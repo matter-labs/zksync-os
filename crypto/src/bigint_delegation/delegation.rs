@@ -103,7 +103,6 @@ pub(crate) fn bigint_op_delegation_with_carry_bit(
     debug_assert!(_a_ptr.addr() % 32 == 0);
     debug_assert!(_b_ptr.addr() % 32 == 0);
 
-    #[cfg(any(feature = "testing", test))]
     unsafe {
         use ruint::aliases::{U256 as rU256, U512 as rU512};
 
@@ -169,7 +168,4 @@ pub(crate) fn bigint_op_delegation_with_carry_bit(
 
         of as u32
     }
-
-    #[cfg(not(any(feature = "testing", test)))]
-    unimplemented!()
 }

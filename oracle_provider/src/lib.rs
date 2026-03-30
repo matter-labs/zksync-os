@@ -2,6 +2,12 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
+#[cfg(all(
+    not(target_arch = "riscv32"),
+    not(all(target_pointer_width = "64", target_endian = "little"))
+))]
+compile_error!("ReadWitnessSource host recording requires a 64-bit little-endian host target");
+
 // Hook zk_ee IOOracle to be NonDeterminismCSRSource
 
 use std::cell::RefCell;
@@ -320,5 +326,88 @@ impl<M: MemorySource> NonDeterminismCSRSource<M> for ReadWitnessSource<M> {
 
     fn write_with_memory_access(&mut self, memory: &M, value: u32) {
         self.original_source.write_with_memory_access(memory, value);
+    }
+}
+
+impl IOOracle for ReadWitnessSource<DummyMemorySource> {
+    type RawIterator<'a> =
+        <ZkEENonDeterminismSource<DummyMemorySource> as IOOracle>::RawIterator<'a>;
+
+    fn raw_query<'a, I>(
+        &'a mut self,
+        query_type: u32,
+        input: &I,
+    ) -> Result<Self::RawIterator<'a>, InternalError>
+    where
+        I: UsizeSerializable + UsizeDeserializable,
+    {
+        let inner = self.original_source.raw_query(query_type, input)?;
+        // First add the length of the iterator.
+        let len = inner.len();
+        {
+            let mut read_items = self.read_items.borrow_mut();
+            // Len is multiplied by 2 to account for 32/64-bit mismatch
+            let len_u32 = u32::try_from(len.checked_mul(2).expect("response length overflow"))
+                .expect("iterator length does not fit into u32");
+            read_items.push(len_u32);
+        }
+        let read_items = Rc::clone(&self.read_items);
+        let wrapped: Self::RawIterator<'a> = Box::new(inner.inspect(move |v| {
+            record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
+        }));
+
+        Ok(wrapped)
+    }
+}
+
+fn record_usize_as_u32_words(dst: &mut Vec<u32>, value: usize) {
+    {
+        let v = value as u64;
+        // LE
+        dst.push((v & 0xFFFF_FFFF) as u32);
+        dst.push((v >> 32) as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_QUERY_ID: u32 = 0x1234_5678;
+
+    struct FixedResponseProcessor;
+
+    impl OracleQueryProcessor<DummyMemorySource> for FixedResponseProcessor {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            vec![TEST_QUERY_ID]
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            query_id: u32,
+            query: Vec<usize>,
+            _memory: &DummyMemorySource,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            assert_eq!(query_id, TEST_QUERY_ID);
+            assert_eq!(query, vec![7usize]);
+            Box::new(vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize].into_iter())
+        }
+    }
+
+    #[test]
+    fn read_witness_source_records_length_and_words() {
+        let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        oracle.add_external_processor(FixedResponseProcessor);
+
+        let mut source = ReadWitnessSource::new(oracle);
+        let response: Vec<usize> = source.raw_query(TEST_QUERY_ID, &7u64).unwrap().collect();
+        assert_eq!(
+            response,
+            vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize]
+        );
+        assert_eq!(
+            *source.get_read_items().borrow(),
+            vec![4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc,]
+        );
     }
 }

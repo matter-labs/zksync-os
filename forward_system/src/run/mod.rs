@@ -23,23 +23,28 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
+use crate::system::bootloader::run_prover_input_no_panic;
 use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
+    BasicBootloaderProvingExecutionConfig,
 };
 use errors::ForwardSubsystemError;
 use oracle_provider::MemorySource;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
+use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
+use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -47,7 +52,6 @@ pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
 use zksync_os_interface::traits::EncodedTx;
 
-use std::path::PathBuf;
 pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
 pub use tx_source::TxSource;
@@ -102,38 +106,21 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     Ok(result_keeper.into())
 }
 
-// TODO(EVM-1184): we should run it on native arch and it should return pubdata and other outputs via result keeper
-pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
-    zk_os_program_path: PathBuf,
+// Returns (prover_input, block_output, pubdata)
+pub fn generate_proof_input<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    TR: TxResultCallback,
+>(
     block_context: BlockContext,
     proof_data: ProofData<StorageCommitment>,
     da_commitment_scheme: DACommitmentScheme,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
-) -> Result<Vec<u32>, ForwardSubsystemError> {
-    let img_bytes = std::fs::read(&zk_os_program_path)
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {zk_os_program_path:?}"));
-    generate_proof_input_from_bytes(
-        &img_bytes,
-        block_context,
-        proof_data,
-        da_commitment_scheme,
-        tree,
-        preimage_source,
-        tx_source,
-    )
-}
-
-pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
-    zk_os_program_bytes: &[u8],
-    block_context: BlockContext,
-    proof_data: ProofData<StorageCommitment>,
-    da_commitment_scheme: DACommitmentScheme,
-    tree: T,
-    preimage_source: PS,
-    tx_source: TS,
-) -> Result<Vec<u32>, ForwardSubsystemError> {
+    tx_result_callback: TR,
+) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
@@ -159,25 +146,29 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
-    oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+    oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
     oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+        callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
     );
-    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
-    oracle.add_external_processor(UARTPrintResponder);
+    oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(oracle);
-    let items = copy_source.get_read_items();
 
-    let (_proof_output, _) = zksync_os_runner::run_and_get_effective_cycles_from_bytes(
-        zk_os_program_bytes,
-        None,
-        1 << 36,
+    let mut tracer = NopTracer::default();
+    let mut result_keeper = ProverInputResultKeeper::new(tx_result_callback);
+
+    let prover_input = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
         copy_source,
-    );
+        &mut result_keeper,
+        &mut tracer,
+        &mut NopTxValidator,
+    )
+    .map_err(|e| wrap_error!(e))?;
+    // Take pubdata, as it's not part of BlockOutput
+    let pubdata = std::mem::take(&mut result_keeper.pubdata);
 
-    Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
+    Ok((prover_input, result_keeper.into(), pubdata))
 }
 
 // TODO(EVM-1184): in future we should generate input per batch
@@ -187,10 +178,11 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
 /// Important: da_commitment_scheme should correspond to one used for blocks proof input generation.
 ///
 pub fn generate_batch_proof_input(
-    mut blocks_proof_inputs: Vec<&[u32]>,
+    blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
+    let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
             let total_pubdata_length: usize = blocks_pubdata
@@ -200,11 +192,28 @@ pub fn generate_batch_proof_input(
             let mut blobs_data = Vec::with_capacity(total_pubdata_length + 31);
             blobs_data.extend_from_slice(&(total_pubdata_length as u64).to_be_bytes());
             blobs_data.extend_from_slice(&[0u8; 23]); // pad to 31
-            for (i, block_pubdata) in blocks_pubdata.into_iter().enumerate() {
+            for (block_proof_input, block_pubdata) in
+                blocks_proof_inputs.iter().zip(blocks_pubdata.into_iter())
+            {
                 blobs_data.extend_from_slice(block_pubdata);
-                let length_without_advice = blocks_proof_inputs[i].len()
-                    - (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
-                blocks_proof_inputs[i] = &blocks_proof_inputs[i][..length_without_advice];
+                let advice_words = (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
+                assert!(
+                    block_proof_input.len() > advice_words,
+                    "block proof input is too short to contain blob advice and disconnect marker"
+                );
+                let disconnect_marker_idx = block_proof_input.len() - 1;
+                assert_eq!(
+                    block_proof_input[disconnect_marker_idx], 0,
+                    "expected disconnect query to have an empty response marker"
+                );
+                let advice_start_idx = disconnect_marker_idx - advice_words;
+                trimmed_blocks_proof_inputs.push(
+                    [
+                        &block_proof_input[..advice_start_idx],
+                        &block_proof_input[disconnect_marker_idx..],
+                    ]
+                    .concat(),
+                );
             }
             let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
             for blob_data in blobs_data.chunks(31 * 4096) {
@@ -225,22 +234,53 @@ pub fn generate_batch_proof_input(
             }
             blobs_advice
         }
-        _ => vec![],
+        _ => {
+            trimmed_blocks_proof_inputs.extend(
+                blocks_proof_inputs
+                    .into_iter()
+                    .map(|block_proof_input| block_proof_input.to_vec()),
+            );
+            vec![]
+        }
     };
     let mut proof_input = Vec::with_capacity(
-        blocks_proof_inputs
+        trimmed_blocks_proof_inputs
             .iter()
             .map(|block_proof_input| block_proof_input.len())
             .sum::<usize>()
             + 1
             + blobs_advice.len(),
     );
-    proof_input.push(blocks_proof_inputs.len() as u32);
-    for block_proof_input in blocks_proof_inputs {
-        proof_input.extend_from_slice(block_proof_input);
+    proof_input.push(trimmed_blocks_proof_inputs.len() as u32);
+    for block_proof_input in trimmed_blocks_proof_inputs {
+        proof_input.extend_from_slice(block_proof_input.as_slice());
     }
     proof_input.extend_from_slice(blobs_advice.as_slice());
     proof_input
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_batch_proof_input;
+    use zk_ee::common_structs::DACommitmentScheme;
+
+    #[test]
+    fn preserves_disconnect_marker_when_replacing_blob_advice() {
+        let block_proof_input = vec![11, 12, 24];
+        let mut block_proof_input = block_proof_input
+            .into_iter()
+            .chain(100..124)
+            .collect::<Vec<_>>();
+        block_proof_input.push(0);
+
+        let batch_input = generate_batch_proof_input(
+            vec![block_proof_input.as_slice()],
+            DACommitmentScheme::BlobsZKsyncOS,
+            vec![&[1, 2, 3]],
+        );
+
+        assert_eq!(&batch_input[..4], &[1, 11, 12, 0]);
+    }
 }
 
 pub fn make_oracle_for_proofs_and_dumps<
@@ -256,6 +296,7 @@ pub fn make_oracle_for_proofs_and_dumps<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
+    use_native_callable_oracles: bool,
 ) -> ZkEENonDeterminismSource<M> {
     make_oracle_for_proofs_and_dumps_for_init_data(
         block_context,
@@ -265,6 +306,7 @@ pub fn make_oracle_for_proofs_and_dumps<
         proof_data,
         da_commitment_scheme,
         add_uart,
+        use_native_callable_oracles,
     )
 }
 
@@ -281,6 +323,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
+    use_native_callable_oracles: bool,
 ) -> ZkEENonDeterminismSource<M> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -305,11 +348,21 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(tree_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
-    oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-    oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
-    );
-    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
+    if use_native_callable_oracles {
+        oracle
+            .add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
+        oracle.add_external_processor(
+            callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
+        );
+        oracle
+            .add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
+    } else {
+        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+        oracle.add_external_processor(
+            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+        );
+        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
+    }
 
     if add_uart {
         let uart_responder = UARTPrintResponder;

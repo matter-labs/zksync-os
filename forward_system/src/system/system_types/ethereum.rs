@@ -26,8 +26,8 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypes<O> {
         >,
         false,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<false>;
+    type SystemFunctionsExt = NoStdSystemFunctions<false>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;
@@ -70,8 +70,8 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<false>;
+    type SystemFunctionsExt = NoStdSystemFunctions<false>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;

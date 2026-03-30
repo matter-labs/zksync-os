@@ -24,7 +24,7 @@ fn test_block_header_invariants() {
     // TODO: enable when this is implemented
     // assert_ne!(header.transactions_root, Bytes32::ZERO);
     // assert_ne!(header.receipts_root, Bytes32::ZERO);
-    assert_eq!(header.number, 0);
+    assert_eq!(header.number, 1);
     assert_eq!(header.gas_limit, MAX_BLOCK_GAS_LIMIT);
     assert!(
         header.gas_used
@@ -62,7 +62,7 @@ fn test_block_header_invariants() {
     // TODO: enable when this is implemented
     // assert_ne!(header.transactions_root, Bytes32::ZERO);
     // assert_ne!(header.receipts_root, Bytes32::ZERO);
-    assert_eq!(header.number, 1);
+    assert_eq!(header.number, 2);
     assert_eq!(header.gas_limit, gas_limit);
     assert!(
         header.gas_used

@@ -43,12 +43,10 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         .with_run_config(RunConfig::with_riscv_run())
         .with_da_commitment_scheme(da_commitment_scheme);
 
-    let block1_result = tester.execute_block(vec![mint_tx]);
-    let block1_proof_input = tester
-        .last_executed_block_info()
-        .unwrap()
-        .proof_input
-        .clone();
+    tester.execute_block(vec![mint_tx]);
+    let block1_info = tester.last_executed_block_info().unwrap();
+    let block1_proof_input = block1_info.proof_input.clone();
+    let block1_pubdata = block1_info.pubdata.clone();
     assert!(
         !block1_proof_input.is_empty(),
         "block1 proof input must be non-empty; proving run is required"
@@ -69,12 +67,10 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone())
     };
 
-    let block2_result = tester.execute_block(vec![encoded_transfer_tx]);
-    let block2_proof_input = tester
-        .last_executed_block_info()
-        .unwrap()
-        .proof_input
-        .clone();
+    tester.execute_block(vec![encoded_transfer_tx]);
+    let block2_info = tester.last_executed_block_info().unwrap();
+    let block2_proof_input = block2_info.proof_input.clone();
+    let block2_pubdata = block2_info.pubdata.clone();
     assert!(
         !block2_proof_input.is_empty(),
         "block2 proof input must be non-empty; proving run is required"
@@ -83,10 +79,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let batch_input = generate_batch_proof_input(
         vec![&block1_proof_input, &block2_proof_input],
         da_commitment_scheme,
-        vec![
-            block1_result.pubdata.as_slice(),
-            block2_result.pubdata.as_slice(),
-        ],
+        vec![block1_pubdata.as_slice(), block2_pubdata.as_slice()],
     );
 
     let multinblock_program_path = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())

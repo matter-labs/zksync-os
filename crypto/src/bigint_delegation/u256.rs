@@ -1,5 +1,5 @@
 use super::{delegation, DelegatedBarretParams, DelegatedModParams, DelegatedMontParams};
-use crate::ark_ff_delegation::{BigInt, BigInteger};
+use crate::{BigInt, BigInteger};
 use core::{fmt::Debug, marker::PhantomData};
 
 pub(super) type U256 = BigInt<4>;

@@ -1,5 +1,6 @@
 use crate::utils::evaluate::read_memory_as_u8;
 use crate::utils::usize_slice_iterator::UsizeSliceIteratorOwned;
+use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::blob_commitment_generator::ENCODABLE_BYTES_PER_BLOB;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
@@ -7,6 +8,8 @@ use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
+
+use crate::read_u8_words;
 
 ///
 /// Query processor, which returns blob kzg commitment and proof for a given data.
@@ -63,6 +66,58 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
     }
 }
 
+/// Query processor to be used for prover input native run
+/// Works in a similar way as the NativeBlobCommitmentAndProof, but with
+/// 64 bit pointers. Importantly, the query response is the
+/// same.
+///
+/// This processor explicitly reads the process memory
+/// using a raw pointer to get the input.
+pub struct NativeBlobCommitmentAndProofQuery<M: MemorySource> {
+    _marker: std::marker::PhantomData<M>,
+}
+
+impl<M: MemorySource> Default for NativeBlobCommitmentAndProofQuery<M> {
+    fn default() -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQuery<M> {
+    fn supported_query_ids(&self) -> Vec<u32> {
+        vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
+    }
+
+    fn process_buffered_query(
+        &mut self,
+        query_id: u32,
+        query: Vec<usize>,
+        _memory: &M,
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        debug_assert!(self.supports_query_id(query_id));
+
+        // this query processor supposed to work only on "host" architecture, which is always 64 bit
+        const { assert!(8 == core::mem::size_of::<usize>()) };
+        let mut it = query.into_iter();
+        let data_ptr = it.next().expect("A u64 should've been passed in.");
+        let data_len = it.next().expect("A u64 should've been passed in.");
+        assert!(
+            it.next().is_none(),
+            "Only a pointer and the length are expected."
+        );
+        assert!(data_len <= ENCODABLE_BYTES_PER_BLOB);
+        let data = read_u8_words(data_ptr as u64, data_len as u64);
+        let result = blob_kzg_commitment_and_proof(&data);
+
+        let r = result.iter().collect::<Vec<_>>();
+        let r = Vec::into_boxed_slice(r);
+        let n = UsizeSliceIteratorOwned::new(r);
+        Box::new(n)
+    }
+}
+
 ///
 /// Calculate kzg commitment and proof at the point `blake2s(versioned_hash & data)` for blob created from passed data.
 ///
@@ -97,5 +152,36 @@ pub fn blob_kzg_commitment_and_proof(data: &[u8]) -> KZGCommitmentAndProof {
     KZGCommitmentAndProof {
         commitment: commitment.to_bytes().into_inner(),
         proof: proof.to_bytes().into_inner(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oracle_provider::DummyMemorySource;
+
+    #[test]
+    fn native_blob_query_processes_valid_query() {
+        let data = [1u8, 2, 3, 4, 5];
+        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery::<DummyMemorySource>::default()
+            .process_buffered_query(
+                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+                vec![data.as_ptr().addr(), data.len()],
+                &DummyMemorySource,
+            )
+            .collect();
+
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn native_blob_query_rejects_null_pointer() {
+        let _ = NativeBlobCommitmentAndProofQuery::<DummyMemorySource>::default()
+            .process_buffered_query(
+                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+                vec![0, 1],
+                &DummyMemorySource,
+            );
     }
 }

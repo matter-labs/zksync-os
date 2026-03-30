@@ -236,6 +236,74 @@ macro_rules! wrap_with_resources {
     }};
 }
 
+// Snapshotting mechanism, used for tests
+// We run multiple native runs of the program, so labels can be duplicated.
+// This is a way to ignore some of those side effects.
+#[cfg(not(target_arch = "riscv32"))]
+pub struct Snapshot {
+    labels_len: usize,
+    #[cfg(feature = "log_to_file")]
+    file_len: u64,
+}
+
+#[cfg(target_arch = "riscv32")]
+pub struct Snapshot;
+
+#[cfg(not(target_arch = "riscv32"))]
+pub fn snapshot() -> Snapshot {
+    let labels_len = LABELS.with(|l| l.borrow().len());
+
+    #[cfg(feature = "log_to_file")]
+    let file_len = MARKER_FILE.with(|f| {
+        use std::io::Seek;
+        use std::io::SeekFrom;
+
+        let mut file = f.borrow_mut();
+        // Get current position; writing always appends, so this is effectively the "index"
+        file.seek(SeekFrom::Current(0))
+            .expect("Failed to seek marker file")
+    });
+
+    Snapshot {
+        labels_len,
+        #[cfg(feature = "log_to_file")]
+        file_len,
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub fn snapshot() -> Snapshot {
+    Snapshot
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+pub fn revert(snap: Snapshot) {
+    // Restore LABELS length
+    LABELS.with(|l| {
+        let mut v = l.borrow_mut();
+        if v.len() > snap.labels_len {
+            v.truncate(snap.labels_len);
+        }
+    });
+
+    // Restore file length/position if logging to file
+    #[cfg(feature = "log_to_file")]
+    {
+        use std::io::{Seek, SeekFrom};
+
+        MARKER_FILE.with(|f| {
+            let mut file = f.borrow_mut();
+            file.set_len(snap.file_len)
+                .expect("Failed to truncate marker file");
+            file.seek(SeekFrom::Start(snap.file_len))
+                .expect("Failed to seek marker file");
+        });
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub fn revert(_: Snapshot) {}
+
 /// Per-opcode aggregated cycle statistics.
 #[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
 #[derive(Debug, Clone)]

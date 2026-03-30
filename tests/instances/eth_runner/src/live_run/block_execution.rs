@@ -146,7 +146,7 @@ pub fn run_block(
         )
     }));
 
-    let (output, stats, _prover_input) = match execution_result {
+    let (output, stats, _prover_input, _pubdata) = match execution_result {
         std::result::Result::Ok(std::result::Result::Ok(result)) => result,
         std::result::Result::Ok(std::result::Result::Err(e)) => {
             return Err(anyhow!("Block execution failed: {e:?}"));

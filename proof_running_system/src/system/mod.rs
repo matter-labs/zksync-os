@@ -72,8 +72,8 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = BootloaderAllocator;
     type Logger = L;
     type Metadata = ZkMetadata;
@@ -144,8 +144,8 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for EthereumStorageSystemType
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = BootloaderAllocator;
     type Logger = L;
     type Metadata = EthereumBlockMetadata;

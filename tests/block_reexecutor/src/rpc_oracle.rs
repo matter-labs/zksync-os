@@ -261,6 +261,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
+        _use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<DummyMemorySource> {
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
         let tx_data_responder = TxDataResponder {
@@ -302,6 +303,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         _proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         _da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
+        _use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
         // Note: block reexecutor does not use proof oracle
         ZkEENonDeterminismSource::default()

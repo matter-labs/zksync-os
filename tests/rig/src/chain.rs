@@ -27,9 +27,11 @@ use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotVal
 use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
+use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
+use forward_system::system::bootloader::run_prover_input_no_panic;
+use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
@@ -51,10 +53,12 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
-use zksync_os_interface::types::BlockOutput;
-use zksync_os_interface::types::StorageWrite;
+use zksync_os_interface::types::{
+    AccountDiff, BlockOutput, ExecutionOutput, ExecutionResult, StorageWrite, TxOutput,
+};
 
 /// Trait for creating oracles with custom configuration
 pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
@@ -68,6 +72,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<DummyMemorySource>;
 
     #[allow(clippy::too_many_arguments)]
@@ -80,6 +85,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
 }
 
@@ -98,6 +104,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<DummyMemorySource> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
@@ -107,6 +114,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
+            use_native_callable_oracles,
         )
     }
 
@@ -119,6 +127,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
@@ -128,6 +137,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
+            use_native_callable_oracles,
         )
     }
 }
@@ -140,7 +150,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     pub(crate) state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
-    previous_block_number: Option<u64>,
+    previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
 }
@@ -187,6 +197,8 @@ pub struct RunConfig {
     pub app: Option<String>,
     // Run RISC-V simulation
     pub do_riscv_run: bool,
+    // Run the prover input generation stop. Must be enabled if [do_riscv_run] is enabled.
+    pub do_prover_input_run: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
     // do_riscv_run is true
@@ -216,6 +228,7 @@ impl Default for RunConfig {
         RunConfig {
             app: Some("for_tests".to_string()),
             do_riscv_run,
+            do_prover_input_run: true,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
             revm_independent_gas: false,
@@ -307,7 +320,7 @@ impl Chain<false> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -330,7 +343,7 @@ impl Chain<true> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -343,13 +356,223 @@ pub struct BlockExtraStats {
     pub effective_used: Option<u64>,
 }
 
+fn assert_storage_write_matches(actual: &StorageWrite, expected: &StorageWrite, context: &str) {
+    assert_eq!(actual.key, expected.key, "{context}: storage key mismatch");
+    assert_eq!(
+        actual.value, expected.value,
+        "{context}: storage value mismatch"
+    );
+    assert_eq!(
+        actual.account, expected.account,
+        "{context}: storage account mismatch"
+    );
+    assert_eq!(
+        actual.account_key, expected.account_key,
+        "{context}: storage account key mismatch"
+    );
+}
+
+fn assert_account_diff_matches(actual: &AccountDiff, expected: &AccountDiff, context: &str) {
+    assert_eq!(
+        actual.address, expected.address,
+        "{context}: address mismatch"
+    );
+    assert_eq!(actual.nonce, expected.nonce, "{context}: nonce mismatch");
+    assert_eq!(
+        actual.balance, expected.balance,
+        "{context}: balance mismatch"
+    );
+    assert_eq!(
+        actual.bytecode_hash, expected.bytecode_hash,
+        "{context}: bytecode hash mismatch"
+    );
+}
+
+fn assert_execution_output_matches(
+    actual: &ExecutionOutput,
+    expected: &ExecutionOutput,
+    context: &str,
+) {
+    match (actual, expected) {
+        (ExecutionOutput::Call(actual), ExecutionOutput::Call(expected)) => {
+            assert_eq!(actual, expected, "{context}: call output mismatch");
+        }
+        (
+            ExecutionOutput::Create(actual_bytes, actual_address),
+            ExecutionOutput::Create(expected_bytes, expected_address),
+        ) => {
+            assert_eq!(
+                actual_bytes, expected_bytes,
+                "{context}: create output mismatch"
+            );
+            assert_eq!(
+                actual_address, expected_address,
+                "{context}: create address mismatch"
+            );
+        }
+        _ => panic!("{context}: execution output kind mismatch"),
+    }
+}
+
+fn assert_execution_result_matches(
+    actual: &ExecutionResult,
+    expected: &ExecutionResult,
+    context: &str,
+) {
+    match (actual, expected) {
+        (ExecutionResult::Success(actual), ExecutionResult::Success(expected)) => {
+            assert_execution_output_matches(actual, expected, context);
+        }
+        (ExecutionResult::Revert(actual), ExecutionResult::Revert(expected)) => {
+            assert_eq!(actual, expected, "{context}: revert output mismatch");
+        }
+        _ => panic!("{context}: execution result kind mismatch"),
+    }
+}
+
+fn assert_tx_output_matches(actual: &TxOutput, expected: &TxOutput, tx_idx: usize) {
+    let context = format!("tx result {tx_idx}");
+    assert_execution_result_matches(
+        &actual.execution_result,
+        &expected.execution_result,
+        &context,
+    );
+    assert_eq!(
+        actual.gas_used, expected.gas_used,
+        "{context}: gas_used mismatch"
+    );
+    assert_eq!(
+        actual.gas_refunded, expected.gas_refunded,
+        "{context}: gas_refunded mismatch"
+    );
+    assert_eq!(
+        actual.computational_native_used, expected.computational_native_used,
+        "{context}: computational_native_used mismatch"
+    );
+    assert_eq!(
+        actual.native_used, expected.native_used,
+        "{context}: native_used mismatch"
+    );
+    assert_eq!(
+        actual.pubdata_used, expected.pubdata_used,
+        "{context}: pubdata_used mismatch"
+    );
+    assert_eq!(
+        actual.contract_address, expected.contract_address,
+        "{context}: contract_address mismatch"
+    );
+    assert_eq!(
+        format!("{:?}", actual.logs),
+        format!("{:?}", expected.logs),
+        "{context}: logs mismatch"
+    );
+    assert_eq!(
+        format!("{:?}", actual.l2_to_l1_logs),
+        format!("{:?}", expected.l2_to_l1_logs),
+        "{context}: l2_to_l1_logs mismatch"
+    );
+    assert_eq!(
+        actual.storage_writes.len(),
+        expected.storage_writes.len(),
+        "{context}: per-tx storage write count mismatch"
+    );
+    for (storage_idx, (actual_write, expected_write)) in actual
+        .storage_writes
+        .iter()
+        .zip(expected.storage_writes.iter())
+        .enumerate()
+    {
+        assert_storage_write_matches(
+            actual_write,
+            expected_write,
+            &format!("{context}: storage write {storage_idx}"),
+        );
+    }
+}
+
+fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
+    assert_eq!(
+        actual.header.inner(),
+        expected.header.inner(),
+        "block header mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.computational_native_used, expected.computational_native_used,
+        "block computational_native_used mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.published_preimages, expected.published_preimages,
+        "published preimages mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.storage_writes.len(),
+        expected.storage_writes.len(),
+        "storage write count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_write, expected_write)) in actual
+        .storage_writes
+        .iter()
+        .zip(expected.storage_writes.iter())
+        .enumerate()
+    {
+        assert_storage_write_matches(
+            actual_write,
+            expected_write,
+            &format!("block storage write {idx}"),
+        );
+    }
+    assert_eq!(
+        actual.account_diffs.len(),
+        expected.account_diffs.len(),
+        "account diff count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_diff, expected_diff)) in actual
+        .account_diffs
+        .iter()
+        .zip(expected.account_diffs.iter())
+        .enumerate()
+    {
+        assert_account_diff_matches(actual_diff, expected_diff, &format!("account diff {idx}"));
+    }
+    assert_eq!(
+        actual.tx_results.len(),
+        expected.tx_results.len(),
+        "tx result count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_tx, expected_tx)) in actual
+        .tx_results
+        .iter()
+        .zip(expected.tx_results.iter())
+        .enumerate()
+    {
+        match (actual_tx, expected_tx) {
+            (Ok(actual_tx), Ok(expected_tx)) => {
+                assert_tx_output_matches(actual_tx, expected_tx, idx)
+            }
+            (Err(actual_err), Err(expected_err)) => assert_eq!(
+                format!("{actual_err:?}"),
+                format!("{expected_err:?}"),
+                "tx result {idx}: invalid transaction mismatch"
+            ),
+            _ => panic!("tx result {idx}: success/error shape mismatch"),
+        }
+    }
+}
+
+fn has_validator_filtered_tx(block_output: &BlockOutput) -> bool {
+    block_output
+        .tx_results
+        .iter()
+        .any(|tx_result| matches!(tx_result, Err(InvalidTransaction::FilteredByValidator)))
+}
+
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
-        self.previous_block_number = Some(prev)
+        self.previous_block_number = prev;
     }
 
     pub fn next_block_number(&self) -> u64 {
-        self.previous_block_number.map(|n| n + 1).unwrap_or(0)
+        self.previous_block_number + 1
     }
 
     pub fn chain_id(&self) -> u64 {
@@ -370,41 +593,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
-    }
-
-    /// TODO: duplicated from API, unify.
-    /// Runs a block in riscV - using zksync_os binary - and returns the
-    /// witness that can be passed to the prover subsystem.
-    pub fn run_block_generate_witness<const FLAMEGRAPH: bool>(
-        oracle: ZkEENonDeterminismSource<VectorMemoryImpl>,
-        app: &Option<String>,
-    ) -> Vec<u32> {
-        // We'll wrap the source, to collect all the reads.
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-        // By default - enable diagnostics is false (which makes the test run faster).
-        let path = get_zksync_os_img_path(app);
-
-        let diagnostics_config = if FLAMEGRAPH {
-            let mut profiler_config = ProfilerConfig::new("flamegraph.svg".into());
-            profiler_config.frequency_recip = 10;
-
-            Some(profiler_config).map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(app));
-                diagnostics_cfg.profiler_config = Some(cfg);
-                diagnostics_cfg
-            })
-        } else {
-            None
-        };
-
-        let output = zksync_os_runner::run(path, diagnostics_config, 1 << 36, copy_source);
-
-        // We return 0s in case of failure.
-        assert_ne!(output, [0u32; 8]);
-
-        let result = items.borrow().clone();
-        result
     }
 
     ///
@@ -547,7 +735,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
             transactions,
@@ -571,7 +759,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
             block_context,
@@ -594,12 +782,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,
             witness_output_file,
             app,
             do_riscv_run,
+            do_prover_input_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
             revm_independent_gas: _,
@@ -643,6 +832,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
+            false,
         );
 
         let forward_oracle = oracle_factory.create_forward_oracle(
@@ -653,6 +843,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
+            false,
         );
 
         #[cfg(feature = "simulate_witness_gen")]
@@ -664,6 +855,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 tx_source.clone(),
                 Some(proof_data),
                 Some(da_commitment_scheme),
+                false,
                 false,
             )
         };
@@ -681,6 +873,71 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         )?;
 
         let block_output: BlockOutput = result_keeper.into();
+
+        let (prover_input_forward, pubdata, has_filtered_by_validator) = if do_prover_input_run {
+            let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
+
+            let prover_input_oracle = oracle_factory.create_forward_oracle(
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                Some(proof_data),
+                Some(da_commitment_scheme),
+                false,
+                true,
+            );
+            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut tracer = NopTracer::default();
+            let mut validator = NopTxValidator;
+            let prover_input_forward = {
+                // Avoid capturing markers from the second run, as it would duplicate them.
+                #[cfg(feature = "cycle_marker")]
+                let snapshot = cycle_marker::snapshot();
+                let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+                    copy_source,
+                    &mut result_keeper_prover_input,
+                    &mut tracer,
+                    &mut validator,
+                );
+                #[cfg(feature = "cycle_marker")]
+                cycle_marker::revert(snapshot);
+                result?
+            };
+
+            if let Some(path) = witness_output_file {
+                let mut file = File::create(&path).expect("should create file");
+                let witness: Vec<u8> = prover_input_forward
+                    .iter()
+                    .flat_map(|x| x.to_be_bytes())
+                    .collect();
+                let hex = hex::encode(witness);
+                file.write_all(hex.as_bytes())
+                    .expect("should write to file");
+            }
+
+            let pubdata = result_keeper_prover_input.pubdata.clone();
+            let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
+            let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
+            if has_filtered_by_validator {
+                warn!(
+                    "Skipping forward/prover-input output equivalence checks because the custom \
+                 validator filtered at least one transaction, and prover-input replay uses \
+                 NopTxValidator"
+                );
+            } else {
+                assert_block_outputs_match(&block_output, &prover_input_block_output);
+            }
+            (prover_input_forward, pubdata, has_filtered_by_validator)
+        } else {
+            // We use the forward prover input run outputs to validate the risc-v run,
+            // so we check consistency in config
+            assert!(
+                !do_riscv_run,
+                "Native prover input run should be performed if risc v run is enabled"
+            );
+            (vec![], vec![], false)
+        };
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -709,7 +966,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         if update_state_after_block_execution {
             // update state
-            self.previous_block_number = Some(self.next_block_number());
+            self.previous_block_number = self.next_block_number();
             self.block_timestamp = block_context.timestamp;
             for i in 0..255 {
                 self.block_hashes[i] = self.block_hashes[i + 1];
@@ -733,105 +990,102 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         let proof_input = if do_riscv_run {
-            if let Some(path) = witness_output_file {
-                let result = Self::run_block_generate_witness::<false>(oracle, &app);
-                let mut file = File::create(&path).expect("should create file");
-                let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
-                let hex = hex::encode(witness);
-                file.write_all(hex.as_bytes())
-                    .expect("should write to file");
-                result
-            } else {
-                // We'll wrap the source, to collect all the reads.
-                let copy_source = ReadWitnessSource::new(oracle);
-                let items = copy_source.get_read_items();
+            // We'll wrap the source, to collect all the reads.
+            let copy_source = ReadWitnessSource::new(oracle);
+            let items = copy_source.get_read_items();
 
-                let diagnostics_config = profiler_config.map(|cfg| {
-                    let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
-                    diagnostics_cfg.profiler_config = Some(cfg);
-                    diagnostics_cfg
-                });
+            let diagnostics_config = profiler_config.map(|cfg| {
+                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
+                diagnostics_cfg.profiler_config = Some(cfg);
+                diagnostics_cfg
+            });
 
-                let now = std::time::Instant::now();
-                let (proof_output, block_effective) = {
-                    zksync_os_runner::run_and_get_effective_cycles(
-                        get_zksync_os_img_path(&app),
-                        diagnostics_config,
-                        1 << 36,
-                        copy_source,
-                    )
-                };
+            let now = std::time::Instant::now();
+            let (proof_output, block_effective) = {
+                zksync_os_runner::run_and_get_effective_cycles(
+                    get_zksync_os_img_path(&app),
+                    diagnostics_config,
+                    1 << 36,
+                    copy_source,
+                )
+            };
 
-                info!(
-                    "Simulator without witness tracing executed over {:?}",
-                    now.elapsed()
-                );
-                stats.effective_used = block_effective;
+            info!(
+                "Simulator without witness tracing executed over {:?}",
+                now.elapsed()
+            );
+            stats.effective_used = block_effective;
 
-                #[cfg(feature = "simulate_witness_gen")]
-                {
-                    zksync_os_runner::simulate_witness_tracing(
-                        get_zksync_os_img_path(),
-                        source_for_witness_bench,
-                    )
-                }
-
-                // dump csr reads if env var set
-                if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
-                    // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
-                    let mut file =
-                        File::create(&output_csr).expect("Failed to create csr reads file");
-                    // Write each u32 as an 8-character hexadecimal string without newlines
-                    for num in items.borrow().iter() {
-                        write!(file, "{num:08X}").expect("Failed to write to file");
-                    }
-                    debug!(
-                        "Successfully wrote {} u32 csr reads elements to file: {}",
-                        items.borrow().len(),
-                        output_csr
-                    );
-                }
-
-                let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
-
-                debug!(
-                    "{}Proof running output{} = 0x",
-                    colors::GREEN,
-                    colors::RESET
-                );
-                for word in proof_output.into_iter() {
-                    debug!("{word:08x}");
-                }
-
-                // Ensure that proof running didn't fail: check that output is not zero
-                assert!(proof_output.into_iter().any(|word| word != 0));
-                let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
-
-                if check_storage_diff_hashes {
-                    // Also ensure that storage diff hash matches
-                    use crypto::MiniDigest;
-                    let mut hasher = crypto::blake2s::Blake2s256::new();
-                    for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
-                        hasher.update(key.0.as_ref());
-                        hasher.update(value.0.as_ref());
-                    }
-                    let forward_storage_diff_hash = hasher.finalize();
-                    info!(
-                        "Forward storage diff hash: 0x{}",
-                        hex::encode(forward_storage_diff_hash.as_ref())
-                    );
-                    assert_eq!(proof_output_u8, forward_storage_diff_hash);
-
-                    #[cfg(feature = "e2e_proving")]
-                    run_prover(items.borrow().as_slice());
-                }
-
-                proof_input
+            #[cfg(feature = "simulate_witness_gen")]
+            {
+                zksync_os_runner::simulate_witness_tracing(
+                    get_zksync_os_img_path(&None),
+                    source_for_witness_bench,
+                )
             }
+
+            // dump csr reads if env var set
+            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
+                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
+                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
+                // Write each u32 as an 8-character hexadecimal string without newlines
+                for num in items.borrow().iter() {
+                    write!(file, "{num:08X}").expect("Failed to write to file");
+                }
+                debug!(
+                    "Successfully wrote {} u32 csr reads elements to file: {}",
+                    items.borrow().len(),
+                    output_csr
+                );
+            }
+
+            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
+
+            debug!(
+                "{}Proof running output{} = 0x",
+                colors::GREEN,
+                colors::RESET
+            );
+            for word in proof_output.into_iter() {
+                debug!("{word:08x}");
+            }
+
+            // Ensure that proof running didn't fail: check that output is not zero
+            assert!(proof_output.into_iter().any(|word| word != 0));
+            let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
+
+            if check_storage_diff_hashes {
+                // Also ensure that storage diff hash matches
+                use crypto::MiniDigest;
+                let mut hasher = crypto::blake2s::Blake2s256::new();
+                for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
+                    hasher.update(key.0.as_ref());
+                    hasher.update(value.0.as_ref());
+                }
+                let forward_storage_diff_hash = hasher.finalize();
+                info!(
+                    "Forward storage diff hash: 0x{}",
+                    hex::encode(forward_storage_diff_hash.as_ref())
+                );
+                assert_eq!(proof_output_u8, forward_storage_diff_hash);
+
+                #[cfg(feature = "e2e_proving")]
+                run_prover(items.borrow().as_slice());
+            }
+
+            if has_filtered_by_validator {
+                warn!(
+                    "Skipping native/proof witness equality checks because the custom validator \
+                     filtered at least one transaction, and proof replay does not use it"
+                );
+            } else {
+                assert_eq!(prover_input_forward, proof_input);
+            }
+            prover_input_forward
         } else {
-            vec![]
+            prover_input_forward
         };
-        Ok((block_output, stats, proof_input))
+        Ok((block_output, stats, proof_input, pubdata))
     }
 
     pub fn make_eth_block_oracle<M: MemorySource + 'static>(
@@ -1021,8 +1275,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_validator = NopTxValidator;
 
         BasicBootloader::<
-            EthereumStorageSystemTypesWithPostOps<_>,
-            EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            EthereumStorageSystemTypes<_>,
+            EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
         >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
             oracle,
             &mut (),

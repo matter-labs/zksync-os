@@ -24,6 +24,8 @@ use zk_ee::types_config::EthereumIOTypesConfig;
 pub use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::L2ToL1LogWithPreimage;
 
+use super::result_keeper::ProverInputResultKeeper;
+
 pub type TxResult = Result<TxOutput, InvalidTransaction>;
 
 /// Extension trait to create `StorageWrite` from components.
@@ -61,11 +63,10 @@ impl<TR: TxResultCallback>
             storage_writes,
             tx_results,
             new_preimages,
-            pubdata,
             ..
         } = value;
 
-        let mut block_computaional_native_used = 0;
+        let mut block_computational_native_used = 0;
 
         // We cannot simply use `enumerate` here, because some transactions can be invalid
         // Invalid transactions are not counted in the tx_number for events/logs, so we need
@@ -87,7 +88,7 @@ impl<TR: TxResultCallback>
                         } else {
                             ExecutionResult::Revert(output.output)
                         };
-                        block_computaional_native_used += output.computational_native_used;
+                        block_computational_native_used += output.computational_native_used;
                         let o = TxOutput {
                             gas_used: output.gas_used,
                             gas_refunded: output.gas_refunded,
@@ -141,9 +142,21 @@ impl<TR: TxResultCallback>
             storage_writes,
             account_diffs,
             published_preimages,
-            pubdata,
-            computational_native_used: block_computaional_native_used,
+            computational_native_used: block_computational_native_used,
+            // TODO: will be populated in the follow-up PR
+            pubdata_used: 0,
         }
+    }
+}
+
+impl<TR: TxResultCallback>
+    From<ProverInputResultKeeper<TR, basic_bootloader::bootloader::block_header::BlockHeader>>
+    for BlockOutput
+{
+    fn from(
+        value: ProverInputResultKeeper<TR, basic_bootloader::bootloader::block_header::BlockHeader>,
+    ) -> Self {
+        BlockOutput::from(value.forward_running_rk)
     }
 }
 

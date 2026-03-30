@@ -13,7 +13,7 @@ use crypto::blake2s::Blake2s256;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, WarmStorageKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
-use zk_ee::oracle::basic_queries::ZKProofDataQuery;
+use zk_ee::oracle::basic_queries::{DisconnectOracleQuery, ZKProofDataQuery};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -46,7 +46,7 @@ where
     S::IO: IOSubsystemExt
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
-    type PostTxLoopOpResult = (O, Bytes32);
+    type PostTxLoopOpResult = (O, Bytes32, public_input::BatchOutput);
     type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
@@ -237,9 +237,12 @@ where
                     state_diffs_hasher.update(value.current_value.as_u8_ref());
                 });
             let state_diffs_hash = state_diffs_hasher.finalize().into();
-            Ok((io.oracle, state_diffs_hash))
+
+            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            Ok((io.oracle, state_diffs_hash, batch_output))
         } else {
-            Ok((io.oracle, public_input_hash))
+            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            Ok((io.oracle, public_input_hash, batch_output))
         }
     }
 }

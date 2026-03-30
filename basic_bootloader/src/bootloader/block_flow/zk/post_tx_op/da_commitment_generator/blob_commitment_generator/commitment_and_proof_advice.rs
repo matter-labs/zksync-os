@@ -70,7 +70,6 @@ pub struct OracleBasedBlobCommitmentAndProofAdvisor<'a, O: zk_ee::oracle::IOOrac
     pub oracle: &'a mut O,
 }
 
-// Right now, we run it only on RISC-V, but in theory, it should be possible to make it runnable on native arch as well
 impl<'a, O: zk_ee::oracle::IOOracle> BlobCommitmentAndProofAdvisor
     for OracleBasedBlobCommitmentAndProofAdvisor<'a, O>
 {

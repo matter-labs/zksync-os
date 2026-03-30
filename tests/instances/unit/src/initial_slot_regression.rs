@@ -20,7 +20,10 @@ use rig::forward_system::run::query_processors::{
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
-use rig::oracle_provider::{MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource};
+use rig::oracle_provider::{
+    DummyMemorySource, MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource,
+};
+use rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
@@ -150,7 +153,7 @@ impl InvalidInitialValueOracleFactory {
         let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
 
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-            da_commitment_scheme: da_commitment_scheme,
+            da_commitment_scheme,
         };
 
         let mut oracle = ZkEENonDeterminismSource::default();
@@ -175,7 +178,8 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+        _use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
         self.build_oracle(
             block_metadata,
             state_tree,
@@ -195,8 +199,8 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-    {
+        _use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
         self.build_oracle(
             block_metadata,
             state_tree,
