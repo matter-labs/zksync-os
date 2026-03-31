@@ -57,6 +57,9 @@ where
         _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
+        result_keeper.record_block_pubdata_used(
+            block_data.block_pubdata_used + BLOCK_PUBDATA_OVERHEAD_BYTES,
+        );
         let block_header = form_block_header(
             &system,
             block_data.transaction_hashes_accumulator.finish().0,

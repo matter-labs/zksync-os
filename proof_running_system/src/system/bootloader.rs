@@ -193,6 +193,9 @@ pub fn run_proving_inner<
 >(
     mut oracle: O,
 ) -> [u32; 8] {
+    use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
+    use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+
     logger_log!(L::default(), "IO implementer init is complete");
 
     // simulating query, just in case
@@ -216,6 +219,8 @@ pub fn run_proving_inner<
             .into_public_input(L::default(), &mut oracle)
             .hash(),
     );
+    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+        .expect("disconnect query must not fail");
 
     unsafe { core::mem::transmute(public_input) }
 }

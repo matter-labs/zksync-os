@@ -1,3 +1,4 @@
+mod batch;
 pub mod errors;
 pub mod fri_admission;
 mod fri_proof_decode;
@@ -28,9 +29,11 @@ use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeRes
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
 use crate::system::bootloader::run_prover_input_no_panic;
+use crate::system::system_types::BatchProverInputBootloader;
 use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
+use basic_bootloader::bootloader::block_flow::public_input::{BatchOutput, BatchPublicInput};
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,
@@ -41,9 +44,13 @@ use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use std::sync::Arc;
 use zk_ee::common_structs::ProofData;
+use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
+use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::system::logger::NullLogger;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 
+pub use self::batch::{BatchBlockInput, BatchState};
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
@@ -75,6 +82,20 @@ pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockCo
 use zksync_os_interface::traits::TxListSource;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
+
+/// Result of the batch prover-input run.
+pub struct BatchRunOutput {
+    /// Canonical batch prover input.
+    pub prover_input: Vec<u32>,
+    /// Canonical batch pubdata accumulated across all blocks.
+    pub pubdata: Vec<u8>,
+    /// Batch public input derived by the multiblock post-op.
+    pub batch_public_input: BatchPublicInput,
+    /// Batch output derived by the multiblock post-op.
+    pub batch_output: BatchOutput,
+    /// Per-block forward outputs observed while executing the batch.
+    pub block_outputs: Vec<BlockOutput>,
+}
 
 pub fn run_block<
     T: ReadStorageTree,
@@ -127,7 +148,6 @@ pub fn run_block<
     Ok(result_keeper.into())
 }
 
-// Returns (prover_input, block_output, pubdata)
 pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
@@ -194,23 +214,39 @@ pub fn generate_proof_input<
         &mut NopTxValidator,
     )
     .map_err(|e| wrap_error!(e))?;
-    // Take pubdata, as it's not part of BlockOutput
     let pubdata = std::mem::take(&mut result_keeper.pubdata);
+    let block_output = result_keeper.into();
 
-    Ok((prover_input, result_keeper.into(), pubdata))
+    Ok((prover_input, block_output, pubdata))
 }
 
-// TODO(EVM-1184): in future we should generate input per batch
+/// Legacy helper that derives the multiblock witness from per-block witnesses.
 ///
-/// Generate batch proof input from blocks proof inputs.
+/// This matches the existing RISC-V-based multiblock flow, where each block is
+/// executed independently first and then combined into a batch witness.
 ///
-/// Important: da_commitment_scheme should correspond to one used for blocks proof input generation.
+/// Important: `da_commitment_scheme` must match the scheme used for the
+/// per-block proof input generation.
 ///
-pub fn generate_batch_proof_input(
+pub fn generate_legacy_batch_proof_input(
     blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
+    fn disconnect_marker_idx(block_proof_input: &[u32]) -> usize {
+        assert!(
+            !block_proof_input.is_empty(),
+            "block proof input must contain a disconnect marker"
+        );
+        let disconnect_marker_idx = block_proof_input.len() - 1;
+        assert_eq!(
+            block_proof_input[disconnect_marker_idx], 0,
+            "expected disconnect query to have an empty response marker"
+        );
+
+        disconnect_marker_idx
+    }
+
     let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
@@ -230,19 +266,9 @@ pub fn generate_batch_proof_input(
                     block_proof_input.len() > advice_words,
                     "block proof input is too short to contain blob advice and disconnect marker"
                 );
-                let disconnect_marker_idx = block_proof_input.len() - 1;
-                assert_eq!(
-                    block_proof_input[disconnect_marker_idx], 0,
-                    "expected disconnect query to have an empty response marker"
-                );
+                let disconnect_marker_idx = disconnect_marker_idx(block_proof_input);
                 let advice_start_idx = disconnect_marker_idx - advice_words;
-                trimmed_blocks_proof_inputs.push(
-                    [
-                        &block_proof_input[..advice_start_idx],
-                        &block_proof_input[disconnect_marker_idx..],
-                    ]
-                    .concat(),
-                );
+                trimmed_blocks_proof_inputs.push(block_proof_input[..advice_start_idx].to_vec());
             }
             let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
             for blob_data in blobs_data.chunks(31 * 4096) {
@@ -264,11 +290,12 @@ pub fn generate_batch_proof_input(
             blobs_advice
         }
         _ => {
-            trimmed_blocks_proof_inputs.extend(
-                blocks_proof_inputs
-                    .into_iter()
-                    .map(|block_proof_input| block_proof_input.to_vec()),
-            );
+            trimmed_blocks_proof_inputs.extend(blocks_proof_inputs.into_iter().map(
+                |block_proof_input| {
+                    let disconnect_marker_idx = disconnect_marker_idx(block_proof_input);
+                    block_proof_input[..disconnect_marker_idx].to_vec()
+                },
+            ));
             vec![]
         }
     };
@@ -278,38 +305,133 @@ pub fn generate_batch_proof_input(
             .map(|block_proof_input| block_proof_input.len())
             .sum::<usize>()
             + 1
-            + blobs_advice.len(),
+            + blobs_advice.len()
+            + 1,
     );
     proof_input.push(trimmed_blocks_proof_inputs.len() as u32);
     for block_proof_input in trimmed_blocks_proof_inputs {
         proof_input.extend_from_slice(block_proof_input.as_slice());
     }
     proof_input.extend_from_slice(blobs_advice.as_slice());
+    proof_input.push(0);
     proof_input
 }
 
-#[cfg(test)]
-mod tests {
-    use super::generate_batch_proof_input;
-    use zk_ee::common_structs::DACommitmentScheme;
+/// Execute a whole batch and return canonical batch prover input and pubdata.
+///
+/// The caller provides:
+/// - the batch pre-state as `initial_proof_data`
+/// - the mutable batch state before block 1
+/// - per-block metadata and transaction sources
+///
+/// The runner derives later `ProofData` values internally and mutates the batch
+/// state between blocks using the observed `BlockOutput`, so the next block sees
+/// the correct pre-state.
+pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
+    initial_proof_data: ProofData<StorageCommitment>,
+    batch_state: BS,
+    blocks: Vec<BatchBlockInput<TS>>,
+    da_commitment_scheme: DACommitmentScheme,
+) -> Result<BatchRunOutput, ForwardSubsystemError> {
+    assert!(
+        !blocks.is_empty(),
+        "batch prover input requires at least one block",
+    );
 
-    #[test]
-    fn preserves_disconnect_marker_when_replacing_blob_advice() {
-        let block_proof_input = vec![11, 12, 24];
-        let mut block_proof_input = block_proof_input
-            .into_iter()
-            .chain(100..124)
-            .collect::<Vec<_>>();
-        block_proof_input.push(0);
+    let batch_len = blocks.len();
+    let batch_index = batch::BatchIndex::new(batch_len);
 
-        let batch_input = generate_batch_proof_input(
-            vec![block_proof_input.as_slice()],
-            DACommitmentScheme::BlobsZKsyncOS,
-            vec![&[1, 2, 3]],
-        );
+    let mut block_metadata = Vec::with_capacity(batch_len);
+    let mut tx_sources = Vec::with_capacity(batch_len);
 
-        assert_eq!(&batch_input[..4], &[1, 11, 12, 0]);
+    for block in blocks {
+        block_metadata.push(block.block_context);
+        tx_sources.push(block.tx_source);
     }
+    let proof_data = batch::SharedProofData::new(initial_proof_data);
+    let batch_state = batch::BatchStateHandle::new(batch_state);
+
+    let mut oracle = ZkEENonDeterminismSource::default();
+    oracle.add_external_processor(batch::BatchBlockMetadataResponder::new(
+        block_metadata,
+        batch_index.clone(),
+    ));
+    oracle.add_external_processor(TxDataResponder {
+        tx_source: batch::BatchTxSource::new(tx_sources, batch_index.clone()),
+        next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
+    });
+    oracle.add_external_processor(batch::BatchZKProofDataResponder::new(proof_data.clone()));
+    oracle.add_external_processor(batch::BatchDACommitmentSchemeResponder::new(
+        da_commitment_scheme,
+    ));
+    oracle.add_external_processor(GenericPreimageResponder {
+        preimage_source: batch_state.clone(),
+    });
+    oracle.add_external_processor(ReadTreeResponder {
+        tree: batch_state.clone(),
+    });
+    oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
+    oracle.add_external_processor(
+        callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
+    );
+    oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
+
+    let mut oracle = ReadWitnessSource::new(oracle);
+    let mut tracer = NopTracer::default();
+    let mut validator = NopTxValidator;
+    let mut result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
+    let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
+    let mut block_outputs = Vec::with_capacity(batch_len);
+
+    for block_idx in 0..batch_len {
+        // Re-enter the proving bootloader for the next block while preserving the
+        // shared witness stream and the multiblock batch keeper.
+        oracle = BatchProverInputBootloader::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+            oracle,
+            &mut batch_data,
+            &mut result_keeper,
+            &mut tracer,
+            &mut validator,
+        )
+        .map_err(|e| wrap_error!(e))?;
+
+        let current_forward_result = std::mem::replace(
+            &mut result_keeper.forward_running_rk,
+            ForwardRunningResultKeeper::new(NoopTxCallback),
+        );
+        let block_output = current_forward_result.into();
+
+        if block_idx + 1 != batch_len {
+            // Make the current block's writes and newly published preimages
+            // visible to the next block in the batch.
+            batch_state.apply_block_output(&block_output);
+            let next_proof_data = batch_data
+                .current_proof_data()
+                .expect("batch prover input must expose next proof data");
+            proof_data.set(next_proof_data);
+            batch_index.advance();
+        }
+
+        block_outputs.push(block_output);
+    }
+
+    let (batch_public_input, batch_output) =
+        batch_data.into_public_input_and_output(NullLogger, &mut oracle);
+    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+        .expect("disconnect query must not fail");
+    let mut prover_input = Vec::with_capacity(1 + oracle.get_read_items().borrow().len());
+    prover_input.push(batch_len as u32);
+    prover_input.extend(oracle.get_read_items().borrow().iter().copied());
+
+    Ok(BatchRunOutput {
+        prover_input,
+        pubdata: result_keeper.pubdata,
+        batch_public_input,
+        batch_output,
+        block_outputs,
+    })
 }
 
 pub fn make_oracle_for_proofs_and_dumps<
@@ -621,4 +743,79 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();
     Ok(block_output.tx_results.remove(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zk_ee::common_structs::DACommitmentScheme;
+
+    #[test]
+    fn replaces_per_block_disconnect_with_single_final_disconnect() {
+        let block_proof_input = vec![11, 12, 24];
+        let mut block_proof_input = block_proof_input
+            .into_iter()
+            .chain(100..124)
+            .collect::<Vec<_>>();
+        block_proof_input.push(0);
+
+        let batch_input = generate_legacy_batch_proof_input(
+            vec![block_proof_input.as_slice()],
+            DACommitmentScheme::BlobsZKsyncOS,
+            vec![&[1, 2, 3]],
+        );
+
+        let mut expected = vec![1, 11, 12];
+        expected.extend_from_slice(&blob_advice(&[1, 2, 3]));
+        expected.push(0);
+
+        assert_eq!(batch_input, expected);
+    }
+
+    fn blob_advice(pubdata: &[u8]) -> Vec<u32> {
+        let mut blobs_data = Vec::with_capacity(pubdata.len() + 31);
+        blobs_data.extend_from_slice(&(pubdata.len() as u64).to_be_bytes());
+        blobs_data.extend_from_slice(&[0u8; 23]);
+        blobs_data.extend_from_slice(pubdata);
+
+        let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
+        for blob_data in blobs_data.chunks(31 * 4096) {
+            let advice =
+                callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof(blob_data);
+            blobs_advice.push(24);
+            for word in advice.iter() {
+                #[cfg(target_pointer_width = "32")]
+                blobs_advice.push(word as u32);
+                #[cfg(target_pointer_width = "64")]
+                {
+                    let low = word as u32;
+                    let high = (word >> 32) as u32;
+                    blobs_advice.push(low);
+                    blobs_advice.push(high);
+                }
+            }
+        }
+        blobs_advice
+    }
+
+    #[test]
+    fn legacy_batch_input_handles_empty_blob_pubdata() {
+        let block_witness_payload = [11, 22, 33];
+        let mut single_block_witness = block_witness_payload.to_vec();
+        single_block_witness.extend_from_slice(&[100; 25]);
+        single_block_witness.push(0);
+
+        let batch_witness = generate_legacy_batch_proof_input(
+            vec![single_block_witness.as_slice()],
+            DACommitmentScheme::BlobsZKsyncOS,
+            vec![&[]],
+        );
+
+        let mut expected = vec![1];
+        expected.extend_from_slice(&block_witness_payload);
+        expected.extend_from_slice(&blob_advice(&[]));
+        expected.push(0);
+
+        assert_eq!(batch_witness, expected);
+    }
 }
