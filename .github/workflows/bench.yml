@@ -65,7 +65,9 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          ./dump_bin.sh --type for-tests
+          # Build for_tests binary with cycle markers for benchmarking.
+          # Fall back to plain for-tests on older base branches that lack this type.
+          ./dump_bin.sh --type for-tests-benchmarking || ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
 
 
@@ -92,7 +94,7 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          ./dump_bin.sh --type for-tests
+          ./dump_bin.sh --type for-tests-benchmarking || ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
 
       - name: run benchmarks on PR

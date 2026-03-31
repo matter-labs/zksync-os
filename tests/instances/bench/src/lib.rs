@@ -115,13 +115,11 @@ fn fibish_sol() {
 
     let tx = ZKsyncTxEnvelope::from_eth_tx_from_req(tx, wallet);
 
-    let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
-        "{}/os_profile_fibish_sol.svg",
-        env!("CARGO_MANIFEST_DIR")
-    )));
-    pc.frequency_recip = 1;
     let run_config = rig::chain::RunConfig {
-        profiler_config: Some(pc),
+        flamegraph_output: Some(PathBuf::from(format!(
+            "{}/os_profile_fibish_sol.svg",
+            env!("CARGO_MANIFEST_DIR")
+        ))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);

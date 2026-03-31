@@ -3,4 +3,7 @@
 set -e
 
 cargo objcopy --release -- -O binary app_native_blake.bin
+cargo objcopy --release -- -O binary --only-section=.text app_native_blake.text
+
 cargo objcopy --release --features single_round_with_control -- -O binary app_extended_delegation_blake.bin
+cargo objcopy --release --features single_round_with_control -- -O binary --only-section=.text app_extended_delegation_blake.text
