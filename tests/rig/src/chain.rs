@@ -1042,6 +1042,27 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_header: Header,
         withdrawals: Vec<u8>,
     ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, false)
+    }
+
+    /// Build an oracle for the prover-input recording pass.
+    /// Uses native callable oracles that don't require RamPeek (guest memory access).
+    fn make_eth_block_oracle_for_prover_input(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+    ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, true)
+    }
+
+    fn make_eth_block_oracle_inner(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
 
@@ -1166,11 +1187,22 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(initial_values_responder.clone());
         oracle.add_external_processor(cl_responder.clone());
         oracle.add_external_processor(da_commitment_scheme_responder);
-        oracle.add_external_processor(
-            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
-        );
-        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
-        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
+        if use_native_callable_oracles {
+            // Native callable oracles compute results on the host without reading
+            // guest memory (RamPeek). Required for prover-input recording where
+            // there is no guest memory to read.
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
+        } else {
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
+        }
         oracle.add_external_processor(UARTPrintResponder);
 
         oracle
@@ -1239,8 +1271,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             // Record non-determinism input words by re-running with the Ethereum
             // proving system types (EthereumStorageSystemTypesWithPostOps uses
             // Ethereum MPT storage, matching the eth_stf RISC-V binary).
-            let prover_input_oracle =
-                Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+            let prover_input_oracle = Self::make_eth_block_oracle_for_prover_input(
+                transactions,
+                witness,
+                block_header,
+                withdrawals,
+            );
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
