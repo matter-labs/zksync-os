@@ -2,13 +2,15 @@ use basic_system::system_functions::modexp::{
     ModExpAdviceParams, ModExpAdviceParams64, MODEXP_ADVICE_QUERY_ID,
 };
 use oracle_provider::OracleQueryProcessor;
-use risc_v_simulator::abstractions::memory::MemorySource;
+use oracle_provider::RamPeek;
 
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
     usize_slice_iterator::UsizeSliceIteratorOwned,
 };
 use crate::{read_host_struct, read_u64_words};
+
+const HOST_MODEXP_ADVICE_MAX_BYTES: usize = 32 * 1024 * 1024;
 
 struct ArithmeticQueryOutput {
     quotient: Vec<u64>,
@@ -54,19 +56,10 @@ impl ArithmeticQueryOutput {
     }
 }
 
-pub struct ArithmeticQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct ArithmeticQuery;
 
-impl<M: MemorySource> Default for ArithmeticQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
+impl OracleQueryProcessor for ArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![MODEXP_ADVICE_QUERY_ID]
     }
@@ -75,7 +68,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        memory: &M,
+        memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -92,7 +85,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         const { assert!(core::mem::align_of::<ModExpAdviceParams>() == 4) }
         const { assert!(core::mem::size_of::<ModExpAdviceParams>().is_multiple_of(4)) }
 
-        let arg = unsafe { read_struct::<ModExpAdviceParams, _>(memory, arg_ptr as u32) }.unwrap();
+        let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr as u32) }.unwrap();
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.a_ptr > 0);
@@ -121,19 +114,10 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
 ///
 /// This processor explicitly reads the process memory
 /// using a raw pointer to get the input.
-pub struct NativeArithmeticQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct NativeArithmeticQuery;
 
-impl<M: MemorySource> Default for NativeArithmeticQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
+impl OracleQueryProcessor for NativeArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![MODEXP_ADVICE_QUERY_ID]
     }
@@ -142,7 +126,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -158,14 +142,21 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
 
-        let a_len_u64_words = arg.a_len.checked_mul(4).expect("a_len overflow");
-        let modulus_len_u64_words = arg
-            .modulus_len
-            .checked_mul(4)
-            .expect("modulus_len overflow");
+        const MAX_MODEXP_INPUT_LIMBS: u64 =
+            (HOST_MODEXP_ADVICE_MAX_BYTES / (core::mem::size_of::<u64>() * 4)) as u64;
+        assert!(arg.a_len <= MAX_MODEXP_INPUT_LIMBS);
+        assert!(arg.modulus_len <= MAX_MODEXP_INPUT_LIMBS);
 
-        let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
-        let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
+        let a_len_u64_words = arg.a_len * 4;
+        let modulus_len_u64_words = arg.modulus_len * 4;
+
+        let mut n: Vec<u64> =
+            read_u64_words(arg.a_ptr, a_len_u64_words, HOST_MODEXP_ADVICE_MAX_BYTES);
+        let mut d: Vec<u64> = read_u64_words(
+            arg.modulus_ptr,
+            modulus_len_u64_words,
+            HOST_MODEXP_ADVICE_MAX_BYTES,
+        );
 
         ruint::algorithms::div(&mut n, &mut d);
 
@@ -183,18 +174,17 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oracle_provider::DummyMemorySource;
-    use risc_v_simulator::abstractions::memory::{AccessType, MemorySource};
-    use risc_v_simulator::cycle::status_registers::TrapReason;
+    use oracle_provider::RamPeek;
 
     #[derive(Default)]
     struct TestMemorySource {
-        words: BTreeMap<u64, u32>,
+        words: BTreeMap<u32, u32>,
     }
 
     impl TestMemorySource {
         fn insert_u32(&mut self, address: u32, value: u32) {
             assert!(address.is_multiple_of(4));
-            self.words.insert(address as u64, value);
+            self.words.insert(address, value);
         }
 
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
@@ -223,26 +213,9 @@ mod tests {
         }
     }
 
-    impl MemorySource for TestMemorySource {
-        fn get(&self, phys_address: u64, _access_type: AccessType, trap: &mut TrapReason) -> u32 {
-            if let Some(value) = self.words.get(&phys_address).copied() {
-                *trap = TrapReason::NoTrap;
-                value
-            } else {
-                *trap = TrapReason::LoadAccessFault;
-                0
-            }
-        }
-
-        fn set(
-            &mut self,
-            phys_address: u64,
-            value: u32,
-            _access_type: AccessType,
-            trap: &mut TrapReason,
-        ) {
-            self.words.insert(phys_address, value);
-            *trap = TrapReason::NoTrap;
+    impl RamPeek for TestMemorySource {
+        fn peek_word(&self, address: u32) -> u32 {
+            self.words.get(&address).copied().unwrap_or(0)
         }
     }
 
@@ -282,7 +255,7 @@ mod tests {
             modulus_len: 1,
         };
 
-        let output: Vec<usize> = NativeArithmeticQuery::<DummyMemorySource>::default()
+        let output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![(&arg as *const ModExpAdviceParams64).addr()],
@@ -325,7 +298,7 @@ mod tests {
         memory.insert_u64_words(GUEST_DIVIDEND_ADDR, &dividend);
         memory.insert_u64_words(GUEST_MODULUS_ADDR, &modulus);
 
-        let riscv_output: Vec<usize> = ArithmeticQuery::<TestMemorySource>::default()
+        let riscv_output: Vec<usize> = ArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![GUEST_ARG_ADDR as usize],
@@ -342,7 +315,7 @@ mod tests {
             modulus_ptr: modulus.as_mut_ptr().addr() as u64,
             modulus_len: MODULUS_DIGITS as u64,
         };
-        let native_output: Vec<usize> = NativeArithmeticQuery::<DummyMemorySource>::default()
+        let native_output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![(&host_arg as *const ModExpAdviceParams64).addr()],
@@ -364,7 +337,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_arithmetic_query_rejects_null_query_pointer() {
-        let _ = NativeArithmeticQuery::<DummyMemorySource>::default().process_buffered_query(
+        let _ = NativeArithmeticQuery.process_buffered_query(
             MODEXP_ADVICE_QUERY_ID,
             vec![0],
             &DummyMemorySource,

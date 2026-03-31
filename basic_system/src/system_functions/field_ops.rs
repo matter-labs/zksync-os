@@ -176,12 +176,12 @@ mod tests {
     use super::*;
     use callable_oracles::field_hints::NativeFieldOpsQuery;
     use crypto::secp256k1::hooks::{DefaultSecp256k1Hooks, Secp256k1Hooks};
-    use oracle_provider::{DummyMemorySource, ZkEENonDeterminismSource};
+    use oracle_provider::ZkEENonDeterminismSource;
     use proptest::{prop_assert_eq, proptest};
 
-    fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource<DummyMemorySource> {
-        let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
-        oracle.add_external_processor(NativeFieldOpsQuery::<DummyMemorySource>::default());
+    fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(NativeFieldOpsQuery::default());
         oracle
     }
 
@@ -260,7 +260,7 @@ mod tests {
     /// These tests ensure that incorrect oracle responses are rejected.
     mod malicious_oracle_tests {
         use super::*;
-        use oracle_provider::{MemorySource, OracleQueryProcessor};
+        use oracle_provider::{OracleQueryProcessor, RamPeek};
         use proptest::prop_assert;
 
         /// Ways to corrupt oracle responses
@@ -301,14 +301,14 @@ mod tests {
         }
 
         /// A malicious oracle processor that wraps a correct one and corrupts its output
-        struct LyingFieldOpsQuery<M: MemorySource> {
-            inner: callable_oracles::field_hints::NativeFieldOpsQuery<M>,
+        struct LyingFieldOpsQuery {
+            inner: callable_oracles::field_hints::NativeFieldOpsQuery,
             corruption: Corruption,
             /// If set, lie about sqrt existence (flip the boolean)
             lie_about_sqrt_existence: bool,
         }
 
-        impl<M: MemorySource> LyingFieldOpsQuery<M> {
+        impl LyingFieldOpsQuery {
             fn new(corruption: Corruption) -> Self {
                 Self {
                     inner: callable_oracles::field_hints::NativeFieldOpsQuery::default(),
@@ -323,7 +323,7 @@ mod tests {
             }
         }
 
-        impl<M: MemorySource> OracleQueryProcessor<M> for LyingFieldOpsQuery<M> {
+        impl OracleQueryProcessor for LyingFieldOpsQuery {
             fn supported_query_ids(&self) -> Vec<u32> {
                 self.inner.supported_query_ids()
             }
@@ -332,7 +332,7 @@ mod tests {
                 &mut self,
                 query_id: u32,
                 query: Vec<usize>,
-                memory: &M,
+                memory: &dyn RamPeek,
             ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
                 // Get the correct response
                 let correct_iter = self.inner.process_buffered_query(query_id, query, memory);
@@ -364,19 +364,16 @@ mod tests {
             }
         }
 
-        fn create_lying_oracle(
-            corruption: Corruption,
-        ) -> ZkEENonDeterminismSource<DummyMemorySource> {
-            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
-            oracle.add_external_processor(LyingFieldOpsQuery::<DummyMemorySource>::new(corruption));
+        fn create_lying_oracle(corruption: Corruption) -> ZkEENonDeterminismSource {
+            let mut oracle = ZkEENonDeterminismSource::default();
+            oracle.add_external_processor(LyingFieldOpsQuery::new(corruption));
             oracle
         }
 
-        fn create_sqrt_existence_lying_oracle() -> ZkEENonDeterminismSource<DummyMemorySource> {
-            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        fn create_sqrt_existence_lying_oracle() -> ZkEENonDeterminismSource {
+            let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(
-                LyingFieldOpsQuery::<DummyMemorySource>::new(Corruption::ReturnZero)
-                    .with_sqrt_existence_lie(),
+                LyingFieldOpsQuery::new(Corruption::ReturnZero).with_sqrt_existence_lie(),
             );
             oracle
         }
@@ -626,15 +623,13 @@ mod tests {
 
     mod zero_input_regression_tests {
         use super::*;
-        use oracle_provider::{
-            DummyMemorySource, MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource,
-        };
+        use oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 
         /// A processor that should never be reached in these tests.
         /// Zero-input hook behavior is expected to short-circuit before oracle queries.
         struct PanickingFieldOpsQuery;
 
-        impl<M: MemorySource> OracleQueryProcessor<M> for PanickingFieldOpsQuery {
+        impl OracleQueryProcessor for PanickingFieldOpsQuery {
             fn supported_query_ids(&self) -> Vec<u32> {
                 vec![FIELD_OPS_ADVISE_QUERY_ID]
             }
@@ -643,14 +638,14 @@ mod tests {
                 &mut self,
                 query_id: u32,
                 _query: Vec<usize>,
-                _memory: &M,
+                _memory: &dyn RamPeek,
             ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
                 panic!("field ops oracle should not be queried for zero input, query_id=0x{query_id:08x}");
             }
         }
 
-        fn create_panicking_field_ops_oracle() -> ZkEENonDeterminismSource<DummyMemorySource> {
-            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        fn create_panicking_field_ops_oracle() -> ZkEENonDeterminismSource {
+            let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(PanickingFieldOpsQuery);
             oracle
         }

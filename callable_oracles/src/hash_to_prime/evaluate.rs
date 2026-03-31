@@ -4,14 +4,12 @@ use crate::utils::evaluate::read_memory_as_u8;
 use crate::MemoryRegionDescriptionParams;
 use evaluate::compute::compute_from_entropy;
 use oracle_provider::OracleQueryProcessor;
-use risc_v_simulator::abstractions::memory::MemorySource;
+use oracle_provider::RamPeek;
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 
-pub struct HashToPrimeSource<M: MemorySource> {
-    marker: std::marker::PhantomData<M>,
-}
+pub struct HashToPrimeSource;
 
-impl<M: MemorySource> OracleQueryProcessor<M> for HashToPrimeSource<M> {
+impl OracleQueryProcessor for HashToPrimeSource {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![HASH_TO_PRIME_ORACLE_ID]
     }
@@ -20,7 +18,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for HashToPrimeSource<M> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        memory: &M,
+        memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
         let mut it = query.into_iter();
