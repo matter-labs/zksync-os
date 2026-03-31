@@ -31,7 +31,9 @@ use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
+use forward_system::system::system_types::ethereum::{
+    EthereumStorageSystemTypes, EthereumStorageSystemTypesWithPostOps,
+};
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
@@ -1234,22 +1236,29 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let proof_input = if only_forward {
             None
         } else {
-            // Record non-determinism input words using the proving config
-            // (must match what the RISC-V binary expects).
+            // Record non-determinism input words by re-running with the Ethereum
+            // proving system types (EthereumStorageSystemTypesWithPostOps uses
+            // Ethereum MPT storage, matching the eth_stf RISC-V binary).
             let prover_input_oracle =
                 Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
-            let mut pi_result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
+            let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
+                ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
             let mut pi_validator = NopTxValidator;
-            let prover_input_words =
-                run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
-                    copy_source,
-                    &mut pi_result_keeper,
-                    &mut pi_tracer,
-                    &mut pi_validator,
-                )
-                .expect("prover-input forward run must succeed");
+            let (returned_oracle, _, _) = BasicBootloader::<
+                EthereumStorageSystemTypesWithPostOps<_>,
+                EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+                copy_source,
+                &mut (),
+                &mut pi_result_keeper,
+                &mut pi_tracer,
+                &mut pi_validator,
+            )
+            .expect("prover-input forward run must succeed");
+            let prover_input_words: Vec<u32> =
+                returned_oracle.get_read_items().borrow().clone();
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
