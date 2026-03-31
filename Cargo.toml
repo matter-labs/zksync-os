@@ -65,13 +65,14 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { version = "0.1.0", default-features =  false }
 zksync_os_interface = {  version = "0.1.0" }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2", default-features = false }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
-cli = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "8ef06cf8dc63b04e4b309b501d54bb571e86a1a9" }
 
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
@@ -117,13 +118,3 @@ debug = true
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
 
-[patch."https://github.com/matter-labs/zksync-airbender"]
-# blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# risc_v_simulator = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# prover_examples = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# riscv_common = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-
-# blake2s_u32 = { path = "../zksync-airbender/blake2s_u32" }
-# prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
-# risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
-# execution_utils = { path = "../zksync-airbender/execution_utils" }
