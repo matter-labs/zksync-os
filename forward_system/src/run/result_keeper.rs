@@ -27,7 +27,6 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
     pub block_pubdata_used: u64,
     pub tx_result_callback: TR,
     pub block_computational_native_used: u64,
-    pub block_pubdata_used: u64,
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
@@ -42,7 +41,6 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             block_pubdata_used: 0,
             tx_result_callback,
             block_computational_native_used: 0,
-            block_pubdata_used: 0,
         }
     }
 }

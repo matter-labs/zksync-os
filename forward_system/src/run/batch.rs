@@ -1,7 +1,8 @@
+use crate::run::BlockOutput;
 use crate::run::StorageCommitment;
 use crate::run::{NextTxResponse, PreimageSource, ReadStorage, ReadStorageTree, TxSource};
-use oracle_provider::MemorySource;
 use oracle_provider::OracleQueryProcessor;
+use oracle_provider::RamPeek;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
@@ -12,7 +13,6 @@ use zk_ee::oracle::query_ids::DA_COMMITMENT_SCHEME_QUERY_ID;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
-use zksync_os_interface::types::BlockOutput;
 
 use super::BlockContext;
 
@@ -158,7 +158,7 @@ impl BatchBlockMetadataResponder {
     }
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for BatchBlockMetadataResponder {
+impl OracleQueryProcessor for BatchBlockMetadataResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![BLOCK_METADATA_QUERY_ID]
     }
@@ -171,7 +171,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BatchBlockMetadataResponder {
         &mut self,
         query_id: u32,
         _query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert_eq!(query_id, BLOCK_METADATA_QUERY_ID);
         let block_metadata = self.block_metadata[self.index.current()];
@@ -216,7 +216,7 @@ impl BatchZKProofDataResponder {
     }
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for BatchZKProofDataResponder {
+impl OracleQueryProcessor for BatchZKProofDataResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![ZKProofDataQuery::<
             zk_ee::types_config::EthereumIOTypesConfig,
@@ -236,7 +236,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BatchZKProofDataResponder {
         &mut self,
         query_id: u32,
         _query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert_eq!(
             query_id,
@@ -260,7 +260,7 @@ impl BatchDACommitmentSchemeResponder {
     }
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for BatchDACommitmentSchemeResponder {
+impl OracleQueryProcessor for BatchDACommitmentSchemeResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![DA_COMMITMENT_SCHEME_QUERY_ID]
     }
@@ -273,7 +273,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BatchDACommitmentSchemeRespond
         &mut self,
         query_id: u32,
         _query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert_eq!(query_id, DA_COMMITMENT_SCHEME_QUERY_ID);
         DynUsizeIterator::from_constructor(self.da_commitment_scheme as u8, UsizeSerializable::iter)
