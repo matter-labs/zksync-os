@@ -1257,8 +1257,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 &mut pi_validator,
             )
             .expect("prover-input forward run must succeed");
-            let prover_input_words: Vec<u32> =
-                returned_oracle.get_read_items().borrow().clone();
+            let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
