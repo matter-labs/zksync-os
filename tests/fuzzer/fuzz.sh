@@ -5,7 +5,7 @@ FUZZ_ARTIFACTS="./fuzz/artifacts"
 FUZZ_CORPUS="./fuzz/corpus"
 FUZZ_SEEDS="./fuzz/seeds"
 # Resolve absolute path for zksync-os
-OVERRIDE_ZKSYNC_OS_PATH="../../zksync_os"
+OVERRIDE_ZKSYNC_OS_PATH="../../zksync_os/dist/for_tests"
 export OVERRIDE_ZKSYNC_OS_PATH
 
 function usage() {
