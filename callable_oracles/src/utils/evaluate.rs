@@ -65,7 +65,7 @@ pub fn read_memory_as_u64<M: MemorySource>(
     mut offset: u32,
     len_u64_words: u32,
 ) -> Result<Vec<u64>, ()> {
-    let mut len_u32_words = len_u64_words * 2;
+    let mut len_u32_words = len_u64_words.checked_mul(2).ok_or(())?;
 
     let (_, of) = offset.overflowing_add(len_u32_words);
     if of == true {

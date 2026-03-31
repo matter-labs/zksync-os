@@ -314,7 +314,10 @@ function regression() {
 
     prepare
 
-    cargo fuzz build
+    # The reason why this is needed is because these packages are highly optimized, but the optimizations
+    # make debug information generation more heavy and cause the default stack size to overflow.
+    # This issue is expected to be resolved later.
+    RUST_MIN_STACK=33554432 cargo fuzz build
     echo "Running regression tests on all fuzz targets..."
 
     # Get the list of fuzz targets

@@ -66,11 +66,10 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
     #[cfg(not(feature = "unlimited_native"))]
     {
         // Adjust gas_used with difference with used native
-        let delta_gas = if native_per_gas == 0 {
-            0
-        } else {
-            (native_used / native_per_gas) as i64 - (gas_used as i64)
-        };
+        let delta_gas = native_used
+            .checked_div(native_per_gas)
+            .map(|q| q as i64 - gas_used as i64)
+            .unwrap_or(0);
 
         if delta_gas > 0 {
             // In this case, the native resource consumption is more than the

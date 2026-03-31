@@ -19,7 +19,7 @@ concurrency:
 jobs:
     tests:
         name: tests
-        runs-on: [matterlabs-ci-runner-high-performance]
+        runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -134,7 +134,7 @@ jobs:
 
     e2e_prove:
         name: e2e_prove
-        runs-on: [matterlabs-ci-runner-highmem]
+        runs-on: [matterlabs-ci-runner-c3d]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -176,7 +176,7 @@ jobs:
                   ./dump_bin.sh --type eth-stf
             - name: Run ethereum block
               working-directory: ./tests/instances/eth_runner
-              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054 
+              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054
 
     blake_tests:
         name: blake_tests
