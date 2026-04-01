@@ -297,7 +297,7 @@ where
         &mut self,
         buffer_constructor: impl FnOnce(usize) -> B,
     ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
+        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,

@@ -1,4 +1,4 @@
-use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable};
+use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWritable};
 
 use super::USIZE_SIZE;
 use core::{alloc::Allocator, mem::MaybeUninit};
@@ -198,7 +198,7 @@ pub struct UsizeSliceWriter<'a> {
     _marker: core::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> UsizeWriteable for UsizeSliceWriter<'a> {
+impl<'a> UsizeWritable for UsizeSliceWriter<'a> {
     unsafe fn write_usize(&mut self, value: usize) {
         self.dst.write(MaybeUninit::new(value));
         self.dst = self.dst.add(1);
@@ -246,7 +246,7 @@ mod tests {
         allocate_vec_usize_aligned, num_usize_words_for_u8_capacity, UsizeAlignedByteBox,
         USIZE_SIZE,
     };
-    use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable};
+    use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWritable};
 
     #[test]
     fn num_usize_words_for_u8_capacity_rounds_up_and_keeps_even_word_count() {
@@ -430,8 +430,8 @@ mod tests {
         {
             let mut writer = buffer.as_writable();
             unsafe {
-                UsizeWriteable::write_usize(&mut writer, usize::MAX);
-                UsizeWriteable::write_usize(&mut writer, 0);
+                UsizeWritable::write_usize(&mut writer, usize::MAX);
+                UsizeWritable::write_usize(&mut writer, 0);
             }
         }
 
