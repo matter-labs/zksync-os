@@ -606,7 +606,7 @@ mod tests {
         let mut rlp = Rlp::new(&[0x82, 0x00, 0x01]); // Represents 1 with leading zero
         assert!(rlp.u256().is_err());
 
-        let mut long_string = vec![0xba, 0x00, 0x38]; // Long-form length for 56 with a leading zero
+        let mut long_string = vec![0xb9, 0x00, 0x38]; // Long-form length for 56 with a leading zero
         long_string.extend_from_slice(&[0x80; 56]);
         let mut rlp = Rlp::new(&long_string);
         assert!(rlp.bytes().is_err());
