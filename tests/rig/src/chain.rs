@@ -186,7 +186,7 @@ impl Default for BlockContext {
 pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
     // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
-    // Config for the profiler
+    // If set, a flamegraph SVG will be written to this path
     pub flamegraph_output: Option<PathBuf>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
