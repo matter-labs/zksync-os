@@ -90,7 +90,7 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
             "Only a pointer and the length are expected."
         );
         assert!(data_len <= ENCODABLE_BYTES_PER_BLOB);
-        let data = read_u8_words(data_ptr as u64, data_len as u64, ENCODABLE_BYTES_PER_BLOB);
+        let data = read_u8_words(data_ptr as u64, data_len as u64);
         let result = blob_kzg_commitment_and_proof(&data);
 
         let r = result.iter().collect::<Vec<_>>();

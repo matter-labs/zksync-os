@@ -10,8 +10,6 @@ use crate::utils::{
 };
 use crate::{read_host_struct, read_u64_words};
 
-const HOST_MODEXP_ADVICE_MAX_BYTES: usize = 32 * 1024 * 1024;
-
 struct ArithmeticQueryOutput {
     quotient: Vec<u64>,
     remainder: Vec<u64>,
@@ -142,21 +140,14 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
 
-        const MAX_MODEXP_INPUT_LIMBS: u64 =
-            (HOST_MODEXP_ADVICE_MAX_BYTES / (core::mem::size_of::<u64>() * 4)) as u64;
-        assert!(arg.a_len <= MAX_MODEXP_INPUT_LIMBS);
-        assert!(arg.modulus_len <= MAX_MODEXP_INPUT_LIMBS);
+        let a_len_u64_words = arg.a_len.checked_mul(4).expect("a_len overflow");
+        let modulus_len_u64_words = arg
+            .modulus_len
+            .checked_mul(4)
+            .expect("modulus_len overflow");
 
-        let a_len_u64_words = arg.a_len * 4;
-        let modulus_len_u64_words = arg.modulus_len * 4;
-
-        let mut n: Vec<u64> =
-            read_u64_words(arg.a_ptr, a_len_u64_words, HOST_MODEXP_ADVICE_MAX_BYTES);
-        let mut d: Vec<u64> = read_u64_words(
-            arg.modulus_ptr,
-            modulus_len_u64_words,
-            HOST_MODEXP_ADVICE_MAX_BYTES,
-        );
+        let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
+        let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
 
         ruint::algorithms::div(&mut n, &mut d);
 

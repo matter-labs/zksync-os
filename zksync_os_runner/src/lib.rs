@@ -57,7 +57,7 @@ fn run_inner(
     cycles: usize,
     mut non_determinism_source: impl NonDeterminismCSRSource,
 ) -> ([u32; 8], Option<u64>) {
-    println!("ZK RISC-V transpiler is starting");
+    log::info!("ZK RISC-V transpiler is starting");
 
     let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(text_words);
     let tape = SimpleTape::new(&instructions);
@@ -151,7 +151,7 @@ pub fn simulate_witness_tracing(
     img_path: PathBuf,
     mut non_determinism_source: impl NonDeterminismCSRSource,
 ) {
-    println!("ZK RISC-V transpiler witness tracing is starting");
+    log::info!("ZK RISC-V transpiler witness tracing is starting");
 
     let text_path = img_path.with_extension("text");
     let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
@@ -183,7 +183,7 @@ pub fn simulate_witness_tracing(
     let cycles_executed = ((state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP) as usize;
     let speed = (cycles_executed as f64) / elapsed.as_secs_f64() / 1_000_000f64;
     let num_snapshots = snapshotter.snapshots.len();
-    println!(
+    log::info!(
         "Witness gen speed is roughly {speed:.1} MHz: ran {cycles_executed} cycles ({num_snapshots} snapshots) over {elapsed:?}"
     );
 }

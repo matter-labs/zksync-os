@@ -15,6 +15,7 @@ execution_utils = { workspace = true }
 prover_examples = { workspace = true }
 common_constants = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
+log = { workspace = true }
 
 [features]
 flamegraph = ["riscv_transpiler/flamegraph"]
