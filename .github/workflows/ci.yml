@@ -134,7 +134,7 @@ jobs:
 
     e2e_prove:
         name: e2e_prove
-        runs-on: [matterlabs-ci-runner-highmem]
+        runs-on: [matterlabs-ci-runner-c3d]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
