@@ -89,6 +89,17 @@ rm -rf "$DIST_DIR"
 # Build via cargo airbender — outputs go to dist/<APP_NAME>/app.{bin,elf,text} + manifest.toml
 cargo airbender build --app-name "$APP_NAME" --release -- --features "$FEATURES"
 
+# For benchmarking variants, create a symlink from the base name so that
+# code hardcoding the non-benchmarking app name can find the artifacts.
+case "$TYPE" in
+  *-benchmarking)
+    BASE_APP_NAME=$(echo "$APP_NAME" | sed 's/_benchmarking$//')
+    if [ "$BASE_APP_NAME" != "$APP_NAME" ]; then
+      ln -sfn "$APP_NAME" "dist/$BASE_APP_NAME"
+    fi
+    ;;
+esac
+
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"
 echo "-> $DIST_DIR/app.bin"
