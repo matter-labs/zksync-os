@@ -15,29 +15,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  vm-benchmarks:
-    name: Run benchmarks
-    runs-on: [matterlabs-ci-runner-highmem]
+  # Compute the merge-base SHA so both bench jobs use the same reference point.
+  merge-base:
+    name: Compute merge-base
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+    outputs:
+      sha: ${{ steps.merge_base.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-      - name: Setup and fetch PR branch
+      - name: Fetch branches
         run: |
-          rustup set profile minimal
           git remote add pr_repo ${{ github.event.pull_request.head.repo.clone_url }}
           git fetch pr_repo ${{ github.event.pull_request.head.ref }}
-
-      - name: Fetch base and head
-        run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
-
       - name: Compute merge-base
         id: merge_base
         run: |
@@ -47,29 +41,33 @@ jobs:
           echo "sha=$sha"
           echo "sha=$sha" >> $GITHUB_OUTPUT
 
-      - name: checkout divergence point
-        run: git checkout ${{ steps.merge_base.outputs.sha }} --recurse-submodules
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+  # Run benchmarks on the merge-base (base branch at divergence point).
+  bench-base:
+    name: Bench base
+    needs: merge-base
+    runs-on: [matterlabs-ci-runner-highmem]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
         with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: pip3 install matplotlib
-
+          ref: ${{ needs.merge-base.outputs.sha }}
+          fetch-depth: 1
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: |
+          rustup set profile minimal
           rustup target add riscv32i-unknown-none-elf
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
           ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
-
-
-      - name: run benchmarks on base branch
+      - name: Run benchmarks
         shell: bash
         run: |
           for dir in tests/instances/eth_runner/blocks/*; do
@@ -80,22 +78,108 @@ jobs:
             cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
           done
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-base-results
+          path: |
+            base_block_*.bench
+            base_block_*.out
+            base_precompiles.bench
+            opcode_samples/
+            opcode_cycles/
 
-      - name: checkout PR
-        run: |
-          git checkout --force pr_repo/${{ github.event.pull_request.head.ref }}
-
-      - name: Recompile for RISC-V
+  # Run benchmarks on the PR head.
+  bench-head:
+    name: Bench head
+    needs: merge-base
+    runs-on: [matterlabs-ci-runner-highmem]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 1
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: |
+          rustup set profile minimal
           rustup target add riscv32i-unknown-none-elf
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
           ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/head_${blk} \
+            OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/head_${blk} \
+            OPCODE_STATS_PATH=$(pwd)/head_block_${blk}_opcode_stats.csv \
+            MARKER_PATH=$(pwd)/head_block_${blk}.bench \
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
+          done
+          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-head-results
+          path: |
+            head_block_*.bench
+            head_block_*.out
+            head_block_*_opcode_stats.csv
+            head_precompiles.bench
+            opcode_samples/
+            opcode_cycles/
 
-      - name: run benchmarks on PR
+  # Compare base and head results, post comment.
+  compare:
+    name: Compare results
+    needs: [bench-base, bench-head]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-base-results
+          path: base-results/
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-head-results
+          path: head-results/
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip3 install matplotlib
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          # Move all files to the workspace root so scripts find them by name.
+          cp base-results/base_block_*.bench base-results/base_block_*.out base-results/base_precompiles.bench . 2>/dev/null || true
+          cp head-results/head_block_*.bench head-results/head_block_*.out head-results/head_precompiles.bench . 2>/dev/null || true
+          cp head-results/head_block_*_opcode_stats.csv . 2>/dev/null || true
+          # Merge opcode_samples and opcode_cycles directories
+          mkdir -p opcode_samples opcode_cycles
+          cp -r base-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
+          cp -r head-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
+          cp -r base-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
+          cp -r head-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
+
+      - name: Generate comparison
         shell: bash
         id: comparison
         run: |
@@ -103,11 +187,6 @@ jobs:
           pairs=""
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/head_${blk} \
-            OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/head_${blk} \
-            OPCODE_STATS_PATH=$(pwd)/bench_results/head_block_${blk}_opcode_stats.csv \
-            MARKER_PATH=$(pwd)/head_block_${blk}.bench \
-            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
             python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
             python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
             if [ -z "$pairs" ]; then
@@ -116,7 +195,6 @@ jobs:
               pairs="${pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
             fi
           done
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
