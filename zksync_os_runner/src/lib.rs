@@ -70,7 +70,8 @@ pub fn run_default_with_flamegraph_path(
     #[cfg(feature = "cycle_marker")]
     {
         if let Some(cm) = result.cycle_markers {
-            block_effective = cycle_marker::print_cycle_markers(cm);
+            let results = cycle_marker::print_cycle_markers(cm);
+            block_effective = results.block_effective;
         }
     }
 
