@@ -82,12 +82,99 @@ The [storage cache](../../../basic_system/src/system_implementation/flat_storage
 
 [Source](../../../basic_system/src/system_implementation/caches/generic_pubdata_aware_plain_storage.rs)
 
-This is the core cache implementation, generic over key type `K`, value type `V`, allocator, and a `StorageAccessPolicy`. It handles:
+This is the core cache implementation, generic over key type `K`, value type `V`, allocator, and a `StorageAccessPolicy`. It is called "pubdata-aware" because it tracks three value states per storage slot — enabling precise computation of net state changes and their pubdata cost at the end of each transaction.
 
-- **Oracle materialisation**: on the first access to a key, queries the oracle via `InitialStorageSlotQuery` to fetch the initial value. Validates that new slots (`is_new_storage_slot == true`) have a trivial (zero) initial value — a malicious oracle returning non-zero for a new slot triggers an assertion.
-- **Cold/warm tracking**: each cache element carries a `StorageElementMetadata` with the last transaction ID that touched it. The first read in a transaction is "cold" (charged extra via `StorageAccessPolicy`); subsequent reads are "warm".
-- **EVM gas refund accounting**: maintains a `NonEmptyHistoryCounter` of EVM refunds. The counter participates in frame snapshots so that refunds from reverted calls are correctly discarded.
-- **Pubdata awareness**: the storage model computes pubdata costs from the diff between initial and current values. The cache exposes `net_diffs_iter()` (changed slots) and `net_accesses_iter()` (all accessed slots) so the upper layer can derive pubdata obligations.
-- **Snapshotting**: delegates to a `HistoryMap` for cache entries and a `NonEmptyHistoryCounter` for refunds. Both are snapshotted together via `StorageSnapshotId`.
+#### Oracle materialisation
 
-The `StorageAccessPolicy` trait (parameterised by `P`) controls how gas/ergs are charged for cold and warm reads. This allows the same cache implementation to work under different pricing models.
+On the first access to a key, `materialize_element()` queries the oracle via
+`InitialStorageSlotQuery` to fetch the initial value and the `is_new_storage_slot`
+flag. It validates that new slots (`is_new_storage_slot == true`) have a trivial
+(zero) initial value — a malicious oracle returning non-zero for a new slot
+triggers an assertion. The result is inserted into the `HistoryMap`-backed cache.
+
+#### Cold/warm tracking
+
+Each cache element carries a `StorageElementMetadata` recording the last
+transaction ID that touched it. On access:
+
+1. `materialize_element()` always charges a warm read first via `charge_warm_storage_read()`.
+2. If the element's `last_touched_in_tx` does not match the current transaction ID
+   (i.e. the access is "cold"), it additionally charges `charge_cold_storage_read_extra()`.
+3. `last_touched_in_tx` is updated to the current transaction ID, making all
+   subsequent accesses within the same transaction "warm".
+4. At the transaction boundary, `finish_tx()` increments the transaction ID counter,
+   resetting all elements to "cold" for the next transaction.
+
+#### EVM gas refund accounting
+
+The cache maintains a `NonEmptyHistoryCounter` of cumulative EVM refunds. Every
+`apply_write_impl()` call passes the three-value state to `refund_for_storage_write()`,
+which implements the EIP-3529 refund rules (e.g. +4800 gas when clearing a slot
+from non-zero to zero). The counter participates in frame snapshots, so refunds
+from reverted calls are correctly discarded.
+
+#### Three-value state tracking
+
+Each cached storage element tracks three values simultaneously:
+
+- **`initial`** — the value at the start of the block, loaded from the oracle.
+- **`committed`** (at transaction start) — the value at the start of the current
+  transaction, frozen by `begin_new_tx()`. This is `initial` for the first
+  transaction, or the value at the end of the previous transaction.
+- **`current`** — the latest value after all writes in the current call stack.
+
+This three-value model is essential for:
+
+1. **Storage write gas costs** — EVM `SSTORE` pricing differs depending on whether
+   the current write is "fresh" (`current == committed`) or "dirty" (`current !=
+   committed`).
+2. **EVM gas refunds** — refunds are computed from the transition between
+   `committed`, `current`, and the new value.
+3. **Pubdata cost computation** — only `committed → current` changes contribute
+   to pubdata. Changes that reset to the committed value cancel out.
+
+#### Pubdata computation
+
+At the end of each transaction, `calculate_pubdata_used_by_tx()` iterates all
+elements altered since the last commit via `iter_altered_since_commit()` and sums
+up the net pubdata bytes:
+
+1. **Deduplication** — multiple writes to the same key count once.
+2. **Skip account properties** — slots under `ACCOUNT_PROPERTIES_STORAGE_ADDRESS`
+   are published as preimages, not as storage diffs.
+3. **Elimination** — if `current == initial`, the change nets to zero and is free.
+4. **Compression** — for each net change, the cost is 32 bytes (key) plus the
+   optimally compressed value diff. Compression strategies include add/subtract
+   delta encoding and leading-zero removal, selecting whichever produces the
+   fewest bytes.
+
+The cache exposes two iterators for upper layers:
+- `net_diffs_iter()` — yields only slots where `current_value != initial_value`
+  (used for publishing state changes to the DA layer).
+- `net_accesses_iter()` — yields all accessed slots regardless of change (used
+  for Merkle proof validation, since all accessed slots need proofs).
+
+#### `StorageAccessPolicy`
+
+The [`StorageAccessPolicy`](../../../basic_system/src/system_implementation/caches/storage_access_policy.rs)
+trait (parameterised by `P`) controls how gas/ergs are charged for storage
+operations. It defines four methods:
+
+- `charge_warm_storage_read` — base cost for every storage access (EVM: 100 gas).
+- `charge_cold_storage_read_extra` — additional cost on the first access in a
+  transaction (EVM: 2000 gas, totalling 2100 for a cold read).
+- `charge_storage_write_extra` — write cost that varies based on the value
+  transition (EVM: 0 for no-change, 20000 for fresh set, 5000 for fresh reset,
+  plus 100 for cold writes).
+- `refund_for_storage_write` — EIP-3529 refund calculation.
+
+This abstraction allows the same `GenericPubdataAwarePlainStorage` to work under
+different pricing models without branching at runtime.
+
+#### Snapshotting
+
+The cache creates a composite `StorageSnapshotId` that bundles a `HistoryMap`
+snapshot and a refund counter snapshot. On `start_frame()` both are captured;
+on `finish_frame(Some(snapshot))` both are rolled back atomically. This ensures
+that a reverted `CALL` or `CREATE` discards both its storage changes and its
+accumulated gas refunds.
