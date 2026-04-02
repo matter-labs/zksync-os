@@ -19,7 +19,7 @@ concurrency:
 jobs:
     tests:
         name: tests
-        runs-on: [matterlabs-ci-runner-highmem]
+        runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -134,7 +134,7 @@ jobs:
 
     e2e_prove:
         name: e2e_prove
-        runs-on: [matterlabs-ci-runner-c3d]
+        runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
