@@ -46,7 +46,7 @@ case "$TYPE" in
     FEATURES="$BASE_FEATURES,for_tests"
     ;;
   for-tests-benchmarking)
-    APP_NAME="for_tests"
+    APP_NAME="for_tests_benchmarking"
     FEATURES="$BASE_FEATURES,for_tests,benchmarking"
     ;;
   for-tests-logging-enabled)
@@ -62,7 +62,7 @@ case "$TYPE" in
     FEATURES="$BASE_FEATURES,eth_runner,eth_stf"
     ;;
   evm-replay-benchmarking)
-    APP_NAME="evm_replay"
+    APP_NAME="evm_replay_benchmarking"
     FEATURES="$BASE_FEATURES,eth_runner,benchmarking"
     ;;
   evm-tester)

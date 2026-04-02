@@ -83,8 +83,8 @@ jobs:
         shell: bash
         run: |
           # Detect artifact layout: new builds use dist/<app>/, old builds use flat files
-          if [ -d "$(pwd)/zksync_os/dist/for_tests" ]; then
-            BASE_OS_PATH=$(pwd)/zksync_os/dist/for_tests
+          if [ -d "$(pwd)/zksync_os/dist/for_tests_benchmarking" ]; then
+            BASE_OS_PATH=$(pwd)/zksync_os/dist/for_tests_benchmarking
           else
             BASE_OS_PATH=$(pwd)/zksync_os
           fi
