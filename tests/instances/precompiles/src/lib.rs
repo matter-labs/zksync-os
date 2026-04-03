@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![feature(assert_matches)]
 
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
@@ -14,8 +13,22 @@ use rig::{
     ruint::aliases::U256,
     TestingFramework,
 };
-use std::assert_matches::assert_matches;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+// `std::assert_matches` is not available on nightly-2026-02-10, but is on 02-13
+// NOTE: remove after bumping nightly.
+macro_rules! assert_matches {
+    ($expr:expr, $pat:pat $(,)?) => {
+        match $expr {
+            $pat => {}
+            ref val => panic!(
+                "assertion `assert_matches!` failed\n  value: {:?}\nexpected: {}",
+                val,
+                stringify!($pat),
+            ),
+        }
+    };
+}
 
 /// Performs two calls:
 /// 1. Calls the precompile with given input and gas limit.

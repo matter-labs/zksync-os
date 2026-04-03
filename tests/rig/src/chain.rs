@@ -35,10 +35,7 @@ use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::MemorySource;
-use oracle_provider::{DummyMemorySource, ReadWitnessSource, ZkEENonDeterminismSource};
-use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
-use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
+use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
@@ -73,7 +70,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource>;
+    ) -> ZkEENonDeterminismSource;
 
     #[allow(clippy::too_many_arguments)]
     fn create_proof_oracle(
@@ -86,7 +83,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
+    ) -> ZkEENonDeterminismSource;
 }
 
 /// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
@@ -105,7 +102,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+    ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -128,7 +125,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
+    ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -189,8 +186,8 @@ impl Default for BlockContext {
 pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
     // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
-    // Config for the profiler
-    pub profiler_config: Option<ProfilerConfig>,
+    // If set, run with flamegraph profiling using the given options.
+    pub flamegraph: Option<crate::FlamegraphOptions>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
@@ -232,7 +229,7 @@ impl Default for RunConfig {
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
             revm_independent_gas: false,
-            profiler_config: None,
+            flamegraph: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
         }
@@ -784,7 +781,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let RunConfig {
-            profiler_config,
+            flamegraph,
             witness_output_file,
             app,
             do_riscv_run,
@@ -994,17 +991,18 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let copy_source = ReadWitnessSource::new(oracle);
             let items = copy_source.get_read_items();
 
-            let diagnostics_config = profiler_config.map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
-                diagnostics_cfg.profiler_config = Some(cfg);
-                diagnostics_cfg
-            });
-
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = {
+            let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
+                zksync_os_runner::run_with_flamegraph(
+                    get_zksync_os_img_path(&app),
+                    get_zksync_os_sym_path(&app),
+                    1 << 36,
+                    copy_source,
+                    fg_options,
+                )
+            } else {
                 zksync_os_runner::run_and_get_effective_cycles(
                     get_zksync_os_img_path(&app),
-                    diagnostics_config,
                     1 << 36,
                     copy_source,
                 )
@@ -1088,12 +1086,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         Ok((block_output, stats, proof_input, pubdata))
     }
 
-    pub fn make_eth_block_oracle<M: MemorySource + 'static>(
+    pub fn make_eth_block_oracle(
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
 
@@ -1219,10 +1217,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(cl_responder.clone());
         oracle.add_external_processor(da_commitment_scheme_responder);
         oracle.add_external_processor(
-            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
         );
-        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
+        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
+        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
         oracle.add_external_processor(UARTPrintResponder);
 
         oracle
@@ -1293,10 +1291,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let proof_input = if only_forward {
             None
         } else {
-            let (proof_output, block_effective) = {
+            let (_proof_output, _block_effective) = {
                 zksync_os_runner::run_and_get_effective_cycles(
                     get_zksync_os_img_path(&app),
-                    None,
                     1 << 36,
                     copy_source,
                 )
@@ -1517,43 +1514,33 @@ pub fn is_account_properties_address(address: &B160) -> bool {
 
 #[cfg(feature = "e2e_proving")]
 fn run_prover(csr_reads: &[u32]) {
-    use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
-    use std::alloc::Global;
-    use std::io::Read;
-
-    let mut file = File::open(get_zksync_os_img_path(&None)).expect("must open provided file");
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
-    let mut binary = vec![];
-    for el in buffer.as_chunks::<4>().0.iter() {
-        binary.push(u32::from_le_bytes(*el));
-    }
-
+    use execution_utils::unrolled::prove_unrolled_for_machine_configuration_into_program_proof;
     use prover_examples::prover::worker::Worker;
     use prover_examples::setups;
+    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
+    use riscv_transpiler::cycle::IMStandardIsaConfigWithUnsignedMulDiv;
 
-    setups::pad_bytecode_for_proving(&mut binary);
+    let img_path = get_zksync_os_img_path(&None);
+    let text_path = img_path.with_extension("text");
 
-    let worker = Worker::new_with_num_threads(8);
+    let (_, binary_u32) = setups::read_and_pad_binary(&img_path);
+    let (_, text_u32) = setups::read_and_pad_binary(&text_path);
 
-    let main_circuit_precomputations =
-        setups::get_main_riscv_circuit_setup::<Global, Global>(&binary, &worker);
-
-    let delegation_precomputations =
-        setups::all_delegation_circuits_precomputations::<Global, Global>(&worker);
-
-    // TODO: fix
     let mut non_determinism_source = QuasiUARTSource::default();
     for word in csr_reads {
         non_determinism_source.oracle.push_back(*word);
     }
 
-    let _ = prover_examples::prove_image_execution(
-        32,
-        &binary,
+    let worker = Worker::new_with_num_threads(8);
+
+    let _proof = prove_unrolled_for_machine_configuration_into_program_proof::<
+        IMStandardIsaConfigWithUnsignedMulDiv,
+    >(
+        &binary_u32,
+        &text_u32,
+        1 << 24,
         non_determinism_source,
-        &main_circuit_precomputations,
-        &delegation_precomputations,
+        1 << 30, // RAM bound (1 GiB address space)
         &worker,
     );
 

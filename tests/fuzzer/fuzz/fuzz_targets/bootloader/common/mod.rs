@@ -5,7 +5,6 @@ use basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, TestingTree, TESTING_TREE_HEIGHT,
 };
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-use oracle_provider::DummyMemorySource;
 use oracle_provider::ZkEENonDeterminismSource;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rig::ruint::aliases::{B160, U256};
@@ -123,7 +122,7 @@ pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
 #[allow(unused)]
 pub fn mock_oracle() -> (
     zk_ee::system::metadata::zk_metadata::ZkMetadata,
-    ZkEENonDeterminismSource<DummyMemorySource>,
+    ZkEENonDeterminismSource,
 ) {
     let tree = InMemoryTree::<false> {
         storage_tree: TestingTree::new_in(Global),
@@ -171,7 +170,7 @@ pub fn mock_oracle_balance(
     balance: U256,
 ) -> (
     zk_ee::system::metadata::zk_metadata::ZkMetadata,
-    ZkEENonDeterminismSource<DummyMemorySource>,
+    ZkEENonDeterminismSource,
 ) {
     let mut tree = InMemoryTree::<false> {
         storage_tree: TestingTree::new_in(Global),

@@ -1,6 +1,6 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 
-//! Markers to capture basic RISC-V simulator measurements for
+//! Markers to capture basic RISC-V transpiler measurements for
 //! a block of rust code.
 //!
 //! Should be used through the macro:
@@ -69,16 +69,14 @@ pub fn log_marker(msg: &str) {
 }
 
 /// Start a marker. For RISC-V this will use a special CSR to
-/// let the simulator know that we need a new marker.
+/// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn start(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -89,16 +87,14 @@ pub fn start(_label: &'static str) {
 }
 
 /// End a marker. For RISC-V this will use a special CSR to
-/// let the simulator know that we need a new marker.
+/// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn end(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -116,10 +112,8 @@ pub fn start_opcode() {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -137,10 +131,8 @@ pub fn end_opcode(_label: &'static str) {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -304,8 +296,12 @@ pub fn revert(snap: Snapshot) {
 #[cfg(target_arch = "riscv32")]
 pub fn revert(_: Snapshot) {}
 
+/// Re-export the transpiler's cycle marker types for use by the runner.
+#[cfg(feature = "use_riscv_transpiler")]
+pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
+
 /// Per-opcode aggregated cycle statistics.
-#[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
 #[derive(Debug, Clone)]
 pub struct OpcodeCycleStats {
     pub name: &'static str,
@@ -317,25 +313,37 @@ pub struct OpcodeCycleStats {
 }
 
 /// Results from processing cycle markers.
-#[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
 pub struct CycleMarkerResults {
     pub block_effective: Option<u64>,
     pub opcode_cycle_stats: Vec<OpcodeCycleStats>,
 }
 
-#[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
-pub fn print_cycle_markers() -> CycleMarkerResults {
+/// Process collected cycle markers from a transpiler run, pairing them
+/// with the labels collected during the forward run.
+///
+/// Returns a `CycleMarkerResults` with the effective cycles for the block-wide
+/// label and per-opcode aggregated stats.
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;
     const BLOCK_WIDE_LABEL: &str = "process_block";
-    use risc_v_simulator::cycle::state::*;
-    let cm = take_cycle_marker();
+
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
     use std::collections::HashMap;
 
-    assert_eq!(cm.markers.len(), labels.len());
+    assert_eq!(
+        cm.markers.len(),
+        labels.len(),
+        "cycle marker count ({}) does not match label count ({}). \
+         If markers is 0, the RISC-V binary was likely built without the cycle_marker feature \
+         (use `dump_bin.sh --type for-tests-benchmarking`).",
+        cm.markers.len(),
+        labels.len(),
+    );
 
     // Block-level markers: use existing nonce-based matching
     let mut label_nonces: HashMap<&'static str, u64> = HashMap::new();

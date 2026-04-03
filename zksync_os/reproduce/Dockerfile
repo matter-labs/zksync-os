@@ -27,7 +27,7 @@ ENV PATH=/opt/cargo/bin:$PATH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git build-essential libssl-dev pkg-config \
  && rm -rf /var/lib/apt/lists/*
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-01-22 --profile minimal
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-02-10 --profile minimal
 RUN rustup target add riscv32i-unknown-none-elf \
  && cargo install cargo-binutils --locked \
  && rustup component add llvm-tools-preview

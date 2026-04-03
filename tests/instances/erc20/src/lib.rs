@@ -33,13 +33,11 @@ fn get_name_sol() {
         wallet,
     );
 
-    let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
-        "{}/os_profile_get_name_sol.svg",
-        env!("CARGO_MANIFEST_DIR")
-    )));
-    pc.frequency_recip = 1;
     let run_config = rig::chain::RunConfig {
-        profiler_config: Some(pc),
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
+            "{}/os_profile_get_name_sol.svg",
+            env!("CARGO_MANIFEST_DIR")
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);
@@ -125,13 +123,11 @@ fn balance_of_sol() {
         wallet,
     );
 
-    let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
-        "{}/os_profile_balance_of_sol.svg",
-        env!("CARGO_MANIFEST_DIR")
-    )));
-    pc.frequency_recip = 1;
     let run_config = rig::chain::RunConfig {
-        profiler_config: Some(pc),
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
+            "{}/os_profile_balance_of_sol.svg",
+            env!("CARGO_MANIFEST_DIR")
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);
@@ -241,13 +237,11 @@ fn transfer_sol() {
         wallet_a,
     );
 
-    let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
-        "{}/os_profile_transfer_sol.svg",
-        env!("CARGO_MANIFEST_DIR")
-    )));
-    pc.frequency_recip = 1;
     let run_config = rig::chain::RunConfig {
-        profiler_config: Some(pc),
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
+            "{}/os_profile_transfer_sol.svg",
+            env!("CARGO_MANIFEST_DIR")
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);

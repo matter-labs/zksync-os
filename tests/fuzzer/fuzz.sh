@@ -314,7 +314,7 @@ function regression() {
 
     prepare
 
-    cargo fuzz build
+    RUST_MIN_STACK=33554432 cargo fuzz build
     echo "Running regression tests on all fuzz targets..."
 
     # Get the list of fuzz targets

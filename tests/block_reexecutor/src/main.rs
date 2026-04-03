@@ -229,7 +229,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
     );
 
     let run_config = Some(RunConfig {
-        profiler_config: None,
+        flamegraph: None,
         witness_output_file: None,
         app: None,
         do_riscv_run: false,

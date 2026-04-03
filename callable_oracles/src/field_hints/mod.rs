@@ -7,7 +7,7 @@
 use basic_system::system_functions::field_ops::{FieldHintOp, FieldOpsHint};
 use basic_system::system_functions::field_ops::{FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID};
 use oracle_provider::OracleQueryProcessor;
-use risc_v_simulator::abstractions::memory::MemorySource;
+use oracle_provider::RamPeek;
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
 use zk_ee::utils::Bytes32;
@@ -16,19 +16,10 @@ mod impls;
 use crate::utils::evaluate::{read_memory_as_u64, read_struct};
 use crate::{read_host_struct, read_u64_words};
 
-pub struct FieldOpsQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct FieldOpsQuery;
 
-impl<M: MemorySource> Default for FieldOpsQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for FieldOpsQuery<M> {
+impl OracleQueryProcessor for FieldOpsQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![FIELD_OPS_ADVISE_QUERY_ID]
     }
@@ -37,7 +28,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for FieldOpsQuery<M> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        memory: &M,
+        memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -54,7 +45,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for FieldOpsQuery<M> {
         const { assert!(core::mem::align_of::<FieldOpsHint>() == 4) }
         const { assert!(core::mem::size_of::<FieldOpsHint>().is_multiple_of(4)) }
 
-        let arg = unsafe { read_struct::<FieldOpsHint, M>(memory, arg_ptr as u32) }.unwrap();
+        let arg = unsafe { read_struct::<FieldOpsHint>(memory, arg_ptr as u32) }.unwrap();
 
         let Some(op) = FieldHintOp::parse_u32(arg.op) else {
             panic!("Unknown field hint op {}", arg.op);
@@ -93,19 +84,10 @@ impl<M: MemorySource> OracleQueryProcessor<M> for FieldOpsQuery<M> {
     }
 }
 
-pub struct NativeFieldOpsQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct NativeFieldOpsQuery;
 
-impl<M: MemorySource> Default for NativeFieldOpsQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for NativeFieldOpsQuery<M> {
+impl OracleQueryProcessor for NativeFieldOpsQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![FIELD_OPS_ADVISE_QUERY_ID]
     }
@@ -114,7 +96,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeFieldOpsQuery<M> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -173,7 +155,7 @@ mod native_query_tests {
             src_len_u32_words: 8,
         };
 
-        let output: Vec<usize> = NativeFieldOpsQuery::<DummyMemorySource>::default()
+        let output: Vec<usize> = NativeFieldOpsQuery
             .process_buffered_query(
                 FIELD_OPS_ADVISE_QUERY_ID,
                 vec![(&hint as *const FieldOpsHint64).addr()],
@@ -188,7 +170,7 @@ mod native_query_tests {
     #[test]
     #[should_panic]
     fn native_field_ops_query_rejects_null_query_pointer() {
-        let _ = NativeFieldOpsQuery::<DummyMemorySource>::default().process_buffered_query(
+        let _ = NativeFieldOpsQuery.process_buffered_query(
             FIELD_OPS_ADVISE_QUERY_ID,
             vec![0],
             &DummyMemorySource,

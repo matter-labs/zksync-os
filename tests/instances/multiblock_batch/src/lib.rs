@@ -14,7 +14,7 @@ use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA
 use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{alloy, testing_signer, TestingFramework};
-use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
+use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
 
 fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
@@ -88,7 +88,6 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
 
     let proof_output = zksync_os_runner::run(
         multinblock_program_path,
-        None,
         1 << 36,
         QuasiUARTSource::new_with_reads(batch_input),
     );

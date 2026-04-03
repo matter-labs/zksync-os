@@ -14,10 +14,7 @@ use rig::forward_system::run::query_processors::{
     BlockMetadataResponder, DACommitmentSchemeResponder, TxDataResponder, ZKProofDataResponder,
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-use rig::oracle_provider::{
-    DummyMemorySource, MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource,
-};
-use rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl;
+use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
@@ -100,7 +97,7 @@ impl RpcStorageResponder {
     }
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
+impl OracleQueryProcessor for RpcStorageResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -113,7 +110,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
         match query_id {
@@ -262,7 +259,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
         _use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+    ) -> ZkEENonDeterminismSource {
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
         let tx_data_responder = TxDataResponder {
             tx_source,
@@ -304,7 +301,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         _da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
         _use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
+    ) -> ZkEENonDeterminismSource {
         // Note: block reexecutor does not use proof oracle
         ZkEENonDeterminismSource::default()
     }

@@ -16,7 +16,6 @@ use basic_system::system_functions::NoStdSystemFunctions;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::EthereumLikeStorageAccessCostModel;
 use basic_system::system_implementation::system::FullIO;
-use oracle_provider::DummyMemorySource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
 use zk_ee::oracle::IOOracle;
@@ -129,16 +128,13 @@ impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, false> {}
 
 /// Forward execution system used in sequencing mode
 /// Uses dummy memory source for oracle data storage
-pub type ForwardRunningSystem =
-    ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
+pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
 
 /// Call simulation system with same configuration as forward execution
-pub type CallSimulationSystem =
-    ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
+pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
 
 /// Prover input system
-pub type ProverInputSystem =
-    ForwardSystemTypes<oracle_provider::ReadWitnessSource<DummyMemorySource>, true>;
+pub type ProverInputSystem = ForwardSystemTypes<oracle_provider::ReadWitnessSource, true>;
 
 /// Bootloader for forward execution using ZK transaction flow (EOA only)
 pub type ForwardBootloader =

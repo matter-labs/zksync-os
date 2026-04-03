@@ -18,28 +18,14 @@ use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
 
-pub use risc_v_simulator::abstractions::memory::MemorySource;
-use risc_v_simulator::abstractions::non_determinism::NonDeterminismCSRSource;
+use riscv_transpiler::vm::NonDeterminismCSRSource;
+pub use riscv_transpiler::vm::RamPeek;
 
 pub struct DummyMemorySource;
 
-impl MemorySource for DummyMemorySource {
-    fn get(
-        &self,
-        _phys_address: u64,
-        _access_type: risc_v_simulator::abstractions::memory::AccessType,
-        _trap: &mut risc_v_simulator::cycle::status_registers::TrapReason,
-    ) -> u32 {
-        unreachable!()
-    }
-    fn set(
-        &mut self,
-        _phys_address: u64,
-        _value: u32,
-        _access_type: risc_v_simulator::abstractions::memory::AccessType,
-        _trap: &mut risc_v_simulator::cycle::status_registers::TrapReason,
-    ) {
-        unreachable!()
+impl RamPeek for DummyMemorySource {
+    fn peek_word(&self, _address: u32) -> u32 {
+        unreachable!("DummyMemorySource should not be read from")
     }
 }
 
@@ -47,7 +33,8 @@ impl MemorySource for DummyMemorySource {
 /// Structure that is responsible for buffering incoming queries till the end,
 /// and then dispatching them to various responders. When constructed it checks
 /// that responders do not try to serve the same query ID.
-pub struct ZkEENonDeterminismSource<M: MemorySource> {
+#[derive(Default)]
+pub struct ZkEENonDeterminismSource {
     query_buffer: Option<QueryBuffer>,
     current_query_id: Option<u32>,
     current_iterator: Option<Box<dyn ExactSizeIterator<Item = usize> + 'static>>,
@@ -55,29 +42,14 @@ pub struct ZkEENonDeterminismSource<M: MemorySource> {
     high_half: Option<u32>,
     is_connected_to_external_oracle: bool,
     /// Vector of different processors that are responsible for handling queries.
-    processors: Vec<Box<dyn OracleQueryProcessor<M> + 'static>>,
+    processors: Vec<Box<dyn OracleQueryProcessor + 'static>>,
     /// Mapping from query_id to processor that is handling it (represented as index in processors vector above).
     ranges: BTreeMap<u32, usize>,
 }
 
-impl<M: MemorySource> Default for ZkEENonDeterminismSource<M> {
-    fn default() -> Self {
-        Self {
-            query_buffer: None,
-            current_query_id: None,
-            current_iterator: None,
-            iterator_len_to_indicate: None,
-            high_half: None,
-            is_connected_to_external_oracle: false,
-            processors: Vec::new(),
-            ranges: BTreeMap::new(),
-        }
-    }
-}
-
-impl<M: MemorySource> ZkEENonDeterminismSource<M> {
+impl ZkEENonDeterminismSource {
     #[track_caller]
-    pub fn add_external_processor<P: OracleQueryProcessor<M> + 'static>(&mut self, processor: P) {
+    pub fn add_external_processor<P: OracleQueryProcessor + 'static>(&mut self, processor: P) {
         let query_ids = processor.supported_query_ids();
         let processor_id = self.processors.len();
         for id in query_ids.into_iter() {
@@ -91,7 +63,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
         self.is_connected_to_external_oracle = true;
     }
 
-    fn process_buffered_query(&mut self, memory: &M) {
+    fn process_buffered_query(&mut self, memory: &dyn RamPeek) {
         assert!(self.current_iterator.is_none());
         assert!(self.current_query_id.is_none());
 
@@ -151,7 +123,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
         low
     }
 
-    fn write_impl(&mut self, memory: &M, value: u32) {
+    fn write_impl(&mut self, memory: &dyn RamPeek, value: u32) {
         if self.current_query_id.is_some() {
             println!(
                 "Current query ID = 0x{:08x} iterator is not consumed in full, but received value 0x{:08x}",
@@ -194,7 +166,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
     }
 }
 
-impl IOOracle for ZkEENonDeterminismSource<DummyMemorySource> {
+impl IOOracle for ZkEENonDeterminismSource {
     type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
     fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
@@ -222,7 +194,7 @@ impl IOOracle for ZkEENonDeterminismSource<DummyMemorySource> {
     }
 }
 
-pub trait OracleQueryProcessor<M: MemorySource> {
+pub trait OracleQueryProcessor {
     /// List of different query ids that are supported (for example NextTxSize or BlockLevelMetadataIterator).
     fn supported_query_ids(&self) -> Vec<u32>;
     fn supports_query_id(&self, query_id: u32) -> bool {
@@ -233,7 +205,7 @@ pub trait OracleQueryProcessor<M: MemorySource> {
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        memory: &M,
+        memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>;
 }
 
@@ -283,7 +255,7 @@ impl QueryBuffer {
 }
 
 // Now we hook an access
-impl<M: MemorySource> NonDeterminismCSRSource<M> for ZkEENonDeterminismSource<M> {
+impl NonDeterminismCSRSource for ZkEENonDeterminismSource {
     #[allow(clippy::let_and_return)]
     fn read(&mut self) -> u32 {
         let value = self.read_impl();
@@ -291,20 +263,24 @@ impl<M: MemorySource> NonDeterminismCSRSource<M> for ZkEENonDeterminismSource<M>
         value
     }
 
-    fn write_with_memory_access(&mut self, memory: &M, value: u32) {
+    fn write_with_memory_access<R: RamPeek>(&mut self, ram: &R, value: u32) {
         // println!("`NonDeterminismCSRSource` received 0x{:08x}", value);
-        self.write_impl(memory, value);
+        self.write_impl(ram, value);
+    }
+
+    fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
+        self.write_impl(ram, value);
     }
 }
 
 /// Wraps the original source and remembers all the read accesses.
-pub struct ReadWitnessSource<M: MemorySource> {
-    original_source: ZkEENonDeterminismSource<M>,
+pub struct ReadWitnessSource {
+    original_source: ZkEENonDeterminismSource,
     read_items: Rc<RefCell<Vec<u32>>>,
 }
 
-impl<M: MemorySource> ReadWitnessSource<M> {
-    pub fn new(original_source: ZkEENonDeterminismSource<M>) -> Self {
+impl ReadWitnessSource {
+    pub fn new(original_source: ZkEENonDeterminismSource) -> Self {
         Self {
             original_source,
             read_items: Rc::new(RefCell::new(vec![])),
@@ -316,7 +292,7 @@ impl<M: MemorySource> ReadWitnessSource<M> {
     }
 }
 
-impl<M: MemorySource> NonDeterminismCSRSource<M> for ReadWitnessSource<M> {
+impl NonDeterminismCSRSource for ReadWitnessSource {
     fn read(&mut self) -> u32 {
         let item = self.original_source.read();
         // On read - remember the items.
@@ -324,14 +300,18 @@ impl<M: MemorySource> NonDeterminismCSRSource<M> for ReadWitnessSource<M> {
         item
     }
 
-    fn write_with_memory_access(&mut self, memory: &M, value: u32) {
-        self.original_source.write_with_memory_access(memory, value);
+    fn write_with_memory_access<R: RamPeek>(&mut self, ram: &R, value: u32) {
+        self.original_source.write_with_memory_access(ram, value);
+    }
+
+    fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
+        self.original_source
+            .write_with_memory_access_dyn(ram, value);
     }
 }
 
-impl IOOracle for ReadWitnessSource<DummyMemorySource> {
-    type RawIterator<'a> =
-        <ZkEENonDeterminismSource<DummyMemorySource> as IOOracle>::RawIterator<'a>;
+impl IOOracle for ReadWitnessSource {
+    type RawIterator<'a> = <ZkEENonDeterminismSource as IOOracle>::RawIterator<'a>;
 
     fn raw_query<'a, I>(
         &'a mut self,
@@ -377,7 +357,7 @@ mod tests {
 
     struct FixedResponseProcessor;
 
-    impl OracleQueryProcessor<DummyMemorySource> for FixedResponseProcessor {
+    impl OracleQueryProcessor for FixedResponseProcessor {
         fn supported_query_ids(&self) -> Vec<u32> {
             vec![TEST_QUERY_ID]
         }
@@ -386,7 +366,7 @@ mod tests {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            _memory: &DummyMemorySource,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             assert_eq!(query_id, TEST_QUERY_ID);
             assert_eq!(query, vec![7usize]);
@@ -396,7 +376,7 @@ mod tests {
 
     #[test]
     fn read_witness_source_records_length_and_words() {
-        let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(FixedResponseProcessor);
 
         let mut source = ReadWitnessSource::new(oracle);

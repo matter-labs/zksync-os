@@ -6,7 +6,7 @@ use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::BLOB_
 use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
-use risc_v_simulator::abstractions::memory::MemorySource;
+use oracle_provider::RamPeek;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
 
 use crate::read_u8_words;
@@ -17,19 +17,10 @@ use crate::read_u8_words;
 /// Proof is basically kzg proof in a point derived from data and kzg commitment,
 /// so it allows to verify kzg commitment correctness by validating this proof and value of the polynomial in this point.
 ///
-pub struct BlobCommitmentAndProofQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct BlobCommitmentAndProofQuery;
 
-impl<M: MemorySource> Default for BlobCommitmentAndProofQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M> {
+impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
     }
@@ -38,7 +29,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        memory: &M,
+        memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -73,19 +64,10 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
 ///
 /// This processor explicitly reads the process memory
 /// using a raw pointer to get the input.
-pub struct NativeBlobCommitmentAndProofQuery<M: MemorySource> {
-    _marker: std::marker::PhantomData<M>,
-}
+#[derive(Default)]
+pub struct NativeBlobCommitmentAndProofQuery;
 
-impl<M: MemorySource> Default for NativeBlobCommitmentAndProofQuery<M> {
-    fn default() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQuery<M> {
+impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
     }
@@ -94,7 +76,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQu
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
@@ -163,7 +145,7 @@ mod tests {
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
-        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery::<DummyMemorySource>::default()
+        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery
             .process_buffered_query(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
                 vec![data.as_ptr().addr(), data.len()],
@@ -177,11 +159,10 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let _ = NativeBlobCommitmentAndProofQuery::<DummyMemorySource>::default()
-            .process_buffered_query(
-                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                vec![0, 1],
-                &DummyMemorySource,
-            );
+        let _ = NativeBlobCommitmentAndProofQuery.process_buffered_query(
+            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+            vec![0, 1],
+            &DummyMemorySource,
+        );
     }
 }

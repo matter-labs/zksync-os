@@ -75,12 +75,12 @@ pub fn ecrecover(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Sec
 /// ecrecover using native field operations oracle (for comparing oracle vs non-oracle paths)
 pub fn ecrecover_with_oracle(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
     use callable_oracles::field_hints::NativeFieldOpsQuery;
-    use oracle_provider::{DummyMemorySource, ZkEENonDeterminismSource};
+    use oracle_provider::ZkEENonDeterminismSource;
 
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
-    oracle.add_external_processor(NativeFieldOpsQuery::<DummyMemorySource>::default());
+    let mut oracle = ZkEENonDeterminismSource::default();
+    oracle.add_external_processor(NativeFieldOpsQuery);
     EcRecoverImpl::<true>::execute(&src, dst, &mut resource, &mut oracle, &mut NullLogger, allocator)
 }
 

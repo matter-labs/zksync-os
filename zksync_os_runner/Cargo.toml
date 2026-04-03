@@ -10,11 +10,13 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-risc_v_simulator = { workspace = true, features = ["delegation"] }
+riscv_transpiler = { workspace = true }
 execution_utils = { workspace = true }
 prover_examples = { workspace = true }
+common_constants = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
+log = { workspace = true }
 
 [features]
-opcode_stats = ["risc_v_simulator/opcode_stats"]
-cycle_marker = ["risc_v_simulator/cycle_marker", "cycle_marker/use_risc_v_simulator"]
+flamegraph = ["riscv_transpiler/flamegraph"]
+cycle_marker = ["cycle_marker/use_riscv_transpiler"]

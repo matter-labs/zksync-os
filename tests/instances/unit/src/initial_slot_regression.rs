@@ -20,10 +20,7 @@ use rig::forward_system::run::query_processors::{
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
-use rig::oracle_provider::{
-    DummyMemorySource, MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource,
-};
-use rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl;
+use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
@@ -56,7 +53,7 @@ impl<S: ReadStorage> MaliciousStorageResponder<S> {
         &[InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID];
 }
 
-impl<S: ReadStorage, M: MemorySource> OracleQueryProcessor<M> for MaliciousStorageResponder<S> {
+impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -69,7 +66,7 @@ impl<S: ReadStorage, M: MemorySource> OracleQueryProcessor<M> for MaliciousStora
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
@@ -127,7 +124,7 @@ impl InvalidInitialValueOracleFactory {
         Self { targets }
     }
 
-    fn build_oracle<M: MemorySource + 'static>(
+    fn build_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<false>,
@@ -135,7 +132,7 @@ impl InvalidInitialValueOracleFactory {
         tx_source: TxListSource,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource {
         // Create a malicious oracle manually instead of using the default factory
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
         let tx_data_responder = TxDataResponder {
@@ -179,7 +176,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
         _use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+    ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
             state_tree,
@@ -200,7 +197,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
         _use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
+    ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
             state_tree,

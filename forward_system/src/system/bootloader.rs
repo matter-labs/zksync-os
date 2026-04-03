@@ -5,7 +5,6 @@ use basic_bootloader::bootloader::block_header as basic_booltoader_block_header;
 use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::result_keeper::ResultKeeperExt;
-use oracle_provider::DummyMemorySource;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::system::tracer::Tracer;
@@ -19,7 +18,7 @@ use super::system_types::ProverInputBootloader;
 /// Returns execution results(tx results, state changes, events, etc) via `results_keeper`.
 ///
 pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
-    oracle: ZkEENonDeterminismSource<DummyMemorySource>,
+    oracle: ZkEENonDeterminismSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,
@@ -35,7 +34,7 @@ pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
 }
 
 pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
-    oracle: ZkEENonDeterminismSource<DummyMemorySource>,
+    oracle: ZkEENonDeterminismSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,
@@ -48,7 +47,7 @@ pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
 }
 
 pub fn run_prover_input_no_panic<Config: BasicBootloaderExecutionConfig>(
-    oracle: ReadWitnessSource<DummyMemorySource>,
+    oracle: ReadWitnessSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,

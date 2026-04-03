@@ -40,6 +40,8 @@ use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::internal_error;
+#[cfg(feature = "p256_precompile")]
+use zk_ee::system::base_system_functions::P256VerifyErrors;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 #[cfg(feature = "mock-unsupported-precompiles")]
