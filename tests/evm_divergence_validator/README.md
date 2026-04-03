@@ -147,16 +147,21 @@ On divergence (`status: "divergence"`), the `error` field contains details about
 
 ## What it checks
 
-The tool uses the existing REVM consistency checker from `tests/revm_runner/`, which compares end-of-block state diffs:
+The tool uses the existing REVM consistency checker from `tests/revm_runner/`, which compares:
 
+**End-of-block state diffs:**
 - Storage slot changes (per address, per slot)
 - Account nonce changes
 - Account balance changes
 - Deployed bytecode changes
 
-## Limitations
+**Per-transaction execution results:**
+- Success/revert outcome
+- Return data
+- Event logs (address, topics, data)
+
+## Design notes
 
 - All steps run in a single block. Multi-block scenarios are not yet supported.
-- Gas comparison is approximate due to ZKsync OS double gas accounting (EVM gas + native resources).
-- Events/logs and return data are not compared (only final state).
-- The REVM side uses `zksync-os-revm` (adapted REVM), not vanilla REVM, so it accounts for known ZKsync-specific behaviors (precompile differences, fee distribution, etc.).
+- The tool enables `unlimited_native` and `independent_gas`, so ZKsync OS gas accounting is equivalent to standard EVM and gas is compared independently (no override from ZKsync OS to REVM).
+- The REVM side uses `zksync-os-revm` (adapted REVM), which accounts for ZKsync-specific behaviors (precompile differences, fee distribution, etc.). This is intentional — divergences caught here are real bugs, not known differences.
