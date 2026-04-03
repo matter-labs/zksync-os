@@ -34,10 +34,10 @@ fn get_name_sol() {
     );
 
     let run_config = rig::chain::RunConfig {
-        flamegraph_output: Some(PathBuf::from(format!(
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
             "{}/os_profile_get_name_sol.svg",
             env!("CARGO_MANIFEST_DIR")
-        ))),
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);
@@ -124,10 +124,10 @@ fn balance_of_sol() {
     );
 
     let run_config = rig::chain::RunConfig {
-        flamegraph_output: Some(PathBuf::from(format!(
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
             "{}/os_profile_balance_of_sol.svg",
             env!("CARGO_MANIFEST_DIR")
-        ))),
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);
@@ -238,10 +238,10 @@ fn transfer_sol() {
     );
 
     let run_config = rig::chain::RunConfig {
-        flamegraph_output: Some(PathBuf::from(format!(
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
             "{}/os_profile_transfer_sol.svg",
             env!("CARGO_MANIFEST_DIR")
-        ))),
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);

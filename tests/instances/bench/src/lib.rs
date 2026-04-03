@@ -116,10 +116,10 @@ fn fibish_sol() {
     let tx = ZKsyncTxEnvelope::from_eth_tx_from_req(tx, wallet);
 
     let run_config = rig::chain::RunConfig {
-        flamegraph_output: Some(PathBuf::from(format!(
+        flamegraph: Some(rig::FlamegraphOptions::new(PathBuf::from(format!(
             "{}/os_profile_fibish_sol.svg",
             env!("CARGO_MANIFEST_DIR")
-        ))),
+        )))),
         ..Default::default()
     };
     tester = tester.with_run_config(run_config);
