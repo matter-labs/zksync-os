@@ -1,6 +1,6 @@
 # EVM Divergence Validator
 
-CLI tool that checks whether a given scenario produces different results on ZKsync OS vs standard EVM (REVM). Takes a JSON scenario describing Solidity contracts and transactions, compiles them, executes on both engines, and reports any state divergences.
+CLI tool that checks whether a given scenario produces different results on ZKsync OS vs standard EVM (REVM). Takes a YAML (or JSON) scenario describing Solidity contracts and transactions, compiles them, executes on both engines, and reports any state divergences.
 
 ## Use cases
 
@@ -14,12 +14,14 @@ CLI tool that checks whether a given scenario produces different results on ZKsy
 ## Usage
 
 ```bash
-cargo run -p evm_divergence_validator -- scenario.json
+cargo run -p evm_divergence_validator -- scenario.yaml
 
 # or build once and run directly
 cargo build -p evm_divergence_validator --release
-./target/release/evm-divergence-validator scenario.json
+./target/release/evm-divergence-validator scenario.yaml
 ```
+
+Accepts `.yaml`/`.yml` (recommended) and `.json` files.
 
 ### Exit codes
 
@@ -31,41 +33,41 @@ cargo build -p evm_divergence_validator --release
 
 ## Scenario format
 
-```json
-{
-  "contracts": {
-    "MyContract": {
-      "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\ncontract MyContract { uint256 public x; function set(uint256 v) public { x = v; } }"
-    },
-    "Other": {
-      "file": "contracts/Other.sol"
-    }
-  },
-  "accounts": {
-    "alice": { "balance": "1000000000000000000" }
-  },
-  "block": {
-    "basefee": 1000,
-    "gas_limit": 30000000,
-    "timestamp": 1700000000
-  },
-  "steps": [
-    {
-      "type": "deploy",
-      "contract": "MyContract",
-      "from": "alice",
-      "gas": 5000000
-    },
-    {
-      "type": "call",
-      "to": "$deployed:0",
-      "from": "alice",
-      "function": "set(uint256)",
-      "args": [42],
-      "gas": 1000000
-    }
-  ]
-}
+```yaml
+contracts:
+  MyContract:
+    source: |
+      // SPDX-License-Identifier: MIT
+      pragma solidity ^0.8.20;
+
+      contract MyContract {
+          uint256 public x;
+          function set(uint256 v) public { x = v; }
+      }
+  Other:
+    file: contracts/Other.sol
+
+accounts:
+  alice:
+    balance: "1000000000000000000"
+
+block:
+  basefee: 1000
+  gas_limit: 30000000
+  timestamp: 1700000000
+
+steps:
+  - type: deploy
+    contract: MyContract
+    from: alice
+    gas: 5000000
+
+  - type: call
+    to: "$deployed:0"
+    from: alice
+    function: "set(uint256)"
+    args: [42]
+    gas: 1000000
 ```
 
 ### Contracts
@@ -75,7 +77,7 @@ Each entry maps a contract name to its source. Two options:
 | Field | Description |
 |-------|-------------|
 | `source` | Inline Solidity source code |
-| `file` | Path to a `.sol` file, relative to the scenario JSON |
+| `file` | Path to a `.sol` file, relative to the scenario file |
 
 The contract name must match the Solidity `contract` name (forge uses it to locate the artifact).
 

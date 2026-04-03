@@ -18,15 +18,11 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
-        eprintln!("Usage: evm-divergence-validator <scenario.json>");
+        eprintln!("Usage: evm-divergence-validator <scenario.yaml>");
         eprintln!();
         eprintln!("Executes a scenario on ZKsync OS and REVM, reports divergences.");
         eprintln!();
-        eprintln!("The scenario JSON file should contain:");
-        eprintln!("  contracts: map of contract name -> {{ source: \"...\" }} or {{ file: \"...\" }}");
-        eprintln!("  accounts:  map of name -> {{ balance: \"...\" }}");
-        eprintln!("  block:     optional {{ basefee, gas_limit, timestamp }}");
-        eprintln!("  steps:     array of deploy/call actions");
+        eprintln!("Accepts YAML (.yaml/.yml) or JSON (.json) scenario files.");
         process::exit(2);
     }
 
@@ -60,8 +56,15 @@ fn run(scenario_path: &PathBuf) -> anyhow::Result<report::Report> {
     let content = std::fs::read_to_string(scenario_path)
         .with_context(|| format!("failed to read scenario file: {}", scenario_path.display()))?;
 
-    let scenario: scenario::Scenario =
-        serde_json::from_str(&content).context("failed to parse scenario JSON")?;
+    let is_yaml = scenario_path
+        .extension()
+        .is_some_and(|ext| ext == "yaml" || ext == "yml");
+
+    let scenario: scenario::Scenario = if is_yaml {
+        serde_yaml::from_str(&content).context("failed to parse scenario YAML")?
+    } else {
+        serde_json::from_str(&content).context("failed to parse scenario JSON")?
+    };
 
     let scenario_dir = scenario_path
         .parent()
