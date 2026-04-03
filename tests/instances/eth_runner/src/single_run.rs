@@ -46,10 +46,10 @@ fn run<const RANDOMIZED: bool>(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let flamegraph_output = flamegraph.map(std::path::PathBuf::from);
+    let flamegraph = flamegraph.map(|p| rig::FlamegraphOptions::new(p.into()));
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
-        flamegraph_output,
+        flamegraph,
         do_riscv_run: true,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,

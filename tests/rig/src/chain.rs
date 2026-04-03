@@ -186,8 +186,8 @@ impl Default for BlockContext {
 pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
     // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
-    // If set, a flamegraph SVG will be written to this path
-    pub flamegraph_output: Option<PathBuf>,
+    // If set, run with flamegraph profiling using the given options.
+    pub flamegraph: Option<crate::FlamegraphOptions>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
@@ -225,7 +225,7 @@ impl Default for RunConfig {
             do_prover_input_run: true,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
-            flamegraph_output: None,
+            flamegraph: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
         }
@@ -777,7 +777,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let RunConfig {
-            flamegraph_output,
+            flamegraph,
             witness_output_file,
             app,
             do_riscv_run,
@@ -987,13 +987,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let items = copy_source.get_read_items();
 
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = if let Some(fg_path) = flamegraph_output {
+            let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
                 zksync_os_runner::run_with_flamegraph(
                     get_zksync_os_img_path(&app),
                     get_zksync_os_sym_path(&app),
                     1 << 36,
                     copy_source,
-                    fg_path,
+                    fg_options,
                 )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(

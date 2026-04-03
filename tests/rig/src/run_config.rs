@@ -20,7 +20,7 @@ pub fn with_riscv_simulation() -> RunConfig {
 /// RISC-V simulation run that also writes a flamegraph SVG to `path`.
 pub fn with_profiler(path: impl Into<PathBuf>) -> RunConfig {
     let mut config = with_riscv_simulation();
-    config.flamegraph_output = Some(path.into());
+    config.flamegraph = Some(crate::FlamegraphOptions::new(path.into()));
     config
 }
 

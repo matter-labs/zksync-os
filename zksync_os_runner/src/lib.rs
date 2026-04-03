@@ -106,13 +106,35 @@ fn run_inner(
     (output, block_effective.or(Some(cycles_executed)))
 }
 
+/// Flamegraph profiling options passed through to the transpiler VM.
+#[cfg(feature = "flamegraph")]
+#[derive(Clone)]
+pub struct FlamegraphOptions {
+    /// Path to write the flamegraph SVG.
+    pub output_path: PathBuf,
+    /// Collect one sample every `frequency_recip` VM cycles.
+    /// Lower values give more detail but add runtime overhead.
+    /// Defaults to 1 (sample every cycle).
+    pub frequency_recip: usize,
+}
+
+#[cfg(feature = "flamegraph")]
+impl FlamegraphOptions {
+    pub fn new(output_path: PathBuf) -> Self {
+        Self {
+            output_path,
+            frequency_recip: 1,
+        }
+    }
+}
+
 #[cfg(feature = "flamegraph")]
 pub fn run_with_flamegraph(
     img_path: PathBuf,
     sym_path: PathBuf,
     cycles: usize,
     mut non_determinism_source: impl NonDeterminismCSRSource,
-    output_path: PathBuf,
+    options: FlamegraphOptions,
 ) -> ([u32; 8], Option<u64>) {
     use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
 
@@ -125,8 +147,8 @@ pub fn run_with_flamegraph(
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
     let mut state = State::initial_with_counters(DelegationsCounters::default());
 
-    let mut config = FlamegraphConfig::new(sym_path, output_path);
-    config.frequency_recip = 1;
+    let mut config = FlamegraphConfig::new(sym_path, options.output_path);
+    config.frequency_recip = options.frequency_recip;
     config.reverse_graph = false;
     let mut profiler =
         VmFlamegraphProfiler::new(config).expect("failed to initialize flamegraph profiler");
