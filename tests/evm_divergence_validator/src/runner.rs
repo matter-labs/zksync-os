@@ -99,12 +99,9 @@ pub fn run_scenario(
                 // Encode constructor args if any.
                 let mut init_code = artifact.bytecode.clone();
                 if !args.is_empty() {
-                    let constructor = artifact
-                        .abi
-                        .constructor()
-                        .with_context(|| {
-                            format!("contract '{contract}' has no constructor but args were given")
-                        })?;
+                    let constructor = artifact.abi.constructor().with_context(|| {
+                        format!("contract '{contract}' has no constructor but args were given")
+                    })?;
                     let encoded_args = encode_args(&constructor.inputs, args)?;
                     init_code.extend_from_slice(&encoded_args);
                 }
@@ -226,10 +223,12 @@ fn resolve_address(
         let idx: usize = idx_str
             .parse()
             .with_context(|| format!("invalid deploy index: {idx_str}"))?;
-        deployed
-            .get(idx)
-            .copied()
-            .with_context(|| format!("no deploy at index {idx} (only {} deploys so far)", deployed.len()))
+        deployed.get(idx).copied().with_context(|| {
+            format!(
+                "no deploy at index {idx} (only {} deploys so far)",
+                deployed.len()
+            )
+        })
     } else if let Some(signer) = signers.get(target) {
         Ok(signer.address())
     } else if target.starts_with("0x") || target.starts_with("0X") {
@@ -237,7 +236,9 @@ fn resolve_address(
             .parse::<Address>()
             .with_context(|| format!("invalid address: {target}"))
     } else {
-        bail!("cannot resolve target '{target}': not a $deployed ref, named account, or hex address");
+        bail!(
+            "cannot resolve target '{target}': not a $deployed ref, named account, or hex address"
+        );
     }
 }
 
@@ -357,7 +358,11 @@ fn json_to_dyn_sol_value(
         DynSolType::Tuple(types) => {
             let arr = value.as_array().context("expected array for tuple")?;
             if arr.len() != types.len() {
-                bail!("tuple length mismatch: expected {}, got {}", types.len(), arr.len());
+                bail!(
+                    "tuple length mismatch: expected {}, got {}",
+                    types.len(),
+                    arr.len()
+                );
             }
             let vals: Vec<DynSolValue> = types
                 .iter()
@@ -388,9 +393,7 @@ fn parse_alloy_u256(s: &str) -> anyhow::Result<AlloyU256> {
 
 fn make_block_context(block: &BlockDef) -> rig::BlockContext {
     rig::BlockContext {
-        eip1559_basefee: ruint::aliases::U256::from(
-            block.basefee.unwrap_or(DEFAULT_MAX_FEE),
-        ),
+        eip1559_basefee: ruint::aliases::U256::from(block.basefee.unwrap_or(DEFAULT_MAX_FEE)),
         native_price: ruint::aliases::U256::from(10u64),
         pubdata_price: Default::default(),
         timestamp: block.timestamp.unwrap_or(1_700_000_000),

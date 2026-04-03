@@ -235,6 +235,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
         do_riscv_run: false,
         update_state_after_block_execution: false,
         check_revm_consistency: false,
+        revm_independent_gas: false,
         check_storage_diff_hashes: false,
     });
 
@@ -367,7 +368,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
         block_context_interface,
         Some(block_output),
     ) {
-        Ok((revm_trace, revm_skipped, compare_report)) => {
+        Ok((revm_trace, revm_skipped, compare_report, _tx_mismatches)) => {
             if !revm_skipped.is_empty() {
                 println!(
                     "REVM skipped {} transaction(s) that failed validation (included in ZKsync OS block as failed)",

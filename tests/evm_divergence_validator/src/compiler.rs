@@ -91,7 +91,10 @@ fn find_artifact(out_dir: &Path, contract_name: &str) -> anyhow::Result<Compiled
         }
     }
 
-    bail!("no artifact found for '{contract_name}' in {}", out_dir.display());
+    bail!(
+        "no artifact found for '{contract_name}' in {}",
+        out_dir.display()
+    );
 }
 
 /// Simple recursive directory walk (avoids adding walkdir crate).
