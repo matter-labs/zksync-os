@@ -4,7 +4,7 @@ use serde::Serialize;
 pub struct Report {
     /// "match", "divergence", or "execution_error"
     pub status: String,
-    /// Per-transaction results from zkSync OS execution.
+    /// Per-transaction results from ZKsync OS execution.
     pub steps: Vec<StepResult>,
     /// State diffs (only populated on divergence, when we can capture them).
     #[serde(skip_serializing_if = "Option::is_none")]

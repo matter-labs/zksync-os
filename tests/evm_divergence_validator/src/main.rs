@@ -20,7 +20,7 @@ fn main() {
     if args.len() != 2 {
         eprintln!("Usage: evm-divergence-validator <scenario.json>");
         eprintln!();
-        eprintln!("Executes a scenario on zkSync OS and REVM, reports divergences.");
+        eprintln!("Executes a scenario on ZKsync OS and REVM, reports divergences.");
         eprintln!();
         eprintln!("The scenario JSON file should contain:");
         eprintln!("  contracts: map of contract name -> {{ source: \"...\" }} or {{ file: \"...\" }}");

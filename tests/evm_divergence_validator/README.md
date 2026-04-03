@@ -1,6 +1,6 @@
 # EVM Divergence Validator
 
-CLI tool that checks whether a given scenario produces different results on zkSync OS vs standard EVM (REVM). Takes a JSON scenario describing Solidity contracts and transactions, compiles them, executes on both engines, and reports any state divergences.
+CLI tool that checks whether a given scenario produces different results on ZKsync OS vs standard EVM (REVM). Takes a JSON scenario describing Solidity contracts and transactions, compiles them, executes on both engines, and reports any state divergences.
 
 ## Use cases
 
@@ -25,7 +25,7 @@ cargo build -p evm_divergence_validator --release
 
 | Code | Meaning |
 |------|---------|
-| 0 | Match — zkSync OS and REVM produce identical state |
+| 0 | Match — ZKsync OS and REVM produce identical state |
 | 1 | Divergence found |
 | 2 | Error (bad input, compilation failure, etc.) |
 
@@ -143,7 +143,7 @@ Structured JSON to stdout:
 }
 ```
 
-On divergence (`status: "divergence"`), the `error` field contains details about which storage slots or account fields differ between zkSync OS and REVM.
+On divergence (`status: "divergence"`), the `error` field contains details about which storage slots or account fields differ between ZKsync OS and REVM.
 
 ## What it checks
 
@@ -157,6 +157,6 @@ The tool uses the existing REVM consistency checker from `tests/revm_runner/`, w
 ## Limitations
 
 - All steps run in a single block. Multi-block scenarios are not yet supported.
-- Gas comparison is approximate due to zkSync OS double gas accounting (EVM gas + native resources).
+- Gas comparison is approximate due to ZKsync OS double gas accounting (EVM gas + native resources).
 - Events/logs and return data are not compared (only final state).
-- The REVM side uses `zksync-os-revm` (adapted REVM), not vanilla REVM, so it accounts for known zkSync-specific behaviors (precompile differences, fee distribution, etc.).
+- The REVM side uses `zksync-os-revm` (adapted REVM), not vanilla REVM, so it accounts for known ZKsync-specific behaviors (precompile differences, fee distribution, etc.).
