@@ -35,7 +35,6 @@ members = [
     "tests/instances/evm",
     "tests/block_reexecutor",
     "tests/revm_runner",
-    "tests/evm_divergence_validator",
     "cycle_marker",
     "tests/binary_checker",
     "supporting_crates/delegated_u256",
@@ -49,6 +48,7 @@ exclude = [
     "crypto/src/blake2s/test_program",
     "circuit_test_program",
     "tests/evm_tester",
+    "tests/evm_divergence_validator",
     "tests/instances/eth_runner",
 ]
 

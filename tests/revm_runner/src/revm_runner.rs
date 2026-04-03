@@ -37,10 +37,7 @@ pub enum TxMismatchKind {
         zk_success: bool,
     },
     /// Return data differs.
-    ReturnDataMismatch {
-        revm: Option<Bytes>,
-        zk: Vec<u8>,
-    },
+    ReturnDataMismatch { revm: Option<Bytes>, zk: Vec<u8> },
     /// Event logs differ.
     LogsMismatch {
         revm_count: usize,
@@ -190,7 +187,10 @@ where
         let mut call_traces = Vec::with_capacity(transactions.len());
         let mut invalid_transactions = vec![];
         // Collect per-tx REVM execution results keyed by original tx index.
-        let mut revm_results: Vec<(usize, revm::context_interface::result::ExecutionResult<HaltReason>)> = vec![];
+        let mut revm_results: Vec<(
+            usize,
+            revm::context_interface::result::ExecutionResult<HaltReason>,
+        )> = vec![];
         for replay_tx in revm_txs {
             let tx_execution = match evm.inspect_tx_commit(replay_tx.tx) {
                 Ok(res) => res,
@@ -234,9 +234,15 @@ where
             None
         };
 
-        // Compare per-tx return data and events.
-        let tx_mismatches = if let Some(block_output) = block_output.as_ref() {
-            Self::compare_tx_results(&revm_results, block_output)
+        // Compare per-tx return data and events only when gas overrides
+        // are disabled — with force_fail, REVM skips execution so return
+        // data is not meaningful.
+        let tx_mismatches = if self.independent_gas {
+            if let Some(block_output) = block_output.as_ref() {
+                Self::compare_tx_results(&revm_results, block_output)
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         };
@@ -247,7 +253,12 @@ where
             }
         }
 
-        Ok((call_traces, invalid_transactions, compare_report, tx_mismatches))
+        Ok((
+            call_traces,
+            invalid_transactions,
+            compare_report,
+            tx_mismatches,
+        ))
     }
 
     fn build_revm_txs(
@@ -341,7 +352,10 @@ where
 
     /// Compare per-tx return data, logs, and success/revert outcome.
     fn compare_tx_results(
-        revm_results: &[(usize, revm::context_interface::result::ExecutionResult<HaltReason>)],
+        revm_results: &[(
+            usize,
+            revm::context_interface::result::ExecutionResult<HaltReason>,
+        )],
         block_output: &BlockOutput,
     ) -> Vec<TxComparisonMismatch> {
         let mut mismatches = Vec::new();
