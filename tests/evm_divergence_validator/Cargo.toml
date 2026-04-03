@@ -1,0 +1,38 @@
+[package]
+name = "evm_divergence_validator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "evm-divergence-validator"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true }
+alloy = { workspace = true, default-features = false, features = [
+    "consensus",
+    "dyn-abi",
+    "json-abi",
+    "network",
+    "signers",
+    "signer-local",
+    "sol-types",
+] }
+ruint = { workspace = true, default-features = false, features = ["alloc"] }
+log = { workspace = true }
+hex = { workspace = true }
+tempfile = "3"
+
+rig = { path = "../rig", features = ["no_print"] }
+zksync_os_tests_common = { path = "../common" }
+zksync_os_revm_runner = { path = "../revm_runner" }
+zk_ee = { path = "../../zk_ee" }
+forward_system = { path = "../../forward_system" }

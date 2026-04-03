@@ -35,6 +35,7 @@ members = [
     "tests/instances/evm",
     "tests/block_reexecutor",
     "tests/revm_runner",
+    "tests/evm_divergence_validator",
     "cycle_marker",
     "tests/binary_checker",
     "supporting_crates/delegated_u256",
