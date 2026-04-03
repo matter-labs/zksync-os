@@ -31,7 +31,7 @@ log = { workspace = true }
 hex = { workspace = true }
 tempfile = "3"
 
-rig = { path = "../rig", features = ["no_print"] }
+rig = { path = "../rig", features = ["no_print", "unlimited_native"] }
 zksync_os_tests_common = { path = "../common" }
 zksync_os_revm_runner = { path = "../revm_runner" }
 zk_ee = { path = "../../zk_ee" }

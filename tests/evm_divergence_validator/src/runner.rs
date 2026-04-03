@@ -39,8 +39,12 @@ pub fn run_scenario(
     }
 
     // Set up the testing framework.
+    // Enable REVM consistency check with independent gas computation.
+    // Combined with the `unlimited_native` feature, this makes ZKsync OS
+    // gas accounting equivalent to standard EVM, enabling true gas comparison.
     let mut run_config = RunConfig::without_riscv_run();
     run_config.enable_revm_consistency_check();
+    run_config.revm_independent_gas = true;
 
     let mut tester = TestingFramework::new().with_run_config(run_config);
 

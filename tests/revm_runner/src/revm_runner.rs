@@ -32,6 +32,10 @@ where
 {
     state: State,
     spec: ZkSpecId,
+    /// When true, REVM computes gas independently instead of using
+    /// ZKsync OS's `gas_used` as an override. Best combined with
+    /// `unlimited_native` so that gas models are equivalent.
+    independent_gas: bool,
 }
 
 impl<State> RevmRunner<State>
@@ -42,6 +46,7 @@ where
         Self {
             state,
             spec: ZkSpecId::AtlasV3,
+            independent_gas: false,
         }
     }
 
@@ -52,6 +57,13 @@ where
 
     pub fn set_spec(&mut self, spec: ZkSpecId) -> &mut Self {
         self.spec = spec;
+        self
+    }
+
+    /// Enable independent gas computation: REVM computes gas itself
+    /// instead of using ZKsync OS's `gas_used` override.
+    pub fn with_independent_gas(mut self, independent: bool) -> Self {
+        self.independent_gas = independent;
         self
     }
 
@@ -136,6 +148,7 @@ where
             block_output.as_ref(),
             block_context.gas_limit,
             settlement_layer_chain_id,
+            self.independent_gas,
         )?;
 
         let mut call_traces = Vec::with_capacity(transactions.len());
@@ -190,6 +203,7 @@ where
         block_output: Option<&BlockOutput>,
         block_gas_limit: u64,
         settlement_layer_chain_id: U256,
+        independent_gas: bool,
     ) -> anyhow::Result<Vec<ReplayTx>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -214,10 +228,16 @@ where
                     continue;
                 };
 
+                let (gas_override, force_fail) = if independent_gas {
+                    (None, false)
+                } else {
+                    (Some(tx_output.gas_used), !tx_output.is_success())
+                };
+
                 let tx_env = zk_tx_into_revm_tx(
                     transaction,
-                    Some(tx_output.gas_used),
-                    !tx_output.is_success(),
+                    gas_override,
+                    force_fail,
                     block_gas_limit,
                     Some(settlement_layer_chain_id),
                 )

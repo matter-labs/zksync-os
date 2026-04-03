@@ -170,9 +170,14 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> Result<(), String> {
         let block_context_interface =
             generate_block_context_interface(&pre_block_chain, &block_context);
+        let independent_gas = self
+            .run_config
+            .as_ref()
+            .is_some_and(|c| c.revm_independent_gas);
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
-        });
+        })
+        .with_independent_gas(independent_gas);
 
         revm_runner
             .run(
