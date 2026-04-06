@@ -260,11 +260,7 @@ mod tests {
         memory.insert_u64_words(m_addr, modulus_u64);
 
         let result: Vec<usize> = ArithmeticQuery
-            .process_buffered_query(
-                MODEXP_ADVICE_QUERY_ID,
-                vec![PARAMS_ADDR as usize],
-                &memory,
-            )
+            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![PARAMS_ADDR as usize], &memory)
             .collect();
 
         assert!(!result.is_empty(), "Expected at least a header word");
@@ -431,15 +427,19 @@ mod tests {
     #[should_panic(expected = "A single RISC-V ptr should've been passed")]
     fn arithmetic_query_panics_on_extra_args() {
         let memory = TestMemorySource::default();
-        let _ =
-            ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x100, 0x200], &memory);
+        let _ = ArithmeticQuery.process_buffered_query(
+            MODEXP_ADVICE_QUERY_ID,
+            vec![0x100, 0x200],
+            &memory,
+        );
     }
 
     #[test]
     #[should_panic]
     fn arithmetic_query_panics_on_misaligned_pointer() {
         let memory = TestMemorySource::default();
-        let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x101], &memory);
+        let _ =
+            ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x101], &memory);
     }
 
     #[test]

@@ -260,8 +260,8 @@ mod custom_oracle_factories {
         ReadTreeResponder, ZKProofDataResponder,
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-    use rig::forward_system::run::{NextTxResponse, PreimageSource, TxSource};
-    use rig::oracle_provider::{MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource};
+    use rig::forward_system::run::{NextTxResponse, PreimageSource};
+    use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
     use rig::ruint::aliases::B160;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
     use rig::zk_ee::oracle::query_ids::{
@@ -274,7 +274,7 @@ mod custom_oracle_factories {
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
     use rig::zk_ee::utils::Bytes32;
-    use rig::zksync_os_interface::traits::{EncodedTx, TxListSource};
+    use rig::zksync_os_interface::traits::{EncodedTx, TxListSource, TxSource};
     use rig::{common_target_address, TestingFramework};
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
@@ -308,7 +308,7 @@ mod custom_oracle_factories {
         ];
     }
 
-    impl<M: MemorySource> OracleQueryProcessor<M> for MaliciousTxFormatResponder {
+    impl OracleQueryProcessor for MaliciousTxFormatResponder {
         fn supported_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
@@ -321,7 +321,7 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             _query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
@@ -353,7 +353,7 @@ mod custom_oracle_factories {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref| {
+                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
                         ReadIterWrapper::from(inner_ref.iter().copied())
                     })
                 }
@@ -384,7 +384,7 @@ mod custom_oracle_factories {
             }
         }
 
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -392,7 +392,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(MaliciousTxFormatResponder::new(
@@ -405,6 +405,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -419,7 +420,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -439,8 +441,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -580,7 +582,7 @@ mod custom_oracle_factories {
         ];
     }
 
-    impl<M: MemorySource> OracleQueryProcessor<M> for MaliciousPreimageResponder {
+    impl OracleQueryProcessor for MaliciousPreimageResponder {
         fn supported_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
@@ -593,7 +595,7 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
 
@@ -636,7 +638,7 @@ mod custom_oracle_factories {
                 let len = preimage.len() as u32;
                 DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }
@@ -653,7 +655,7 @@ mod custom_oracle_factories {
             Self { blocked_hashes }
         }
 
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -661,7 +663,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(
@@ -681,6 +683,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -695,7 +698,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -715,8 +719,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -797,7 +801,7 @@ mod custom_oracle_factories {
         ];
     }
 
-    impl<S: rig::forward_system::run::ReadStorage, M: MemorySource> OracleQueryProcessor<M>
+    impl<S: rig::forward_system::run::ReadStorage> OracleQueryProcessor
         for MaliciousAccountStorageResponder<S>
     {
         fn supported_query_ids(&self) -> Vec<u32> {
@@ -812,7 +816,7 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
             use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
@@ -860,7 +864,7 @@ mod custom_oracle_factories {
     struct MaliciousAccountStorageOracleFactory;
 
     impl MaliciousAccountStorageOracleFactory {
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -868,7 +872,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(
@@ -885,6 +889,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -899,7 +904,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -919,8 +925,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -992,7 +998,7 @@ mod custom_oracle_factories {
         ];
     }
 
-    impl<M: MemorySource> OracleQueryProcessor<M> for MaliciousTxDataCorruptResponder {
+    impl OracleQueryProcessor for MaliciousTxDataCorruptResponder {
         fn supported_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
@@ -1005,7 +1011,7 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             _query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
@@ -1039,7 +1045,7 @@ mod custom_oracle_factories {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref| {
+                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
                         ReadIterWrapper::from(inner_ref.iter().copied())
                     })
                 }
@@ -1062,7 +1068,7 @@ mod custom_oracle_factories {
     struct MaliciousTxDataCorruptOracleFactory;
 
     impl MaliciousTxDataCorruptOracleFactory {
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -1070,7 +1076,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(MaliciousTxDataCorruptResponder::new(tx_source));
@@ -1080,6 +1086,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -1094,7 +1101,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1114,8 +1122,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1182,11 +1190,11 @@ mod custom_oracle_factories {
     /// even when they are actually new. This tests whether the system handles incorrect
     /// is_new_storage_slot flags — in forward mode this may silently corrupt pubdata
     /// accounting, but should not crash.
-    struct FalseExistingSlotResponder<S: rig::forward_system::run::ReadStorage> {
+    struct FalseExistingSlotResponder<S: rig::forward_system::run::ReadStorageTree> {
         storage: S,
     }
 
-    impl<S: rig::forward_system::run::ReadStorage> FalseExistingSlotResponder<S> {
+    impl<S: rig::forward_system::run::ReadStorageTree> FalseExistingSlotResponder<S> {
         fn new(storage: S) -> Self {
             Self { storage }
         }
@@ -1195,10 +1203,13 @@ mod custom_oracle_factories {
             rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery::<
                 rig::zk_ee::types_config::EthereumIOTypesConfig,
             >::QUERY_ID,
+            rig::basic_system::system_implementation::flat_storage_model::PreviousIndexQuery::QUERY_ID,
+            rig::basic_system::system_implementation::flat_storage_model::ExactIndexQuery::QUERY_ID,
+            rig::basic_system::system_implementation::flat_storage_model::PROOF_FOR_INDEX_QUERY_ID,
         ];
     }
 
-    impl<S: rig::forward_system::run::ReadStorage, M: MemorySource> OracleQueryProcessor<M>
+    impl<S: rig::forward_system::run::ReadStorageTree> OracleQueryProcessor
         for FalseExistingSlotResponder<S>
     {
         fn supported_query_ids(&self) -> Vec<u32> {
@@ -1213,8 +1224,11 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            use rig::basic_system::system_implementation::flat_storage_model::{
+                ExactIndexQuery, PreviousIndexQuery, PROOF_FOR_INDEX_QUERY_ID,
+            };
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
             use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
             use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
@@ -1222,32 +1236,68 @@ mod custom_oracle_factories {
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let StorageAddress { address, key } =
-                <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter(),
-                )
-                .expect("must deserialize the address/slot");
+            match query_id {
+                _ if query_id == InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
+                    let StorageAddress { address, key } = <InitialStorageSlotQuery<
+                        EthereumIOTypesConfig,
+                    > as SimpleOracleQuery>::Input::from_iter(
+                        &mut query.into_iter()
+                    )
+                    .expect("must deserialize the address/slot");
 
-            let flat_key = rig::zk_ee::common_structs::derive_flat_storage_key(&address, &key);
+                    let flat_key =
+                        rig::zk_ee::common_structs::derive_flat_storage_key(&address, &key);
 
-            let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
-                if let Some(cold) = self.storage.read(flat_key) {
-                    InitialStorageSlotData {
-                        initial_value: cold,
-                        is_new_storage_slot: false,
-                    }
-                } else {
-                    // MALICIOUS: claim this new slot already exists with zero value.
-                    // This bypasses the "Initial value of empty slot must be trivial"
-                    // check (which only fires when is_new=true) and may corrupt
-                    // pubdata accounting.
-                    InitialStorageSlotData {
-                        initial_value: Bytes32::from_array([0; 32]),
-                        is_new_storage_slot: false, // Lie about slot existence
-                    }
-                };
+                    let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
+                        if let Some(cold) = self.storage.read(flat_key) {
+                            InitialStorageSlotData {
+                                initial_value: cold,
+                                is_new_storage_slot: false,
+                            }
+                        } else {
+                            // MALICIOUS: claim this new slot already exists with zero value.
+                            InitialStorageSlotData {
+                                initial_value: Bytes32::from_array([0; 32]),
+                                is_new_storage_slot: false, // Lie about slot existence
+                            }
+                        };
 
-            DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                    DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                }
+                _ if query_id == PreviousIndexQuery::QUERY_ID => {
+                    let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                        &mut query.into_iter(),
+                    )
+                    .expect("must deserialize key");
+                    let prev_index = self.storage.prev_tree_index(key);
+                    DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
+                }
+                _ if query_id == ExactIndexQuery::QUERY_ID => {
+                    let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                        &mut query.into_iter(),
+                    )
+                    .expect("must deserialize key");
+                    let index = self
+                        .storage
+                        .tree_index(key)
+                        .expect("Reading index for key that is not in the tree");
+                    DynUsizeIterator::from_constructor(index, UsizeSerializable::iter)
+                }
+                _ if query_id == PROOF_FOR_INDEX_QUERY_ID => {
+                    use rig::basic_system::system_implementation::flat_storage_model::{
+                        ExistingReadProof, ValueAtIndexProof,
+                    };
+                    let index =
+                        u64::from_iter(&mut query.into_iter()).expect("must deserialize index");
+                    let proof = ValueAtIndexProof {
+                        proof: ExistingReadProof {
+                            existing: self.storage.merkle_proof(index),
+                        },
+                    };
+                    DynUsizeIterator::from_constructor(proof, UsizeSerializable::iter)
+                }
+                _ => unreachable!(),
+            }
         }
     }
 
@@ -1255,7 +1305,7 @@ mod custom_oracle_factories {
     struct FalseExistingSlotOracleFactory;
 
     impl FalseExistingSlotOracleFactory {
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -1263,7 +1313,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(
@@ -1280,6 +1330,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -1294,7 +1345,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1314,8 +1366,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1327,15 +1379,15 @@ mod custom_oracle_factories {
         }
     }
 
-    /// Verifies that a malicious oracle claiming all new slots are existing (is_new=false)
-    /// does not crash the system in forward mode. The wrong is_new flag corrupts pubdata
-    /// accounting (a concern for proving mode), but forward execution should still complete.
-    /// This test documents the forward-mode behavior for this attack vector.
+    /// Verifies that a malicious oracle claiming new slots are existing (is_new=false)
+    /// is caught by the tree index lookup. In draft-0.4.0, the flat storage model
+    /// validates the is_new claim by looking up the tree index — if the key is not in
+    /// the tree but was reported as existing, the lookup panics.
     ///
-    /// Forward-only: The custom oracle factory only overrides the storage slot responder
-    /// and does not handle tree-index queries needed by the RISC-V proving path.
+    /// Forward-only: Uses the custom oracle factory with full tree-index support.
     #[test]
-    fn test_malicious_oracle_false_existing_slot_does_not_crash() {
+    #[should_panic(expected = "expected existing leaf for key")]
+    fn test_malicious_oracle_false_existing_slot_detected() {
         let mut tester = TestingFramework::new().with_run_config(rig::run_config::forward_only());
         let wallet = tester.random_signer();
 
@@ -1369,14 +1421,9 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // In forward mode, the false is_new flag should not cause a crash.
-        // The system trusts the oracle response and proceeds (pubdata accounting
-        // would be wrong, but this is caught in proving mode by Merkle proofs).
-        let result = tester.execute_block_no_panic(vec![tx]);
-        assert!(
-            result.is_ok(),
-            "Forward mode should not crash with false is_new flag — proving mode catches this"
-        );
+        // The false is_new flag is caught by the tree index lookup — the tree doesn't
+        // have the key, so the lookup panics with "expected existing leaf for key".
+        let _result = tester.execute_block(vec![tx]);
     }
 
     // ---- Corrupted preimage responder: returns wrong bytes for targeted hashes ----
@@ -1414,7 +1461,7 @@ mod custom_oracle_factories {
         ];
     }
 
-    impl<M: MemorySource> OracleQueryProcessor<M> for CorruptedPreimageResponder {
+    impl OracleQueryProcessor for CorruptedPreimageResponder {
         fn supported_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
@@ -1427,7 +1474,7 @@ mod custom_oracle_factories {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            _memory: &M,
+            _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
 
@@ -1468,7 +1515,7 @@ mod custom_oracle_factories {
                 let len = preimage.len() as u32;
                 DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }
@@ -1485,7 +1532,7 @@ mod custom_oracle_factories {
             Self { corrupted_hashes }
         }
 
-        fn build_oracle<M: MemorySource + 'static>(
+        fn build_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
             state_tree: InMemoryTree<false>,
@@ -1493,7 +1540,7 @@ mod custom_oracle_factories {
             tx_source: TxListSource,
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
-        ) -> ZkEENonDeterminismSource<M> {
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(
@@ -1513,6 +1560,7 @@ mod custom_oracle_factories {
             oracle.add_external_processor(DACommitmentSchemeResponder {
                 da_commitment_scheme,
             });
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -1527,7 +1575,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1547,8 +1596,8 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             self.build_oracle(
                 block_metadata,
                 state_tree,
@@ -1622,15 +1671,14 @@ mod callable_oracle_tests {
     //! operations directly without querying callable oracles.
     //!
     //! These tests validate the callable oracle processors themselves using
-    //! VectorMemoryImpl, which allows testing the full oracle query path (memory read,
-    //! computation, response serialization) without RISC-V simulation. A malicious
-    //! oracle factory integration test is included to demonstrate the custom factory
-    //! pattern for callable oracle testing.
+    //! a TestMemorySource (BTreeMap-based RamPeek impl), which allows testing
+    //! the full oracle query path (memory read, computation, response serialization)
+    //! without RISC-V simulation. A malicious oracle factory integration test is
+    //! included to demonstrate the custom factory pattern for callable oracle testing.
 
     use rig::callable_oracles::arithmetic::ArithmeticQuery;
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
-    use rig::oracle_provider::OracleQueryProcessor;
-    use rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl;
+    use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
 
     use rig::alloy::consensus::TxEip2930;
     use rig::alloy::primitives::{TxKind, U256};
@@ -1644,29 +1692,43 @@ mod callable_oracle_tests {
         ReadTreeResponder, TxDataResponder, ZKProofDataResponder,
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-    use rig::oracle_provider::{MemorySource, ZkEENonDeterminismSource};
+    use rig::oracle_provider::ZkEENonDeterminismSource;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zksync_os_interface::traits::TxListSource;
     use rig::{common_target_address, TestingFramework};
+    use std::collections::BTreeMap;
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+    /// Simple BTreeMap-based memory source for testing oracle query processors.
+    /// Replaces the removed VectorMemoryImpl.
+    #[derive(Default)]
+    struct TestMemorySource {
+        words: BTreeMap<u32, u32>,
+    }
+
+    impl TestMemorySource {
+        fn populate(&mut self, address: u32, value: u32) {
+            assert!(address.is_multiple_of(4));
+            self.words.insert(address, value);
+        }
+    }
+
+    impl RamPeek for TestMemorySource {
+        fn peek_word(&self, address: u32) -> u32 {
+            self.words.get(&address).copied().unwrap_or(0)
+        }
+    }
 
     /// A malicious arithmetic oracle that returns deliberately wrong division results.
     /// When queried for modexp advice, it corrupts the quotient by adding 1 to each word,
     /// which will cause the verification step (q * modulus + r == dividend) to fail.
-    struct MaliciousArithmeticQuery<M: MemorySource> {
-        inner: ArithmeticQuery<M>,
+    #[derive(Default)]
+    struct MaliciousArithmeticQuery {
+        inner: ArithmeticQuery,
     }
 
-    impl<M: MemorySource> Default for MaliciousArithmeticQuery<M> {
-        fn default() -> Self {
-            Self {
-                inner: ArithmeticQuery::default(),
-            }
-        }
-    }
-
-    impl<M: MemorySource> OracleQueryProcessor<M> for MaliciousArithmeticQuery<M> {
+    impl OracleQueryProcessor for MaliciousArithmeticQuery {
         fn supported_query_ids(&self) -> Vec<u32> {
             self.inner.supported_query_ids()
         }
@@ -1675,7 +1737,7 @@ mod callable_oracle_tests {
             &mut self,
             query_id: u32,
             query: Vec<usize>,
-            memory: &M,
+            memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             // Get the correct result first
             let correct: Vec<usize> = self
@@ -1709,7 +1771,8 @@ mod callable_oracle_tests {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(TxDataResponder {
@@ -1725,9 +1788,8 @@ mod callable_oracle_tests {
                 da_commitment_scheme,
             });
             // Register malicious arithmetic oracle — not queried in forward mode
-            oracle.add_external_processor(MaliciousArithmeticQuery::<
-                rig::oracle_provider::DummyMemorySource,
-            >::default());
+            oracle.add_external_processor(MaliciousArithmeticQuery::default());
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
 
@@ -1740,8 +1802,8 @@ mod callable_oracle_tests {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-        {
+            _use_native_callable_oracles: bool,
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(BlockMetadataResponder { block_metadata });
             oracle.add_external_processor(TxDataResponder {
@@ -1757,9 +1819,8 @@ mod callable_oracle_tests {
                 da_commitment_scheme,
             });
             // Register malicious arithmetic oracle — WILL be queried in RISC-V mode
-            oracle.add_external_processor(MaliciousArithmeticQuery::<
-                rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl,
-            >::default());
+            oracle.add_external_processor(MaliciousArithmeticQuery::default());
+            oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
             oracle
         }
     }
@@ -1772,9 +1833,8 @@ mod callable_oracle_tests {
         let params_addr: u32 = 0x100;
         let a_addr: u32 = 0x200;
         let m_addr: u32 = 0x400;
-        let mem_bytes = 0x800;
 
-        let mut memory = VectorMemoryImpl::new_for_byte_size(mem_bytes);
+        let mut memory = TestMemorySource::default();
 
         // ModExpAdviceParams: 10 / 3
         memory.populate(params_addr, 0); // op
@@ -1791,13 +1851,13 @@ mod callable_oracle_tests {
         memory.populate(m_addr, 3);
 
         // Get correct result
-        let mut correct_oracle = ArithmeticQuery::<VectorMemoryImpl>::default();
+        let mut correct_oracle = ArithmeticQuery::default();
         let correct: Vec<usize> = correct_oracle
             .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
             .collect();
 
         // Get malicious result
-        let mut malicious_oracle = MaliciousArithmeticQuery::<VectorMemoryImpl>::default();
+        let mut malicious_oracle = MaliciousArithmeticQuery::default();
         let malicious: Vec<usize> = malicious_oracle
             .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
             .collect();
