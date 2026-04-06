@@ -4,12 +4,14 @@ mod tests {
 
     use prover::{cs::machine::Machine, field::Mersenne31Field};
 
-    fn read_text_section(app: &str) -> Vec<u32> {
+    fn read_text_section(app_dist_path: &str) -> Vec<u32> {
         let mut binary = vec![];
 
         let zksync_os_path =
             std::env::var("ZKSYNC_OS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
-        let file_path = PathBuf::from_str(&zksync_os_path).unwrap().join(app);
+        let file_path = PathBuf::from_str(&zksync_os_path)
+            .unwrap()
+            .join(app_dist_path);
         let mut file = std::fs::File::open(file_path).unwrap();
         file.read_to_end(&mut binary).unwrap();
         assert!(binary.len() % 4 == 0);
@@ -41,7 +43,7 @@ mod tests {
     #[test]
     #[ignore = "runs only on CI / explicit opt-in"]
     fn verify_default_binaries() {
-        verify_binary("singleblock_batch.text");
-        verify_binary("multiblock_batch.text")
+        verify_binary("dist/singleblock_batch/app.text");
+        verify_binary("dist/multiblock_batch/app.text")
     }
 }

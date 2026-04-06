@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking}"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf}"
 TYPE=""
 
 # Parse --type argument
@@ -27,69 +27,52 @@ FEATURES="proving"
 case "$TYPE" in
   singleblock-batch)
     FEATURES="$FEATURES,production"
-    BIN_NAME="singleblock_batch.bin"
-    ELF_NAME="singleblock_batch.elf"
-    TEXT_NAME="singleblock_batch.text"
+    APP_NAME="singleblock_batch"
     ;;
   singleblock-batch-logging-enabled)
     FEATURES="$FEATURES,production,print_debug_info"
-    BIN_NAME="singleblock_batch_logging_enabled.bin"
-    ELF_NAME="singleblock_batch_logging_enabled.elf"
-    TEXT_NAME="singleblock_batch_logging_enabled.text"
+    APP_NAME="singleblock_batch_logging_enabled"
     ;;
   multiblock-batch)
     FEATURES="$FEATURES,production,multiblock-batch"
-    BIN_NAME="multiblock_batch.bin"
-    ELF_NAME="multiblock_batch.elf"
-    TEXT_NAME="multiblock_batch.text"
+    APP_NAME="multiblock_batch"
     ;;
   multiblock-batch-logging-enabled)
     FEATURES="$FEATURES,production,multiblock-batch,print_debug_info"
-    BIN_NAME="multiblock_batch_logging_enabled.bin"
-    ELF_NAME="multiblock_batch_logging_enabled.elf"
-    TEXT_NAME="multiblock_batch_logging_enabled.text"
+    APP_NAME="multiblock_batch_logging_enabled"
     ;;
   for-tests)
     FEATURES="$FEATURES,for_tests"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests"
     ;;
   for-tests-benchmarking)
     FEATURES="$FEATURES,for_tests,benchmarking"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests"
     ;;
   for-tests-logging-enabled)
     FEATURES="$FEATURES,for_tests,print_debug_info"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests"
     ;;
   evm-replay)
     FEATURES="$FEATURES,eth_runner"
-    BIN_NAME="evm_replay.bin"
-    ELF_NAME="evm_replay.elf"
-    TEXT_NAME="evm_replay.text"
+    APP_NAME="evm_replay"
     ;;
   eth-stf)
     FEATURES="$FEATURES,eth_runner,eth_stf"
-    BIN_NAME="eth_stf.bin"
-    ELF_NAME="eth_stf.elf"
-    TEXT_NAME="eth_stf.text"
+    APP_NAME="eth_stf"
     ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,eth_runner,benchmarking"
-    BIN_NAME="evm_replay.bin"
-    ELF_NAME="evm_replay.elf"
-    TEXT_NAME="evm_replay.text"
+    APP_NAME="evm_replay"
     ;;
   evm-tester)
     FEATURES="$FEATURES,evm_tester"
-    BIN_NAME="evm_tester.bin"
-    ELF_NAME="evm_tester.elf"
-    TEXT_NAME="evm_tester.text"
+    APP_NAME="evm_tester"
+    ;;
+  "")
+    echo "Missing --type argument"
+    echo "$USAGE"
+    exit 2
     ;;
   *)
     echo "Invalid --type: $TYPE"
@@ -98,19 +81,22 @@ case "$TYPE" in
     ;;
 esac
 
-# Clean up only the artifacts for this mode
-rm -f "$BIN_NAME" "$ELF_NAME" "$TEXT_NAME"
+DIST_DIR="dist/$APP_NAME"
+
+# Clean up previous artifacts for this app
+rm -rf "$DIST_DIR"
+mkdir -p "$DIST_DIR"
 
 # Build
 cargo build --features "$FEATURES" --release
 
-# Produce and rename outputs
-cargo objcopy --features "$FEATURES" --release -- -O binary "$BIN_NAME"
-cargo objcopy --features "$FEATURES" --release -- -R .text "$ELF_NAME"
-cargo objcopy --features "$FEATURES" --release -- -O binary --only-section=.text "$TEXT_NAME"
+# Produce outputs into dist/<app>/
+cargo objcopy --features "$FEATURES" --release -- -O binary "$DIST_DIR/app.bin"
+cargo objcopy --features "$FEATURES" --release -- -R .text "$DIST_DIR/app.elf"
+cargo objcopy --features "$FEATURES" --release -- -O binary --only-section=.text "$DIST_DIR/app.text"
 
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"
-echo "→ $BIN_NAME"
-echo "→ $ELF_NAME"
-echo "→ $TEXT_NAME"
+echo "-> $DIST_DIR/app.bin"
+echo "-> $DIST_DIR/app.elf"
+echo "-> $DIST_DIR/app.text"

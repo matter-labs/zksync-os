@@ -12,7 +12,7 @@ pub fn run_naive_test() {
     use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
     let non_determinism_source = QuasiUARTSource::default();
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/app_native_blake.bin".into(),
+        "src/blake2s/test_program/dist/app_native_blake/app.bin".into(),
         1 << 25,
         non_determinism_source,
     );
@@ -25,7 +25,7 @@ pub fn run_extended_delegation_test() {
     use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
     let non_determinism_source = QuasiUARTSource::default();
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/app_extended_delegation_blake.bin".into(),
+        "src/blake2s/test_program/dist/app_extended_delegation_blake/app.bin".into(),
         1 << 25,
         non_determinism_source,
     );

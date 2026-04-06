@@ -84,7 +84,9 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
 
     let multinblock_program_path = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
         .join("zksync_os")
-        .join("multiblock_batch.bin");
+        .join("dist")
+        .join("multiblock_batch")
+        .join("app.bin");
 
     let proof_output = zksync_os_runner::run(
         multinblock_program_path,
