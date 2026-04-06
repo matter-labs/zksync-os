@@ -91,4 +91,22 @@ pub enum Step {
         #[serde(default)]
         value: Option<String>,
     },
+    /// Send raw bytecode/calldata — for cases unreachable via Solidity.
+    #[serde(rename = "send_raw")]
+    SendRaw {
+        /// Target address (hex, named account, or "$deployed:N"). Omit for CREATE.
+        #[serde(default)]
+        to: Option<String>,
+        /// Account name for the sender.
+        from: String,
+        /// Raw hex data (deployment bytecode or calldata).
+        #[serde(default)]
+        data: Option<String>,
+        /// Gas limit override.
+        #[serde(default)]
+        gas: Option<u64>,
+        /// ETH value to send (decimal wei).
+        #[serde(default)]
+        value: Option<String>,
+    },
 }

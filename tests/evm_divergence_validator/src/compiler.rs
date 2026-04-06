@@ -85,7 +85,10 @@ fn find_artifact(out_dir: &Path, contract_name: &str) -> anyhow::Result<Compiled
     let target = format!("{contract_name}.json");
 
     for entry in walkdir(out_dir)? {
-        if entry.file_name().is_some_and(|n| n == target.as_str()) {
+        if entry
+            .file_name()
+            .is_some_and(|n| n == std::ffi::OsStr::new(&target))
+        {
             let content = std::fs::read_to_string(&entry)?;
             return parse_forge_artifact(&content, contract_name);
         }

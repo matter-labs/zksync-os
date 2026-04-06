@@ -6,6 +6,7 @@ mod report;
 mod runner;
 mod scenario;
 
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process;
 
@@ -18,7 +19,7 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
-        eprintln!("Usage: evm-divergence-validator <scenario.yaml>");
+        eprintln!("Usage: evm-divergence-validator <scenario.yaml|json>");
         eprintln!();
         eprintln!("Executes a scenario on ZKsync OS and REVM, reports divergences.");
         eprintln!();
@@ -33,16 +34,15 @@ fn main() {
             let json = serde_json::to_string_pretty(&report).expect("failed to serialize report");
             println!("{json}");
             match report.status.as_str() {
-                "match" => process::exit(0),
-                "divergence" => process::exit(1),
+                report::STATUS_MATCH => process::exit(0),
+                report::STATUS_DIVERGENCE => process::exit(1),
                 _ => process::exit(2),
             }
         }
         Err(err) => {
             let report = report::Report {
-                status: "error".to_string(),
+                status: report::STATUS_ERROR.to_string(),
                 steps: vec![],
-                state_diffs: None,
                 error: Some(format!("{err:#}")),
             };
             let json = serde_json::to_string_pretty(&report).expect("failed to serialize report");
@@ -58,7 +58,7 @@ fn run(scenario_path: &PathBuf) -> anyhow::Result<report::Report> {
 
     let is_yaml = scenario_path
         .extension()
-        .is_some_and(|ext| ext == "yaml" || ext == "yml");
+        .is_some_and(|ext| ext == OsStr::new("yaml") || ext == OsStr::new("yml"));
 
     let scenario: scenario::Scenario = if is_yaml {
         serde_yaml::from_str(&content).context("failed to parse scenario YAML")?

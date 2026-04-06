@@ -524,6 +524,16 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.last_executed_block_info.as_ref()
     }
 
+    /// Returns a reference to the underlying chain state.
+    pub fn chain(&self) -> &Chain<RANDOMIZED_TREE> {
+        &self.chain
+    }
+
+    /// Returns the block context that will be used for the next block execution.
+    pub fn block_context(&self) -> Option<&BlockContext> {
+        self.block_context.as_ref()
+    }
+
     /// Builds and executes an ERC20 transfer block using default fee settings.
     pub fn run_block_of_erc20(
         &mut self,

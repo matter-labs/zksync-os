@@ -6,11 +6,13 @@ use alloy::primitives::{Address, TxKind, U256 as AlloyU256};
 use alloy::signers::local::PrivateKeySigner;
 use anyhow::{bail, Context};
 use rig::chain::RunConfig;
+use rig::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 use rig::TestingFramework;
+use zksync_os_revm_runner::revm_runner::RevmRunner;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::compiler::CompiledContract;
-use crate::report::{Report, StepResult};
+use crate::report::{Report, StepResult, STATUS_DIVERGENCE, STATUS_ERROR, STATUS_MATCH};
 use crate::scenario::{BlockDef, Scenario, Step};
 
 const CHAIN_ID: u64 = 37;
@@ -30,8 +32,9 @@ pub fn run_scenario(
     // Also create signers for any "from" references not in accounts.
     for step in &scenario.steps {
         let from = match step {
-            Step::Deploy { from, .. } => from,
-            Step::Call { from, .. } => from,
+            Step::Deploy { from, .. } | Step::Call { from, .. } | Step::SendRaw { from, .. } => {
+                from
+            }
         };
         signers
             .entry(from.clone())
@@ -39,12 +42,8 @@ pub fn run_scenario(
     }
 
     // Set up the testing framework.
-    // Enable REVM consistency check with independent gas computation.
-    // Combined with the `unlimited_native` feature, this makes ZKsync OS
-    // gas accounting equivalent to standard EVM, enabling true gas comparison.
-    let mut run_config = RunConfig::without_riscv_run();
-    run_config.enable_revm_consistency_check();
-    run_config.revm_independent_gas = true;
+    // Disable the built-in REVM check — we run it ourselves to get structured results.
+    let run_config = RunConfig::without_riscv_run();
 
     let mut tester = TestingFramework::new().with_run_config(run_config);
 
@@ -58,7 +57,6 @@ pub fn run_scenario(
     // Ensure all senders have at least some balance.
     for (name, signer) in &signers {
         if !scenario.accounts.contains_key(name) {
-            // Default fund so they can pay gas.
             tester.set_balance(
                 signer.address(),
                 ruint::aliases::U256::from(1_000_000_000_000_000_u64),
@@ -96,7 +94,6 @@ pub fn run_scenario(
                 let nonce = nonces.entry(from.clone()).or_insert(0);
                 let deploy_addr = signer.address().create(*nonce);
 
-                // Encode constructor args if any.
                 let mut init_code = artifact.bytecode.clone();
                 if !args.is_empty() {
                     let constructor = artifact.abi.constructor().with_context(|| {
@@ -142,9 +139,7 @@ pub fn run_scenario(
                 let nonce = nonces.entry(from.clone()).or_insert(0);
 
                 let target = resolve_address(to, &deployed_addresses, &signers)?;
-
-                // Encode function call.
-                let calldata = encode_function_call(function, args, artifacts)?;
+                let calldata = encode_function_call(function, args)?;
 
                 let value = match value {
                     Some(v) => parse_alloy_u256(v)?,
@@ -167,47 +162,118 @@ pub fn run_scenario(
                 step_descriptions.push(format!("call {function} on {target}"));
                 *nonce += 1;
             }
+            Step::SendRaw {
+                to,
+                from,
+                data,
+                gas,
+                value,
+            } => {
+                let signer = signers
+                    .get(from)
+                    .with_context(|| format!("unknown sender '{from}'"))?;
+                let nonce = nonces.entry(from.clone()).or_insert(0);
+
+                let to_kind = match to {
+                    Some(addr) => {
+                        let target = resolve_address(addr, &deployed_addresses, &signers)?;
+                        TxKind::Call(target)
+                    }
+                    None => TxKind::Create,
+                };
+
+                let raw_data = data
+                    .as_deref()
+                    .map(|d| {
+                        let d = d.strip_prefix("0x").unwrap_or(d);
+                        hex::decode(d).context("invalid hex in 'data' field")
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+
+                let value = match value {
+                    Some(v) => parse_alloy_u256(v)?,
+                    None => AlloyU256::ZERO,
+                };
+
+                let tx = TxEip1559 {
+                    chain_id: CHAIN_ID,
+                    nonce: *nonce,
+                    max_fee_per_gas: DEFAULT_MAX_FEE,
+                    max_priority_fee_per_gas: DEFAULT_PRIORITY_FEE,
+                    gas_limit: gas.unwrap_or(DEFAULT_GAS_LIMIT),
+                    to: to_kind,
+                    value,
+                    access_list: Default::default(),
+                    input: raw_data.into(),
+                };
+
+                let desc = match to {
+                    Some(addr) => format!("send_raw to {addr}"),
+                    None => "send_raw CREATE".to_string(),
+                };
+
+                transactions.push(ZKsyncTxEnvelope::from_eth_tx(tx, signer.clone()));
+                step_descriptions.push(desc);
+                if to.is_none() {
+                    deployed_addresses.push(signer.address().create(*nonce));
+                }
+                *nonce += 1;
+            }
         }
     }
 
-    // Execute block.
-    let result = tester.execute_block_no_panic(transactions);
+    // Snapshot pre-block state for REVM replay.
+    let pre_block_chain = tester.chain().clone();
+    let block_context = tester.block_context().cloned().unwrap_or_default();
 
-    // Build report.
+    // Execute block on ZKsync OS (without built-in REVM check).
+    let block_output = match tester.execute_block_no_panic(transactions.clone()) {
+        Ok(output) => output,
+        Err(err) => {
+            return Ok(Report {
+                status: STATUS_ERROR.to_string(),
+                steps: Vec::new(),
+                error: Some(format!("{err:?}")),
+            });
+        }
+    };
+
+    // Build per-step results.
+    let mut steps = Vec::new();
+    for (i, desc) in step_descriptions.iter().enumerate() {
+        let tx_result = block_output.tx_results.get(i);
+        let (success, gas_used) = match tx_result {
+            Some(Ok(output)) => (output.is_success(), Some(output.gas_used)),
+            Some(Err(_)) => (false, None),
+            None => (false, None),
+        };
+        steps.push(StepResult {
+            description: desc.clone(),
+            success,
+            gas_used,
+        });
+    }
+
+    // Run REVM with independent gas (no gas_used override from ZKsync OS).
+    let block_context_interface =
+        generate_block_context_interface(&pre_block_chain, &block_context);
+    let mut revm_runner = RevmRunner::new(ChainStateView {
+        chain: pre_block_chain,
+    })
+    .with_independent_gas(true);
+
+    let revm_result = revm_runner.run(transactions, block_context_interface, Some(block_output));
+
     let mut report = Report {
-        status: "match".to_string(),
-        steps: Vec::new(),
-        state_diffs: None,
+        status: STATUS_MATCH.to_string(),
+        steps,
         error: None,
     };
 
-    match result {
-        Ok(block_output) => {
-            for (i, desc) in step_descriptions.iter().enumerate() {
-                let tx_result = block_output.tx_results.get(i);
-                let (success, gas_used) = match tx_result {
-                    Some(Ok(output)) => (output.is_success(), Some(output.gas_used)),
-                    Some(Err(_)) => (false, None),
-                    None => (false, None),
-                };
-                report.steps.push(StepResult {
-                    description: desc.clone(),
-                    success,
-                    gas_used,
-                });
-            }
-            report.status = "match".to_string();
-        }
-        Err(err) => {
-            let err_str = format!("{err:?}");
-            if err_str.contains("REVM consistency") {
-                report.status = "divergence".to_string();
-                report.error = Some(err_str);
-            } else {
-                report.status = "execution_error".to_string();
-                report.error = Some(err_str);
-            }
-        }
+    if let Err(err) = revm_result {
+        report.status = STATUS_DIVERGENCE.to_string();
+        report.error = Some(format!("{err:#}"));
     }
 
     Ok(report)
@@ -243,17 +309,11 @@ fn resolve_address(
 }
 
 /// Encode function call from a signature like "transfer(address,uint256)" and JSON args.
-fn encode_function_call(
-    sig: &str,
-    args: &[serde_json::Value],
-    _artifacts: &HashMap<String, CompiledContract>,
-) -> anyhow::Result<Vec<u8>> {
-    // Parse the function signature to get selector and param types.
+fn encode_function_call(sig: &str, args: &[serde_json::Value]) -> anyhow::Result<Vec<u8>> {
     let func = alloy::json_abi::Function::parse(sig)
         .with_context(|| format!("failed to parse function signature: {sig}"))?;
 
     let selector = func.selector();
-
     let encoded_args = encode_args(&func.inputs, args)?;
 
     let mut calldata = Vec::with_capacity(4 + encoded_args.len());

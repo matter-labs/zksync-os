@@ -9,17 +9,21 @@ CLI tool that checks whether a given scenario produces different results on ZKsy
 
 ## Prerequisites
 
-- [Foundry](https://getfoundry.sh/) (`forge`) must be on PATH for Solidity compilation.
+- [Foundry](https://getfoundry.sh/) (`forge`) must be on PATH for Solidity compilation (not needed for `send_raw` steps with pre-compiled bytecode).
 
 ## Usage
 
 ```bash
-cargo run -p evm_divergence_validator -- scenario.yaml
+# Build and run from the crate directory
+cd tests/evm_divergence_validator
+cargo run -- path/to/scenario.yaml
 
 # or build once and run directly
-cargo build -p evm_divergence_validator --release
+cargo build --release
 ./target/release/evm-divergence-validator scenario.yaml
 ```
+
+Note: this crate is excluded from the workspace (to avoid feature leakage), so `cargo run -p` from the repo root won't work. Run from its own directory instead.
 
 Accepts `.yaml`/`.yml` (recommended) and `.json` files.
 
@@ -81,6 +85,8 @@ Each entry maps a contract name to its source. Two options:
 
 The contract name must match the Solidity `contract` name (forge uses it to locate the artifact).
 
+The `contracts` section can be omitted entirely when using only `send_raw` steps with pre-compiled bytecode.
+
 ### Accounts
 
 Named accounts with a pre-funded `balance` (in wei, decimal or `0x`-prefixed hex). Any `from` name referenced in steps that isn't listed here gets a default balance sufficient for gas.
@@ -95,7 +101,7 @@ Named accounts with a pre-funded `balance` (in wei, decimal or `0x`-prefixed hex
 
 ### Steps
 
-All steps execute as transactions within a single block. Two types:
+All steps execute as transactions within a single block. Three types:
 
 **deploy** — deploys a compiled contract via CREATE.
 
@@ -118,14 +124,24 @@ All steps execute as transactions within a single block. Two types:
 | `gas` | no | Gas limit (default: 5000000) |
 | `value` | no | ETH value in wei |
 
+**send_raw** — sends raw bytecode/calldata directly. Use for cases unreachable via Solidity.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `to` | no | Target (omit for CREATE) |
+| `from` | yes | Sender account name |
+| `data` | no | Raw hex data (deployment bytecode or calldata) |
+| `gas` | no | Gas limit (default: 5000000) |
+| `value` | no | ETH value in wei |
+
 The `to` field accepts:
-- `"$deployed:N"` — address from the Nth deploy step (0-indexed)
+- `"$deployed:N"` — address from the Nth deploy/send_raw(CREATE) step (0-indexed)
 - A named account from `accounts`
 - A hex address like `"0x1234..."`
 
 ## Output
 
-Structured JSON to stdout:
+Structured JSON to stdout. Status is one of `"match"`, `"divergence"`, or `"error"`.
 
 ```json
 {
@@ -145,7 +161,7 @@ Structured JSON to stdout:
 }
 ```
 
-On divergence (`status: "divergence"`), the `error` field contains details about which storage slots or account fields differ between ZKsync OS and REVM.
+On divergence, the `error` field contains details about which storage slots, account fields, return data, or event logs differ.
 
 ## What it checks
 
@@ -157,7 +173,7 @@ The tool uses the existing REVM consistency checker from `tests/revm_runner/`, w
 - Account balance changes
 - Deployed bytecode changes
 
-**Per-transaction execution results:**
+**Per-transaction execution results** (when `independent_gas` is enabled):
 - Success/revert outcome
 - Return data
 - Event logs (address, topics, data)
@@ -165,5 +181,5 @@ The tool uses the existing REVM consistency checker from `tests/revm_runner/`, w
 ## Design notes
 
 - All steps run in a single block. Multi-block scenarios are not yet supported.
-- The tool enables `unlimited_native` and `independent_gas`, so ZKsync OS gas accounting is equivalent to standard EVM and gas is compared independently (no override from ZKsync OS to REVM).
+- The tool enables `unlimited_native` and `independent_gas`, so ZKsync OS gas accounting follows standard EVM rules and is not overridden from ZKsync OS to REVM. The validator reports `gas_used` per step, but does not treat per-transaction gas differences as a separate divergence check — gas differences surface through balance diffs in the state comparison.
 - The REVM side uses `zksync-os-revm` (adapted REVM), which accounts for ZKsync-specific behaviors (precompile differences, fee distribution, etc.). This is intentional — divergences caught here are real bugs, not known differences.

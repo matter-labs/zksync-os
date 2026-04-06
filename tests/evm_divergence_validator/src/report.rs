@@ -1,15 +1,16 @@
 use serde::Serialize;
 
+pub const STATUS_MATCH: &str = "match";
+pub const STATUS_DIVERGENCE: &str = "divergence";
+pub const STATUS_ERROR: &str = "error";
+
 #[derive(Debug, Serialize)]
 pub struct Report {
-    /// "match", "divergence", or "execution_error"
+    /// "match", "divergence", or "error"
     pub status: String,
     /// Per-transaction results from ZKsync OS execution.
     pub steps: Vec<StepResult>,
-    /// State diffs (only populated on divergence, when we can capture them).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_diffs: Option<serde_json::Value>,
-    /// Error message if execution or REVM check failed.
+    /// Error detail if status is "divergence" or "error".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
