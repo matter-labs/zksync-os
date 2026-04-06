@@ -76,16 +76,28 @@ steps:
 
 ### Contracts
 
-Each entry maps a contract name to its source. Two options:
+Each entry maps a contract name to its definition. Three modes:
 
-| Field | Description |
-|-------|-------------|
-| `source` | Inline Solidity source code |
-| `file` | Path to a `.sol` file, relative to the scenario file |
+| Fields | Description |
+|--------|-------------|
+| `source` | Inline Solidity source code (compiled via `forge build`) |
+| `file` | Path to a `.sol` file, relative to the scenario file (compiled via `forge build`) |
+| `bytecode` + `address` | Raw runtime bytecode predeployed at the given address (no compilation) |
 
-The contract name must match the Solidity `contract` name (forge uses it to locate the artifact).
+For Solidity contracts, the name must match the Solidity `contract` name (forge uses it to locate the artifact).
 
-The `contracts` section can be omitted entirely when using only `send_raw` steps with pre-compiled bytecode.
+Predeployed bytecode example:
+
+```yaml
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+```
+
+Steps can reference predeployed contracts by name in the `to` field (e.g. `to: Store`).
+
+The `contracts` section can be omitted entirely when using only `send_raw` steps.
 
 ### Accounts
 

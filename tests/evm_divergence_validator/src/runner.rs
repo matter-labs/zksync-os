@@ -64,6 +64,24 @@ pub fn run_scenario(
         }
     }
 
+    // Predeploy contracts with raw bytecode at specified addresses.
+    let mut predeployed_addresses: HashMap<String, Address> = HashMap::new();
+    for (name, def) in &scenario.contracts {
+        if let Some(ref bytecode_hex) = def.bytecode {
+            let addr_str = def.address.as_ref().with_context(|| {
+                format!("contract '{name}' has 'bytecode' but no 'address' for predeployment")
+            })?;
+            let addr: Address = addr_str
+                .parse()
+                .with_context(|| format!("invalid address for contract '{name}': {addr_str}"))?;
+            let hex_str = bytecode_hex.strip_prefix("0x").unwrap_or(bytecode_hex);
+            let bytecode = hex::decode(hex_str)
+                .with_context(|| format!("invalid bytecode hex for '{name}'"))?;
+            tester.set_evm_contract(addr, &bytecode);
+            predeployed_addresses.insert(name.clone(), addr);
+        }
+    }
+
     // Apply block context if specified.
     if let Some(ref block) = scenario.block {
         tester.set_block_context(Some(make_block_context(block)));
@@ -138,7 +156,8 @@ pub fn run_scenario(
                     .with_context(|| format!("unknown sender '{from}'"))?;
                 let nonce = nonces.entry(from.clone()).or_insert(0);
 
-                let target = resolve_address(to, &deployed_addresses, &signers)?;
+                let target =
+                    resolve_address(to, &deployed_addresses, &signers, &predeployed_addresses)?;
                 let calldata = encode_function_call(function, args)?;
 
                 let value = match value {
@@ -176,7 +195,12 @@ pub fn run_scenario(
 
                 let to_kind = match to {
                     Some(addr) => {
-                        let target = resolve_address(addr, &deployed_addresses, &signers)?;
+                        let target = resolve_address(
+                            addr,
+                            &deployed_addresses,
+                            &signers,
+                            &predeployed_addresses,
+                        )?;
                         TxKind::Call(target)
                     }
                     None => TxKind::Create,
@@ -279,11 +303,13 @@ pub fn run_scenario(
     Ok(report)
 }
 
-/// Resolve a target address from a string like "$deployed:0", a named account, or a hex address.
+/// Resolve a target address from a string like "$deployed:0", a contract name, a named account,
+/// or a hex address.
 fn resolve_address(
     target: &str,
     deployed: &[Address],
     signers: &HashMap<String, PrivateKeySigner>,
+    predeployed: &HashMap<String, Address>,
 ) -> anyhow::Result<Address> {
     if let Some(idx_str) = target.strip_prefix("$deployed:") {
         let idx: usize = idx_str
@@ -295,6 +321,8 @@ fn resolve_address(
                 deployed.len()
             )
         })
+    } else if let Some(addr) = predeployed.get(target) {
+        Ok(*addr)
     } else if let Some(signer) = signers.get(target) {
         Ok(signer.address())
     } else if target.starts_with("0x") || target.starts_with("0X") {
@@ -303,7 +331,7 @@ fn resolve_address(
             .with_context(|| format!("invalid address: {target}"))
     } else {
         bail!(
-            "cannot resolve target '{target}': not a $deployed ref, named account, or hex address"
+            "cannot resolve target '{target}': not a $deployed ref, contract name, named account, or hex address"
         );
     }
 }

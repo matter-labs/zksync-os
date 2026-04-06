@@ -20,7 +20,13 @@ pub fn compile_contracts(
     contracts: &HashMap<String, ContractDef>,
     scenario_dir: &Path,
 ) -> anyhow::Result<HashMap<String, CompiledContract>> {
-    if contracts.is_empty() {
+    // Filter to only contracts that need compilation (have source or file, not raw bytecode).
+    let to_compile: HashMap<&String, &ContractDef> = contracts
+        .iter()
+        .filter(|(_, def)| def.bytecode.is_none())
+        .collect();
+
+    if to_compile.is_empty() {
         return Ok(HashMap::new());
     }
 
@@ -36,7 +42,7 @@ pub fn compile_contracts(
     )?;
 
     // Write each contract source
-    for (name, def) in contracts {
+    for (name, def) in &to_compile {
         let source = if let Some(ref inline) = def.source {
             inline.clone()
         } else if let Some(ref file) = def.file {
@@ -69,10 +75,10 @@ pub fn compile_contracts(
     let out_dir = project_dir.join("out");
     let mut result = HashMap::new();
 
-    for name in contracts.keys() {
+    for name in to_compile.keys() {
         let artifact = find_artifact(&out_dir, name)
             .with_context(|| format!("failed to find artifact for contract '{name}'"))?;
-        result.insert(name.clone(), artifact);
+        result.insert((*name).clone(), artifact);
     }
 
     Ok(result)

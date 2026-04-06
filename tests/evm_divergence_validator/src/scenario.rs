@@ -31,6 +31,16 @@ pub struct ContractDef {
     #[serde(default)]
     pub file: Option<String>,
 
+    /// Raw hex runtime bytecode to predeploy at `address`.
+    /// When set, the contract is injected into state before execution
+    /// (no CREATE transaction needed). Requires `address`.
+    #[serde(default)]
+    pub bytecode: Option<String>,
+
+    /// Address to predeploy the contract at. Required when `bytecode` is set.
+    #[serde(default)]
+    pub address: Option<String>,
+
     /// Solidity compiler version (e.g. "0.8.26"). Uses forge default if omitted.
     #[serde(default)]
     #[allow(dead_code)]

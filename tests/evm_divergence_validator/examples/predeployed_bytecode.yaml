@@ -1,0 +1,21 @@
+# Example using predeployed raw bytecode instead of Solidity compilation.
+# This deploys a minimal SSTORE contract at a fixed address and calls it.
+#
+# The bytecode is: CALLDATALOAD(0) SSTORE_at_slot_0
+# 60003560005500 = PUSH1 0x00, CALLDATALOAD, PUSH1 0x00, SSTORE, STOP
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000"
+
+steps:
+  - type: call
+    to: Store
+    from: alice
+    function: "set(uint256)"
+    args: [42]
+    gas: 1000000
