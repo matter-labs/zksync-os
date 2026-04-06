@@ -40,6 +40,9 @@ jobs:
                   rustup component add rust-src
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
+            - name: Compile blake test programs for RISC-V
+              working-directory: ./crypto/src/blake2s/test_program
+              run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
@@ -67,6 +70,9 @@ jobs:
                   rustup component add rust-src
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
+            - name: Compile blake test programs for RISC-V
+              working-directory: ./crypto/src/blake2s/test_program
+              run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
