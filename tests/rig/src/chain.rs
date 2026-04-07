@@ -986,6 +986,21 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             );
             stats.effective_used = block_effective;
 
+            // dump csr reads if env var set
+            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
+                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
+                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
+                // Write each u32 as an 8-character hexadecimal string without newlines
+                for num in prover_input_forward.iter() {
+                    write!(file, "{num:08X}").expect("Failed to write to file");
+                }
+                debug!(
+                    "Successfully wrote {} u32 csr reads elements to file: {}",
+                    prover_input_forward.len(),
+                    output_csr
+                );
+            }
+
             debug!(
                 "{}Proof running output{} = 0x",
                 colors::GREEN,
@@ -1016,21 +1031,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
                 #[cfg(feature = "e2e_proving")]
                 run_prover(&prover_input_forward);
-            }
-
-            // dump csr reads if env var set
-            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
-                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
-                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
-                // Write each u32 as an 8-character hexadecimal string without newlines
-                for num in prover_input_forward.iter() {
-                    write!(file, "{num:08X}").expect("Failed to write to file");
-                }
-                debug!(
-                    "Successfully wrote {} u32 csr reads elements to file: {}",
-                    prover_input_forward.len(),
-                    output_csr
-                );
             }
         }
         Ok((block_output, stats, prover_input_forward, pubdata))
