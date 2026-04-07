@@ -520,7 +520,7 @@ mod custom_oracle_factories {
         );
     }
 
-    /// Verifies that the system rejects a large TX encoding format value (u64::MAX)
+    /// Verifies that the system rejects a large TX encoding format value (usize::MAX)
     /// from a malicious oracle via a custom oracle factory. Tests the u8 overflow path.
     #[test]
     fn test_malicious_oracle_tx_encoding_format_overflow() {
@@ -1395,7 +1395,7 @@ mod custom_oracle_factories {
             rig::alloy::primitives::address!("1000000000000000000000000000000000000001");
 
         // Simple storage contract: SSTORE(0, calldata[0..32])
-        // PUSH1 0x00 CALLDATALOAD PUSH1 0x00 SSTORE STOP
+        // PUSH1 0x00 CALLDATALOAD PUSH1 0x00 SSTORE STOP POP POP
         let store_bytecode = hex::decode("600035600055005050").unwrap();
 
         tester = tester
