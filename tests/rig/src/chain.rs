@@ -1487,16 +1487,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+/// Returns the dist directory for the given app (e.g. `zksync_os/dist/for_tests`).
+fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("for_tests");
-    // let app = app_name.as_deref().unwrap_or("app_debug");
-    let filename = format!("{app}.{extension}");
-    let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
+    let zksync_os_root = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os")
         });
-    zksync_os_path.join(filename)
+    zksync_os_root.join("dist").join(app)
+}
+
+fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+    let filename = format!("app.{extension}");
+    get_zksync_os_dist_dir(app_name).join(filename)
 }
 
 pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {

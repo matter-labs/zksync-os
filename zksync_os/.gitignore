@@ -4,3 +4,4 @@
 *.text
 app_debug.bin
 /target
+/dist

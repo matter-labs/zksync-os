@@ -16,19 +16,20 @@ docker build \
 
 cid="$(docker create --platform=linux/amd64 zksync-os-bin)"
 
-FILES=(
-    for_tests.bin
-    evm_replay.bin
-    singleblock_batch.bin
-    singleblock_batch_logging_enabled.bin
-    multiblock_batch.bin
-    multiblock_batch_logging_enabled.bin
+# Map of dist/<app>/app.bin -> flat output name for backwards compatibility
+declare -A APPS=(
+    [for_tests]=for_tests.bin
+    [evm_replay]=evm_replay.bin
+    [singleblock_batch]=singleblock_batch.bin
+    [singleblock_batch_logging_enabled]=singleblock_batch_logging_enabled.bin
+    [multiblock_batch]=multiblock_batch.bin
+    [multiblock_batch_logging_enabled]=multiblock_batch_logging_enabled.bin
 )
 
-for FILE in "${FILES[@]}"; do
-    docker cp "$cid":/zksync_os/zksync_os/"$FILE" zksync_os/
-    md5sum "zksync_os/$FILE"
+for APP in "${!APPS[@]}"; do
+    OUT="${APPS[$APP]}"
+    docker cp "$cid":/zksync_os/zksync_os/dist/"$APP"/app.bin zksync_os/"$OUT"
+    md5sum "zksync_os/$OUT"
 done
-
 
 docker rm -f "$cid" >/dev/null
