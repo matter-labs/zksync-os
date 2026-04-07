@@ -1,16 +1,13 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_NATIVE_COST,
+    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_NATIVE_COST,
     L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PRICE,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
-use crate::bootloader::transaction_flow::gas_helpers::{
-    check_enough_resources_for_pubdata, create_resources_for_tx,
-    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
-};
+use crate::bootloader::transaction_flow::gas_helpers::{calculate_l1_tx_intrinsic_computational_native_resources, check_enough_resources_for_pubdata, create_resources_for_tx, get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx};
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
 use crate::bootloader::{BasicBootloader, BootloaderSubsystemError};
@@ -475,7 +472,7 @@ where
         });
 
     let (calldata_tokens, minimal_gas_used) =
-        compute_calldata_tokens(system, transaction.calldata(), true);
+        compute_calldata_tokens(system, transaction.calldata());
 
     // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
     // Validation errors are type-safe impossible - they're logged and saturated instead
@@ -488,9 +485,8 @@ where
         false, // is_deployment
         transaction.calldata().len() as u64,
         calldata_tokens,
-        L1_TX_INTRINSIC_L2_GAS,
+        calculate_l1_tx_intrinsic_computational_native_resources(transaction.calldata().len() as u64),
         L1_TX_INTRINSIC_PUBDATA,
-        L1_TX_INTRINSIC_NATIVE_COST,
     )?;
 
     // L1 transactions might have a gas limit < minimal_gas_used. This should be

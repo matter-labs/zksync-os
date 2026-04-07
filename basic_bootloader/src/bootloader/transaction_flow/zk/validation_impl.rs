@@ -4,9 +4,7 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
-use crate::bootloader::transaction_flow::gas_helpers::{
-    create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
-};
+use crate::bootloader::transaction_flow::gas_helpers::{calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata, create_resources_for_tx, get_gas_price, L2ResourcesPolicy};
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
@@ -92,7 +90,7 @@ where
     }
 
     // EIP-7623
-    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata, false);
+    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata);
     #[cfg(feature = "eip_7623")]
     require!(
         minimal_gas_used <= tx_gas_limit,
@@ -150,9 +148,12 @@ where
         transaction.is_deployment().is_some(),
         calldata.len() as u64,
         calldata_tokens,
-        L2_TX_INTRINSIC_GAS,
-        L2_TX_INTRINSIC_PUBDATA,
-        L2_TX_INTRINSIC_NATIVE_COST,
+        // TODO: correct params
+        calculate_l2_tx_intrinsic_computational_native_resources(
+            calldata.len() as u64,
+            0, 0, 0
+        ),
+        calculate_l2_tx_intrinsic_pubdata(0),
     )?;
 
     system_log!(
@@ -166,29 +167,12 @@ where
     // - or we will perform non-mutating operations without any payment
 
     // steps below are all not free, so the choice there is rather arbitrary. Let's first check the signature, as it's compute-only
-
-    // We have to charge native for this hash, as it's computed during parsing
-    // for RLP-encoded transactions.
-    // We over-estimate using the total tx length
-    charge_keccak(transaction.len(), &mut tx_resources.main_resources)?;
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
     // Only service transactions have no signature,
     // we don't even charge gas/native related to ecrecover for them.
     if let Some((parity, r, s)) = transaction.sig_parity_r_s() {
-        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
-        // Note that gas is charged already in intrinsic cost, so now
-        // we only need to charge native resources.
-        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
-            tx_resources
-                .main_resources
-                .charge(&Resources::from_ergs_and_native(
-                    Ergs::empty(),
-                    <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
-                        ECRECOVER_NATIVE_COST,
-                    ),
-                ))?;
-        } else {
+        if Config::VALIDATE_EOA_SIGNATURE && !Config::SIMULATION {
             if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
                 return Err(InvalidTransaction::MalleableSignature.into());
             }
@@ -200,18 +184,14 @@ where
             ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
-            // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
-            tx_resources
-                .main_resources
-                .with_infinite_ergs(|resources| {
-                    S::SystemFunctions::secp256k1_ec_recover(
-                        ecrecover_input.as_slice(),
-                        &mut ecrecover_output,
-                        resources,
-                        system.get_allocator(),
-                    )
-                    .map_err(SystemError::from)
-                })?;
+            let mut inf_resources = S::Resources::FORMAL_INFINITE;
+            S::SystemFunctions::secp256k1_ec_recover(
+                ecrecover_input.as_slice(),
+                &mut ecrecover_output,
+                &mut inf_resources,
+                system.get_allocator(),
+            )
+            .map_err(SystemError::from)?;
 
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
@@ -233,28 +213,26 @@ where
             }
         }
     };
-    let tx_hash: Bytes32 = transaction.transaction_hash(&mut tx_resources.main_resources)?;
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+    let tx_hash: Bytes32 = transaction.transaction_hash(&mut inf_resources)?;
 
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
     // intrinsic cost charnged above
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     let originator_account_data =
-        tx_resources
-            .main_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    ExecutionEnvironmentType::NoEE,
-                    inf_resources,
-                    &from,
-                    AccountDataRequest::empty()
-                        .with_ee_version()
-                        .with_nonce()
-                        .with_has_bytecode()
-                        .with_is_delegated()
-                        .with_nominal_token_balance(),
-                )
-            })?;
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &from,
+            AccountDataRequest::empty()
+                .with_ee_version()
+                .with_nonce()
+                .with_has_bytecode()
+                .with_is_delegated()
+                .with_nominal_token_balance(),
+        )?;
 
     // EIP-3607: Reject transactions from senders with deployed code modulo delegations
     // We skip it for simulation to allow simulate calls between contracts
@@ -264,12 +242,11 @@ where
 
     // Originator's nonce is incremented before authorization list
     // skipped for service transactions, for which we do not track nonce
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     let old_nonce = if transaction.nonce().is_some() {
-        match tx_resources.main_resources.with_infinite_ergs(|resources| {
-            system
+        match system
                 .io
-                .increment_nonce(ExecutionEnvironmentType::NoEE, resources, &from, 1u64)
-        }) {
+                .increment_nonce(ExecutionEnvironmentType::NoEE, &mut inf_resources, &from, 1u64) {
             Ok(x) => Ok(x),
             Err(SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _))) => {
                 return Err(TxError::Validation(
@@ -317,7 +294,8 @@ where
     }
 
     // Access list
-    parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, &transaction)?;
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+    parse_and_warm_up_access_list(system, &mut inf_resources, &transaction)?;
 
     // Parse blobs, if any
     // No need to feature gate this part, as blobs() should return an empty list
@@ -354,12 +332,13 @@ where
 
     // Now we can apply access list and authorization list, while simultaneously charging for them
     // Parse, validate and apply authorization list, following EIP-7702
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     #[cfg(feature = "eip-7702")]
     {
         if let Some(authorization_list) = transaction.authorization_list() {
             crate::bootloader::transaction::authorization_list:: parse_authorization_list_and_apply_delegations(
                     system,
-                    &mut tx_resources.main_resources,
+                    &mut inf_resources,
                     authorization_list,
                 )?;
         }
@@ -441,36 +420,30 @@ where
 }
 
 ///
-/// Compute number of calldata tokens and intrinsic gas,
-/// following EIP-7623 if enabled.
+/// Compute number of calldata tokens and EIP-7623 floor gas,
+/// floor gas == 0, if EIP-7623 disabled.
 ///
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     system: &mut System<S>,
     calldata: &[u8],
-    is_l1_tx: bool,
 ) -> (u64, u64) {
     let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
     let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
     let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
     let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
-    let intrinsic_gas = if is_l1_tx {
-        L1_TX_INTRINSIC_L2_GAS
-    } else {
-        L2_TX_INTRINSIC_GAS
-    };
 
     #[cfg(feature = "eip_7623")]
     {
         let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let intrinsic_gas = intrinsic_gas.saturating_add(floor_tokens_gas_cost);
+        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
         (num_tokens, intrinsic_gas)
     }
 
     #[cfg(not(feature = "eip_7623"))]
     {
-        (num_tokens, intrinsic_gas)
+        (num_tokens, 0)
     }
 }

@@ -8,7 +8,7 @@ use zk_ee::system::{Computational, Ergs, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
-
+use crate::bootloader::constants::{L1_TX_INTRINSIC_NATIVE_COST, TX_INTRINSIC_GAS};
 use super::super::*;
 
 /// Policy trait for handling arithmetic validation errors during resource creation.
@@ -188,6 +188,124 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
     }
 }
 
+pub fn calculate_l2_tx_intrinsic_computational_native_resources(
+    calldata_byte_length: u64,
+    access_list_accounts: u64,
+    access_list_storages: u64,
+    authorization_list_num: u64,
+) -> u64 {
+    // TODO: include preimage + blake in the account read cost?
+
+    // 1. 30_000 for post validation processing: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash.
+    // 2. 522000 = 350_000 + 43_000*4 for ecrecover.
+    // 3. account read(worst case): 252220 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 800 + 340 * 2(blake2s_native_cost(124)) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+    // 4. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+    // 5. keccak for signing hash(worst case const part - 2 rounds + 1 round precharge for dynamic parts): 37500 = 2500 + 17_500 * 3
+    // 6. keccak for full hash(worst case const part - 2 rounds + 1 round precharge for calldata): 37500 = 2500 + 17_500 * 3
+    // 7. fee prepayment: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+    // NOTE: we are precharging 1 keccak round(in 5 and 6) since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
+    const INTRINSIC_COMPUTATIONAL_NATIVE_CONST: u64 = 30_000 + 522_000 + 252_220 + 5_000 + 55_000 + 55_000 + 5_000;
+
+    // 1. caldata per byte copy: COPY_BYTE_NATIVE_COST = 1
+    // 2. keccak for signing hash: 17_500 div_ceil 136 = 129
+    // 3. keccak for full hash: 17_500 div_ceil 136 = 129
+    const INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1 + 129 + 129;
+
+    // 1. computational part: 2000
+    // 2. account read(worst case): 252220 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 800 + 340 * 2(blake2s_native_cost(124)) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+    // 3. keccak for signing hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
+    // 4. keccak for full hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
+    const INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 = 2_000 + 252_220 + 3_861 + 3_861;
+
+    // 1. computational part: 2000
+    // 2. storage slot read(worst case): 242240 (COLD_NEW_STORAGE_READ_NATIVE_COST)
+    // 3. keccak for signing hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
+    // 4. keccak for full hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
+    const INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 = 2_000 + 242_240 + 4_247 + 4_247;
+
+    // 1. computational part: 2000
+    // 2. auth message keccak cost: 2500 + 17_500 = 20_000 (length 70, 1 round)
+    // 3. 522000 = 350_000 + 43_000*4 for ecrecover.
+    // 4. account read(worst case): 252220 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 800 + 340 * 2(blake2s_native_cost(124)) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+    // 5. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+    // 6. delegation write: 26640 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) + 500(PREIMAGE_CACHE_SET_NATIVE_COST) + 20_000(1 round keccak, 23 byte code) + 1140(1 round blake, 24 byte padded code)
+    const INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 = 2_000 + 20_000 + 522_000 + 252_220 + 5_000 + 26_640;
+
+    let mut intrinsic_computational_native_resources = INTRINSIC_COMPUTATIONAL_NATIVE_CONST;
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources.saturating_add(
+        calldata_byte_length.saturating_mul(
+            INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE
+        )
+    );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources.saturating_add(
+        access_list_accounts.saturating_mul(
+            INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS
+        )
+    );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources.saturating_add(
+        access_list_storages.saturating_mul(
+            INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY
+        )
+    );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources.saturating_add(
+        authorization_list_num.saturating_mul(
+            INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION
+        )
+    );
+
+    intrinsic_computational_native_resources
+}
+
+
+pub fn calculate_l1_tx_intrinsic_computational_native_resources(
+    calldata_byte_length: u64,
+) -> u64 {
+    let mut intrinsic_computational_native_resources = L1_TX_INTRINSIC_NATIVE_COST;
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources.saturating_add(
+        calldata_byte_length.saturating_mul(
+            evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
+        )
+    );
+
+    intrinsic_computational_native_resources
+}
+
+pub fn calculate_l2_tx_intrinsic_pubdata(
+    authorization_list_num: u64,
+) -> u64 {
+    // 1. sender account change: 68 = 32(key) + 1(account metadata) + 2(nonce increase) + 33(worst case balance)
+    // 2. coinbase: 66 = 32(key) + 1(account metadata) + 33(worst case balance)
+    const INTRINSIC_PUBDATA_CONST: u64 = 68 + 64;
+
+
+    // Full diff compression:
+    // 1. key: 32
+    // 2. account metadata: 1
+    // 3. versioning data: 8
+    // 4. nonce: 2
+    // 5. balance: 1
+    // 6. unpadded code length: 4
+    // 7. artifacts length: 4
+    // 8. padded bytecode: 24
+    // 9. observable length: 4
+    const INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = 32 + 1 + 8 + 2 + 1 + 4 + 4 + 24 + 4;
+
+    let mut intrinsic_pubdata = INTRINSIC_PUBDATA_CONST;
+
+    intrinsic_pubdata = intrinsic_pubdata.saturating_add(
+        authorization_list_num.saturating_mul(
+            INTRINSIC_PUBDATA_PER_AUTHORIZATION
+        )
+    );
+
+    intrinsic_pubdata
+}
+
 ///
 /// Create initial resources for a transaction.
 ///
@@ -205,9 +323,8 @@ pub fn create_resources_for_tx<S: EthereumLikeTypes, P: ResourcesCreationErrorPo
     is_deployment: bool,
     calldata_len: u64,
     calldata_tokens: u64,
-    intrinsic_gas: u64,
+    intrinsic_computational_native: u64,
     intrinsic_pubdata: u64,
-    intrinsic_native: u64,
 ) -> Result<ResourcesForTx<S>, P::Error>
 where
     S::Metadata: ZkSpecificPricingMetadata,
@@ -226,7 +343,7 @@ where
         native_prepaid_from_gas
     };
 
-    // Charge pubdata overhead
+    // Charge intrinsic pubdata
     let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
     let native_limit = match native_limit.checked_sub(intrinsic_pubdata_overhead) {
         Some(val) => val,
@@ -257,12 +374,8 @@ where
         )
     };
 
-    // Charge for calldata and intrinsic native
-    let calldata_native = calldata_len
-        .saturating_mul(evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST);
-    let intrinsic_computational_native_charged = calldata_native.saturating_add(intrinsic_native);
-
-    let native_limit = match native_limit.checked_sub(intrinsic_computational_native_charged) {
+    // Charge intrinsic computational native
+    let native_limit = match native_limit.checked_sub(intrinsic_computational_native) {
         Some(val) => val,
         None => P::handle_arithmetic_error(
             system,
@@ -275,8 +388,8 @@ where
             native_limit,
         );
 
-    // Intrinsic overhead - he can quickly check deployment cost and calldata tokens cost
-    let mut intrinsic_overhead = intrinsic_gas;
+    // Intrinsic gas overhead - he can quickly check deployment cost and calldata tokens cost
+    let mut intrinsic_overhead = TX_INTRINSIC_GAS;
 
     if is_deployment {
         if calldata_len > MAX_INITCODE_SIZE as u64 {
@@ -291,6 +404,7 @@ where
     }
     intrinsic_overhead =
         intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
+    // TODO: intrinsic for access list? authorization list?
 
     // Check if intrinsic gas exceeds gas limit
     let gas_limit_for_tx = match gas_limit.checked_sub(intrinsic_overhead) {
@@ -307,7 +421,7 @@ where
     Ok(ResourcesForTx {
         main_resources,
         withheld,
-        intrinsic_computational_native_charged,
+        intrinsic_computational_native_charged: intrinsic_computational_native,
     })
 }
 

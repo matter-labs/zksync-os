@@ -235,19 +235,15 @@ where
         // 1. Deduct full fee from sender at transaction start (here)
         // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
         // This ensures sender has sufficient funds before execution begins
-        context
-            .resources
-            .main_resources
-            .with_infinite_ergs(|resources| {
-                system.io.update_account_nominal_token_balance(
-                    ExecutionEnvironmentType::NoEE,
-                    resources,
-                    &from,
-                    &fee,
-                    true,
-                    Config::SIMULATION,
-                )
-            })
+        let mut inf_resources = S::Resources::FORMAL_INFINITE;
+        system.io.update_account_nominal_token_balance(
+                ExecutionEnvironmentType::NoEE,
+                &mut inf_resources,
+                &from,
+                &fee,
+                true,
+                Config::SIMULATION,
+            )
             .map_err(|e| match e {
                 SubsystemError::LeafUsage(interface_error) => {
                     unreachable!(
@@ -275,14 +271,10 @@ where
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
-        // Charge for validation pubdata
-        let (validation_pubdata, to_charge_for_pubdata) =
+        // TODO: consider using intrinsic here(so worst case can be "refunded" after execution)
+        let (validation_pubdata, _) =
             get_resources_to_charge_for_pubdata(system, context.native_per_pubdata, None)?;
         context.validation_pubdata = validation_pubdata;
-        Self::charge_for_validation_pubdata_using_withheld(
-            &mut context.resources,
-            &to_charge_for_pubdata,
-        )?;
 
         // Save resources to be able to calculate computational native consumption after everything
         let initial_resources = context.resources.main_resources.clone();

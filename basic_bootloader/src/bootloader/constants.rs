@@ -28,8 +28,6 @@ pub const TX_CALLDATA_OFFSET: usize = 0x60;
 /// Maximum value of gas that can be represented as ergs in an u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
 
-// Just for EVM compatibility.
-pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
 
 // Covers intrinsic L1 tx work not charged as tx-body computation.
 //
@@ -115,7 +113,8 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
 
-pub const L2_TX_INTRINSIC_GAS: u64 = 21_000;
+/// Transaction intrinsic gas cost (EVM eq)
+pub const TX_INTRINSIC_GAS: u64 = 21_000;
 
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
