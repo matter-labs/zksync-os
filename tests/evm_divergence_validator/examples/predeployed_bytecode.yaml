@@ -1,0 +1,22 @@
+# Example using predeployed raw bytecode instead of Solidity compilation.
+# This deploys a minimal SSTORE contract at a fixed address and calls it
+# with raw calldata (no ABI selector — the bytecode reads CALLDATALOAD(0)
+# directly, so we need exactly 32 bytes of calldata).
+#
+# Bytecode: 60003560005500 = PUSH1 0x00, CALLDATALOAD, PUSH1 0x00, SSTORE, STOP
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000"
+
+steps:
+  # Send 32 bytes of calldata = uint256(42), no function selector.
+  - type: send_raw
+    to: Store
+    from: alice
+    data: "0x000000000000000000000000000000000000000000000000000000000000002a"
+    gas: 1000000

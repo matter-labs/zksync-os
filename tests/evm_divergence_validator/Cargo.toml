@@ -1,0 +1,39 @@
+[package]
+name = "evm_divergence_validator"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/zksync-os/"
+license = "MIT OR Apache-2.0"
+keywords = ["blockchain", "zksync", "zk", "risc-v"]
+categories = ["cryptography"]
+
+[[bin]]
+name = "evm-divergence-validator"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["std", "derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+alloy = { version = "1", default-features = false, features = [
+    "consensus",
+    "dyn-abi",
+    "json-abi",
+    "network",
+    "signers",
+    "signer-local",
+    "sol-types",
+] }
+ruint = { version = "1.16", default-features = false, features = ["alloc"] }
+log = "0.4"
+hex = "0.4"
+tempfile = "3"
+
+rig = { path = "../rig", features = ["no_print", "unlimited_native"] }
+zksync_os_tests_common = { path = "../common" }
+zksync_os_revm_runner = { path = "../revm_runner" }
+zk_ee = { path = "../../zk_ee" }
+forward_system = { path = "../../forward_system" }
