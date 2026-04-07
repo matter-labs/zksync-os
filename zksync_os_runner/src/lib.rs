@@ -1,6 +1,24 @@
 use airbender_host::{FlamegraphConfig, Program, Runner};
 use std::path::PathBuf;
 
+/// Flamegraph profiling options passed through to the transpiler VM.
+#[derive(Clone)]
+pub struct FlamegraphOptions {
+    /// Path to write the flamegraph SVG.
+    pub output_path: PathBuf,
+    /// Collect one sample every `frequency_recip` VM cycles.
+    pub frequency_recip: usize,
+}
+
+impl FlamegraphOptions {
+    pub fn new(output_path: PathBuf) -> Self {
+        Self {
+            output_path,
+            frequency_recip: 1,
+        }
+    }
+}
+
 /// Run a ZKsync OS RISC-V program and return the 256-bit output.
 ///
 /// `dist_dir` - path to the program distribution directory (containing manifest.toml and artifacts).

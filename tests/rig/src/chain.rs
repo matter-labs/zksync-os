@@ -978,14 +978,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             }
 
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = if let Some(fg_path) = flamegraph_output {
+            let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
                 let sym_path = get_zksync_os_sym_path(&app);
                 zksync_os_runner::run_default_with_flamegraph_path(
                     dist_dir,
                     sym_path,
                     1 << 36,
                     &prover_input_forward,
-                    Some(fg_path),
+                    Some(fg_options.output_path),
                 )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(
