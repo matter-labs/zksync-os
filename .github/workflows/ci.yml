@@ -85,6 +85,8 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: workspace-release
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -108,6 +110,9 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: workspace-release
+                  save-if: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -131,6 +136,8 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  cache-targets: false
             - uses: actions/download-artifact@v4
               with:
                   name: blake-binaries
@@ -172,6 +179,8 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  cache-targets: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -189,6 +198,9 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: workspace-release
+                  save-if: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -226,6 +238,9 @@ jobs:
               with:
                   rustflags: ""
             - uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: workspace-release
+                  save-if: false
             - name: Setup RISC-V toolchain
               run: |
                   rustup set profile minimal
@@ -262,6 +277,8 @@ jobs:
               with:
                   components: clippy
             - uses: Swatinem/rust-cache@v2
+              with:
+                  cache-targets: false
             - name: Run Clippy
               run: |
                   cargo clippy --all -- -D warnings
@@ -287,6 +304,7 @@ jobs:
             - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: tests/fuzzer
+                  cache-targets: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
