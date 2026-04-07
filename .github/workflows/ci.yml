@@ -17,89 +17,113 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    build_riscv_binaries:
+        name: Build RISC-V binaries
+        runs-on: [matterlabs-ci-runner-high-performance]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Setup RISC-V toolchain
+              run: |
+                  rustup set profile minimal
+                  rustup target add riscv32i-unknown-none-elf
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
+                  rustup component add rust-src
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: |
+                      zksync_os
+                      crypto/src/blake2s/test_program
+            - name: Build zksync_os binaries
+              working-directory: ./zksync_os
+              run: |
+                  ./dump_bin.sh --type for-tests
+                  ./dump_bin.sh --type multiblock-batch
+                  ./dump_bin.sh --type singleblock-batch
+                  ./dump_bin.sh --type eth-stf
+            - name: Build blake test programs
+              working-directory: ./crypto/src/blake2s/test_program
+              run: ./dump_bin.sh
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
+                  retention-days: 1
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: blake-binaries
+                  path: crypto/src/blake2s/test_program/dist/
+                  retention-days: 1
+
     tests:
         name: tests
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
-                  ./dump_bin.sh --type multiblock-batch
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh
+            - uses: Swatinem/rust-cache@v2
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
+            - uses: actions/download-artifact@v4
+              with:
+                  name: blake-binaries
+                  path: crypto/src/blake2s/test_program/dist/
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3
+              run: cargo test --release
+
     test_revm_consistency:
         name: revm consistency checker tests
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
-                  ./dump_bin.sh --type multiblock-batch
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh
+            - uses: Swatinem/rust-cache@v2
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
+            - uses: actions/download-artifact@v4
+              with:
+                  name: blake-binaries
+                  path: crypto/src/blake2s/test_program/dist/
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release -j 3
+              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
+
     crypto_test:
         name: crypto crate tests
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh
+            - uses: Swatinem/rust-cache@v2
+            - uses: actions/download-artifact@v4
+              with:
+                  name: blake-binaries
+                  path: crypto/src/blake2s/test_program/dist/
             - name: Run crypto tests 10 times with overflow checks
               run: |
                   for i in {1..10}; do
                     RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
                   done
+
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -108,6 +132,9 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: tests/evm_tester
             - name: Setup
               run: |
                   rustup toolchain install
@@ -123,83 +150,70 @@ jobs:
 
     verify_binary:
         name: Verify binary
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              working-directory: ./zksync_os
-              run: |
-                  rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  ./dump_bin.sh --type singleblock-batch
-                  ./dump_bin.sh --type multiblock-batch
+            - uses: Swatinem/rust-cache@v2
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
             - name: Run binary checker
               run: cargo test -p binary_checker -- --nocapture --ignored
 
     e2e_prove:
         name: e2e_prove
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-c3d]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
+            - uses: Swatinem/rust-cache@v2
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
             - name: Run proving test
               # Runs with e2e_proving feature
               run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
 
     eth_stf_run:
         name: eth_stf_run
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type eth-stf
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: tests/instances/eth_runner
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
             - name: Run ethereum block
               working-directory: ./tests/instances/eth_runner
               run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054
 
     blake_tests:
         name: blake_tests
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Setup
+            - uses: Swatinem/rust-cache@v2
+            - name: Setup RISC-V toolchain
               run: |
                   rustup set profile minimal
                   rustup target add riscv32i-unknown-none-elf
@@ -234,6 +248,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   components: clippy
+            - uses: Swatinem/rust-cache@v2
             - name: Run Clippy
               run: |
                   cargo clippy --all -- -D warnings
@@ -249,6 +264,7 @@ jobs:
 
     run_fuzzer_regressions:
         name: Run fuzzer regressions
+        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
@@ -258,14 +274,13 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: tests/fuzzer
+            - uses: actions/download-artifact@v4
+              with:
+                  name: riscv-binaries
+                  path: zksync_os/dist/
             - name: Run regression tests
               working-directory: ./tests/fuzzer
               run: |
