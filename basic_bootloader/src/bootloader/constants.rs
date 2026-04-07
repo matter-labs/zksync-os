@@ -105,7 +105,7 @@ const REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
 // Each storage diff is encoded as 32 bytes (derived key) + compressed value
 // diff. The worst-case compressed value using the Add strategy with a
 // 256-bit amount falls back to Nothing encoding = 33 bytes.
-const ASSET_TRACKER_INTRINSIC_PUBDATA: u64 = 32 + 33;
+pub const ASSET_TRACKER_INTRINSIC_PUBDATA: u64 = 32 + 33;
 
 // Needed to publish the L1 tx log, coinbase balance, treasury balance, refund
 // recipient balance, and asset tracker state diff.
