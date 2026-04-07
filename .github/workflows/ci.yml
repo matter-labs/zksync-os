@@ -25,6 +25,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - name: Setup RISC-V toolchain
               run: |
                   rustup set profile minimal
@@ -56,6 +57,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - name: Setup RISC-V toolchain
               run: |
                   rustup set profile minimal
@@ -84,6 +86,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: Swatinem/rust-cache@v2
               with:
                   shared-key: workspace-release
@@ -109,6 +112,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: Swatinem/rust-cache@v2
               with:
                   shared-key: workspace-release
@@ -135,6 +139,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: actions/download-artifact@v4
               with:
                   name: blake-binaries
@@ -150,6 +155,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - name: Setup
               run: |
                   rustup toolchain install
@@ -172,6 +178,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -188,6 +195,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: Swatinem/rust-cache@v2
               with:
                   shared-key: workspace-release
@@ -209,6 +217,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
@@ -225,6 +234,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: Swatinem/rust-cache@v2
               with:
                   shared-key: workspace-release
@@ -253,6 +263,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   components: rustfmt
+                  cache: false
             - name: Rustfmt Check
               uses: actions-rust-lang/rustfmt@v1
 
@@ -264,6 +275,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   components: clippy
+                  cache: false
             - name: Run Clippy
               run: |
                   cargo clippy --all -- -D warnings
@@ -286,6 +298,7 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+                  cache: false
             - uses: actions/download-artifact@v4
               with:
                   name: riscv-binaries
