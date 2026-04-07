@@ -1528,7 +1528,7 @@ fn run_prover(input_words: &[u32]) {
     let program = Program::load(&dist_dir).expect("failed to load program");
     let prover = program
         .cpu_prover()
-        .with_cycles(1 << 24)
+        .with_cycles(1 << 36)
         .build()
         .expect("failed to build prover");
 
