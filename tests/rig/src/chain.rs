@@ -844,7 +844,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let block_output: BlockOutput = result_keeper.into();
 
-        let (prover_input_forward, pubdata, _has_filtered_by_validator) = if do_prover_input_run {
+        let (prover_input_forward, pubdata) = if do_prover_input_run {
             let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
 
             let prover_input_oracle = oracle_factory.create_forward_oracle(
@@ -898,7 +898,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             } else {
                 assert_block_outputs_match(&block_output, &prover_input_block_output);
             }
-            (prover_input_forward, pubdata, has_filtered_by_validator)
+            (prover_input_forward, pubdata)
         } else {
             // We use the forward prover input run outputs to validate the risc-v run,
             // so we check consistency in config
@@ -906,7 +906,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 !do_riscv_run,
                 "Native prover input run should be performed if risc v run is enabled"
             );
-            (vec![], vec![], false)
+            (vec![], vec![])
         };
 
         trace!(
@@ -980,12 +980,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
                 let sym_path = get_zksync_os_sym_path(&app);
-                zksync_os_runner::run_default_with_flamegraph_path(
+                zksync_os_runner::run_with_flamegraph(
                     dist_dir,
                     sym_path,
                     1 << 36,
                     &prover_input_forward,
-                    Some(fg_options.output_path),
+                    fg_options,
                 )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(

@@ -137,11 +137,12 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
     }
 }
 
-/// Safe wrapper for use with `#[airbender::main(allocator_init = ...)]`.
+/// Wrapper around [`init_allocator`] matching the `fn(*mut usize, *mut usize)`
+/// signature required by `#[airbender::main(allocator_init = ...)]`.
 ///
-/// # Safety
-/// The caller must ensure the heap region `[heap_start, heap_end)` is valid,
-/// exclusively owned, and not already initialized.
+/// The airbender runtime guarantees that `heap_start` and `heap_end` point to a
+/// valid, exclusively-owned region, so the `unsafe` preconditions of
+/// [`init_allocator`] are upheld by the caller (the boot sequence).
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn init_allocator_safe(heap_start: *mut usize, heap_end: *mut usize) {
     unsafe { init_allocator(heap_start, heap_end) }

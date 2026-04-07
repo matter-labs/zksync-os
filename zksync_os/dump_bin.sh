@@ -21,9 +21,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 # Base features
-BASE_FEATURES="proving"
+FEATURES="proving"
 
-# Map --type to APP_NAME and FEATURES
+# Adjust for server modes
 case "$TYPE" in
   singleblock-batch)
     FEATURES="$FEATURES,production"

@@ -28,29 +28,28 @@ jobs:
       - name: Prepare release artifacts
         run: |
           mkdir -p release-artifacts
+          cd zksync_os
 
-          # Map app_name -> output filename for release
-          declare -A APPS=(
-            [for_tests]="for_tests.bin"
-            [evm_replay]="evm_replay.bin"
-            [singleblock_batch]="singleblock_batch.bin"
-            [singleblock_batch_logging_enabled]="singleblock_batch_logging_enabled.bin"
-            [multiblock_batch]="multiblock_batch.bin"
-            [multiblock_batch_logging_enabled]="multiblock_batch_logging_enabled.bin"
+          # Copy all generated binaries
+          FILES=(
+            for_tests.bin
+            evm_replay.bin
+            singleblock_batch.bin
+            singleblock_batch_logging_enabled.bin
+            multiblock_batch.bin
+            multiblock_batch_logging_enabled.bin
           )
 
-          for APP_NAME in "${!APPS[@]}"; do
-            SRC="zksync_os/dist/${APP_NAME}/app.bin"
-            DEST="release-artifacts/${APPS[$APP_NAME]}"
-            if [ -f "$SRC" ]; then
-              cp "$SRC" "$DEST"
-              echo "Copied $SRC -> $DEST"
+          for FILE in "${FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              cp "$FILE" ../release-artifacts/
+              echo "✓ Copied $FILE"
             else
-              echo "WARNING: $SRC not found"
+              echo "⚠️  $FILE not found"
             fi
           done
 
-          cd release-artifacts
+          cd ../release-artifacts
 
           # Create checksums
           sha256sum *.bin > checksums.txt

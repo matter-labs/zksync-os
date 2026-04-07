@@ -7,6 +7,8 @@ pub struct FlamegraphOptions {
     /// Path to write the flamegraph SVG.
     pub output_path: PathBuf,
     /// Collect one sample every `frequency_recip` VM cycles.
+    /// Lower values give more detail but add runtime overhead.
+    /// Defaults to 1 (sample every cycle).
     pub frequency_recip: usize,
 }
 
@@ -36,40 +38,39 @@ pub fn run_and_get_effective_cycles(
     cycles: usize,
     input_words: &[u32],
 ) -> ([u32; 8], Option<u64>) {
-    run_default_with_flamegraph_path(dist_dir, PathBuf::new(), cycles, input_words, None)
+    run_inner(dist_dir, cycles, input_words, None, None)
 }
 
-/// Run a ZKsync OS RISC-V program with optional flamegraph profiling.
-///
-/// `dist_dir` - path to the program distribution directory.
-/// `sym_path` - path to the ELF symbols file (used for flamegraph).
-/// `cycles` - limit for number of cycles.
-/// `input_words` - pre-recorded non-determinism input words.
-/// `flamegraph_path` - optional path to write flamegraph output.
-pub fn run_default_with_flamegraph_path(
+pub fn run_with_flamegraph(
     dist_dir: PathBuf,
     sym_path: PathBuf,
     cycles: usize,
     input_words: &[u32],
-    flamegraph_path: Option<PathBuf>,
+    options: FlamegraphOptions,
 ) -> ([u32; 8], Option<u64>) {
-    println!("ZK RISC-V transpiler runner is starting");
+    run_inner(dist_dir, cycles, input_words, Some(sym_path), Some(options))
+}
+
+fn run_inner(
+    dist_dir: PathBuf,
+    cycles: usize,
+    input_words: &[u32],
+    sym_path: Option<PathBuf>,
+    flamegraph: Option<FlamegraphOptions>,
+) -> ([u32; 8], Option<u64>) {
+    eprintln!("ZK RISC-V transpiler runner is starting");
 
     let program = Program::load(&dist_dir)
         .unwrap_or_else(|err| panic!("failed to load program from {}: {err}", dist_dir.display()));
 
     let mut builder = program.transpiler_runner().with_cycles(cycles);
 
-    if let Some(fg_path) = flamegraph_path {
+    if let Some(fg_options) = flamegraph {
         let flamegraph_config = FlamegraphConfig {
-            output: fg_path,
-            sampling_rate: 1,
+            output: fg_options.output_path,
+            sampling_rate: fg_options.frequency_recip,
             inverse: false,
-            elf_path: if sym_path.as_os_str().is_empty() {
-                None
-            } else {
-                Some(sym_path)
-            },
+            elf_path: sym_path,
         };
         builder = builder.with_flamegraph(flamegraph_config);
     }
