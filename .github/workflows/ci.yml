@@ -34,9 +34,7 @@ jobs:
                   rustup component add rust-src
             - uses: Swatinem/rust-cache@v2
               with:
-                  workspaces: |
-                      zksync_os
-                      crypto/src/blake2s/test_program
+                  workspaces: zksync_os
             - name: Build zksync_os binaries
               working-directory: ./zksync_os
               run: |
@@ -44,14 +42,33 @@ jobs:
                   ./dump_bin.sh --type multiblock-batch
                   ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type eth-stf
-            - name: Build blake test programs
-              working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh
             - uses: actions/upload-artifact@v4
               with:
                   name: riscv-binaries
                   path: zksync_os/dist/
                   retention-days: 1
+
+    build_blake_binaries:
+        name: Build blake test programs
+        runs-on: [matterlabs-ci-runner-high-performance]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Setup RISC-V toolchain
+              run: |
+                  rustup set profile minimal
+                  rustup target add riscv32i-unknown-none-elf
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
+                  rustup component add rust-src
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: crypto/src/blake2s/test_program
+            - name: Build blake test programs
+              working-directory: ./crypto/src/blake2s/test_program
+              run: ./dump_bin.sh
             - uses: actions/upload-artifact@v4
               with:
                   name: blake-binaries
@@ -60,7 +77,7 @@ jobs:
 
     tests:
         name: tests
-        needs: [build_riscv_binaries]
+        needs: [build_riscv_binaries, build_blake_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
@@ -83,7 +100,7 @@ jobs:
 
     test_revm_consistency:
         name: revm consistency checker tests
-        needs: [build_riscv_binaries]
+        needs: [build_riscv_binaries, build_blake_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
@@ -106,7 +123,7 @@ jobs:
 
     crypto_test:
         name: crypto crate tests
-        needs: [build_riscv_binaries]
+        needs: [build_blake_binaries]
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
@@ -202,7 +219,6 @@ jobs:
 
     blake_tests:
         name: blake_tests
-        needs: [build_riscv_binaries]
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
