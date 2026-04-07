@@ -1,8 +1,8 @@
 use crate::internal_error;
-use crate::storage_types::MAX_EVENT_TOPICS;
 use crate::system::errors::internal::InternalError;
 use crate::system::{
     errors::system::SystemError, CompletedExecution, ExternalCallRequest, System, SystemTypes,
+    MAX_EVENT_TOPICS,
 };
 use crate::types_config::SystemIOTypesConfig;
 use alloc::collections::BTreeMap;

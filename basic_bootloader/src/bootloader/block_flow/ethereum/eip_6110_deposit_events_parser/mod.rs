@@ -1,11 +1,11 @@
 use ruint::aliases::B160;
 use zk_ee::common_structs::GenericEventContentWithTxRef;
 use zk_ee::logger_log;
-use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::System;
+use zk_ee::system::MAX_EVENT_TOPICS;
 use zk_ee::system::{EthereumLikeTypes, IOTeardown};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;

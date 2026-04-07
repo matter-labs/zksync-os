@@ -6,7 +6,7 @@ use ruint::aliases::U256;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType, internal_error,
-    storage_types::MAX_EVENT_TOPICS, system::errors::system::SystemError,
+    system::errors::system::SystemError, system::MAX_EVENT_TOPICS,
 };
 
 // SettlementLayerChainIdUpdated(uint256) -  208daf0b9291c1e9a1697737d736630c808045f81f5bc5ae7b8ed740eb5a4d7a

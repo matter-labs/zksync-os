@@ -7,7 +7,7 @@ use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::{
     common_structs::interop_root_storage::InteropRoot,
     execution_environment_type::ExecutionEnvironmentType, internal_error,
-    storage_types::MAX_EVENT_TOPICS, system::errors::system::SystemError, utils::Bytes32,
+    system::errors::system::SystemError, system::MAX_EVENT_TOPICS, utils::Bytes32,
 };
 
 // InteropRootAdded(uint256,uint256,bytes32[]) - 6b451b8422636e45b93bf7f594fa2c1769d039766c4254a6e7f9c0ee1715cdb0

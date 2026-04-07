@@ -1,4 +1,5 @@
 pub const MAX_SCRATCH_SPACE_USIZE_WORDS: usize = 128;
+pub const MAX_EVENT_TOPICS: usize = 4;
 
 pub const BLAKE_DELEGATION_COEFFICIENT: u64 = 16;
 pub const BIGINT_DELEGATION_COEFFICIENT: u64 = 4;

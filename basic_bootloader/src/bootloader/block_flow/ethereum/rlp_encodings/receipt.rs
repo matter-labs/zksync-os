@@ -2,7 +2,7 @@ use super::*;
 use crate::bootloader::rlp;
 use crate::bootloader::transaction_flow::ethereum::LogsBloom;
 use basic_system::system_implementation::ethereum_storage_model::ByteBuffer;
-use zk_ee::storage_types::MAX_EVENT_TOPICS;
+use zk_ee::system::MAX_EVENT_TOPICS;
 use zk_ee::{common_structs::GenericEventContentRef, types_config::EthereumIOTypesConfig};
 
 impl<'a> RLPEncodable for GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig> {

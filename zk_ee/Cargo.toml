@@ -18,7 +18,6 @@ serde = { workspace = true, default-features = false, features = ["derive"], opt
 
 cfg-if = { workspace = true }
 crypto = { path = "../crypto", default-features = false }
-bitflags = { version = "2.6.0", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = { workspace = true }
 paste = { workspace = true }
