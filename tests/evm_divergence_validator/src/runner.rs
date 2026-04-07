@@ -42,8 +42,11 @@ pub fn run_scenario(
     }
 
     // Set up the testing framework.
-    // Disable the built-in REVM check — we run it ourselves to get structured results.
-    let run_config = RunConfig::without_riscv_run();
+    // Explicitly disable the built-in REVM check — we run it ourselves to get
+    // structured results. Note that `without_riscv_run()` alone doesn't disable
+    // the REVM check (it can still be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK).
+    let mut run_config = RunConfig::without_riscv_run();
+    run_config.disable_revm_consistency_check();
 
     let mut tester = TestingFramework::new().with_run_config(run_config);
 

@@ -43,6 +43,8 @@ pub fn compile_contracts(
 
     // Write each contract source
     for (name, def) in &to_compile {
+        validate_contract_name(name)?;
+
         let source = if let Some(ref inline) = def.source {
             inline.clone()
         } else if let Some(ref file) = def.file {
@@ -82,6 +84,26 @@ pub fn compile_contracts(
     }
 
     Ok(result)
+}
+
+/// Validates that a contract name is safe to use as a filename.
+/// Rejects names containing path separators or other unsafe characters
+/// to prevent escape from the temp project directory.
+fn validate_contract_name(name: &str) -> anyhow::Result<()> {
+    if name.is_empty() {
+        bail!("contract name must not be empty");
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        bail!(
+            "invalid contract name '{name}': must not contain path separators or '..' (Solidity contract names should be alphanumeric)"
+        );
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        bail!(
+            "invalid contract name '{name}': must only contain ASCII alphanumeric characters or underscore"
+        );
+    }
+    Ok(())
 }
 
 /// Finds the forge artifact JSON for a contract name.
