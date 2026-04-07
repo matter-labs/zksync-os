@@ -35,6 +35,13 @@ impl QuasiUART {
         }
     }
 
+    #[inline(never)]
+    pub fn write_debug<T: core::fmt::Debug>(value: &T) {
+        use core::fmt::Write;
+        let mut writer = Self::new();
+        let _ = write!(writer, "{:?}", value);
+    }
+
     fn flush(&mut self) {
         if self.len == 0 {
             self.buffer.fill(0);
