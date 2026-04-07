@@ -24,6 +24,7 @@ jobs:
               with:
                   components: clippy, rustfmt
                   rustflags: ""
+                  cache: false
 
             - name: Setup
               run: |
