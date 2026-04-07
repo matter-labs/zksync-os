@@ -239,6 +239,10 @@ function install() {
 }
 
 function prepare() {
+    if [[ -f "../../zksync_os/dist/for_tests/app.bin" ]]; then
+        echo "RISC-V binary already exists, skipping build"
+        return
+    fi
     pushd ../../zksync_os || exit
     /bin/bash ./dump_bin.sh --type for-tests || exit
     popd || exit

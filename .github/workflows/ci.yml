@@ -281,9 +281,6 @@ jobs:
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions/setup-node@v3
-              with:
-                  node-version: "20"
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
@@ -294,11 +291,11 @@ jobs:
               with:
                   name: riscv-binaries
                   path: zksync_os/dist/
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz
             - name: Run regression tests
               working-directory: ./tests/fuzzer
-              run: |
-                  ./fuzz.sh install
-                  ./fuzz.sh regression
+              run: ./fuzz.sh regression
 
     check_app_bin:
         name: Check that binaries can be built
