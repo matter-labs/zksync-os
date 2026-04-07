@@ -35,13 +35,6 @@ impl QuasiUART {
         }
     }
 
-    #[inline(never)]
-    pub fn write_debug<T: core::fmt::Debug>(value: &T) {
-        use core::fmt::Write;
-        let mut writer = Self::new();
-        let _ = write!(writer, "{:?}", value);
-    }
-
     fn flush(&mut self) {
         if self.len == 0 {
             self.buffer.fill(0);
@@ -53,6 +46,7 @@ impl QuasiUART {
         self.len = 0;
         write_word(u32::from_le_bytes(self.buffer));
     }
+
 }
 
 impl core::fmt::Write for QuasiUART {
@@ -71,14 +65,10 @@ impl proof_running_system::zk_ee::system::logger::Logger for QuasiUART {
     fn log_data(&mut self, src: impl ExactSizeIterator<Item = u8>) -> core::fmt::Result {
         let expected_len = src.len() * 2;
         self.write_entry_sequence(expected_len);
+        const HEX: &[u8; 16] = b"0123456789abcdef";
         for byte in src {
-            // Write two hex digits per byte without heapless
-            let hi = byte >> 4;
-            let lo = byte & 0x0f;
-            let hi_char = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-            let lo_char = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-            self.write_byte(hi_char);
-            self.write_byte(lo_char);
+            self.write_byte(HEX[(byte >> 4) as usize]);
+            self.write_byte(HEX[(byte & 0x0f) as usize]);
         }
         self.flush();
 
