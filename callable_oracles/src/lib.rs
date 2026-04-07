@@ -36,6 +36,32 @@ use zk_ee::{
 
 pub mod hash_to_prime;
 
+/// Shared test utilities for callable oracle unit tests.
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use oracle_provider::RamPeek;
+    use std::collections::BTreeMap;
+
+    /// BTreeMap-backed memory source for testing oracle query processors.
+    #[derive(Default)]
+    pub(crate) struct TestMemorySource {
+        pub words: BTreeMap<u32, u32>,
+    }
+
+    impl TestMemorySource {
+        pub fn insert_u32(&mut self, address: u32, value: u32) {
+            assert!(address.is_multiple_of(4));
+            self.words.insert(address, value);
+        }
+    }
+
+    impl RamPeek for TestMemorySource {
+        fn peek_word(&self, address: u32) -> u32 {
+            self.words.get(&address).copied().unwrap_or(0)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryRegionDescriptionParams {
     pub offset: u32,

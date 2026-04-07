@@ -140,15 +140,9 @@ pub fn blob_kzg_commitment_and_proof(data: &[u8]) -> KZGCommitmentAndProof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
-    use oracle_provider::RamPeek;
-    use std::collections::BTreeMap;
     use zk_ee::oracle::usize_serialization::UsizeSerializable;
-
-    #[derive(Default)]
-    struct TestMemorySource {
-        words: BTreeMap<u32, u32>,
-    }
 
     impl TestMemorySource {
         fn write_bytes(&mut self, offset: u32, data: &[u8]) {
@@ -159,12 +153,6 @@ mod tests {
                 let addr = offset + (i as u32) * 4;
                 self.words.insert(addr, val);
             }
-        }
-    }
-
-    impl RamPeek for TestMemorySource {
-        fn peek_word(&self, address: u32) -> u32 {
-            self.words.get(&address).copied().unwrap_or(0)
         }
     }
 

@@ -162,22 +162,11 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
+    use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
-    use oracle_provider::RamPeek;
-
-    #[derive(Default)]
-    struct TestMemorySource {
-        words: BTreeMap<u32, u32>,
-    }
 
     impl TestMemorySource {
-        fn insert_u32(&mut self, address: u32, value: u32) {
-            assert!(address.is_multiple_of(4));
-            self.words.insert(address, value);
-        }
-
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
             for (idx, value) in values.iter().copied().enumerate() {
                 let word_address = address + (idx as u32) * 8;
@@ -204,12 +193,6 @@ mod tests {
         }
     }
 
-    impl RamPeek for TestMemorySource {
-        fn peek_word(&self, address: u32) -> u32 {
-            self.words.get(&address).copied().unwrap_or(0)
-        }
-    }
-
     fn patterned_u64_words(len: usize, seed: u64) -> Vec<u64> {
         let mut state = seed;
         let mut words = Vec::with_capacity(len);
@@ -233,8 +216,8 @@ mod tests {
     }
 
     /// Helper: write a ModExpAdviceParams struct and data into TestMemorySource, then run the
-    /// RISC-V oracle query. Returns (quotient_u64_words, remainder_u64_words).
-    fn run_riscv_division(dividend_u64: &[u64], modulus_u64: &[u64]) -> (Vec<u64>, Vec<u64>) {
+    /// oracle query processor. Returns (quotient_u64_words, remainder_u64_words).
+    fn run_division_query(dividend_u64: &[u64], modulus_u64: &[u64]) -> (Vec<u64>, Vec<u64>) {
         let a_digits = dividend_u64.len().div_ceil(4);
         let m_digits = modulus_u64.len().div_ceil(4);
         let a_u64_count = a_digits * 4;
@@ -279,7 +262,7 @@ mod tests {
     #[test]
     fn riscv_arithmetic_query_basic_division() {
         // 10 / 3 = q=3, r=1
-        let (q, r) = run_riscv_division(&[10, 0, 0, 0], &[3, 0, 0, 0]);
+        let (q, r) = run_division_query(&[10, 0, 0, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert_eq!(r, vec![1]);
     }
@@ -287,7 +270,7 @@ mod tests {
     #[test]
     fn riscv_arithmetic_query_exact_division() {
         // 15 / 5 = q=3, r=0
-        let (q, r) = run_riscv_division(&[15, 0, 0, 0], &[5, 0, 0, 0]);
+        let (q, r) = run_division_query(&[15, 0, 0, 0], &[5, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert!(r.is_empty(), "remainder should be zero (stripped)");
     }
@@ -295,7 +278,7 @@ mod tests {
     #[test]
     fn riscv_arithmetic_query_dividend_smaller_than_modulus() {
         // 2 / 7 = q=0, r=2
-        let (q, r) = run_riscv_division(&[2, 0, 0, 0], &[7, 0, 0, 0]);
+        let (q, r) = run_division_query(&[2, 0, 0, 0], &[7, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![2]);
     }
@@ -304,7 +287,7 @@ mod tests {
     fn riscv_arithmetic_query_dividend_fewer_digits_than_modulus() {
         // a=5 (1 DelegatedU256 digit), m=2^64+3 (2 DelegatedU256 digits)
         // 5 < 2^64+3, so q=0, r=5
-        let (q, r) = run_riscv_division(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
+        let (q, r) = run_division_query(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![5]);
     }
@@ -312,7 +295,7 @@ mod tests {
     #[test]
     fn riscv_arithmetic_query_multi_digit_quotient() {
         // 2^128 / 3 = 0x55555555555555555555555555555555 remainder 1
-        let (q, r) = run_riscv_division(&[0, 0, 1, 0], &[3, 0, 0, 0]);
+        let (q, r) = run_division_query(&[0, 0, 1, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![0x5555555555555555, 0x5555555555555555]);
         assert_eq!(r, vec![1]);
     }
@@ -320,7 +303,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn riscv_arithmetic_query_division_by_zero() {
-        let _ = run_riscv_division(&[10, 0, 0, 0], &[0, 0, 0, 0]);
+        let _ = run_division_query(&[10, 0, 0, 0], &[0, 0, 0, 0]);
     }
 
     #[test]

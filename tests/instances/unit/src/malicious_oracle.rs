@@ -245,8 +245,7 @@ mod da_commitment_scheme {
 }
 
 /// Integration tests using custom oracle factories to test security-critical
-/// oracle validation paths end-to-end. These cover cases from PR#374 where
-/// the system must properly validate and reject malicious oracle responses.
+/// oracle validation paths end-to-end.
 mod custom_oracle_factories {
     use rig::alloy::consensus::TxEip2930;
     use rig::alloy::primitives::{TxKind, U256};
@@ -279,8 +278,6 @@ mod custom_oracle_factories {
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
     /// Generic oracle factory that delegates oracle construction to a closure.
-    /// Replaces per-test factory structs: each test only provides the closure
-    /// that builds its custom oracle configuration.
     pub(super) struct CustomOracleFactory<F>(pub F)
     where
         F: Fn(
@@ -344,6 +341,43 @@ mod custom_oracle_factories {
                 da_commitment_scheme,
             )
         }
+    }
+
+    /// Builds a standard oracle with common processors (block metadata, proof data,
+    /// DA commitment scheme, field ops), calling `add_custom` to inject the
+    /// test-specific (possibly malicious) processors.
+    pub(super) fn build_oracle(
+        block_metadata: BlockMetadataFromOracle,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_custom: impl FnOnce(&mut ZkEENonDeterminismSource),
+    ) -> ZkEENonDeterminismSource {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(BlockMetadataResponder { block_metadata });
+        add_custom(&mut oracle);
+        oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
+        oracle.add_external_processor(DACommitmentSchemeResponder {
+            da_commitment_scheme,
+        });
+        oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
+        oracle
+    }
+
+    /// Adds the standard (non-malicious) TX, preimage, and storage processors.
+    pub(super) fn add_standard_processors(
+        oracle: &mut ZkEENonDeterminismSource,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+    ) {
+        oracle.add_external_processor(TxDataResponder {
+            tx_source,
+            next_tx: None,
+            next_tx_format: None,
+            next_tx_from: None,
+        });
+        oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+        oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
     }
 
     // ---- Malicious TX encoding format responder ----
@@ -460,22 +494,14 @@ mod custom_oracle_factories {
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(MaliciousTxFormatResponder::new(
-                    tx_source,
-                    malicious_format_value,
-                ));
-                oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(MaliciousTxFormatResponder::new(
+                        tx_source,
+                        malicious_format_value,
+                    ));
+                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                })
             },
         )
     }
@@ -688,27 +714,19 @@ mod custom_oracle_factories {
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(TxDataResponder {
-                    tx_source,
-                    next_tx: None,
-                    next_tx_format: None,
-                    next_tx_from: None,
-                });
-                oracle.add_external_processor(MaliciousPreimageResponder::new(
-                    preimage_source,
-                    blocked_hashes.clone(),
-                ));
-                oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(TxDataResponder {
+                        tx_source,
+                        next_tx: None,
+                        next_tx_format: None,
+                        next_tx_from: None,
+                    });
+                    oracle.add_external_processor(MaliciousPreimageResponder::new(
+                        preimage_source,
+                        blocked_hashes.clone(),
+                    ));
+                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                })
             },
         )
     }
@@ -840,7 +858,6 @@ mod custom_oracle_factories {
         }
     }
 
-    /// Custom oracle factory that corrupts account properties storage reads.
     /// Helper: builds a CustomOracleFactory with MaliciousAccountStorageResponder.
     fn malicious_account_storage_factory() -> CustomOracleFactory<
         impl Fn(
@@ -859,24 +876,17 @@ mod custom_oracle_factories {
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(TxDataResponder {
-                    tx_source,
-                    next_tx: None,
-                    next_tx_format: None,
-                    next_tx_from: None,
-                });
-                oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                oracle.add_external_processor(MaliciousAccountStorageResponder::new(state_tree));
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(TxDataResponder {
+                        tx_source,
+                        next_tx: None,
+                        next_tx_format: None,
+                        next_tx_from: None,
+                    });
+                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                    oracle
+                        .add_external_processor(MaliciousAccountStorageResponder::new(state_tree));
+                })
             },
         )
     }
@@ -1006,7 +1016,6 @@ mod custom_oracle_factories {
         }
     }
 
-    /// Custom oracle factory that corrupts transaction data bytes.
     /// Helper: builds a CustomOracleFactory with MaliciousTxDataCorruptResponder.
     fn malicious_tx_data_corrupt_factory() -> CustomOracleFactory<
         impl Fn(
@@ -1025,19 +1034,11 @@ mod custom_oracle_factories {
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(MaliciousTxDataCorruptResponder::new(tx_source));
-                oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(MaliciousTxDataCorruptResponder::new(tx_source));
+                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                })
             },
         )
     }
@@ -1207,7 +1208,6 @@ mod custom_oracle_factories {
         }
     }
 
-    /// Custom oracle factory that lies about slot existence.
     /// Helper: builds a CustomOracleFactory with FalseExistingSlotResponder.
     fn false_existing_slot_factory() -> CustomOracleFactory<
         impl Fn(
@@ -1226,24 +1226,16 @@ mod custom_oracle_factories {
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(TxDataResponder {
-                    tx_source,
-                    next_tx: None,
-                    next_tx_format: None,
-                    next_tx_from: None,
-                });
-                oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                oracle.add_external_processor(FalseExistingSlotResponder::new(state_tree));
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(TxDataResponder {
+                        tx_source,
+                        next_tx: None,
+                        next_tx_format: None,
+                        next_tx_from: None,
+                    });
+                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                    oracle.add_external_processor(FalseExistingSlotResponder::new(state_tree));
+                })
             },
         )
     }
@@ -1390,7 +1382,6 @@ mod custom_oracle_factories {
         }
     }
 
-    /// Custom oracle factory that corrupts preimage data for targeted hashes.
     /// Helper: builds a CustomOracleFactory with CorruptedPreimageResponder.
     fn corrupted_preimage_factory(
         corrupted_hashes: Vec<Bytes32>,
@@ -1411,27 +1402,19 @@ mod custom_oracle_factories {
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(TxDataResponder {
-                    tx_source,
-                    next_tx: None,
-                    next_tx_format: None,
-                    next_tx_from: None,
-                });
-                oracle.add_external_processor(CorruptedPreimageResponder::new(
-                    preimage_source,
-                    corrupted_hashes.clone(),
-                ));
-                oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
-                    da_commitment_scheme,
-                });
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
+                    oracle.add_external_processor(TxDataResponder {
+                        tx_source,
+                        next_tx: None,
+                        next_tx_format: None,
+                        next_tx_from: None,
+                    });
+                    oracle.add_external_processor(CorruptedPreimageResponder::new(
+                        preimage_source,
+                        corrupted_hashes.clone(),
+                    ));
+                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                })
             },
         )
     }
@@ -1512,10 +1495,6 @@ mod callable_oracle_tests {
     use rig::basic_system::system_implementation::flat_storage_model::{
         FlatStorageCommitment, TREE_HEIGHT,
     };
-    use rig::forward_system::run::query_processors::{
-        BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder,
-        ReadTreeResponder, TxDataResponder, ZKProofDataResponder,
-    };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::oracle_provider::ZkEENonDeterminismSource;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
@@ -1525,8 +1504,7 @@ mod callable_oracle_tests {
     use std::collections::BTreeMap;
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-    /// Simple BTreeMap-based memory source for testing oracle query processors.
-    /// Replaces the removed VectorMemoryImpl.
+    /// BTreeMap-based memory source for testing oracle query processors.
     #[derive(Default)]
     struct TestMemorySource {
         words: BTreeMap<u32, u32>,
@@ -1600,25 +1578,20 @@ mod callable_oracle_tests {
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                let mut oracle = ZkEENonDeterminismSource::default();
-                oracle.add_external_processor(BlockMetadataResponder { block_metadata });
-                oracle.add_external_processor(TxDataResponder {
-                    tx_source,
-                    next_tx: None,
-                    next_tx_format: None,
-                    next_tx_from: None,
-                });
-                oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
-                oracle.add_external_processor(DACommitmentSchemeResponder {
+                super::custom_oracle_factories::build_oracle(
+                    block_metadata,
+                    proof_data,
                     da_commitment_scheme,
-                });
-                oracle.add_external_processor(MaliciousArithmeticQuery::default());
-                oracle.add_external_processor(
-                    rig::callable_oracles::field_hints::NativeFieldOpsQuery,
-                );
-                oracle
+                    |oracle| {
+                        super::custom_oracle_factories::add_standard_processors(
+                            oracle,
+                            state_tree,
+                            preimage_source,
+                            tx_source,
+                        );
+                        oracle.add_external_processor(MaliciousArithmeticQuery::default());
+                    },
+                )
             },
         )
     }
