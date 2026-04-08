@@ -3,11 +3,14 @@ use crate::bootloader::constants::*;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
-use crate::bootloader::transaction::{charge_keccak, Transaction};
-use crate::bootloader::transaction_flow::gas_helpers::{calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata, create_resources_for_tx, get_gas_price, L2ResourcesPolicy};
+use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
+use crate::bootloader::transaction::Transaction;
+use crate::bootloader::transaction_flow::gas_helpers::{
+    calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
+    create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+};
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
-use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::ERGS_PER_GAS;
@@ -20,11 +23,10 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
-use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
 use zk_ee::system::{AccountDataRequest, SystemFunctions};
-use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
+use zk_ee::system::{Ergs, IOSubsystemExt};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
 use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
@@ -138,8 +140,28 @@ where
         .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
 
+    let mut access_list_accounts = 0;
+    let mut access_list_storage_keys = 0;
+    let mut authorization_list_num = 0;
+    if let Some(iter) = transaction.access_list_iter() {
+        for AccessListForAddress {
+            address: _,
+            slots_list,
+        } in iter
+        {
+            access_list_accounts += 1;
+            access_list_storage_keys += slots_list.count as u64;
+        }
+    }
+    #[cfg(feature = "eip-7702")]
+    {
+        if let Some(authorization_list) = transaction.authorization_list() {
+            authorization_list_num = authorization_list.len() as u64;
+        }
+    }
+
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
-    let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
+    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
         system,
         tx_gas_limit,
         native_per_gas == 0,
@@ -148,12 +170,13 @@ where
         transaction.is_deployment().is_some(),
         calldata.len() as u64,
         calldata_tokens,
-        // TODO: correct params
         calculate_l2_tx_intrinsic_computational_native_resources(
             calldata.len() as u64,
-            0, 0, 0
+            access_list_accounts,
+            access_list_storage_keys,
+            authorization_list_num,
         ),
-        calculate_l2_tx_intrinsic_pubdata(0),
+        calculate_l2_tx_intrinsic_pubdata(authorization_list_num),
     )?;
 
     system_log!(
@@ -161,6 +184,9 @@ where
         "Prepared resources for transaction: {:?}\n",
         &tx_resources
     );
+
+    // we will use infinite resources during validation, since we already charged for it(intrinsic cost)
+    let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
     // NOTE: we provided a "hint" for "from", so it's sequencer's risks here:
     // - either "from" is valid at it has at least enough balance, valid signature, etc to eventually pay for all validation
@@ -184,7 +210,6 @@ where
             ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
-            let mut inf_resources = S::Resources::FORMAL_INFINITE;
             S::SystemFunctions::secp256k1_ec_recover(
                 ecrecover_input.as_slice(),
                 &mut ecrecover_output,
@@ -213,26 +238,23 @@ where
             }
         }
     };
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     let tx_hash: Bytes32 = transaction.transaction_hash(&mut inf_resources)?;
 
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
     // intrinsic cost charnged above
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
-    let originator_account_data =
-        system.io.read_account_properties(
-            ExecutionEnvironmentType::NoEE,
-            &mut inf_resources,
-            &from,
-            AccountDataRequest::empty()
-                .with_ee_version()
-                .with_nonce()
-                .with_has_bytecode()
-                .with_is_delegated()
-                .with_nominal_token_balance(),
-        )?;
+    let originator_account_data = system.io.read_account_properties(
+        ExecutionEnvironmentType::NoEE,
+        &mut inf_resources,
+        &from,
+        AccountDataRequest::empty()
+            .with_ee_version()
+            .with_nonce()
+            .with_has_bytecode()
+            .with_is_delegated()
+            .with_nominal_token_balance(),
+    )?;
 
     // EIP-3607: Reject transactions from senders with deployed code modulo delegations
     // We skip it for simulation to allow simulate calls between contracts
@@ -242,11 +264,13 @@ where
 
     // Originator's nonce is incremented before authorization list
     // skipped for service transactions, for which we do not track nonce
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     let old_nonce = if transaction.nonce().is_some() {
-        match system
-                .io
-                .increment_nonce(ExecutionEnvironmentType::NoEE, &mut inf_resources, &from, 1u64) {
+        match system.io.increment_nonce(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &from,
+            1u64,
+        ) {
             Ok(x) => Ok(x),
             Err(SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _))) => {
                 return Err(TxError::Validation(
@@ -294,7 +318,6 @@ where
     }
 
     // Access list
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     parse_and_warm_up_access_list(system, &mut inf_resources, &transaction)?;
 
     // Parse blobs, if any
@@ -332,7 +355,6 @@ where
 
     // Now we can apply access list and authorization list, while simultaneously charging for them
     // Parse, validate and apply authorization list, following EIP-7702
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
     #[cfg(feature = "eip-7702")]
     {
         if let Some(authorization_list) = transaction.authorization_list() {

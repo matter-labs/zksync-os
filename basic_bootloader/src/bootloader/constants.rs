@@ -28,7 +28,83 @@ pub const TX_CALLDATA_OFFSET: usize = 0x60;
 /// Maximum value of gas that can be represented as ergs in an u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
 
+/// Transaction intrinsic gas cost.
+pub const TX_INTRINSIC_GAS: u64 = 21_000;
 
+/// Extra cost for deployment transactions.
+pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
+
+/// Cost to convert zero byte of calldata into "token"
+pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
+
+/// Cost to convert non-zero byte of calldata into "token"
+pub const CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR: u64 = 4;
+
+/// Cost in gas per "token" of calldata
+pub const CALLDATA_TOKEN_GAS_COST: u64 = 4;
+
+/// EIP-7623 minimal "token" cost
+pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
+
+/// EVM tester requires a high native_per_gas, but it hard-codes
+/// low gas prices. We need to bypass the usual way to compute this
+/// value. The value is so high because of modexp tests.
+pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
+
+// Default native price for L1->L2 transactions.
+// TODO (EVM-1157): find a reasonable value for it.
+pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
+
+// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
+// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
+pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
+
+// computational native consts
+/// Constant part of l2 tx intrinsic computational native cost.
+// 1. 30_000 for post validation processing: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash.
+// 2. 522000 = 350_000 + 43_000*4 for ecrecover.
+// 3. account read(worst case): 250740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+// 4. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+// 5. keccak for signing hash(worst case const part - 2 rounds + 1 round precharge for dynamic parts): 37500 = 2500 + 17_500 * 3
+// 6. keccak for full hash(worst case const part - 2 rounds + 1 round precharge for dynamic parts): 37500 = 2500 + 17_500 * 3
+// 7. fee prepayment: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+// NOTE: we are precharging 1 keccak round(in 5 and 6) since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
+    30_000 + 522_000 + 250_740 + 5_000 + 55_000 + 55_000 + 5_000;
+
+/// L2 tx calldata byte intrinsic computational native cost.
+// 1. caldata per byte copy: COPY_BYTE_NATIVE_COST = 1
+// 2. keccak for signing hash: 17_500 div_ceil 136 = 129
+// 3. keccak for full hash: 17_500 div_ceil 136 = 129
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1 + 129 + 129;
+
+/// L2 tx access list account computational native cost.
+// 1. computational part: 2000
+// 2. account read(worst case): 250740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+// 3. keccak for signing hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
+// 4. keccak for full hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
+    2_000 + 250_740 + 3_861 + 3_861;
+
+/// L2 tx access list storage slot computational native cost.
+// 1. computational part: 2000
+// 2. storage slot read(worst case): 242240 (COLD_NEW_STORAGE_READ_NATIVE_COST)
+// 3. keccak for signing hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
+// 4. keccak for full hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
+    2_000 + 242_240 + 4_247 + 4_247;
+
+/// L2 tx authorization computational native cost.
+// 1. computational part: 2000
+// 2. auth message keccak cost: 2500 + 17_500 = 20_000 (length 70, 1 round)
+// 3. 522000 = 350_000 + 43_000*4 for ecrecover.
+// 4. account read(worst case): 250_740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
+// 5. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
+// 6. delegation write: 26640 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) + 500(PREIMAGE_CACHE_SET_NATIVE_COST) + 20_000(1 round keccak, 23 byte code) + 1140(1 round blake, 24 byte padded code)
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
+    2_000 + 20_000 + 522_000 + 250_740 + 5_000 + 26_640;
+
+/// Constant part of l1 tx intrinsic computational native cost.
 // Covers intrinsic L1 tx work not charged as tx-body computation.
 //
 //  - storing and hashing the L1 tx log:
@@ -79,6 +155,29 @@ pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
 // first mint / call to L2AssetTracker can fail due to out-of-native
 pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
 
+/// L1 tx calldata byte intrinsic computational native cost.
+// caldata per byte copy: COPY_BYTE_NATIVE_COST = 1
+pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1;
+
+// pubdata consts
+/// Constant part of l2 tx intrinsic pubdata.
+// 1. sender account change: 68 = 32(key) + 1(account metadata) + 2(nonce increase) + 33(worst case balance)
+// 2. coinbase: 66 = 32(key) + 1(account metadata) + 33(worst case balance)
+pub const L2_TX_INTRINSIC_PUBDATA: u64 = 68 + 64;
+
+/// L2 tx authorization intrinsic pubdata.
+// Full diff compression:
+// 1. key: 32
+// 2. account metadata: 1
+// 3. versioning data: 8
+// 4. nonce: 2
+// 5. balance: 1
+// 6. unpadded code length: 4
+// 7. artifacts length: 4
+// 8. padded bytecode: 24
+// 9. observable length: 4
+pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = 32 + 1 + 8 + 2 + 1 + 4 + 4 + 24 + 4;
+
 // Pubdata needed for the diff in balance as a result of
 // the fee payment to the coinbase.
 // We take a worst-case value of 32 byte for the key and 34 for
@@ -113,33 +212,7 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
 
-/// Transaction intrinsic gas cost (EVM eq)
-pub const TX_INTRINSIC_GAS: u64 = 21_000;
-
-/// Extra cost for deployment transactions.
-pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
-
-/// Value taken from system-contracts, to adjust.
-pub const L2_TX_INTRINSIC_PUBDATA: u64 = COINBASE_BALANCE_INTRINSIC_PUBDATA;
-
-// Includes:
-//  - Transferring fee to coinbase.
-//  - Transferring the gas refund.
-//  - Hashing of tx hash into rolling hash.
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
-
-/// Cost to convert zero byte of calldata into "token"
-pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
-
-/// Cost to convert non-zero byte of calldata into "token"
-pub const CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR: u64 = 4;
-
-/// Cost in gas per "token" of calldata
-pub const CALLDATA_TOKEN_GAS_COST: u64 = 4;
-
-/// EIP-7623 minimal "token" cost
-pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
-
+// to be removed
 /// Computational cost of 7702 auth
 pub const PER_AUTH_NATIVE_COST: u64 = 2000;
 
@@ -148,16 +221,3 @@ pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COST: u64 = 2000;
 
 /// Computational cost of 2930 access list per slot
 pub const PER_SLOT_ACCESS_LIST_NATIVE_COST: u64 = 2000;
-
-/// EVM tester requires a high native_per_gas, but it hard-codes
-/// low gas prices. We need to bypass the usual way to compute this
-/// value. The value is so high because of modexp tests.
-pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
-
-// Default native price for L1->L2 transactions.
-// TODO (EVM-1157): find a reasonable value for it.
-pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
-
-// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
-// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;

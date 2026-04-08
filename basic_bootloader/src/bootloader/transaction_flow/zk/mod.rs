@@ -20,7 +20,6 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
@@ -236,7 +235,9 @@ where
         // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
         // This ensures sender has sufficient funds before execution begins
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
-        system.io.update_account_nominal_token_balance(
+        system
+            .io
+            .update_account_nominal_token_balance(
                 ExecutionEnvironmentType::NoEE,
                 &mut inf_resources,
                 &from,
@@ -271,10 +272,12 @@ where
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
-        // TODO: consider using intrinsic here(so worst case can be "refunded" after execution)
-        let (validation_pubdata, _) =
-            get_resources_to_charge_for_pubdata(system, context.native_per_pubdata, None)?;
-        context.validation_pubdata = validation_pubdata;
+        // we are saving amount of pubdata spent during validation,
+        // it's already covered by intrinsic cost, so it will be excluded
+        // from pubdata payment after execution.
+        // In the future we may consider using intrinsic pubdata here,
+        // so worst case validation pubdata will be "refunded" if not used
+        context.validation_pubdata = system.net_pubdata_used()?;
 
         // Save resources to be able to calculate computational native consumption after everything
         let initial_resources = context.resources.main_resources.clone();
@@ -875,37 +878,5 @@ where
                 },
             ))
         }
-    }
-
-    ///
-    /// Charge validation pubdata using both main and withheld resources.
-    /// First try to use withheld.
-    ///
-    fn charge_for_validation_pubdata_using_withheld(
-        resources: &mut ResourcesForTx<S>,
-        to_charge_for_pubdata: &S::Resources,
-    ) -> Result<(), SystemError> {
-        if resources.withheld.has_enough(to_charge_for_pubdata) {
-            // Simple case, just spend directly from withheld
-            resources.withheld.charge(to_charge_for_pubdata)?;
-            return Ok(());
-        }
-
-        if resources.withheld.is_empty() {
-            // Simple case, just spend directly from main resources
-            resources.main_resources.charge(to_charge_for_pubdata)?;
-            return Ok(());
-        }
-
-        // General case: first compute the part that should be charged from
-        // withheld.
-        let to_charge_from_main = to_charge_for_pubdata.diff(resources.withheld.clone());
-        // Then charge from withheld, this will return an Err with OON and zero it out.
-        // We ignore the error and continue charging from the main resources.
-        if resources.withheld.charge(to_charge_for_pubdata).is_ok() {
-            return Err(internal_error!("Withheld should be insufficient, checked above").into());
-        }
-        resources.main_resources.charge(&to_charge_from_main)?;
-        Ok(())
     }
 }
