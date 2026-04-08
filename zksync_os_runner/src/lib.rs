@@ -58,7 +58,7 @@ fn run_inner(
     sym_path: Option<PathBuf>,
     flamegraph: Option<FlamegraphOptions>,
 ) -> ([u32; 8], Option<u64>) {
-    eprintln!("ZK RISC-V transpiler runner is starting");
+    log::info!("ZK RISC-V transpiler runner is starting");
 
     let program = Program::load(&dist_dir)
         .unwrap_or_else(|err| panic!("failed to load program from {}: {err}", dist_dir.display()));
