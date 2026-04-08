@@ -1678,7 +1678,7 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
     let base_fee = 1_000u128;
     let simulation_total_deposited = U256::from(1_000u64);
     let execution_total_deposited =
-        U256::from(gas_limit) * U256::from(base_fee) + value + U256::from(100u64);
+        U256::from(gas_limit) * U256::from(base_fee) + value + U256::from(100_000u64);
 
     let simulation_tx = L1TxBuilder::new()
         .from(from)
@@ -1750,6 +1750,18 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         "Mismatch in gas used between simulation and execution"
     );
     assert!(simulation_result.pubdata_used >= execution_result.pubdata_used);
+    // Expected number of bytes simulation will overestimate for pubdata.
+    // It's important to check that the introduction of the asset tracker
+    // call doesn't increment this difference.
+    println!(
+        "sim: {}, execution {}",
+        simulation_result.pubdata_used, execution_result.pubdata_used
+    );
+    let expected_pubdata_diff_before_asset_tracker = 61;
+    assert!(
+        simulation_result.pubdata_used
+            >= execution_result.pubdata_used + expected_pubdata_diff_before_asset_tracker
+    );
 }
 
 /// Check that gas price doesn't affect gas used in simulation.

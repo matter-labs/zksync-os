@@ -1,6 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PRICE,
+    ASSET_TRACKER_INTRINSIC_PUBDATA, FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_PUBDATA,
+    L1_TX_NATIVE_PRICE,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -78,6 +79,24 @@ where
     // will be refunded to the user.
     let gas_per_pubdata = transaction.gas_per_pubdata_limit.read();
 
+    // It's important to ensure that the amount of pubdata estimated during
+    // transaction simulation is never less than the amount estimated
+    // during execution of the same transaction.
+    // Since the introduction of the asset tracker calls during the base token
+    // minting, the pubdata for the storage diff of the first of such calls
+    // depends indirectly on the gas price, which can fluctuate from simulation
+    // to execution.
+    // Even though the pubdata for this storage change is already considered in
+    // L1_TX_INTRINSIC_PUBDATA (for the calls related to refunds), we need to
+    // add an extra worst case when in simulation to ensure that simulation
+    // never underestimates pubdata used.
+    let extra_pubdata_for_simulation = if Config::SIMULATION {
+        ASSET_TRACKER_INTRINSIC_PUBDATA
+    } else {
+        0
+    };
+    let intrinsic_pubdata = L1_TX_INTRINSIC_PUBDATA + extra_pubdata_for_simulation;
+
     // Compute resource and fee information, making sure we handle
     // all possible validation errors carefully.
     // L1 transactions cannot be invalidated. Therefore, the following
@@ -100,6 +119,7 @@ where
         gas_limit,
         gas_price,
         gas_per_pubdata,
+        intrinsic_pubdata,
     )?;
 
     // Just used for computing native used
@@ -387,7 +407,7 @@ where
         gas_refunded: evm_refund,
         computational_native_used,
         native_used,
-        pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA,
+        pubdata_used: pubdata_used + intrinsic_pubdata,
         blob_gas_used: 0,
     })
 }
@@ -423,6 +443,7 @@ fn prepare_and_check_resources<
     gas_limit: u64,
     gas_price: U256,
     gas_per_pubdata: u32,
+    intrinsic_pubdata: u64,
 ) -> Result<ResourceAndFeeInfo<S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -491,7 +512,7 @@ where
         calculate_l1_tx_intrinsic_computational_native_resources(
             transaction.calldata().len() as u64
         ),
-        L1_TX_INTRINSIC_PUBDATA,
+        intrinsic_pubdata,
     )?;
 
     // L1 transactions might have a gas limit < minimal_gas_used. This should be
@@ -721,7 +742,7 @@ where
     S::Metadata: ZkSpecificPricingMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    notify_l2_asset_tracker::<S>(
+    notify_l2_asset_tracker::<S, Config>(
         system,
         system_functions,
         memories,
@@ -819,7 +840,7 @@ where
 /// If no contract is deployed at L2AssetTracker, the call succeeds silently
 /// (a call to an empty address returns success with no returndata in EVM).
 /// However, we are certain that L2AssetTracker is available after the upgrade.
-fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
+fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
@@ -834,7 +855,7 @@ where
     S::Metadata: ZkSpecificPricingMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    if amount > U256::ZERO {
+    if amount > U256::ZERO || Config::SIMULATION {
         // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
         // selector 0x03117c8c + abi-encoded (fromChainId, amount)
         let mut calldata = [0u8; 68];

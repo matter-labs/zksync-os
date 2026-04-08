@@ -1,10 +1,11 @@
-use alloy::primitives::U256;
+use alloy::primitives::{Bytes, Log, U256};
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use forward_system::run::convert_alloy::IntoAlloy;
 use revm::{
     context::{ContextTr, TxEnv},
     context_interface::block::BlobExcessGasAndPrice,
+    context_interface::result::HaltReason,
     database::{CacheDB, EmptyDB},
     inspector::InspectCommitEvm,
     DatabaseRef,
@@ -21,6 +22,30 @@ use crate::helpers::{
 use crate::revm_state_provider::{RevmStateProvider, ViewState};
 use crate::storage_diff_comp::CompareReport;
 
+/// Per-transaction execution comparison between REVM and ZKsync OS.
+#[derive(Debug)]
+pub struct TxComparisonMismatch {
+    pub tx_index: usize,
+    pub kind: TxMismatchKind,
+}
+
+#[derive(Debug)]
+pub enum TxMismatchKind {
+    /// Success/revert status differs.
+    OutcomeMismatch {
+        revm_success: bool,
+        zk_success: bool,
+    },
+    /// Return data differs.
+    ReturnDataMismatch { revm: Option<Bytes>, zk: Vec<u8> },
+    /// Event logs differ.
+    LogsMismatch {
+        revm_count: usize,
+        zk_count: usize,
+        first_diff_index: Option<usize>,
+    },
+}
+
 struct ReplayTx {
     tx: ZKsyncTx<TxEnv>,
     original_tx_index: usize,
@@ -32,6 +57,10 @@ where
 {
     state: State,
     spec: ZkSpecId,
+    /// When true, REVM computes gas independently instead of using
+    /// ZKsync OS's `gas_used` as an override. Best combined with
+    /// `unlimited_native` so that gas models are equivalent.
+    independent_gas: bool,
 }
 
 impl<State> RevmRunner<State>
@@ -42,6 +71,7 @@ where
         Self {
             state,
             spec: ZkSpecId::AtlasV3,
+            independent_gas: false,
         }
     }
 
@@ -55,13 +85,20 @@ where
         self
     }
 
+    /// Enable independent gas computation: REVM computes gas itself
+    /// instead of using ZKsync OS's `gas_used` override.
+    pub fn with_independent_gas(mut self, independent: bool) -> Self {
+        self.independent_gas = independent;
+        self
+    }
+
     pub fn run(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
     ) -> anyhow::Result<()> {
-        let (_traces, _errors, compare_report) =
+        let (_traces, _errors, compare_report, tx_mismatches) =
             self.run_with_call_traces(transactions, block_context, block_output)?;
 
         if let Some(report) = compare_report {
@@ -74,6 +111,13 @@ where
                     report.accounts.len()
                 );
             }
+        }
+
+        if !tx_mismatches.is_empty() {
+            bail!(
+                "REVM consistency mismatch: {} transaction-level divergence(s) (return data, logs, or outcome)",
+                tx_mismatches.len()
+            );
         }
 
         Ok(())
@@ -89,6 +133,7 @@ where
         Vec<CallFrame>,
         Vec<(usize, ZKsyncTxError)>,
         Option<CompareReport>,
+        Vec<TxComparisonMismatch>,
     )> {
         let blob_fee: u64 = block_context
             .blob_fee
@@ -136,10 +181,16 @@ where
             block_output.as_ref(),
             block_context.gas_limit,
             settlement_layer_chain_id,
+            self.independent_gas,
         )?;
 
         let mut call_traces = Vec::with_capacity(transactions.len());
         let mut invalid_transactions = vec![];
+        // Collect per-tx REVM execution results keyed by original tx index.
+        let mut revm_results: Vec<(
+            usize,
+            revm::context_interface::result::ExecutionResult<HaltReason>,
+        )> = vec![];
         for replay_tx in revm_txs {
             let tx_execution = match evm.inspect_tx_commit(replay_tx.tx) {
                 Ok(res) => res,
@@ -165,6 +216,7 @@ where
                 .geth_builder()
                 .geth_call_traces(Default::default(), tx_execution.gas_used());
             call_traces.push(trace);
+            revm_results.push((replay_tx.original_tx_index, tx_execution));
             evm.0.inspector.fuse();
         }
 
@@ -182,7 +234,31 @@ where
             None
         };
 
-        Ok((call_traces, invalid_transactions, compare_report))
+        // Compare per-tx return data and events only when gas overrides
+        // are disabled — with force_fail, REVM skips execution so return
+        // data is not meaningful.
+        let tx_mismatches = if self.independent_gas {
+            if let Some(block_output) = block_output.as_ref() {
+                Self::compare_tx_results(&revm_results, block_output)
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        if !tx_mismatches.is_empty() {
+            for m in &tx_mismatches {
+                log::warn!("tx #{} mismatch: {:?}", m.tx_index, m.kind);
+            }
+        }
+
+        Ok((
+            call_traces,
+            invalid_transactions,
+            compare_report,
+            tx_mismatches,
+        ))
     }
 
     fn build_revm_txs(
@@ -190,6 +266,7 @@ where
         block_output: Option<&BlockOutput>,
         block_gas_limit: u64,
         settlement_layer_chain_id: U256,
+        independent_gas: bool,
     ) -> anyhow::Result<Vec<ReplayTx>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -214,10 +291,16 @@ where
                     continue;
                 };
 
+                let (gas_override, force_fail) = if independent_gas {
+                    (None, false)
+                } else {
+                    (Some(tx_output.gas_used), !tx_output.is_success())
+                };
+
                 let tx_env = zk_tx_into_revm_tx(
                     transaction,
-                    Some(tx_output.gas_used),
-                    !tx_output.is_success(),
+                    gas_override,
+                    force_fail,
                     block_gas_limit,
                     Some(settlement_layer_chain_id),
                 )
@@ -267,6 +350,92 @@ where
         )
     }
 
+    /// Compare per-tx return data, logs, and success/revert outcome.
+    fn compare_tx_results(
+        revm_results: &[(
+            usize,
+            revm::context_interface::result::ExecutionResult<HaltReason>,
+        )],
+        block_output: &BlockOutput,
+    ) -> Vec<TxComparisonMismatch> {
+        let mut mismatches = Vec::new();
+
+        for (tx_idx, revm_result) in revm_results {
+            let Some(Ok(zk_output)) = block_output.tx_results.get(*tx_idx) else {
+                continue;
+            };
+
+            // Compare outcome (success vs revert).
+            let revm_success = revm_result.is_success();
+            let zk_success = zk_output.is_success();
+            if revm_success != zk_success {
+                mismatches.push(TxComparisonMismatch {
+                    tx_index: *tx_idx,
+                    kind: TxMismatchKind::OutcomeMismatch {
+                        revm_success,
+                        zk_success,
+                    },
+                });
+                // If outcome differs, skip return data / logs comparison.
+                continue;
+            }
+
+            // Compare return data.
+            let revm_output = revm_result.output().cloned();
+            let zk_output_data = match &zk_output.execution_result {
+                zksync_os_interface::types::ExecutionResult::Success(
+                    zksync_os_interface::types::ExecutionOutput::Call(data),
+                ) => data.clone(),
+                zksync_os_interface::types::ExecutionResult::Success(
+                    zksync_os_interface::types::ExecutionOutput::Create(data, _),
+                ) => data.clone(),
+                zksync_os_interface::types::ExecutionResult::Revert(data) => data.clone(),
+            };
+
+            let revm_output_bytes = revm_output.as_ref().map(|b| b.as_ref()).unwrap_or(&[]);
+            if revm_output_bytes != zk_output_data.as_slice() {
+                mismatches.push(TxComparisonMismatch {
+                    tx_index: *tx_idx,
+                    kind: TxMismatchKind::ReturnDataMismatch {
+                        revm: revm_output,
+                        zk: zk_output_data,
+                    },
+                });
+            }
+
+            // Compare event logs.
+            let revm_logs = revm_result.logs();
+            let zk_logs = &zk_output.logs;
+            if revm_logs.len() != zk_logs.len() {
+                mismatches.push(TxComparisonMismatch {
+                    tx_index: *tx_idx,
+                    kind: TxMismatchKind::LogsMismatch {
+                        revm_count: revm_logs.len(),
+                        zk_count: zk_logs.len(),
+                        first_diff_index: Some(revm_logs.len().min(zk_logs.len())),
+                    },
+                });
+            } else {
+                // Same count — compare individual logs.
+                for (i, (revm_log, zk_log)) in revm_logs.iter().zip(zk_logs.iter()).enumerate() {
+                    if !logs_match(revm_log, zk_log) {
+                        mismatches.push(TxComparisonMismatch {
+                            tx_index: *tx_idx,
+                            kind: TxMismatchKind::LogsMismatch {
+                                revm_count: revm_logs.len(),
+                                zk_count: zk_logs.len(),
+                                first_diff_index: Some(i),
+                            },
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        mismatches
+    }
+
     fn read_settlement_layer_chain_id(mut state: State) -> anyhow::Result<U256> {
         let flat_key = zk_ee::common_structs::derive_flat_storage_key(
             &ruint::aliases::B160::from_limbs([0x800b, 0, 0]),
@@ -279,4 +448,11 @@ where
                 .as_slice(),
         ))
     }
+}
+
+/// Compare two logs for equality (address, topics, data).
+fn logs_match(revm_log: &Log, zk_log: &Log) -> bool {
+    revm_log.address == zk_log.address
+        && revm_log.topics() == zk_log.topics()
+        && revm_log.data.data == zk_log.data.data
 }

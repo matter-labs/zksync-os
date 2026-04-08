@@ -48,6 +48,7 @@ exclude = [
     "crypto/src/blake2s/test_program",
     "circuit_test_program",
     "tests/evm_tester",
+    "tests/evm_divergence_validator",
     "tests/instances/eth_runner",
 ]
 

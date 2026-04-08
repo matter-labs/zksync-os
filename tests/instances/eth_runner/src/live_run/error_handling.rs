@@ -14,7 +14,12 @@ use crate::post_check::PostCheckError;
 const MAX_FAILURES: usize = 10;
 
 /// Formats a block failure message for Slack webhook notifications.
-fn format_block_failure_message(block_number: u64, chain_id: u64, error_type: &str, error: &dyn std::fmt::Debug) -> String {
+fn format_block_failure_message(
+    block_number: u64,
+    chain_id: u64,
+    error_type: &str,
+    error: &dyn std::fmt::Debug,
+) -> String {
     let machine_info = utils::get_machine_info();
     format!(
         ":rotating_light: eth_runner: Block {block_number} on chain with id {chain_id} {error_type}\n\
@@ -49,15 +54,16 @@ pub fn retry_block_with_backup_endpoint(
     total_block_time: &mut std::time::Duration,
 ) -> Result<BlockStatus> {
     warn!("Block {block_number} failed with primary endpoint. Retrying with backup endpoint...");
-    
+
     let backup_traces_result = {
         let rpc_start = Instant::now();
-        match rpc::get_all_block_traces(backup_endpoint, block_number)
-            .context(format!("Failed to fetch block traces from backup endpoint for {block_number}"))
-        {
+        match rpc::get_all_block_traces(backup_endpoint, block_number).context(format!(
+            "Failed to fetch block traces from backup endpoint for {block_number}"
+        )) {
             std::result::Result::Ok((block, prestate, diff, receipts, call)) => {
                 let total_rpc_time = rpc_start.elapsed();
-                debug!("RPC call for block {} from backup endpoint (batched): total={:.2}ms",
+                debug!(
+                    "RPC call for block {} from backup endpoint (batched): total={:.2}ms",
                     block_number,
                     total_rpc_time.as_secs_f64() * 1000.0
                 );
@@ -72,7 +78,7 @@ pub fn retry_block_with_backup_endpoint(
             std::result::Result::Err(e) => std::result::Result::Err(e),
         }
     };
-    
+
     match backup_traces_result {
         std::result::Result::Ok(backup_traces) => {
             let backup_block_start = Instant::now();
@@ -90,7 +96,7 @@ pub fn retry_block_with_backup_endpoint(
             );
             let backup_block_time = backup_block_start.elapsed();
             *total_block_time += backup_block_time;
-            
+
             match backup_result {
                 std::result::Result::Ok(BlockStatus::Success) => {
                     info!("Block {block_number} succeeded with backup endpoint");
@@ -108,8 +114,12 @@ pub fn retry_block_with_backup_endpoint(
         }
         std::result::Result::Err(fetch_err) => {
             error!("Failed to fetch traces from backup endpoint for block {block_number}: {fetch_err:?}");
-            Err(anyhow!("Backup endpoint failed to fetch traces: {fetch_err:?}")
-                .context(format!("Block {} failed with primary endpoint and backup fetch also failed", block_number)))
+            Err(
+                anyhow!("Backup endpoint failed to fetch traces: {fetch_err:?}").context(format!(
+                    "Block {} failed with primary endpoint and backup fetch also failed",
+                    block_number
+                )),
+            )
         }
     }
 }
@@ -132,13 +142,13 @@ pub fn fetch_block_traces_with_backup(
         std::result::Result::Ok(traces) => Ok(Some(traces)),
         std::result::Result::Err(primary_err) => {
             error!("Failed to fetch traces for block {block_number} from primary endpoint: {primary_err:?}");
-            
+
             // Try backup endpoint if available
             let traces_result = if let Some(backup) = backup_endpoint {
                 warn!("Trying backup endpoint for block {block_number} trace fetch...");
-                match rpc::get_all_block_traces(backup, block_number)
-                    .context(format!("Failed to fetch block traces from backup endpoint for {block_number}"))
-                {
+                match rpc::get_all_block_traces(backup, block_number).context(format!(
+                    "Failed to fetch block traces from backup endpoint for {block_number}"
+                )) {
                     std::result::Result::Ok((block, prestate, diff, receipts, call)) => {
                         info!("Successfully fetched traces for block {block_number} from backup endpoint");
                         std::result::Result::Ok(BlockTraces {
@@ -157,7 +167,7 @@ pub fn fetch_block_traces_with_backup(
             } else {
                 std::result::Result::Err(primary_err)
             };
-            
+
             match traces_result {
                 std::result::Result::Ok(traces) => Ok(Some(traces)),
                 std::result::Result::Err(e) => {
@@ -181,7 +191,7 @@ pub fn fetch_block_traces_with_backup(
                             warn!("Failed to send webhook notification: {}", webhook_err);
                         }
                     }
-                    
+
                     // Even if we can't fetch traces, we need to save the block hash
                     // so future blocks can reference it. Try to fetch just the hash.
                     match db.get_block_hash(block_number) {
@@ -192,15 +202,18 @@ pub fn fetch_block_traces_with_backup(
                             // Hash doesn't exist, try to fetch it
                             // Try backup endpoint first if available (since primary already failed for traces)
                             let hash_result = if let Some(backup) = backup_endpoint {
-                                rpc::get_block_hash(backup, block_number)
-                                    .or_else(|_| rpc::get_block_hash(primary_endpoint, block_number))
+                                rpc::get_block_hash(backup, block_number).or_else(|_| {
+                                    rpc::get_block_hash(primary_endpoint, block_number)
+                                })
                             } else {
                                 rpc::get_block_hash(primary_endpoint, block_number)
                             };
-                            
+
                             match hash_result {
                                 std::result::Result::Ok(hash) => {
-                                    if let Err(hash_err) = db.set_block_hash(block_number, U256::from_be_bytes(hash.0)) {
+                                    if let Err(hash_err) =
+                                        db.set_block_hash(block_number, U256::from_be_bytes(hash.0))
+                                    {
                                         warn!("Failed to save block hash for {block_number}: {hash_err}");
                                     } else {
                                         if let Err(flush_err) = db.flush() {
@@ -242,14 +255,14 @@ pub fn handle_block_result(
         }
         std::result::Result::Ok(BlockStatus::Error(e)) => {
             stats.failures += 1;
-            
+
             // Check if this is a "Reference must have write for account" error
             let should_skip_webhook = if let PostCheckError::Internal { msg } = &e {
                 msg.contains("Reference must have write for account")
             } else {
                 false
             };
-            
+
             if should_skip_webhook {
                 warn!("Block {block_number} failed with 'Reference must have write for account' error: {e:?}");
                 // Don't count this towards critical failures (MAX_FAILURES check)
@@ -262,10 +275,14 @@ pub fn handle_block_result(
                 }
                 stats.total_overhead_time += webhook_start.elapsed();
             }
-            
+
             if stats.critical_failures == MAX_FAILURES {
-                error!("Reached max number of critical failures ({MAX_FAILURES}), stopping execution");
-                return Err(anyhow!("Reached max number of critical failures ({MAX_FAILURES})"));
+                error!(
+                    "Reached max number of critical failures ({MAX_FAILURES}), stopping execution"
+                );
+                return Err(anyhow!(
+                    "Reached max number of critical failures ({MAX_FAILURES})"
+                ));
             }
         }
         std::result::Result::Err(e) => {
@@ -274,14 +291,23 @@ pub fn handle_block_result(
             error!("Block {block_number} failed with error: {e:?}");
             let webhook_start = Instant::now();
             if let Some(webhook) = webhook {
-                let msg = format_block_failure_message(block_number, chain_id, "failed with execution error", &e);
+                let msg = format_block_failure_message(
+                    block_number,
+                    chain_id,
+                    "failed with execution error",
+                    &e,
+                );
                 utils::send_slack(webhook, &msg)?;
             }
             stats.total_overhead_time += webhook_start.elapsed();
-            
+
             if stats.critical_failures == MAX_FAILURES {
-                error!("Reached max number of critical failures ({MAX_FAILURES}), stopping execution");
-                return Err(anyhow!("Reached max number of critical failures ({MAX_FAILURES})"));
+                error!(
+                    "Reached max number of critical failures ({MAX_FAILURES}), stopping execution"
+                );
+                return Err(anyhow!(
+                    "Reached max number of critical failures ({MAX_FAILURES})"
+                ));
             }
         }
     }
