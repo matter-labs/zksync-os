@@ -10,16 +10,11 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_sol_types::sol;
 use alloy_sol_types::SolCall;
-use basic_bootloader::bootloader::constants::{
-    BOOTLOADER_FORMAL_ADDRESS, CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR, CALLDATA_TOKEN_GAS_COST,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L2_TX_INTRINSIC_PUBDATA,
-    L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, TX_INTRINSIC_GAS,
-};
+use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
+use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
+    calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
+};
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
@@ -388,7 +383,7 @@ pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> V
 /// This mirrors the checks performed by the bootloader during L2 tx validation
 /// without requiring the full system infrastructure.
 #[allow(clippy::too_many_arguments)]
-pub fn validate_native_resources(
+pub fn validate_l2_tx_intrinsic_native_resources(
     base_fee: U256,
     native_price: U256,
     pubdata_price: U256,
@@ -412,9 +407,8 @@ pub fn validate_native_resources(
     let gas_price = if base_fee.is_zero() {
         U256::ZERO
     } else {
-        let priority_fee =
-            max_priority_fee_per_gas.min(max_fee_per_gas.saturating_sub(base_fee));
-        (base_fee.saturating_add(priority_fee)).min(max_fee_per_gas)
+        let priority_fee = max_priority_fee_per_gas.min(max_fee_per_gas - base_fee);
+        base_fee + priority_fee
     };
 
     // native_per_gas = ceil(gas_price / native_price)
@@ -424,35 +418,32 @@ pub fn validate_native_resources(
     let native_per_gas = u256_try_to_u64(gas_price.div_ceil(native_price)).ok_or(())?;
 
     // native_per_pubdata = pubdata_price / native_price
-    let native_per_pubdata =
-        u256_try_to_u64(pubdata_price.wrapping_div(native_price)).ok_or(())?;
+    let native_per_pubdata = u256_try_to_u64(pubdata_price.wrapping_div(native_price)).ok_or(())?;
 
     let native_prepaid = native_per_gas.saturating_mul(gas_limit);
 
-    // Intrinsic pubdata overhead
-    let intrinsic_pubdata = L2_TX_INTRINSIC_PUBDATA
-        .saturating_add(authorization_list_num.saturating_mul(L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION));
+    // Intrinsic pubdata
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num);
     let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
 
-    let native_limit = native_prepaid.checked_sub(intrinsic_pubdata_overhead).ok_or(())?;
+    let native_limit = native_prepaid
+        .checked_sub(intrinsic_pubdata_overhead)
+        .ok_or(())?;
 
     // Cap at MAX_NATIVE_COMPUTATIONAL (excess is withheld for pubdata only)
     let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
 
     // Intrinsic computational native
-    let intrinsic_computational_native = L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST
-        .saturating_add(calldata_length.saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE))
-        .saturating_add(access_list_accounts.saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS))
-        .saturating_add(access_list_storage_keys.saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY))
-        .saturating_add(authorization_list_num.saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION));
+    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
+        calldata_length,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+    );
 
-    native_limit.checked_sub(intrinsic_computational_native).ok_or(())?;
-
-    // Intrinsic gas check (worst case: all non-zero calldata bytes)
-    let calldata_tokens = calldata_length.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
-    let intrinsic_gas = TX_INTRINSIC_GAS
-        .saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
-    gas_limit.checked_sub(intrinsic_gas).ok_or(())?;
+    native_limit
+        .checked_sub(intrinsic_computational_native)
+        .ok_or(())?;
 
     Ok(())
 }

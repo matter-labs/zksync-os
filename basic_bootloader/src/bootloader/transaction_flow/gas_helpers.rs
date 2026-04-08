@@ -333,7 +333,7 @@ where
             native_limit,
         );
 
-    // Intrinsic gas overhead - he can quickly check deployment cost and calldata tokens cost
+    // Intrinsic gas overhead - we can quickly check deployment cost and calldata tokens cost
     let mut intrinsic_overhead = TX_INTRINSIC_GAS;
 
     if is_deployment {

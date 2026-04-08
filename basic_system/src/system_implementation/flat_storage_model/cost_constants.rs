@@ -22,7 +22,6 @@ pub const WARM_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 = 1000;
 // Estimation based on worst-case
 pub const COLD_EXISTING_STORAGE_READ_NATIVE_COST: u64 = native_with_delegations!(100_000, 0, 1320);
 pub const COLD_NEW_STORAGE_READ_NATIVE_COST: u64 = 2 * COLD_EXISTING_STORAGE_READ_NATIVE_COST;
-// TODO: not the worst case? Should be one path == COLD_EXISTING_STORAGE_READ_NATIVE_COST?
 pub const COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 =
     native_with_delegations!(40_000, 0, 660);
 pub const COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 =
