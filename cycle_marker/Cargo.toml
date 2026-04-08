@@ -13,5 +13,5 @@ categories.workspace = true
 airbender-host = { workspace = true, optional = true }
 
 [features]
-use_riscv_transpiler = ["airbender-host"]  # historical name; now backed by airbender-host
+use_riscv_transpiler = ["airbender-host"]
 log_to_file = []
