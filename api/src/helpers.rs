@@ -20,6 +20,7 @@ use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
+use std::cmp::min;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
@@ -383,6 +384,7 @@ pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> V
 /// This mirrors the checks performed by the bootloader during L2 tx validation
 /// without requiring the full system infrastructure.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::result_unit_err)]
 pub fn validate_l2_tx_intrinsic_native_resources(
     base_fee: U256,
     native_price: U256,
@@ -407,9 +409,17 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     let gas_price = if base_fee.is_zero() {
         U256::ZERO
     } else {
-        let priority_fee = max_priority_fee_per_gas.min(max_fee_per_gas - base_fee);
+        let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
         base_fee + priority_fee
     };
+
+    fn u256_try_to_u64(src: U256) -> Option<u64> {
+        if src > U256::from(u64::MAX) {
+            None
+        } else {
+            Some(src.as_limbs()[0])
+        }
+    }
 
     // native_per_gas = ceil(gas_price / native_price)
     if native_price.is_zero() {
@@ -446,12 +456,4 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         .ok_or(())?;
 
     Ok(())
-}
-
-fn u256_try_to_u64(src: U256) -> Option<u64> {
-    if src > U256::from(u64::MAX) {
-        None
-    } else {
-        Some(src.as_limbs()[0])
-    }
 }

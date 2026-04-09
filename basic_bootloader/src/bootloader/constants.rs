@@ -163,7 +163,7 @@ pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1;
 /// Constant part of l2 tx intrinsic pubdata.
 // 1. sender account change: 68 = 32(key) + 1(account metadata) + 2(nonce increase) + 33(worst case balance)
 // 2. coinbase: 66 = 32(key) + 1(account metadata) + 33(worst case balance)
-pub const L2_TX_INTRINSIC_PUBDATA: u64 = 68 + 64;
+pub const L2_TX_INTRINSIC_PUBDATA: u64 = 68 + 66;
 
 /// L2 tx authorization intrinsic pubdata.
 // Full diff compression:

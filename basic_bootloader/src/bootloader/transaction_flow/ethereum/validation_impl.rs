@@ -145,7 +145,7 @@ where
         #[cfg(feature = "eip_7623")]
         {
             let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-            let intrinsic_gas = L2_TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+            let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
             require!(
                 intrinsic_gas <= tx_gas_limit,
