@@ -211,13 +211,3 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + TREASURY_BALANCE_INTRINSIC_PUBDATA
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
-
-// to be removed
-/// Computational cost of 7702 auth
-pub const PER_AUTH_NATIVE_COST: u64 = 2000;
-
-/// Computational cost of 2930 access list per address
-pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COST: u64 = 2000;
-
-/// Computational cost of 2930 access list per slot
-pub const PER_SLOT_ACCESS_LIST_NATIVE_COST: u64 = 2000;

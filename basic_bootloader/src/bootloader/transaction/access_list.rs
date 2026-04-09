@@ -32,7 +32,7 @@ where
             // per-address charge
             resources.charge(&S::Resources::from_ergs_and_native(
                 Ergs(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS * ERGS_PER_GAS),
-                    <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(crate::bootloader::constants::PER_ADDRESS_ACCESS_LIST_NATIVE_COST)
+                <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(0),
                 )
             )?;
             resources.with_infinite_ergs(|resources| {
@@ -44,7 +44,7 @@ where
                 // per-slot charge
                 resources.charge(&S::Resources::from_ergs_and_native(
                     Ergs(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY * ERGS_PER_GAS),
-                        <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(crate::bootloader::constants::PER_SLOT_ACCESS_LIST_NATIVE_COST)
+                    <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(0),
                     )
                 )?;
                 let key = key?;

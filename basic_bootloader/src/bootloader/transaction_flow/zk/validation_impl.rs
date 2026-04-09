@@ -318,7 +318,9 @@ where
     }
 
     // Access list
-    parse_and_warm_up_access_list(system, &mut inf_resources, &transaction)?;
+    // we are passing resources, this function should charge only ergs,
+    // shouldn't touch native resources as cost included in the intrinsic
+    parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, &transaction)?;
 
     // Parse blobs, if any
     // No need to feature gate this part, as blobs() should return an empty list
@@ -357,10 +359,12 @@ where
     // Parse, validate and apply authorization list, following EIP-7702
     #[cfg(feature = "eip-7702")]
     {
+        // we are passing resources, this function should charge only ergs,
+        // shouldn't touch native resources as cost included in the intrinsic
         if let Some(authorization_list) = transaction.authorization_list() {
             crate::bootloader::transaction::authorization_list:: parse_authorization_list_and_apply_delegations(
                     system,
-                    &mut inf_resources,
+                    &mut tx_resources.main_resources,
                     authorization_list,
                 )?;
         }
