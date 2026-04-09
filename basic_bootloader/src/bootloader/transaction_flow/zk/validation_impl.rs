@@ -161,7 +161,7 @@ where
     }
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
-    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
+    let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
         system,
         tx_gas_limit,
         native_per_gas == 0,
