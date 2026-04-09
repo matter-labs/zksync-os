@@ -49,9 +49,12 @@ mod block_metadata {
 
         tester.set_block_context(Some(block_context));
         let result = tester.execute_block_no_panic(vec![tx]);
+        let err = result
+            .expect_err("Block execution should fail when gas limit exceeds MAX_BLOCK_GAS_LIMIT");
+        let err_message = err.to_string();
         assert!(
-            result.is_err(),
-            "Block execution should fail when gas limit exceeds MAX_BLOCK_GAS_LIMIT"
+            err_message.contains("gas limit is too high"),
+            "Expected gas limit error, got: {err_message}"
         );
     }
 
@@ -138,9 +141,11 @@ mod block_metadata {
 
         tester.set_block_context(Some(block_context));
         let result = tester.execute_block_no_panic(vec![]);
+        let err = result.expect_err("Even an empty block should fail with excessive gas limit");
+        let err_message = err.to_string();
         assert!(
-            result.is_err(),
-            "Even an empty block should fail with excessive gas limit"
+            err_message.contains("gas limit is too high"),
+            "Expected gas limit error, got: {err_message}"
         );
     }
 }

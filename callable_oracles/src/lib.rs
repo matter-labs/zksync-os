@@ -45,13 +45,26 @@ pub(crate) mod test_utils {
     /// BTreeMap-backed memory source for testing oracle query processors.
     #[derive(Default)]
     pub(crate) struct TestMemorySource {
-        pub words: BTreeMap<u32, u32>,
+        words: BTreeMap<u32, u32>,
     }
 
     impl TestMemorySource {
         pub fn insert_u32(&mut self, address: u32, value: u32) {
             assert!(address.is_multiple_of(4));
             self.words.insert(address, value);
+        }
+
+        /// Write a byte slice into memory starting at the given word-aligned offset.
+        /// Data is written in little-endian order, 4 bytes per word.
+        /// Partial final chunks are zero-padded.
+        pub fn write_bytes(&mut self, offset: u32, data: &[u8]) {
+            for (i, chunk) in data.chunks(4).enumerate() {
+                let mut word = [0u8; 4];
+                word[..chunk.len()].copy_from_slice(chunk);
+                let val = u32::from_le_bytes(word);
+                let addr = offset + (i as u32) * 4;
+                self.insert_u32(addr, val);
+            }
         }
     }
 

@@ -144,18 +144,6 @@ mod tests {
     use oracle_provider::DummyMemorySource;
     use zk_ee::oracle::usize_serialization::UsizeSerializable;
 
-    impl TestMemorySource {
-        fn write_bytes(&mut self, offset: u32, data: &[u8]) {
-            for (i, chunk) in data.chunks(4).enumerate() {
-                let mut word = [0u8; 4];
-                word[..chunk.len()].copy_from_slice(chunk);
-                let val = u32::from_le_bytes(word);
-                let addr = offset + (i as u32) * 4;
-                self.words.insert(addr, val);
-            }
-        }
-    }
-
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
