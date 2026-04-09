@@ -3,6 +3,7 @@ use crate::utils::Bytes32;
 /// Snapshot of a storage slot's state used to interface between
 /// the cache and [`crate::common_structs::state_root_view::StateRootView`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[repr(C)]
 pub struct StorageSlotValue {
     pub initial_value: Bytes32,
     pub current_value: Bytes32,
