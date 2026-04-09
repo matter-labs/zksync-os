@@ -37,14 +37,14 @@ use zk_ee::{
 pub mod hash_to_prime;
 
 /// Shared test utilities for callable oracle unit tests.
-#[cfg(test)]
-pub(crate) mod test_utils {
+#[cfg(any(test, feature = "testing"))]
+pub mod test_utils {
     use oracle_provider::RamPeek;
     use std::collections::BTreeMap;
 
     /// BTreeMap-backed memory source for testing oracle query processors.
     #[derive(Default)]
-    pub(crate) struct TestMemorySource {
+    pub struct TestMemorySource {
         words: BTreeMap<u32, u32>,
     }
 

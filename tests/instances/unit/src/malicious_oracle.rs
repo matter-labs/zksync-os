@@ -1492,6 +1492,7 @@ mod callable_oracle_tests {
 
     use rig::callable_oracles::arithmetic::ArithmeticQuery;
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
+    use rig::callable_oracles::test_utils::TestMemorySource;
     use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
 
     use rig::alloy::consensus::TxEip2930;
@@ -1506,27 +1507,7 @@ mod callable_oracle_tests {
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zksync_os_interface::traits::TxListSource;
     use rig::{common_target_address, TestingFramework};
-    use std::collections::BTreeMap;
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-
-    /// BTreeMap-based memory source for testing oracle query processors.
-    #[derive(Default)]
-    struct TestMemorySource {
-        words: BTreeMap<u32, u32>,
-    }
-
-    impl TestMemorySource {
-        fn populate(&mut self, address: u32, value: u32) {
-            assert!(address.is_multiple_of(4));
-            self.words.insert(address, value);
-        }
-    }
-
-    impl RamPeek for TestMemorySource {
-        fn peek_word(&self, address: u32) -> u32 {
-            self.words.get(&address).copied().unwrap_or(0)
-        }
-    }
 
     /// A malicious arithmetic oracle that returns deliberately wrong division results.
     /// When queried for modexp advice, it corrupts the quotient by adding 1 to each word,
@@ -1613,18 +1594,18 @@ mod callable_oracle_tests {
         let mut memory = TestMemorySource::default();
 
         // ModExpAdviceParams: 10 / 3
-        memory.populate(params_addr, 0); // op
-        memory.populate(params_addr + 4, a_addr); // a_ptr
-        memory.populate(params_addr + 8, 1); // a_len (1 digit)
-        memory.populate(params_addr + 12, 0); // b_ptr
-        memory.populate(params_addr + 16, 0); // b_len
-        memory.populate(params_addr + 20, m_addr); // modulus_ptr
-        memory.populate(params_addr + 24, 1); // modulus_len
+        memory.insert_u32(params_addr, 0); // op
+        memory.insert_u32(params_addr + 4, a_addr); // a_ptr
+        memory.insert_u32(params_addr + 8, 1); // a_len (1 digit)
+        memory.insert_u32(params_addr + 12, 0); // b_ptr
+        memory.insert_u32(params_addr + 16, 0); // b_len
+        memory.insert_u32(params_addr + 20, m_addr); // modulus_ptr
+        memory.insert_u32(params_addr + 24, 1); // modulus_len
 
         // dividend = 10
-        memory.populate(a_addr, 10);
+        memory.insert_u32(a_addr, 10);
         // modulus = 3
-        memory.populate(m_addr, 3);
+        memory.insert_u32(m_addr, 3);
 
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();
