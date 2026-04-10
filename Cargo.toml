@@ -50,6 +50,7 @@ exclude = [
     "tests/evm_tester",
     "tests/evm_divergence_validator",
     "tests/instances/eth_runner",
+    "tests/fri_verifier_runner",
 ]
 
 [workspace.package]

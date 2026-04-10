@@ -8,6 +8,8 @@ instances_examples/test_contracts/artifacts
 tests/contracts_wasm/*/target
 tests/contracts_wasm/*/out.wat
 
+tests/fri_verifier_runner/target
+
 # Assuming solidity is managed by hardhat
 tests/contracts_sol/*/.env
 tests/contracts_sol/*/artifacts
