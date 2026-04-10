@@ -97,12 +97,9 @@ where
     let chain_id = system.get_chain_id();
 
     // 0. Pre-charge intrinsic gas
-    resources.charge(&S::Resources::from_ergs_and_native(
-        Ergs(evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS),
-        <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(
-            0,
-        ),
-    ))?;
+    resources.charge(&S::Resources::from_ergs(Ergs(
+        evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS,
+    )))?;
 
     // 1. Check chain id
     if !auth_chain_id.is_zero() && auth_chain_id != &U256::from(chain_id) {

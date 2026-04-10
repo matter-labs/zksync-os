@@ -30,11 +30,9 @@ where
         } in iter
         {
             // per-address charge
-            resources.charge(&S::Resources::from_ergs_and_native(
-                Ergs(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS * ERGS_PER_GAS),
-                <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(0),
-                )
-            )?;
+            resources.charge(&S::Resources::from_ergs(Ergs(
+                evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS * ERGS_PER_GAS,
+            )))?;
             resources.with_infinite_ergs(|resources| {
                 system
                     .io
@@ -42,11 +40,9 @@ where
             })?;
             for key in slots_list.iter() {
                 // per-slot charge
-                resources.charge(&S::Resources::from_ergs_and_native(
-                    Ergs(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY * ERGS_PER_GAS),
-                    <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(0),
-                    )
-                )?;
+                resources.charge(&S::Resources::from_ergs(Ergs(
+                    evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY * ERGS_PER_GAS,
+                )))?;
                 let key = key?;
                 resources.with_infinite_ergs(|resources| {
                     system.io.storage_touch(

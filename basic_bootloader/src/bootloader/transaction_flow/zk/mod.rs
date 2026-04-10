@@ -253,6 +253,7 @@ where
                     );
                 }
                 SubsystemError::LeafDefect(internal_error) => internal_error.into(),
+                // shouldn't be reachable as we are using infinite resources
                 SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
                     RuntimeError::FatalRuntimeError(_) => {
                         TxError::oon_as_validation(out_of_native_resources!().into())
