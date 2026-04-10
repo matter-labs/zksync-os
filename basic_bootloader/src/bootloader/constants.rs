@@ -169,17 +169,16 @@ pub const L2_TX_INTRINSIC_PUBDATA: u64 =
     SENDER_BALANCE_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 /// L2 tx authorization intrinsic pubdata.
-// Full diff compression:
-// 1. key: 32
-// 2. account metadata: 1
-// 3. versioning data: 8
-// 4. nonce: 2
-// 5. balance: 1
-// 6. unpadded code length: 4
-// 7. artifacts length: 4
-// 8. padded bytecode: 24
-// 9. observable length: 4
-pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = 32 + 1 + 8 + 2 + 1 + 4 + 4 + 24 + 4;
+pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compression:
+    32 + // key
+    1 + // account metadata
+    8 + // versioning data
+    2 + // nonce
+    1 + // balance
+    4 + // unpadded code length
+    4 + // artifacts length
+    24 + // padded bytecode
+    4; // observable length
 
 // Pubdata needed for the diff in balance as a result of
 // the fee payment to the coinbase.
