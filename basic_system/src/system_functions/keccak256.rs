@@ -33,6 +33,10 @@ pub fn keccak256_native_cost_u64(len: usize) -> u64 {
     (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST
 }
 
+pub const fn keccak256_native_cost_for_rounds_u64(rounds: usize) -> u64 {
+    (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST
+}
+
 pub fn keccak256_native_cost<R: Resources>(len: usize) -> R::Native {
     use zk_ee::system::Computational;
     R::Native::from_computational(keccak256_native_cost_u64(len))

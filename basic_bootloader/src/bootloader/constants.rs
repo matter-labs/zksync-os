@@ -1,3 +1,13 @@
+use basic_system::cost_constants::{
+    ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
+};
+use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
+use basic_system::system_implementation::flat_storage_model::cost_constants::{
+    COLD_NEW_STORAGE_READ_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+    WARM_STORAGE_READ_NATIVE_COST,
+};
+use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 
@@ -61,48 +71,40 @@ pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
 
 // computational native consts
 /// Constant part of l2 tx intrinsic computational native cost.
-// 1. 30_000 for post validation processing: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash.
-// 2. 522000 = 350_000 + 43_000*4 for ecrecover.
-// 3. account read(worst case): 250740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
-// 4. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
-// 5. keccak for signing hash(worst case const part - 2 rounds + 1 round precharge for dynamic parts): 37500 = 2500 + 17_500 * 3
-// 6. keccak for full hash(worst case const part - 2 rounds + 1 round precharge for dynamic parts): 37500 = 2500 + 17_500 * 3
-// 7. fee prepayment: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
-// NOTE: we are precharging 1 keccak round(in 5 and 6) since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
-    30_000 + 522_000 + 250_740 + 5_000 + 55_000 + 55_000 + 5_000;
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // nonce update
+    keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // balance change for fee prepayment
+    (WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+
+/// Native computational cost to cover keccak256 hashing overhead for dynamic fields of the transaction per byte.
+/// NOTE: we are precharging 1 keccak round in the constant part since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
+const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
+    KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
 
 /// L2 tx calldata byte intrinsic computational native cost.
-// 1. caldata per byte copy: COPY_BYTE_NATIVE_COST = 1
-// 2. keccak for signing hash: 17_500 div_ceil 136 = 129
-// 3. keccak for full hash: 17_500 div_ceil 136 = 129
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1 + 129 + 129;
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
+    COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
 
 /// L2 tx access list account computational native cost.
-// 1. computational part: 2000
-// 2. account read(worst case): 250740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
-// 3. keccak for signing hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
-// 4. keccak for full hash: 30(worst case contribution to rlp encoding, 21 address, 9 keys list length encoding) * 17500 / 136 = 3861
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
-    2_000 + 250_740 + 3_861 + 3_861;
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 = 2_000 + // computational overhead
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+    30 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 30 - worst case contribution to rlp encoding (21 address, 9 keys list length encoding)
 
 /// L2 tx access list storage slot computational native cost.
-// 1. computational part: 2000
-// 2. storage slot read(worst case): 242240 (COLD_NEW_STORAGE_READ_NATIVE_COST)
-// 3. keccak for signing hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
-// 4. keccak for full hash: 33(contribution to rlp encoding length) * 17500 / 136 = 4247
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
-    2_000 + 242_240 + 4_247 + 4_247;
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 = 2_000 + // computational overhead
+    COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
+    33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
 
 /// L2 tx authorization computational native cost.
-// 1. computational part: 2000
-// 2. auth message keccak cost: 2500 + 17_500 = 20_000 (length 70, 1 round)
-// 3. 522000 = 350_000 + 43_000*4 for ecrecover.
-// 4. account read(worst case): 250_740 = 500(PREIMAGE_CACHE_GET_NATIVE_COST) + 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 4000(WARM_STORAGE_READ_NATIVE_COST) + 242240(COLD_NEW_STORAGE_READ_NATIVE_COST)
-// 5. nonce write: 5000 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST)
-// 6. delegation write: 26640 = 4000(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST) + 1000(WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) + 500(PREIMAGE_CACHE_SET_NATIVE_COST) + 20_000(1 round keccak, 23 byte code) + 1140(1 round blake, 24 byte padded code)
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
-    2_000 + 20_000 + 522_000 + 250_740 + 5_000 + 26_640;
+    2_000 + // computational overhead
+    keccak256_native_cost_for_rounds_u64(1) + // auth message keccak cost (1 round)
+    ECRECOVER_NATIVE_COST + // signature verification
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // nonce update
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + 1140 /* 1 round blake2s padded bytecode */; // delegation write
 
 /// Constant part of l1 tx intrinsic computational native cost.
 // Covers intrinsic L1 tx work not charged as tx-body computation.
@@ -159,11 +161,12 @@ pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
 // caldata per byte copy: COPY_BYTE_NATIVE_COST = 1
 pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = 1;
 
-// pubdata consts
+/// worse case pubdata for tx sender balance change
+const SENDER_BALANCE_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 33/*worst case balance*/;
+
 /// Constant part of l2 tx intrinsic pubdata.
-// 1. sender account change: 68 = 32(key) + 1(account metadata) + 2(nonce increase) + 33(worst case balance)
-// 2. coinbase: 66 = 32(key) + 1(account metadata) + 33(worst case balance)
-pub const L2_TX_INTRINSIC_PUBDATA: u64 = 68 + 66;
+pub const L2_TX_INTRINSIC_PUBDATA: u64 =
+    SENDER_BALANCE_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 /// L2 tx authorization intrinsic pubdata.
 // Full diff compression:
