@@ -243,7 +243,7 @@ where
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
-    // intrinsic cost charnged above
+    // intrinsic cost charged above
     let originator_account_data = system.io.read_account_properties(
         ExecutionEnvironmentType::NoEE,
         &mut inf_resources,
