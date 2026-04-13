@@ -1492,7 +1492,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
 // bunch of internal utility methods
 /// Returns the dist directory for the given app (e.g. `zksync_os/dist/for_tests`).
-fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
+pub fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("for_tests");
     let zksync_os_root = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
