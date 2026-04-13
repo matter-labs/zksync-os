@@ -1,4 +1,4 @@
-use airbender::rt::sys::{read_word, write_word};
+use airbender::rt::sys::write_word;
 
 #[derive(Default)]
 pub struct QuasiUART {

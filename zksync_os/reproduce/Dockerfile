@@ -31,7 +31,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-202
 ENV ZKSYNC_USE_CUDA_STUBS=true
 RUN rustup component add rust-src \
  && rustup component add llvm-tools-preview \
- && cargo install cargo-binutils \
+ && cargo install cargo-binutils --locked \
  && cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
 
 
