@@ -296,9 +296,9 @@ pub fn revert(snap: Snapshot) {
 #[cfg(target_arch = "riscv32")]
 pub fn revert(_: Snapshot) {}
 
-/// Re-export the transpiler's cycle marker types for use by the runner.
+/// Re-export `airbender_host` cycle marker types for use by the runner.
 #[cfg(feature = "use_riscv_transpiler")]
-pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
+pub use airbender_host::{CycleMarker, Mark};
 
 /// Per-opcode aggregated cycle statistics.
 #[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]

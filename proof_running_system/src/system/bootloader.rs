@@ -145,19 +145,12 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 ///
 /// Returns public input.
 ///
+/// NOTE: The allocator must already be initialized before calling this function
+/// (e.g. by `#[airbender::main(allocator_init = init_allocator)]`).
+///
 #[inline(never)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>(
-    heap_start: *mut usize,
-    heap_end: *mut usize,
-) -> [u32; 8] {
+pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>() -> [u32; 8] {
     logger_log!(L::default(), "Enter proving bootloader");
-
-    // init allocator
-    // allocator is a global singleton object, that can be later accessed by ProxyAllocator
-    unsafe {
-        init_allocator(heap_start, heap_end);
-    }
 
     logger_log!(L::default(), "Allocator init is complete");
 
