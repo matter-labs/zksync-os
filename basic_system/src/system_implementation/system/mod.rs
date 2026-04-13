@@ -16,8 +16,7 @@ use zk_ee::utils::Bytes32;
 use zk_ee::{
     memory::stack_trait::StackFactory,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
-    system::{errors::internal::InternalError, logger::Logger, Resources, *},
+    system::{errors::internal::InternalError, logger::Logger, Resources, MAX_EVENT_TOPICS, *},
 };
 
 pub mod interop_roots;

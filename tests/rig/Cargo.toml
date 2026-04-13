@@ -46,7 +46,7 @@ cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycl
 unlimited_native = ["forward_system/unlimited_native"]
 production = ["forward_system/production"]
 # Features for test instances
-for_tests = ["forward_system/for_tests"]
+for_tests = ["forward_system/for_tests", "callable_oracles/testing"]
 # Features used for eth_runner
 eth_runner = ["forward_system/eth_runner"]
 eth_stf = ["forward_system/eth_stf"]

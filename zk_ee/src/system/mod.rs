@@ -57,7 +57,6 @@ use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 

@@ -16,7 +16,7 @@ use crate::common_structs::GenericEventContentRef;
 use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::oracle::IOOracle;
-use crate::storage_types::MAX_EVENT_TOPICS;
+use crate::system::MAX_EVENT_TOPICS;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use arrayvec::ArrayVec;
