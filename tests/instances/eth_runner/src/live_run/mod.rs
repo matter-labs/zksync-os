@@ -45,18 +45,15 @@ pub fn live_run(
     #[cfg(feature = "gpu")]
     let mut gpu_state = {
         info!("Setting up GPU state...");
-        let bin_path = rig::chain::get_zksync_os_img_path(&Some("evm_replay".to_string()))
-            .as_path()
-            .to_str()
-            .unwrap()
-            .to_string();
-        let binary = rig::cli_lib::prover_utils::load_binary_from_path(&bin_path);
-        let s = rig::cli_lib::prover_utils::GpuSharedState::new(
-            &binary,
-            rig::gpu_prover::circuit_type::MainCircuitType::ReducedRiscVMachine,
-        );
+        let dist_dir = rig::chain::get_zksync_os_dist_dir(&Some("evm_replay".to_string()));
+        let program = airbender_host::Program::load(&dist_dir)
+            .expect("failed to load program");
+        let prover = program
+            .gpu_prover()
+            .build()
+            .expect("failed to build GPU prover");
         info!("Done setting up GPU state...");
-        s
+        prover
     };
     #[cfg(feature = "gpu")]
     let gpu_state = &mut Some(&mut gpu_state);
