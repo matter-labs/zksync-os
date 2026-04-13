@@ -33,7 +33,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -61,7 +61,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -90,7 +90,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile blake test programs for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -135,7 +135,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -159,7 +159,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -183,7 +183,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -207,7 +207,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -267,7 +267,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
-              run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |

@@ -109,7 +109,7 @@ jobs:
         with:
           rustflags: ""
       - name: Install cargo-airbender
-        run: cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+        run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: |

@@ -10,7 +10,7 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-airbender = { package = "airbender-sdk", git = "https://github.com/vibelyova/airbender-platform", rev = "a179bc0dc82b6be08b29359bf79e28b2cab7af65" }
+airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95" }
 crypto = { path = "../../../", features = ["blake2s_tests"]}
 
 [workspace]

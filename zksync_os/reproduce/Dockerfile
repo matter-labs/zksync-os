@@ -32,7 +32,7 @@ ENV ZKSYNC_USE_CUDA_STUBS=true
 RUN rustup component add rust-src \
  && rustup component add llvm-tools-preview \
  && cargo install cargo-binutils \
- && cargo install cargo-airbender --git https://github.com/vibelyova/airbender-platform --rev a179bc0dc82b6be08b29359bf79e28b2cab7af65 --locked
+ && cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
 
 
 COPY . zksync_os

@@ -3,7 +3,7 @@
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
 
-use proof_running_system::system::bootloader::{init_allocator_safe, run_proving};
+use proof_running_system::system::bootloader::{init_allocator, run_proving};
 
 /// Uses CSR (control & status register) to communicate with outside oracle.
 mod csr {
@@ -44,7 +44,7 @@ use proof_running_system::system::bootloader::OptionalGlobalAllocator;
 #[global_allocator]
 static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 
-#[airbender::main(allocator_init = init_allocator_safe)]
+#[airbender::main(allocator_init = init_allocator)]
 fn main() -> [u32; 8] {
     run_proving::<CSRBasedNonDeterminismSource, LoggerTy>()
 }

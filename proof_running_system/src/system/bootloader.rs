@@ -137,17 +137,6 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
     }
 }
 
-/// Wrapper around [`init_allocator`] matching the `fn(*mut usize, *mut usize)`
-/// signature required by `#[airbender::main(allocator_init = ...)]`.
-///
-/// The airbender runtime guarantees that `heap_start` and `heap_end` point to a
-/// valid, exclusively-owned region, so the `unsafe` preconditions of
-/// [`init_allocator`] are upheld by the caller (the boot sequence).
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn init_allocator_safe(heap_start: *mut usize, heap_end: *mut usize) {
-    unsafe { init_allocator(heap_start, heap_end) }
-}
-
 ///
 /// main zksync_os program, that is responsible for running the proving flow.
 ///
@@ -157,7 +146,7 @@ pub fn init_allocator_safe(heap_start: *mut usize, heap_end: *mut usize) {
 /// Returns public input.
 ///
 /// NOTE: The allocator must already be initialized before calling this function
-/// (e.g. by `#[airbender::main(allocator_init = init_allocator_safe)]`).
+/// (e.g. by `#[airbender::main(allocator_init = init_allocator)]`).
 ///
 #[inline(never)]
 pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>() -> [u32; 8] {
