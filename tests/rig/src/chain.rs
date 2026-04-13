@@ -964,10 +964,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
-                let sym_path = get_zksync_os_sym_path(&app);
                 zksync_os_runner::run_with_flamegraph(
-                    dist_dir,
-                    sym_path,
+                    dist_dir.clone(),
+                    dist_dir.join("app.elf"),
                     1 << 36,
                     &prover_input_forward,
                     fg_options,
@@ -1500,19 +1499,6 @@ pub fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
             PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os")
         });
     zksync_os_root.join("dist").join(app)
-}
-
-fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
-    let filename = format!("app.{extension}");
-    get_zksync_os_dist_dir(app_name).join(filename)
-}
-
-pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "bin")
-}
-
-fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "elf")
 }
 
 // TODO: utils?
