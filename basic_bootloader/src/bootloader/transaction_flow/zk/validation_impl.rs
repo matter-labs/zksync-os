@@ -402,8 +402,6 @@ where
     // Parse, validate and apply authorization list, following EIP-7702
     #[cfg(feature = "eip-7702")]
     {
-        // we are passing resources, this function should charge only ergs,
-        // shouldn't touch native resources as cost included in the intrinsic
         if let Some(authorization_list) = transaction.authorization_list() {
             // Same as for the access list: gas is included in the intrinsic
             // gas above, so the processor only charges native, routed through

@@ -12,11 +12,6 @@ use zk_ee::{
 /// Touches all accounts and storage keys in the access list so they are hot
 /// before execution.
 ///
-/// Gas for each entry (per-address and per-storage-key) is paid as part of
-/// the intrinsic gas precharged at transaction-resource creation time
-/// (`calculate_l2_tx_intrinsic_gas`), so this function only accounts for the
-/// native-resource component of the work.
-///
 /// Returns Ok on success, or `TxError` if an IO operation fails.
 ///
 /// This function charges only native from `resources`.

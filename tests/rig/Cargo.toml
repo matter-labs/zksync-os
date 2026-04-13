@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-basic_bootloader = { path = "../../basic_bootloader" }
+basic_bootloader = { path = "../../basic_bootloader", features = ["verify_intrinsic_native"] }
 risc_v_simulator = { workspace = true , features = ["delegation"] }
 basic_system = { path = "../../basic_system" }
 evm_interpreter = { path = "../../evm_interpreter" }

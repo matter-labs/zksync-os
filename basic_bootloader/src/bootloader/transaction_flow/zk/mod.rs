@@ -244,20 +244,18 @@ where
         // 1. Deduct full fee from sender at transaction start (here)
         // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
         // This ensures sender has sufficient funds before execution begins
-        // Native consumption for this system op is precharged by the intrinsic
-        // formula, so we route the charge through `intrinsic_tracker` (which is
-        // `FORMAL_INFINITE` in production, and finite under
-        // `verify_intrinsic_native` so it can be measured).
-        system
-            .io
-            .update_account_nominal_token_balance(
-                ExecutionEnvironmentType::NoEE,
-                &mut context.intrinsic_tracker,
-                &from,
-                &fee,
-                true,
-                Config::SIMULATION,
-            )
+        context
+            .intrinsic_tracker
+            .with_infinite_ergs(|resources| {
+                system.io.update_account_nominal_token_balance(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &from,
+                    &fee,
+                    true,
+                    Config::SIMULATION,
+                )
+            })
             .map_err(|e| match e {
                 SubsystemError::LeafUsage(interface_error) => {
                     unreachable!(
@@ -454,16 +452,20 @@ where
             // First refund the sender. Routed through `intrinsic_tracker` so
             // the native charge (precharged by the intrinsic formula) can be
             // verified under `verify_intrinsic_native`.
-            system
-                .io
-                .update_account_nominal_token_balance(
-                    ExecutionEnvironmentType::NoEE,
-                    &mut context.intrinsic_tracker,
-                    &refund_recipient,
-                    &token_to_refund,
-                    false,
-                    Config::SIMULATION,
-                )
+            context
+                .intrinsic_tracker
+                .with_infinite_ergs(|resources| {
+                    system
+                        .io
+                        .update_account_nominal_token_balance(
+                            ExecutionEnvironmentType::NoEE,
+                            resources,
+                            &refund_recipient,
+                            &token_to_refund,
+                            false,
+                            Config::SIMULATION,
+                        )
+                })
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
                     SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
@@ -509,16 +511,20 @@ where
 
         let coinbase = system.get_coinbase();
         // Operator payment native is precharged by the intrinsic formula too.
-        system
-            .io
-            .update_account_nominal_token_balance(
-                ExecutionEnvironmentType::NoEE,
-                &mut context.intrinsic_tracker,
-                &coinbase,
-                &token_to_pay_operator,
-                false,
-                Config::SIMULATION,
-            )
+        context
+            .intrinsic_tracker
+            .with_infinite_ergs(|resources| {
+                system
+                    .io
+                    .update_account_nominal_token_balance(
+                        ExecutionEnvironmentType::NoEE,
+                        resources,
+                        &coinbase,
+                        &token_to_pay_operator,
+                        false,
+                        Config::SIMULATION,
+                    )
+            })
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
                 SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
@@ -532,33 +538,6 @@ where
                 },
                 other => wrap_error!(other),
             })?;
-
-        // Under `verify_intrinsic_native`, compare the native that was actually
-        // consumed for operations covered by the intrinsic computational native
-        // formula (everything charged through `intrinsic_tracker`, plus the
-        // per-site deltas accumulated during validation for the access list
-        // and authorization list) against the formula value. The formula must
-        // be an upper bound; otherwise a transaction could consume more native
-        // than was precharged.
-        #[cfg(feature = "verify_intrinsic_native")]
-        {
-            use crate::bootloader::transaction_flow::gas_helpers::INTRINSIC_TRACKER_INITIAL_NATIVE;
-            let remaining = context.intrinsic_tracker.native().as_u64();
-            let actual_used = INTRINSIC_TRACKER_INITIAL_NATIVE.saturating_sub(remaining);
-            let formula = context.resources.intrinsic_computational_native_charged;
-            system_log!(
-                system,
-                "intrinsic native verification: formula={}, actually_used={}\n",
-                formula,
-                actual_used
-            );
-            assert!(
-                actual_used <= formula,
-                "intrinsic computational native formula ({}) is not an upper bound on actual consumption ({})",
-                formula,
-                actual_used
-            );
-        }
 
         Ok(())
     }
@@ -598,6 +577,33 @@ where
 
         let num_blobs = system.metadata.num_blobs();
         let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
+
+        // Under `verify_intrinsic_native`, compare the native that was actually
+        // consumed for operations covered by the intrinsic computational native
+        // formula (everything charged through `intrinsic_tracker`, plus the
+        // per-site deltas accumulated during validation for the access list
+        // and authorization list) against the formula value. The formula must
+        // be an upper bound; otherwise a transaction could consume more native
+        // than was precharged.
+        #[cfg(feature = "verify_intrinsic_native")]
+        {
+            use crate::bootloader::transaction_flow::gas_helpers::INTRINSIC_TRACKER_INITIAL_NATIVE;
+            let remaining = context.intrinsic_tracker.native().as_u64();
+            let actual_used = INTRINSIC_TRACKER_INITIAL_NATIVE.saturating_sub(remaining);
+            let formula = context.resources.intrinsic_computational_native_charged;
+            system_log!(
+                system,
+                "intrinsic native verification: formula={}, actually_used={}\n",
+                formula,
+                actual_used
+            );
+            assert!(
+                actual_used <= formula,
+                "intrinsic computational native formula ({}) is not an upper bound on actual consumption ({})",
+                formula,
+                actual_used
+            );
+        }
 
         ZkTxResult {
             result,

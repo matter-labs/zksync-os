@@ -27,11 +27,20 @@ fn create_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
     is_deployment: bool,
     calldata_len: u64,
-    intrinsic_overhead: u64,
+    calldata_tokens: u64,
 ) -> Result<ResourcesForEthereumTx<S>, TxError> {
-    if is_deployment && calldata_len > MAX_INITCODE_SIZE as u64 {
-        return Err(TxError::Validation(CreateInitCodeSizeLimit));
+    let mut intrinsic_overhead = TX_INTRINSIC_GAS;
+    if is_deployment {
+        if calldata_len > MAX_INITCODE_SIZE as u64 {
+            return Err(TxError::Validation(CreateInitCodeSizeLimit));
+        }
+        intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
+        let initcode_gas_cost =
+            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
+        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
     }
+    intrinsic_overhead =
+        intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
 
     if intrinsic_overhead > gas_limit {
         Err(TxError::Validation(
