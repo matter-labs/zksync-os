@@ -1,8 +1,6 @@
 [advisories]
-#TODO(EVM-1050): replace unmaintained ethers dependency in rig
 ignore = [
-    { id = "RUSTSEC-2025-0009", reason = "We do not rely on impacted functionality. Affected crate is used only in tests" },
-    { id = "RUSTSEC-2026-0002", reason = "Unsoundness in lru <0.16.3. Waiting for alloy-provider to upgrade (https://github.com/alloy-rs/alloy/pull/3460)" }
+    { id = "RUSTSEC-2026-0097", reason = "Unsoundness in rand <0.9.3 only triggers with a custom logger calling rand::rng() during reseeding — not applicable. Transitive dep via ark-std 0.5 and alloy-signer-local; no 0.8.x patch exists, waiting for upstream (https://github.com/arkworks-rs/std/pull/60)" }
 ]
 
 [bans]
