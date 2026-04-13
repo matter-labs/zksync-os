@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests}"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|fri-verifier-benchmarking}"
 TYPE=""
 
 # Parse --type argument
@@ -78,6 +78,12 @@ case "$TYPE" in
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
+    ;;
+  fri-verifier-benchmarking)
+    FEATURES="$FEATURES,benchmarking,fri_verifier_bench"
+    BIN_NAME="fri_verifier_bench.bin"
+    ELF_NAME="fri_verifier_bench.elf"
+    TEXT_NAME="fri_verifier_bench.text"
     ;;
   evm-tester)
     FEATURES="$FEATURES,evm_tester"

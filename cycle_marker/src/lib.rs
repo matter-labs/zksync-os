@@ -59,10 +59,8 @@ pub fn start(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -79,10 +77,8 @@ pub fn end(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -240,5 +236,114 @@ pub fn print_cycle_markers() -> Option<u64> {
         "Total delegations: {:?}\n==================",
         cm.delegation_counter
     ));
+    block_effective
+}
+
+#[cfg(feature = "use_riscv_transpiler")]
+pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
+
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
+    const BLAKE_DELEGATION_ID: u32 = 1991;
+    const BIGINT_DELEGATION_ID: u32 = 1994;
+    const BLAKE_DELEGATION_COEFF: u64 = 16;
+    const BIGINT_DELEGATION_COEFF: u64 = 4;
+    const BLOCK_WIDE_LABEL: &str = "run_prepared";
+    use std::collections::HashMap;
+
+    let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
+
+    if labels.is_empty() {
+        let mut block_effective = None;
+        for (idx, pair) in cm.markers.chunks_exact(2).enumerate() {
+            let diff = pair[1].diff(&pair[0]);
+            log_marker(&format!(
+                "anonymous_marker_{}: net cycles: {}, net delegations: {:?}",
+                idx, diff.cycles, diff.delegations
+            ));
+            if idx == 0 {
+                block_effective = Some(
+                    diff.cycles
+                        + BLAKE_DELEGATION_COEFF
+                            * diff
+                                .delegations
+                                .get(&BLAKE_DELEGATION_ID)
+                                .cloned()
+                                .unwrap_or_default()
+                        + BIGINT_DELEGATION_COEFF
+                            * diff
+                                .delegations
+                                .get(&BIGINT_DELEGATION_ID)
+                                .cloned()
+                                .unwrap_or_default(),
+                );
+            }
+        }
+        return block_effective;
+    }
+
+    assert_eq!(
+        cm.markers.len(),
+        labels.len(),
+        "cycle marker count ({}) does not match label count ({})",
+        cm.markers.len(),
+        labels.len(),
+    );
+
+    let mut label_nonces: HashMap<&'static str, u64> = HashMap::new();
+    let mut marker_map: HashMap<(&'static str, u64), (Mark, Mark)> = HashMap::new();
+    let mut start_counts: HashMap<(&'static str, u64), Mark> = HashMap::new();
+
+    for (label, mark) in labels.into_iter().zip(cm.markers.into_iter()) {
+        match label {
+            Label::Start(name) => {
+                let nonce = label_nonces
+                    .entry(name)
+                    .and_modify(|n| *n += 1)
+                    .or_insert(0);
+                start_counts.insert((name, *nonce), mark);
+            }
+            Label::End(name) => {
+                let nonce = label_nonces.get(name).unwrap();
+                if let Some(start_count) = start_counts.remove(&(name, *nonce)) {
+                    marker_map.insert((name, *nonce), (start_count, mark));
+                }
+            }
+        }
+    }
+
+    let mut markers: Vec<(&'static str, (Mark, Mark))> = marker_map
+        .into_iter()
+        .map(|((label, _), value)| (label, value))
+        .collect();
+    markers.sort_by_key(|(_, (start, _))| start.cycles);
+
+    let mut block_effective: Option<u64> = None;
+
+    for (label, (start, end)) in markers {
+        let diff = end.diff(&start);
+        log_marker(&format!(
+            "{}: net cycles: {}, net delegations: {:?}",
+            label, diff.cycles, diff.delegations
+        ));
+        if label == BLOCK_WIDE_LABEL {
+            block_effective = Some(
+                diff.cycles
+                    + BLAKE_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BLAKE_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default()
+                    + BIGINT_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BIGINT_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default(),
+            );
+        }
+    }
+
     block_effective
 }

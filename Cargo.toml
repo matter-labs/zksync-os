@@ -67,6 +67,8 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { version = "0.0.14", default-features = false }
 zksync_os_interface = { version = "0.0.14", default-features = false }
 
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2", default-features = false }
 prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
@@ -120,6 +122,7 @@ debug = true
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
 
 [patch."https://github.com/matter-labs/zksync-airbender"]
+riscv_transpiler = { path = "/tmp/zksync-airbender-dev/riscv_transpiler" }
 # blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
 # risc_v_simulator = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
 # prover_examples = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }

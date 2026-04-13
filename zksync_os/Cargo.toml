@@ -9,6 +9,12 @@ license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
+[[bin]]
+name = "zksync_os"
+path = "src/main.rs"
+test = false
+bench = false
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -16,6 +22,8 @@ heapless = { version = "*", default-features = false }
 proof_running_system = { path = "../proof_running_system", default-features = false}
 crypto = { path = "../crypto", optional = true }
 riscv_common = {git = "https://github.com/matter-labs/zksync-airbender.git", tag = "v0.5.2", features = ["custom_panic", "custom_allocator"]}
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false, features = ["unified_verifier_only_security_80", "modular_ops"], optional = true }
+cycle_marker = { path = "../cycle_marker" }
 
 [profile.dev]
 opt-level = 0
@@ -36,27 +44,29 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [profile.release.overrides."*"]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [features]
 scalloc = ["proof_running_system/scalloc"]
 print_debug_info = ["proof_running_system/error_origins", "proof_running_system/global-alloc"]
 proving = ["crypto/proving", "proof_running_system/proving"]
-benchmarking = ["proof_running_system/benchmarking"]
+cycle_marker = []
+benchmarking = ["proof_running_system/benchmarking", "cycle_marker"]
 production = ["proof_running_system/production"]
-for_tests = ["proof_running_system/for_tests"]
+for_tests = ["proof_running_system/for_tests", "cycle_marker", "fri_verifier_bench"]
 eth_runner = ["proof_running_system/eth_runner"]
 eth_stf = ["proof_running_system/eth_stf"]
 evm_tester = ["proof_running_system/evm_tester"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
+fri_verifier_bench = ["dep:full_statement_verifier"]
 
 
 # [patch."https://github.com/matter-labs/zksync-airbender"]

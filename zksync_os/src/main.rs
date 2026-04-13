@@ -36,6 +36,7 @@ pub mod trap_frame;
 pub mod utils;
 
 use riscv_common::zksync_os_finish_success;
+use proof_running_system::io_oracle::NonDeterminismCSRSourceImplementation;
 
 use self::trap_frame::MachineTrapFrame;
 
@@ -119,6 +120,40 @@ mod csr {
 }
 
 pub use self::csr::CSRBasedNonDeterminismSource;
+
+#[cfg(feature = "fri_verifier_bench")]
+const FRI_VERIFIER_MODE_MAGIC: usize = 0x4652_4956;
+
+#[cfg(feature = "fri_verifier_bench")]
+static mut BUFFERED_FIRST_WORD: usize = 0;
+#[cfg(feature = "fri_verifier_bench")]
+static mut HAS_BUFFERED_FIRST_WORD: bool = false;
+
+#[cfg(feature = "fri_verifier_bench")]
+#[derive(Clone, Copy, Debug)]
+pub struct BufferedCSRBasedNonDeterminismSource;
+
+#[cfg(feature = "fri_verifier_bench")]
+impl proof_running_system::io_oracle::NonDeterminismCSRSourceImplementation
+    for BufferedCSRBasedNonDeterminismSource
+{
+    #[inline(always)]
+    fn csr_read_impl() -> usize {
+        unsafe {
+            if HAS_BUFFERED_FIRST_WORD {
+                HAS_BUFFERED_FIRST_WORD = false;
+                BUFFERED_FIRST_WORD
+            } else {
+                CSRBasedNonDeterminismSource::csr_read_impl()
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn csr_write_impl(value: usize) {
+        CSRBasedNonDeterminismSource::csr_write_impl(value)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NullAllocator;
@@ -208,7 +243,27 @@ unsafe fn workload() -> ! {
         "Entry routine is done, moving into payload\n"
     );
 
-    // and crunch
+    #[cfg(feature = "fri_verifier_bench")]
+    let output = {
+        let mode_word = CSRBasedNonDeterminismSource::csr_read_impl();
+        if mode_word == FRI_VERIFIER_MODE_MAGIC {
+            let result: [u32; 16] = cycle_marker::wrap!("run_prepared", {
+                full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer()
+            });
+            let mut output = [0u32; 8];
+            output.copy_from_slice(&result[..8]);
+            output
+        } else {
+            BUFFERED_FIRST_WORD = mode_word;
+            HAS_BUFFERED_FIRST_WORD = true;
+            proof_running_system::system::bootloader::run_proving::<
+                BufferedCSRBasedNonDeterminismSource,
+                LoggerTy,
+            >(heap_start, heap_end)
+        }
+    };
+
+    #[cfg(not(feature = "fri_verifier_bench"))]
     let output = proof_running_system::system::bootloader::run_proving::<
         CSRBasedNonDeterminismSource,
         LoggerTy,

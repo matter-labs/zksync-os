@@ -10,7 +10,9 @@ categories.workspace = true
 
 [dependencies]
 risc_v_simulator = { workspace = true, features = ["delegation", "cycle_marker"], optional = true }
+riscv_transpiler = { workspace = true, optional = true }
 
 [features]
 use_risc_v_simulator = ["risc_v_simulator"]
+use_riscv_transpiler = ["riscv_transpiler"]
 log_to_file = []
