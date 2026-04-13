@@ -455,16 +455,14 @@ where
             context
                 .intrinsic_tracker
                 .with_infinite_ergs(|resources| {
-                    system
-                        .io
-                        .update_account_nominal_token_balance(
-                            ExecutionEnvironmentType::NoEE,
-                            resources,
-                            &refund_recipient,
-                            &token_to_refund,
-                            false,
-                            Config::SIMULATION,
-                        )
+                    system.io.update_account_nominal_token_balance(
+                        ExecutionEnvironmentType::NoEE,
+                        resources,
+                        &refund_recipient,
+                        &token_to_refund,
+                        false,
+                        Config::SIMULATION,
+                    )
                 })
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -514,16 +512,14 @@ where
         context
             .intrinsic_tracker
             .with_infinite_ergs(|resources| {
-                system
-                    .io
-                    .update_account_nominal_token_balance(
-                        ExecutionEnvironmentType::NoEE,
-                        resources,
-                        &coinbase,
-                        &token_to_pay_operator,
-                        false,
-                        Config::SIMULATION,
-                    )
+                system.io.update_account_nominal_token_balance(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &coinbase,
+                    &token_to_pay_operator,
+                    false,
+                    Config::SIMULATION,
+                )
             })
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
