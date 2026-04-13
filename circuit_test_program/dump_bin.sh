@@ -2,4 +2,4 @@
 
 set -e
 
-cargo objcopy --release -- -O binary app.bin
+cargo airbender build --app-name circuit_test --release
