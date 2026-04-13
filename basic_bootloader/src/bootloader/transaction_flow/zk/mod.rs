@@ -599,6 +599,12 @@ where
                 formula,
                 actual_used
             );
+            assert!(
+                formula <= actual_used * 2,
+                "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
+                formula,
+                actual_used
+            );
         }
 
         ZkTxResult {
