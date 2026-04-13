@@ -1,6 +1,7 @@
 use super::Transaction;
 use crate::bootloader::errors::TxError;
-use zk_ee::system::{Computational, Resource, Resources};
+use evm_interpreter::ERGS_PER_GAS;
+use zk_ee::system::{Ergs, Resource, Resources};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{EthereumLikeTypes, IOSubsystemExt, System},
@@ -13,8 +14,6 @@ use zk_ee::{
 /// before execution.
 ///
 /// Returns Ok on success, or `TxError` if an IO operation fails.
-///
-/// This function charges only native from `resources`.
 pub fn parse_and_warm_up_access_list<S: EthereumLikeTypes>(
     system: &mut System<S>,
     resources: &mut S::Resources,
@@ -30,25 +29,24 @@ where
             slots_list,
         } in iter
         {
-            // per-address native charge (overhead on top of what the IO op
-            // itself debits via `with_infinite_ergs`).
-            resources.charge(&S::Resources::from_native(
-                <<S::Resources as Resources>::Native as Computational>::from_computational(
-                    crate::bootloader::constants::PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD,
-                ),
-            ))?;
+            // per-address charge
+            resources.charge(&S::Resources::from_ergs_and_native(
+                Ergs(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS * ERGS_PER_GAS),
+                <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(crate::bootloader::constants::PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD)
+            )
+            )?;
             resources.with_infinite_ergs(|resources| {
                 system
                     .io
                     .touch_account(ExecutionEnvironmentType::NoEE, resources, &address)
             })?;
             for key in slots_list.iter() {
-                // per-slot native charge
-                resources.charge(&S::Resources::from_native(
-                    <<S::Resources as Resources>::Native as Computational>::from_computational(
-                        crate::bootloader::constants::PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD
-                    ),
-                ))?;
+                // per-slot charge
+                resources.charge(&S::Resources::from_ergs_and_native(
+                    Ergs(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY * ERGS_PER_GAS),
+                    <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(crate::bootloader::constants::PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD)
+                )
+                )?;
                 let key = key?;
                 resources.with_infinite_ergs(|resources| {
                     system.io.storage_touch(

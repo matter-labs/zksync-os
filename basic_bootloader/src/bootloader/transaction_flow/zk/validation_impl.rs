@@ -359,11 +359,10 @@ where
     }
 
     // Access list.
-    // Gas is already included in the intrinsic gas charged above, so the
-    // processor only touches native. We route native through `intrinsic_tracker`
-    // (precharged by the intrinsic computational native formula) rather than
-    // `main_resources`.
-    parse_and_warm_up_access_list(system, &mut intrinsic_tracker, &transaction)?;
+    // Gas is already included in the intrinsic gas charged above, so we are only charging native.
+    intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+        parse_and_warm_up_access_list(system, inf_resources, &transaction)
+    })?;
 
     // Parse blobs, if any
     // No need to feature gate this part, as blobs() should return an empty list
@@ -404,13 +403,14 @@ where
     {
         if let Some(authorization_list) = transaction.authorization_list() {
             // Same as for the access list: gas is included in the intrinsic
-            // gas above, so the processor only charges native, routed through
-            // `intrinsic_tracker`.
-            crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations(
+            // gas above, so we are only charging native
+            intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+                crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations(
                     system,
-                    &mut intrinsic_tracker,
+                    inf_resources,
                     authorization_list,
-                )?;
+                )
+            })?;
         }
     }
 
