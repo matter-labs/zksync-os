@@ -243,43 +243,49 @@ pub fn print_cycle_markers() -> Option<u64> {
 pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
 
 #[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
-pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
+fn compute_effective_cycles(diff: &Mark) -> u64 {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;
+
+    diff.cycles
+        + BLAKE_DELEGATION_COEFF
+            * diff
+                .delegations
+                .get(&BLAKE_DELEGATION_ID)
+                .cloned()
+                .unwrap_or_default()
+        + BIGINT_DELEGATION_COEFF
+            * diff
+                .delegations
+                .get(&BIGINT_DELEGATION_ID)
+                .cloned()
+                .unwrap_or_default()
+}
+
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
     const BLOCK_WIDE_LABEL: &str = "run_prepared";
     use std::collections::HashMap;
 
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
 
     if labels.is_empty() {
-        let mut block_effective = None;
-        for (idx, pair) in cm.markers.chunks_exact(2).enumerate() {
-            let diff = pair[1].diff(&pair[0]);
-            log_marker(&format!(
-                "anonymous_marker_{}: net cycles: {}, net delegations: {:?}",
-                idx, diff.cycles, diff.delegations
-            ));
-            if idx == 0 {
-                block_effective = Some(
-                    diff.cycles
-                        + BLAKE_DELEGATION_COEFF
-                            * diff
-                                .delegations
-                                .get(&BLAKE_DELEGATION_ID)
-                                .cloned()
-                                .unwrap_or_default()
-                        + BIGINT_DELEGATION_COEFF
-                            * diff
-                                .delegations
-                                .get(&BIGINT_DELEGATION_ID)
-                                .cloned()
-                                .unwrap_or_default(),
-                );
-            }
-        }
-        return block_effective;
+        assert_eq!(
+            cm.markers.len(),
+            2,
+            "anonymous transpiler cycle markers are only supported for a single profiled scope; got {} markers",
+            cm.markers.len(),
+        );
+
+        let diff = cm.markers[1].diff(&cm.markers[0]);
+        log_marker(&format!(
+            "anonymous_marker: net cycles: {}, net delegations: {:?}",
+            diff.cycles, diff.delegations
+        ));
+
+        return Some(compute_effective_cycles(&diff));
     }
 
     assert_eq!(
@@ -327,21 +333,7 @@ pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
             label, diff.cycles, diff.delegations
         ));
         if label == BLOCK_WIDE_LABEL {
-            block_effective = Some(
-                diff.cycles
-                    + BLAKE_DELEGATION_COEFF
-                        * diff
-                            .delegations
-                            .get(&BLAKE_DELEGATION_ID)
-                            .cloned()
-                            .unwrap_or_default()
-                    + BIGINT_DELEGATION_COEFF
-                        * diff
-                            .delegations
-                            .get(&BIGINT_DELEGATION_ID)
-                            .cloned()
-                            .unwrap_or_default(),
-            );
+            block_effective = Some(compute_effective_cycles(&diff));
         }
     }
 
