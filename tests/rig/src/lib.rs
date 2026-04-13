@@ -29,14 +29,10 @@ pub use basic_system;
 pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
-#[cfg(feature = "airbender_cli")]
-pub use cli_lib;
 pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::system_types::ForwardRunningSystem;
-#[cfg(feature = "gpu")]
-pub use gpu_prover;
 pub use log;
 pub use oracle_provider;
 pub use ruint;
