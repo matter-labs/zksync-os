@@ -235,8 +235,15 @@ pub fn big_wrapping_pow<A: Allocator + Clone>(
         digits: vec_in!(allocator.clone(); 0; scratch_space.len()),
     };
     result.digits[0] = 1;
-    for &b in exp {
-        let mut mask: u8 = 1 << 7;
+    for (i, &b) in exp.iter().enumerate() {
+        // Skip leading zero bits in the first byte to align execution
+        // with adjusted-bit-length pricing.
+        let mut mask: u8 = if i == 0 {
+            1u8.checked_shl(7u32.wrapping_sub(b.leading_zeros()))
+                .unwrap_or(0)
+        } else {
+            1 << 7
+        };
         while mask > 0 {
             big_wrapping_mul(&result, &result, scratch_space);
             result.digits.copy_from_slice(scratch_space);

@@ -373,8 +373,15 @@ impl<A: Allocator + Clone> MPNat<A> {
         let monpro_len = s + 2;
 
         // Use binary method for computing exp, but with monpro as the multiplication
-        for &b in exp {
-            let mut mask: u8 = 1 << 7;
+        for (i, &b) in exp.iter().enumerate() {
+            // Skip leading zero bits in the first byte to align execution
+            // with adjusted-bit-length pricing.
+            let mut mask: u8 = if i == 0 {
+                1u8.checked_shl(7u32.wrapping_sub(b.leading_zeros()))
+                    .unwrap_or(0)
+            } else {
+                1 << 7
+            };
             while mask > 0 {
                 monsq(&x_bar, modulus, n_prime, &mut scratch);
                 x_bar.digits.copy_from_slice(&scratch[0..s]);
@@ -774,6 +781,90 @@ mod test {
             assert_eq!(
                 result, expected,
                 "({base} ^ {exp}) % {modulus} failed check_modpow_montgomery"
+            );
+        }
+    }
+
+    /// Tests that exponents with leading zero bits in their first nonzero byte
+    /// produce correct results. This exercises the optimization that skips
+    /// leading zero bits to align execution with adjusted-bit-length pricing.
+    #[test]
+    fn test_modpow_sparse_exponents() {
+        let base: u128 = 0xadb5ce8589030e3a9112123f4558f69c;
+        let modulus_odd: u128 = 0xc4550871a1cfc67af3e77eceb2ecfce5;
+        let modulus_even: u128 = 0xf863d4f17a5405d84814f54c92f803c8;
+        let modulus_pow2: u128 = 1 << 118;
+
+        // Exponents whose first nonzero byte has varying leading zero bits
+        let sparse_exponents: Vec<u128> = vec![
+            0x01, // 7 leading zero bits
+            0x02, // 6 leading zero bits
+            0x03, // 6 leading zero bits
+            0x0F, // 4 leading zero bits
+            0x10, // 3 leading zero bits
+            0x40, // 1 leading zero bit
+            0x7F, // 1 leading zero bit
+            0x80, // 0 leading zero bits (baseline)
+            0xFF, // 0 leading zero bits
+        ];
+
+        for &exp in &sparse_exponents {
+            let expected = {
+                let b = num_bigint::BigUint::from(base);
+                let e = num_bigint::BigUint::from(exp);
+                let m = num_bigint::BigUint::from(modulus_odd);
+                b.modpow(&e, &m)
+            };
+
+            // Montgomery path (odd modulus)
+            let result = crate::modexp(
+                &base.to_be_bytes(),
+                &exp.to_be_bytes(),
+                &modulus_odd.to_be_bytes(),
+                Global,
+            );
+            let result = num_bigint::BigUint::from_bytes_be(&result);
+            assert_eq!(
+                result, expected,
+                "Montgomery: ({base:#x} ^ {exp:#x}) % {modulus_odd:#x}"
+            );
+
+            // Even modulus path
+            let expected_even = {
+                let b = num_bigint::BigUint::from(base);
+                let e = num_bigint::BigUint::from(exp);
+                let m = num_bigint::BigUint::from(modulus_even);
+                b.modpow(&e, &m)
+            };
+            let result = crate::modexp(
+                &base.to_be_bytes(),
+                &exp.to_be_bytes(),
+                &modulus_even.to_be_bytes(),
+                Global,
+            );
+            let result = num_bigint::BigUint::from_bytes_be(&result);
+            assert_eq!(
+                result, expected_even,
+                "Even modulus: ({base:#x} ^ {exp:#x}) % {modulus_even:#x}"
+            );
+
+            // Power-of-two modulus path
+            let expected_pow2 = {
+                let b = num_bigint::BigUint::from(base);
+                let e = num_bigint::BigUint::from(exp);
+                let m = num_bigint::BigUint::from(modulus_pow2);
+                b.modpow(&e, &m)
+            };
+            let result = crate::modexp(
+                &base.to_be_bytes(),
+                &exp.to_be_bytes(),
+                &modulus_pow2.to_be_bytes(),
+                Global,
+            );
+            let result = num_bigint::BigUint::from_bytes_be(&result);
+            assert_eq!(
+                result, expected_pow2,
+                "Power-of-two: ({base:#x} ^ {exp:#x}) % {modulus_pow2:#x}"
             );
         }
     }
