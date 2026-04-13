@@ -20,7 +20,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-# Base features and output names
+# Base features
 FEATURES="proving"
 
 # Adjust for server modes
@@ -85,18 +85,13 @@ DIST_DIR="dist/$APP_NAME"
 
 # Clean up previous artifacts for this app
 rm -rf "$DIST_DIR"
-mkdir -p "$DIST_DIR"
 
-# Build
-cargo build --features "$FEATURES" --release
-
-# Produce outputs into dist/<app>/
-cargo objcopy --features "$FEATURES" --release -- -O binary "$DIST_DIR/app.bin"
-cargo objcopy --features "$FEATURES" --release -- -R .text "$DIST_DIR/app.elf"
-cargo objcopy --features "$FEATURES" --release -- -O binary --only-section=.text "$DIST_DIR/app.text"
+# Build via cargo airbender — outputs go to dist/<APP_NAME>/app.{bin,elf,text} + manifest.toml
+cargo airbender build --app-name "$APP_NAME" --release -- --features "$FEATURES"
 
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"
 echo "-> $DIST_DIR/app.bin"
 echo "-> $DIST_DIR/app.elf"
 echo "-> $DIST_DIR/app.text"
+echo "-> $DIST_DIR/manifest.toml"
