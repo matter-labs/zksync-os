@@ -81,6 +81,8 @@ const EIP7702_MAGIC: u8 = 0x05;
 ///
 /// Note that if any of these checks fail, the function returns
 /// false.
+///
+/// This function charges only native from `resources`.
 #[inline]
 fn validate_and_apply_delegation<S: EthereumLikeTypes>(
     system: &mut System<S>,
@@ -96,10 +98,13 @@ where
 {
     let chain_id = system.get_chain_id();
 
-    // 0. Pre-charge intrinsic gas
-    resources.charge(&S::Resources::from_ergs(Ergs(
-        evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS,
-    )))?;
+    // 0. Native pre-charge. The gas part (NEWACCOUNT per authorization) is
+    //    already included in the transaction's intrinsic gas charged
+    resources.charge(&S::Resources::from_native(
+        <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(
+            crate::bootloader::constants::PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD,
+        ),
+    ))?;
 
     // 1. Check chain id
     if !auth_chain_id.is_zero() && auth_chain_id != &U256::from(chain_id) {

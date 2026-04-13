@@ -88,23 +88,34 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
     COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
 
 /// L2 tx access list account computational native cost.
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 = 2_000 + // computational overhead
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
+    PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
     30 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 30 - worst case contribution to rlp encoding (21 address, 9 keys list length encoding)
 
 /// L2 tx access list storage slot computational native cost.
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 = 2_000 + // computational overhead
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
+    PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
     33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
 
 /// L2 tx authorization computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
-    2_000 + // computational overhead
+    PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     keccak256_native_cost_for_rounds_u64(1) + // auth message keccak cost (1 round)
     ECRECOVER_NATIVE_COST + // signature verification
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // nonce update
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + 1140 /* 1 round blake2s padded bytecode */; // delegation write
+
+/// Native computational overhead of 7702 auth.
+pub const PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Native computational overhead of 2930 access list per address.
+pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Native computational overhead 2930 access list per slot.
+pub const PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
 
 /// Constant part of l1 tx intrinsic computational native cost.
 // Covers intrinsic L1 tx work not charged as tx-body computation.

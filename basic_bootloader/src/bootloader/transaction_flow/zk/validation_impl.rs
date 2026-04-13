@@ -4,16 +4,18 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
-use crate::bootloader::transaction::Transaction;
+use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, make_intrinsic_tracker,
+    L2ResourcesPolicy,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
+use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::ERGS_PER_GAS;
+use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
@@ -24,9 +26,9 @@ use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
+use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
 use zk_ee::system::{AccountDataRequest, SystemFunctions};
-use zk_ee::system::{Ergs, IOSubsystemExt};
+use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
 use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
@@ -160,23 +162,38 @@ where
         }
     }
 
-    // Now we will materialize resources, from which we will try to charge intrinsic cost on top
-    let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
+    let is_deployment = transaction.is_deployment().is_some();
+    if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
+        return Err(TxError::Validation(
+            InvalidTransaction::CreateInitCodeSizeLimit,
+        ));
+    }
+    let intrinsic_gas = calculate_tx_intrinsic_gas(
+        calldata.len() as u64,
+        calldata_tokens,
+        is_deployment,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+    );
+    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
+        calldata.len() as u64,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+    );
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num);
+
+    // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
+    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
         system,
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
         native_per_pubdata,
-        transaction.is_deployment().is_some(),
-        calldata.len() as u64,
-        calldata_tokens,
-        calculate_l2_tx_intrinsic_computational_native_resources(
-            calldata.len() as u64,
-            access_list_accounts,
-            access_list_storage_keys,
-            authorization_list_num,
-        ),
-        calculate_l2_tx_intrinsic_pubdata(authorization_list_num),
+        intrinsic_gas,
+        intrinsic_computational_native,
+        intrinsic_pubdata,
     )?;
 
     system_log!(
@@ -185,20 +202,40 @@ where
         &tx_resources
     );
 
-    // we will use infinite resources during validation, since we already charged for it(intrinsic cost)
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+    // We use `intrinsic_tracker` for operations whose native cost is already
+    // included in the intrinsic computational native formula (ecrecover, tx
+    // hash keccak, originator account read, nonce increment, and later the
+    // fee prepayment / refund / operator payment). In production the tracker
+    // is `FORMAL_INFINITE`, preserving the previous behavior. Under
+    // `verify_intrinsic_native` it starts at a known finite value so the
+    // consumed native can be recovered and checked against the formula.
+    let mut intrinsic_tracker = make_intrinsic_tracker::<S>();
 
     // NOTE: we provided a "hint" for "from", so it's sequencer's risks here:
     // - either "from" is valid at it has at least enough balance, valid signature, etc to eventually pay for all validation
     // - or we will perform non-mutating operations without any payment
 
     // steps below are all not free, so the choice there is rather arbitrary. Let's first check the signature, as it's compute-only
+
+    // We have to charge native for this hash, as it's computed during parsing
+    // for RLP-encoded transactions.
+    // We over-estimate using the total tx length
+    charge_keccak(transaction.len(), &mut intrinsic_tracker)?;
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
     // Only service transactions have no signature,
     // we don't even charge gas/native related to ecrecover for them.
     if let Some((parity, r, s)) = transaction.sig_parity_r_s() {
-        if Config::VALIDATE_EOA_SIGNATURE && !Config::SIMULATION {
+        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
+        // Note that gas is charged already in intrinsic cost, so now
+        // we only need to charge native resources.
+        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
+            intrinsic_tracker.charge(&Resources::from_native(
+                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                    ECRECOVER_NATIVE_COST,
+                ),
+            ))?;
+        } else {
             if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
                 return Err(InvalidTransaction::MalleableSignature.into());
             }
@@ -210,13 +247,16 @@ where
             ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
-            S::SystemFunctions::secp256k1_ec_recover(
-                ecrecover_input.as_slice(),
-                &mut ecrecover_output,
-                &mut inf_resources,
-                system.get_allocator(),
-            )
-            .map_err(SystemError::from)?;
+            // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
+            intrinsic_tracker.with_infinite_ergs(|resources| {
+                S::SystemFunctions::secp256k1_ec_recover(
+                    ecrecover_input.as_slice(),
+                    &mut ecrecover_output,
+                    resources,
+                    system.get_allocator(),
+                )
+                .map_err(SystemError::from)
+            })?;
 
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
@@ -238,23 +278,25 @@ where
             }
         }
     };
-    let tx_hash: Bytes32 = transaction.transaction_hash(&mut inf_resources)?;
+    let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_tracker)?;
 
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
     // intrinsic cost charged above
-    let originator_account_data = system.io.read_account_properties(
-        ExecutionEnvironmentType::NoEE,
-        &mut inf_resources,
-        &from,
-        AccountDataRequest::empty()
-            .with_ee_version()
-            .with_nonce()
-            .with_has_bytecode()
-            .with_is_delegated()
-            .with_nominal_token_balance(),
-    )?;
+    let originator_account_data = intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::NoEE,
+            inf_resources,
+            &from,
+            AccountDataRequest::empty()
+                .with_ee_version()
+                .with_nonce()
+                .with_has_bytecode()
+                .with_is_delegated()
+                .with_nominal_token_balance(),
+        )
+    })?;
 
     // EIP-3607: Reject transactions from senders with deployed code modulo delegations
     // We skip it for simulation to allow simulate calls between contracts
@@ -265,12 +307,11 @@ where
     // Originator's nonce is incremented before authorization list
     // skipped for service transactions, for which we do not track nonce
     let old_nonce = if transaction.nonce().is_some() {
-        match system.io.increment_nonce(
-            ExecutionEnvironmentType::NoEE,
-            &mut inf_resources,
-            &from,
-            1u64,
-        ) {
+        match intrinsic_tracker.with_infinite_ergs(|resources| {
+            system
+                .io
+                .increment_nonce(ExecutionEnvironmentType::NoEE, resources, &from, 1u64)
+        }) {
             Ok(x) => Ok(x),
             Err(SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _))) => {
                 return Err(TxError::Validation(
@@ -317,10 +358,12 @@ where
         }
     }
 
-    // Access list
-    // we are passing resources, this function should charge only ergs,
-    // shouldn't touch native resources as cost included in the intrinsic
-    parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, &transaction)?;
+    // Access list.
+    // Gas is already included in the intrinsic gas charged above, so the
+    // processor only touches native. We route native through `intrinsic_tracker`
+    // (precharged by the intrinsic computational native formula) rather than
+    // `main_resources`.
+    parse_and_warm_up_access_list(system, &mut intrinsic_tracker, &transaction)?;
 
     // Parse blobs, if any
     // No need to feature gate this part, as blobs() should return an empty list
@@ -362,9 +405,12 @@ where
         // we are passing resources, this function should charge only ergs,
         // shouldn't touch native resources as cost included in the intrinsic
         if let Some(authorization_list) = transaction.authorization_list() {
-            crate::bootloader::transaction::authorization_list:: parse_authorization_list_and_apply_delegations(
+            // Same as for the access list: gas is included in the intrinsic
+            // gas above, so the processor only charges native, routed through
+            // `intrinsic_tracker`.
+            crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations(
                     system,
-                    &mut tx_resources.main_resources,
+                    &mut intrinsic_tracker,
                     authorization_list,
                 )?;
         }
@@ -442,6 +488,7 @@ where
         total_pubdata: 0,
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
+        intrinsic_tracker,
     })
 }
 

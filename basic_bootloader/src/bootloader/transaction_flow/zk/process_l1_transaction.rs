@@ -8,9 +8,9 @@ use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
-    calculate_l1_tx_intrinsic_computational_native_resources, check_enough_resources_for_pubdata,
-    create_resources_for_tx, get_resources_to_charge_for_pubdata, L1ResourcesPolicy,
-    ResourcesForTx,
+    calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
+    check_enough_resources_for_pubdata, create_resources_for_tx,
+    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
@@ -498,6 +498,20 @@ where
     let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, transaction.calldata());
 
+    // L1 transactions never carry an access list or authorization list, so
+    // the corresponding counts are 0 and the intrinsic-gas helper collapses
+    // to TX_INTRINSIC_GAS + calldata-token cost (deployment is also false).
+    let intrinsic_gas = calculate_tx_intrinsic_gas(
+        transaction.calldata().len() as u64,
+        calldata_tokens,
+        false, // is_deployment
+        0,     // access_list_accounts
+        0,     // access_list_storage_keys
+        0,     // authorization_list_num
+    );
+    let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
+        transaction.calldata().len() as u64,
+    );
     // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
     // Validation errors are type-safe impossible - they're logged and saturated instead
     let resources = create_resources_for_tx::<S, L1ResourcesPolicy>(
@@ -506,12 +520,8 @@ where
         native_per_gas == 0,
         native_prepaid_from_gas,
         native_per_pubdata,
-        false, // is_deployment
-        transaction.calldata().len() as u64,
-        calldata_tokens,
-        calculate_l1_tx_intrinsic_computational_native_resources(
-            transaction.calldata().len() as u64
-        ),
+        intrinsic_gas,
+        intrinsic_computational_native,
         intrinsic_pubdata,
     )?;
 
