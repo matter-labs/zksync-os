@@ -32,8 +32,6 @@ jobs:
                   cargo install cargo-binutils
 
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
 
             - name: Compile for RISC-V
               working-directory: ./zksync_os

@@ -31,8 +31,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -58,8 +56,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -86,8 +82,6 @@ jobs:
                   rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile blake test programs for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -130,8 +124,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -153,8 +145,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -176,8 +166,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -199,8 +187,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -258,8 +244,6 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
-              with:
-                  rev: "7e559f95"
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
