@@ -56,7 +56,7 @@ pub fn live_run(
         {
             Box::new(program.cpu_prover().build().expect("failed to build CPU prover"))
         }
-        #[cfg(not(feature = "proving"))]
+        #[cfg(not(any(feature = "proving", feature = "gpu")))]
         {
             Box::new(program.dev_prover().build().expect("failed to build dev prover"))
         }
