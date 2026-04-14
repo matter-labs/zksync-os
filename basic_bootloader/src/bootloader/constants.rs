@@ -78,6 +78,17 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // balance change for fee prepayment
     (WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
 
+/// Service tx intrinsic computational native cost.
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+    keccak256_native_cost_for_rounds_u64(2) + // keccak for full hash, 1 rounds worst case tx size + 1 round precharge for dynamic parts
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // balance change for fee prepayment
+    (WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+
+/// L2 tx calldata byte intrinsic computational native cost.
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
+    DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover full hash
+
 /// Native computational cost to cover keccak256 hashing overhead for dynamic fields of the transaction per byte.
 /// NOTE: we are precharging 1 keccak round in the constant part since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
 const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =

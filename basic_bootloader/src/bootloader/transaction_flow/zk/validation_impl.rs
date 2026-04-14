@@ -181,8 +181,9 @@ where
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        transaction.is_service(),
     );
-    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num);
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
     let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
@@ -220,7 +221,9 @@ where
     // We have to charge native for this hash, as it's computed during parsing
     // for RLP-encoded transactions.
     // We over-estimate using the total tx length
-    charge_keccak(transaction.len(), &mut intrinsic_tracker)?;
+    if !transaction.is_service() {
+        charge_keccak(transaction.len(), &mut intrinsic_tracker)?;
+    }
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
     // Only service transactions have no signature,

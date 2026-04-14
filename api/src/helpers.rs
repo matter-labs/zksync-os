@@ -383,6 +383,8 @@ pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> V
 ///
 /// This mirrors the checks performed by the bootloader during L2 tx validation
 /// without requiring the full system infrastructure.
+///
+/// Please note, that it works only for Ethereum tx types(doesn't work for service txs)
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::result_unit_err)]
 pub fn validate_l2_tx_intrinsic_native_resources(
@@ -433,7 +435,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     let native_prepaid = native_per_gas.saturating_mul(gas_limit);
 
     // Intrinsic pubdata
-    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num);
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false);
     let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
 
     let native_limit = native_prepaid
@@ -449,6 +451,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        false
     );
 
     native_limit

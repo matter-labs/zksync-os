@@ -1,13 +1,5 @@
 use super::super::*;
-use crate::bootloader::constants::{
-    L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L2_TX_INTRINSIC_PUBDATA,
-    L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, TX_INTRINSIC_GAS,
-};
+use crate::bootloader::constants::{L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L2_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST, SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, TX_INTRINSIC_GAS};
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
 use evm_interpreter::ERGS_PER_GAS;
@@ -233,13 +225,14 @@ pub fn calculate_l2_tx_intrinsic_computational_native_resources(
     access_list_accounts: u64,
     access_list_storages: u64,
     authorization_list_num: u64,
+    is_service: bool,
 ) -> u64 {
-    let mut intrinsic_computational_native_resources = L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST;
+    let mut intrinsic_computational_native_resources = if is_service { SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST } else { L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST };
 
     intrinsic_computational_native_resources = intrinsic_computational_native_resources
         .saturating_add(
             calldata_byte_length
-                .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE),
+                .saturating_mul( if is_service { SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE } else { L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE}),
         );
 
     intrinsic_computational_native_resources = intrinsic_computational_native_resources
@@ -324,7 +317,11 @@ pub fn calculate_tx_intrinsic_gas(
     intrinsic_gas
 }
 
-pub fn calculate_l2_tx_intrinsic_pubdata(authorization_list_num: u64) -> u64 {
+pub fn calculate_l2_tx_intrinsic_pubdata(authorization_list_num: u64, is_service: bool) -> u64 {
+    if is_service {
+        // there is no intrinsic pubdata for service txs
+        return 0;
+    }
     let mut intrinsic_pubdata = L2_TX_INTRINSIC_PUBDATA;
 
     intrinsic_pubdata = intrinsic_pubdata.saturating_add(
