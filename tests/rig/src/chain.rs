@@ -1296,11 +1296,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
-            let (_proof_output, _block_effective) = zksync_os_runner::run_and_get_effective_cycles(
-                dist_dir,
-                1 << 36,
-                &prover_input_words,
-            );
+            zksync_os_runner::run(dist_dir, 1 << 36, &prover_input_words);
             Some(prover_input_words)
         };
         (Some(result_keeper), proof_input)

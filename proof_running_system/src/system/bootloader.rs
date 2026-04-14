@@ -145,9 +145,6 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 ///
 /// Returns public input.
 ///
-/// NOTE: The allocator must already be initialized before calling this function
-/// (e.g. by `#[airbender::main(allocator_init = init_allocator)]`).
-///
 #[inline(never)]
 pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>() -> [u32; 8] {
     logger_log!(L::default(), "Enter proving bootloader");
