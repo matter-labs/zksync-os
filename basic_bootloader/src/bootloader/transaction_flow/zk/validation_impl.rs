@@ -490,6 +490,7 @@ where
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
         intrinsic_tracker,
+        authorization_list_num,
     })
 }
 

@@ -130,6 +130,11 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// actual native consumption can be recovered by subtracting the residual
     /// and compared against the formula as an upper bound.
     pub intrinsic_tracker: S::Resources,
+    /// Number of EIP-7702 authorization list entries in the transaction.
+    /// Used by `verify_intrinsic_native` to skip the overcharging check when
+    /// authorizations are present (failed auths consume much less native than
+    /// the worst-case formula budgets).
+    pub authorization_list_num: u64,
 }
 
 impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
@@ -599,12 +604,18 @@ where
                 formula,
                 actual_used
             );
-            assert!(
-                formula <= actual_used * 2,
-                "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
-                formula,
-                actual_used
-            );
+            // Skip the overcharging check when authorization-list entries are
+            // present: failed auths (bad sig, wrong chain id, nonce overflow)
+            // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
+            // formula budgets worst-case success cost per entry.
+            if context.authorization_list_num == 0 {
+                assert!(
+                    formula <= actual_used * 2,
+                    "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
+                    formula,
+                    actual_used
+                );
+            }
         }
 
         ZkTxResult {
