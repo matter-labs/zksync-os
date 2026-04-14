@@ -451,7 +451,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
-        false
+        false,
     );
 
     native_limit

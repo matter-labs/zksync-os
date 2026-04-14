@@ -183,7 +183,8 @@ where
         authorization_list_num,
         transaction.is_service(),
     );
-    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
+    let intrinsic_pubdata =
+        calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
     let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
