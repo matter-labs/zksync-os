@@ -6,7 +6,6 @@ mod prefetch;
 mod rpc;
 mod statistics;
 mod utils;
-use block_execution::GpuSharedState;
 use db::{BlockStatus, BlockTraces, Database};
 use rig::log::{debug, info, warn};
 use statistics::RunStatistics;
@@ -42,24 +41,26 @@ pub fn live_run(
     info!("Blocks: {} to {}", start_block, end_block);
     info!("Initialization: {:.2}ms", init_time.as_secs_f64() * 1000.0);
 
-    #[cfg(feature = "gpu")]
-    let mut gpu_state = {
-        info!("Setting up GPU state...");
+    let prover: Box<dyn airbender_host::Prover> = {
         let dist_dir = rig::chain::get_zksync_os_dist_dir(&Some("evm_replay".to_string()));
         let program = airbender_host::Program::load(&dist_dir)
             .expect("failed to load program");
-        let prover = program
-            .gpu_prover()
-            .build()
-            .expect("failed to build GPU prover");
-        info!("Done setting up GPU state...");
-        prover
+        #[cfg(feature = "gpu")]
+        {
+            info!("Setting up GPU prover...");
+            let p = program.gpu_prover().build().expect("failed to build GPU prover");
+            info!("Done setting up GPU prover.");
+            Box::new(p)
+        }
+        #[cfg(all(feature = "proving", not(feature = "gpu")))]
+        {
+            Box::new(program.cpu_prover().build().expect("failed to build CPU prover"))
+        }
+        #[cfg(not(feature = "proving"))]
+        {
+            Box::new(program.dev_prover().build().expect("failed to build dev prover"))
+        }
     };
-    #[cfg(feature = "gpu")]
-    let gpu_state = &mut Some(&mut gpu_state);
-
-    #[cfg(not(feature = "gpu"))]
-    let gpu_state: &mut Option<&mut GpuSharedState> = &mut None;
 
     let mut stats = RunStatistics::new();
     let mut prefetch_cache = std::collections::HashMap::<u64, BlockTraces>::new();
@@ -124,7 +125,7 @@ pub fn live_run(
             persist_all,
             chain_id,
             single_tx,
-            gpu_state,
+            &*prover,
             only_forward,
             block_traces,
         );
@@ -144,7 +145,7 @@ pub fn live_run(
                         persist_all,
                         chain_id,
                         single_tx,
-                        gpu_state,
+                        &*prover,
                         only_forward,
                         &mut stats.total_block_time,
                     )

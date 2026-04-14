@@ -29,15 +29,6 @@ fn filter_skipped<T>(items: Vec<T>, skipped: &HashSet<usize>) -> Vec<T> {
         .collect()
 }
 
-#[cfg(feature = "gpu")]
-pub type GpuSharedState = airbender_host::GpuProver;
-
-#[cfg(all(feature = "proving", not(feature = "gpu")))]
-pub type GpuSharedState = ();
-
-#[cfg(not(feature = "proving"))]
-pub type GpuSharedState = ();
-
 /// Runs a block using prefetched traces.
 #[allow(clippy::too_many_arguments, unused_variables)]
 pub fn run_block(
@@ -48,7 +39,7 @@ pub fn run_block(
     persist_all: bool,
     chain_id: u64,
     single_tx: Option<u64>,
-    gpu_shared_state: &mut Option<&mut GpuSharedState>,
+    prover: &dyn airbender_host::Prover,
     only_forward: bool,
     block_traces: BlockTraces,
 ) -> Result<BlockStatus> {
@@ -175,27 +166,9 @@ pub fn run_block(
 
     info!("Actual gas used: {}", output.header.gas_used);
 
-    #[cfg(all(feature = "proving", feature = "gpu"))]
-    {
+    if !only_forward {
         info!("Starting base layer proofs...");
-        let result = gpu_shared_state
-            .as_ref()
-            .expect("GPU prover not initialized")
-            .prove(&_prover_input)
-            .expect("GPU proving failed");
-        info!("Done with base layer proofs in {} cycles", result.cycles);
-    }
-    #[cfg(all(feature = "proving", not(feature = "gpu")))]
-    {
-        let dist_dir = rig::chain::get_zksync_os_dist_dir(&Some("evm_replay".to_string()));
-        let program = airbender_host::Program::load(&dist_dir)
-            .expect("failed to load program");
-        let prover = program
-            .cpu_prover()
-            .build()
-            .expect("failed to build CPU prover");
-        info!("Starting base layer proofs...");
-        let result = prover.prove(&_prover_input).expect("CPU proving failed");
+        let result = prover.prove(&_prover_input).expect("proving failed");
         info!("Done with base layer proofs in {} cycles", result.cycles);
     }
 
