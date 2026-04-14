@@ -365,16 +365,220 @@ fn measure_fri_verifier_cycles_in_riscv() {
 
     let bin_path = resolve_riscv_bin_path();
     println!("Running RISC-V verifier bench binary: {}", bin_path.display());
-    let (public_output, effective_cycles) = zksync_os_runner::run_and_get_effective_cycles(
+    let (public_output, cycle_stats) = zksync_os_runner::run_and_get_stats(
         bin_path,
         200_000_000,
         non_determinism_source,
     );
 
     println!("RISC-V public output: {public_output:#010x?}");
-    println!("RISC-V effective cycles: {:?}", effective_cycles);
+    println!("RISC-V cycle stats: {cycle_stats:#?}");
     assert!(
-        effective_cycles.is_some(),
+        cycle_stats.is_some(),
         "effective cycles were not reported; build the binary with cycle markers enabled"
+    );
+}
+
+/// Discovers FRI proof files to benchmark.
+///
+/// If `FRI_ORACLE_PATHS` is set, treats it as a colon-separated list of
+/// paths (absolute, or relative to the repo root). Otherwise enumerates
+/// the repo root for files matching `matter-labs_*.bin`.
+fn resolve_proof_paths() -> Vec<PathBuf> {
+    let repo_root = resolve_repo_root();
+
+    if let Ok(list) = std::env::var("FRI_ORACLE_PATHS") {
+        return list
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let p = PathBuf::from(s);
+                if p.is_absolute() {
+                    p
+                } else {
+                    repo_root.join(p)
+                }
+            })
+            .collect();
+    }
+
+    let mut discovered: Vec<PathBuf> = std::fs::read_dir(&repo_root)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", repo_root.display()))
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("matter-labs_") && n.ends_with(".bin"))
+        })
+        .collect();
+
+    // Stable deterministic iteration order regardless of filesystem order.
+    discovered.sort();
+    discovered
+}
+
+#[derive(Debug, Clone)]
+struct ProofStats {
+    public_output: [u32; 8],
+    raw_cycles: u64,
+    effective_cycles: u64,
+    delegations: std::collections::HashMap<u32, u64>,
+}
+
+#[test]
+fn measure_multiple_fri_verifier_cycles_in_riscv() {
+    let proof_paths = resolve_proof_paths();
+    assert!(
+        !proof_paths.is_empty(),
+        "no proof files found — set FRI_ORACLE_PATHS or place matter-labs_*.bin files at the repo root"
+    );
+
+    // Load setup / layout once and reuse for every proof. They describe the
+    // unified verifier circuit configuration, not any specific proof.
+    let setup_path = resolve_artifact_path(
+        "FRI_SETUP_PATH",
+        "/tmp/ethereum-prover/artifacts/recursion_unified_setup.bin",
+    );
+    let layout_path = resolve_artifact_path(
+        "FRI_LAYOUT_PATH",
+        "/tmp/ethereum-prover/artifacts/recursion_unified_layouts.bin",
+    );
+    let setup_bytes = std::fs::read(&setup_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", setup_path.display()));
+    let layout_bytes = std::fs::read(&layout_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", layout_path.display()));
+    let setup: UnrolledProgramSetup = decode_exact(&setup_bytes, "UnrolledProgramSetup");
+    let layout: CompiledCircuitsSet = decode_exact(&layout_bytes, "CompiledCircuitsSet");
+
+    let bin_path = resolve_riscv_bin_path();
+    println!("Running RISC-V verifier bench binary: {}", bin_path.display());
+    println!("Discovered {} proof file(s):", proof_paths.len());
+    for p in &proof_paths {
+        println!("  - {}", p.display());
+    }
+    println!();
+
+    let mut all_stats: Vec<ProofStats> = Vec::with_capacity(proof_paths.len());
+
+    for proof_path in &proof_paths {
+        let file_name = proof_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+
+        println!("=== verifying {file_name} ===");
+
+        let proof_bytes = std::fs::read(proof_path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", proof_path.display()));
+        let proof_bytes = maybe_decompress_gzip(&proof_bytes, "proof");
+        let proof: UnrolledProgramProof = decode_exact(&proof_bytes, "UnrolledProgramProof");
+
+        let responses =
+            flatten_proof_into_responses_for_unified_recursion(&proof, &setup, &layout, false);
+
+        let mut non_determinism_source = QuasiUARTSource::default();
+        non_determinism_source.oracle.push_back(FRI_VERIFIER_MODE_MAGIC);
+        for word in responses {
+            non_determinism_source.oracle.push_back(word);
+        }
+
+        let (public_output, cycle_stats) = zksync_os_runner::run_and_get_stats(
+            bin_path.clone(),
+            200_000_000,
+            non_determinism_source,
+        );
+
+        let stats = cycle_stats.unwrap_or_else(|| {
+            panic!(
+                "no cycle stats reported for {file_name}; \
+                 the binary must be built with cycle markers enabled"
+            )
+        });
+
+        println!("  public output : {public_output:#010x?}");
+        println!("  raw cycles    : {}", stats.raw_cycles);
+        println!("  effective     : {}", stats.effective_cycles);
+        if stats.delegations.is_empty() {
+            println!("  delegations   : (none)");
+        } else {
+            let mut entries: Vec<_> = stats.delegations.iter().collect();
+            entries.sort_by_key(|(id, _)| **id);
+            let rendered: Vec<String> = entries
+                .iter()
+                .map(|(id, count)| format!("{id}={count}"))
+                .collect();
+            println!("  delegations   : {{ {} }}", rendered.join(", "));
+        }
+        println!();
+
+        let _ = file_name; // kept for the "=== verifying ... ===" header only
+        all_stats.push(ProofStats {
+            public_output,
+            raw_cycles: stats.raw_cycles,
+            effective_cycles: stats.effective_cycles,
+            delegations: stats.delegations,
+        });
+    }
+
+    // ---- Aggregate stats -----------------------------------------------
+
+    let n = all_stats.len() as u64;
+    assert!(n > 0);
+
+    let total_raw: u128 = all_stats.iter().map(|s| s.raw_cycles as u128).sum();
+    let total_effective: u128 = all_stats.iter().map(|s| s.effective_cycles as u128).sum();
+    let min_raw = all_stats.iter().map(|s| s.raw_cycles).min().unwrap();
+    let max_raw = all_stats.iter().map(|s| s.raw_cycles).max().unwrap();
+    let min_effective = all_stats.iter().map(|s| s.effective_cycles).min().unwrap();
+    let max_effective = all_stats.iter().map(|s| s.effective_cycles).max().unwrap();
+
+    // Union of all delegation IDs seen across any proof.
+    let mut all_delegation_ids: std::collections::BTreeSet<u32> =
+        std::collections::BTreeSet::new();
+    for s in &all_stats {
+        for id in s.delegations.keys() {
+            all_delegation_ids.insert(*id);
+        }
+    }
+
+    let unique_public_outputs: std::collections::HashSet<[u32; 8]> =
+        all_stats.iter().map(|s| s.public_output).collect();
+
+    println!("=== aggregate over {n} proof(s) ===");
+    println!(
+        "  raw cycles       : avg={:>12}  min={:>12}  max={:>12}",
+        total_raw / n as u128,
+        min_raw,
+        max_raw
+    );
+    println!(
+        "  effective cycles : avg={:>12}  min={:>12}  max={:>12}",
+        total_effective / n as u128,
+        min_effective,
+        max_effective
+    );
+    for id in &all_delegation_ids {
+        let mut total: u128 = 0;
+        let mut min_count: Option<u64> = None;
+        let mut max_count: u64 = 0;
+        for s in &all_stats {
+            let c = s.delegations.get(id).copied().unwrap_or(0);
+            total += c as u128;
+            min_count = Some(min_count.map_or(c, |m| m.min(c)));
+            max_count = max_count.max(c);
+        }
+        println!(
+            "  delegation {id:>5}: avg={:>12}  min={:>12}  max={:>12}",
+            total / n as u128,
+            min_count.unwrap_or(0),
+            max_count
+        );
+    }
+    println!(
+        "  unique public outputs seen: {}",
+        unique_public_outputs.len()
     );
 }

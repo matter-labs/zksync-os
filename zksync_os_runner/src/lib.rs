@@ -7,10 +7,18 @@ use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions};
 use riscv_transpiler::vm::{
     DelegationsCounters, NonDeterminismCSRSource, RamWithRomRegion, SimpleTape, State, VM,
 };
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const RAM_SIZE: usize = 1 << 30;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CycleStats {
+    pub raw_cycles: u64,
+    pub effective_cycles: u64,
+    pub delegations: HashMap<u32, u64>,
+}
 
 struct FullUnsignedMachineWithMopDecoderConfig;
 
@@ -37,7 +45,8 @@ pub fn run_and_get_effective_cycles_from_bytes(
 ) -> ([u32; 8], Option<u64>) {
     let bin_words = bytes_to_u32_words(img_bytes);
     let text_words = bytes_to_u32_words(text_bytes);
-    run_inner(&bin_words, &text_words, cycles, non_determinism_source)
+    let (output, stats) = run_inner(&bin_words, &text_words, cycles, non_determinism_source);
+    (output, stats.map(|stats| stats.effective_cycles))
 }
 
 pub fn run_and_get_effective_cycles(
@@ -45,6 +54,15 @@ pub fn run_and_get_effective_cycles(
     cycles: usize,
     non_determinism_source: impl NonDeterminismCSRSource,
 ) -> ([u32; 8], Option<u64>) {
+    let (output, stats) = run_and_get_stats(img_path, cycles, non_determinism_source);
+    (output, stats.map(|stats| stats.effective_cycles))
+}
+
+pub fn run_and_get_stats(
+    img_path: PathBuf,
+    cycles: usize,
+    non_determinism_source: impl NonDeterminismCSRSource,
+) -> ([u32; 8], Option<CycleStats>) {
     let text_path = img_path.with_extension("text");
     let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
     run_inner(&bin_words, &text_words, cycles, non_determinism_source)
@@ -55,7 +73,7 @@ fn run_inner(
     text_words: &[u32],
     cycles: usize,
     mut non_determinism_source: impl NonDeterminismCSRSource,
-) -> ([u32; 8], Option<u64>) {
+) -> ([u32; 8], Option<CycleStats>) {
     log::info!("ZK RISC-V transpiler is starting");
 
     let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(text_words);
@@ -65,7 +83,9 @@ fn run_inner(
     let mut state = State::initial_with_counters(DelegationsCounters::default());
 
     #[allow(unused_mut, unused_assignments)]
-    let mut block_effective = None;
+    let mut cycle_stats = None;
+    #[allow(unused_mut, unused_assignments)]
+    let mut fallback_delegations: HashMap<u32, u64> = HashMap::new();
 
     #[cfg(feature = "cycle_marker")]
     {
@@ -81,7 +101,29 @@ fn run_inner(
                 &mut non_determinism_source,
             )
         });
-        block_effective = cycle_marker::print_cycle_markers(cycle_markers);
+        // Capture the global delegation counter before `print_cycle_markers`
+        // consumes `cycle_markers`, so the fallback path below can still
+        // report delegations even when the marker window is unusable.
+        let global_delegations = cycle_markers.delegation_counter.clone();
+
+        let scoped_stats = if cycle_markers.markers.len() == 2 {
+            let diff = cycle_markers.markers[1].diff(&cycle_markers.markers[0]);
+            let effective_cycles = diff.cycles
+                + 16 * diff.delegations.get(&1991).cloned().unwrap_or_default()
+                + 4 * diff.delegations.get(&1994).cloned().unwrap_or_default();
+
+            Some(CycleStats {
+                raw_cycles: diff.cycles,
+                effective_cycles,
+                delegations: diff.delegations.clone(),
+            })
+        } else {
+            None
+        };
+
+        let _ = cycle_marker::print_cycle_markers(cycle_markers);
+        cycle_stats = scoped_stats;
+        fallback_delegations = global_delegations;
     }
 
     #[cfg(not(feature = "cycle_marker"))]
@@ -99,7 +141,18 @@ fn run_inner(
     let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
     let output: [u32; 8] = std::array::from_fn(|i| state.registers[10 + i].value);
 
-    (output, block_effective.or(Some(cycles_executed)))
+    let cycle_stats = cycle_stats.or_else(|| {
+        let effective_cycles = cycles_executed
+            + 16 * fallback_delegations.get(&1991).cloned().unwrap_or_default()
+            + 4 * fallback_delegations.get(&1994).cloned().unwrap_or_default();
+        Some(CycleStats {
+            raw_cycles: cycles_executed,
+            effective_cycles,
+            delegations: fallback_delegations,
+        })
+    });
+
+    (output, cycle_stats)
 }
 
 pub fn simulate_witness_tracing(

@@ -259,6 +259,7 @@ name = "blake2s_u32"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender.git?branch=dev#73f46c2bc86cdcefb878d6675abfcfc0eaf04607"
 dependencies = [
+ "common_constants",
  "unroll",
 ]
 
