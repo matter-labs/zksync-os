@@ -234,10 +234,7 @@ fn test_l1_tx_returndata_cleared_on_pubdata_revert() {
 
     // Bytecode that writes to 10 storage slots (generating pubdata) and
     // returns 32 bytes containing the value 42.
-    let mut builder = BytecodeBuilder::new()
-        .push_u8(42)
-        .push0()
-        .mstore();
+    let mut builder = BytecodeBuilder::new().push_u8(42).push0().mstore();
     for slot in 0..10u8 {
         builder = builder.push_u8(1).push_u8(slot).sstore();
     }

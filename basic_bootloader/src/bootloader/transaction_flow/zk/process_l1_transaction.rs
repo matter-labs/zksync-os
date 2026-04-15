@@ -598,7 +598,7 @@ where
     let total_deposited = transaction.reserved[0].read();
     let to_transfer = total_deposited
         .checked_sub(max_fee_commitment)
-        .ok_or(internal_error!("mfc+tic"))?;
+        .ok_or(internal_error!("td-mfc"))?;
 
     // Transfer value from treasury to sender (the deposit minus max fee).
     // We want to ensure that the simulation of a transaction
