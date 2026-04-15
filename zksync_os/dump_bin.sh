@@ -1,16 +1,21 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf}"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
+REPRODUCIBLE=""
 
-# Parse --type argument
+# Parse arguments
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --type)
       [ "$#" -ge 2 ] || { echo "Missing value for --type"; echo "$USAGE"; exit 2; }
       TYPE="$2"
       shift 2
+      ;;
+    --reproducible)
+      REPRODUCIBLE="--reproducible --workspace-root .."
+      shift
       ;;
     *)
       echo "Unknown argument: $1"
@@ -87,7 +92,7 @@ DIST_DIR="dist/$APP_NAME"
 rm -rf "$DIST_DIR"
 
 # Build via cargo airbender — outputs go to dist/<APP_NAME>/app.{bin,elf,text} + manifest.toml
-cargo airbender build --app-name "$APP_NAME" --release -- --features "$FEATURES"
+cargo airbender build --app-name "$APP_NAME" --release $REPRODUCIBLE -- --features "$FEATURES"
 
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"
