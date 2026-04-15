@@ -705,6 +705,8 @@ where
         system_log!(system, "Not enough gas for pubdata after execution\n");
         // Burn all remaining ergs.
         resources.exhaust_ergs();
+        // Reset returndata
+        returndata = Vec::new_in(system.get_allocator());
     }
 
     Ok(L1ExecutionOutcome {
