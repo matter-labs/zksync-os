@@ -1292,6 +1292,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 &mut pi_validator,
             )
             .expect("prover-input forward run must succeed");
+
+            assert_eq!(
+                result_keeper.storage_writes, pi_result_keeper.storage_writes,
+                "storage writes mismatch between forward and prover-input runs"
+            );
+
             let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
 
             // RISC-V simulation using pre-recorded input
