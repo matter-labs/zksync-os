@@ -30,7 +30,7 @@ impl<R: Resources> SystemFunction<R, Keccak256Errors> for Keccak256Impl {
 
 pub fn keccak256_native_cost_u64(len: usize) -> u64 {
     let rounds = core::cmp::max(1, len.div_ceil(KECCAK256_CHUNK_SIZE));
-    (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST
+    keccak256_native_cost_for_rounds_u64(rounds)
 }
 
 pub const fn keccak256_native_cost_for_rounds_u64(rounds: usize) -> u64 {

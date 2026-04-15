@@ -144,7 +144,6 @@ where
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
-    let mut authorization_list_num = 0;
     if let Some(iter) = transaction.access_list_iter() {
         for AccessListForAddress {
             address: _,
@@ -156,11 +155,14 @@ where
         }
     }
     #[cfg(feature = "eip-7702")]
+    let authorization_list_num = if let Some(authorization_list) = transaction.authorization_list()
     {
-        if let Some(authorization_list) = transaction.authorization_list() {
-            authorization_list_num = authorization_list.len() as u64;
-        }
-    }
+        authorization_list.len() as u64
+    } else {
+        0u64
+    };
+    #[cfg(not(feature = "eip-7702"))]
+    let authorization_list_num = 0;
 
     let is_deployment = transaction.is_deployment().is_some();
     if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {

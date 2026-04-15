@@ -155,6 +155,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
             .field("intrinsic_tracker", &self.intrinsic_tracker)
+            .field("authorization_list_num", &self.authorization_list_num)
             .finish()
     }
 }
