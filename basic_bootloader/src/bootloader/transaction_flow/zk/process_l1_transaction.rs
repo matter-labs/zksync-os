@@ -652,7 +652,7 @@ where
 
     // TODO: add support for deployment transactions,
     // probably unify with execution logic for EOA
-    let (reverted, returndata) =
+    let (reverted, mut returndata) =
         match BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
             system,
             system_functions,

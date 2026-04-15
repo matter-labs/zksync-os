@@ -12,9 +12,11 @@
 //!
 
 use rig::alloy::primitives::address;
+use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::U256;
 use rig::tx_succeeded;
 use rig::utils::L1TxBuilder;
+use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
 
 use super::common_target_address;
@@ -215,4 +217,95 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
         gas_used_zero, gas_used_high,
         "L1->L2 tx gas_used must be independent of block base_fee"
     );
+}
+
+/// Regression test: L1 transaction returndata must be cleared when the
+/// post-execution pubdata check forces a revert.
+///
+/// When an L1 tx body executes successfully but the remaining gas cannot
+/// cover the generated pubdata, the transaction is marked as failed.
+/// Previously, the returndata from the successful execution leaked into
+/// the revert output. This verifies the fix that clears returndata in
+/// that case.
+#[test]
+fn test_l1_tx_returndata_cleared_on_pubdata_revert() {
+    let from = address!("1234000000000000000000000000000000000000");
+    let to = address!("0000000000000000000000000000000000010002");
+
+    // Bytecode that writes to 10 storage slots (generating pubdata) and
+    // returns 32 bytes containing the value 42.
+    let mut builder = BytecodeBuilder::new()
+        .push_u8(42)
+        .push0()
+        .mstore();
+    for slot in 0..10u8 {
+        builder = builder.push_u8(1).push_u8(slot).sstore();
+    }
+    let bytecode = builder.push_u8(0x20).push0().return_().finish();
+
+    // Control: L1 tx with cheap pubdata succeeds and returns non-empty data.
+    let control_tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(10_000)
+        .gas_limit(500_000)
+        .gas_per_pubdata_byte_limit(1)
+        .build()
+        .into();
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(to, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64));
+    let control_output = tester.execute_block(vec![control_tx]);
+    let control_result = control_output.tx_results[0]
+        .as_ref()
+        .expect("Control tx should be processed");
+    assert!(
+        control_result.is_success(),
+        "Control tx should succeed, got: {:?}",
+        control_output.tx_results[0]
+    );
+    match &control_result.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(output)) => {
+            assert!(
+                !output.is_empty(),
+                "Control tx should return non-empty returndata"
+            );
+        }
+        other => panic!("Unexpected control execution result: {other:?}"),
+    }
+
+    // Regression: same contract with expensive pubdata (high gas_per_pubdata)
+    // so the post-execution pubdata check reverts the transaction.
+    // The returndata from the successful execution must NOT leak through.
+    let expensive_tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(10_000)
+        .gas_limit(500_000)
+        .gas_per_pubdata_byte_limit(1000)
+        .build()
+        .into();
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(to, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64));
+    let reverted_output = tester.execute_block(vec![expensive_tx]);
+    let reverted_result = reverted_output.tx_results[0]
+        .as_ref()
+        .expect("Tx should be processed even if reverted by pubdata check");
+    assert!(
+        !reverted_result.is_success(),
+        "Tx should be reverted by pubdata check, got: {:?}",
+        reverted_output.tx_results[0]
+    );
+    match &reverted_result.execution_result {
+        ExecutionResult::Revert(output) => {
+            assert!(
+                output.is_empty(),
+                "Returndata must be cleared when L1 tx is reverted by pubdata check"
+            );
+        }
+        other => panic!("Expected revert result, got: {other:?}"),
+    }
 }
