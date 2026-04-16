@@ -1,5 +1,5 @@
 use basic_system::cost_constants::{
-    ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
+    blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
 use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
@@ -7,7 +7,6 @@ use basic_system::system_implementation::flat_storage_model::cost_constants::{
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
     WARM_STORAGE_READ_NATIVE_COST,
 };
-use crypto::blake2s::blake2s_native_cost;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};

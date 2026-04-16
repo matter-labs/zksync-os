@@ -14,9 +14,9 @@ use crate::system_implementation::ethereum_storage_model::caches::preimage::Prei
 use crate::system_implementation::ethereum_storage_model::caches::EMPTY_STRING_KECCAK_HASH;
 use crate::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH;
 use crate::system_implementation::flat_storage_model::BitsOrd160;
+use crate::cost_constants::blake2s_native_cost;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
-use crypto::blake2s::blake2s_native_cost;
 use evm_interpreter::errors::EvmSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
