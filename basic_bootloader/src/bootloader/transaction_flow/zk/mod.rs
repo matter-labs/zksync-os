@@ -574,13 +574,18 @@ where
             format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
         );
 
-        use crate::bootloader::constants::L2_TX_INTRINSIC_PUBDATA;
+        use crate::bootloader::transaction_flow::gas_helpers::calculate_l2_tx_intrinsic_pubdata;
 
         let num_blobs = system.metadata.num_blobs();
         let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
 
         #[cfg(feature = "verify_intrinsic_native")]
         Self::verify_intrinsic_native(system, &context);
+
+        let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
+            context.authorization_list_num,
+            transaction.is_service(),
+        );
 
         ZkTxResult {
             result,
@@ -592,7 +597,7 @@ where
             gas_refunded: context.gas_refunded,
             native_used: context.native_used,
             computational_native_used,
-            pubdata_used: context.total_pubdata + L2_TX_INTRINSIC_PUBDATA,
+            pubdata_used: context.total_pubdata + intrinsic_pubdata,
             blob_gas_used,
         }
     }
