@@ -407,10 +407,13 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         return Err(());
     }
 
-    // Compute effective gas price (same as get_gas_price in bootloader)
-    let gas_price = if base_fee.is_zero() {
-        U256::ZERO
-    } else {
+    // following bootloader: native is unlimited on 0 base fee chains
+    if base_fee == 0 {
+        return Ok(());
+    }
+
+    // Compute effective gas price
+    let gas_price = {
         let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
         base_fee + priority_fee
     };
