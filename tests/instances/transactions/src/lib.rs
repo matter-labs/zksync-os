@@ -1189,12 +1189,12 @@ fn test_expensive_pubdata() {
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
-    // Validation uses 40 bytes of pubdata, we want the validation
+    // Validation uses 134 bytes of pubdata, we want the validation
     // pubdata charge to be > MAX_NATIVE_COMPUTATIONAL (2^35), to
     // ensure we use withheld resources for it.
     let native_price = U256::from(100);
-    // Value s.t. (pubdata_price / native_price) * 40 > MAX_NATIVE_COMPUTATIONAL
-    let pubdata_price = U256::from(85899346000u64);
+    // Value s.t. (pubdata_price / native_price) * 134 > MAX_NATIVE_COMPUTATIONAL
+    let pubdata_price = U256::from(25641596000u64);
 
     let block_context = BlockContext {
         native_price,

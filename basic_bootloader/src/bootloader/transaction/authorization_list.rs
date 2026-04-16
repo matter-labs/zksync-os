@@ -100,7 +100,7 @@ where
     resources.charge(&S::Resources::from_ergs_and_native(
         Ergs(evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS),
         <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(
-            crate::bootloader::constants::PER_AUTH_NATIVE_COST,
+            crate::bootloader::constants::PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD,
         ),
     ))?;
 

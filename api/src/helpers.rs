@@ -11,16 +11,25 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_sol_types::sol;
 use alloy_sol_types::SolCall;
 use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
+use basic_bootloader::bootloader::constants::{
+    CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR, CALLDATA_ZERO_BYTE_TOKEN_FACTOR,
+};
 use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
+use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
+    calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
+    calculate_tx_intrinsic_gas,
+};
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
+use std::cmp::min;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
-use zk_ee::utils::Bytes32;
+use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
+use zk_ee::utils::{u256_try_to_u64, Bytes32};
 use zksync_os_interface::traits::EncodedTx;
 
 // Getters
@@ -371,4 +380,106 @@ pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> V
 
     // Construct calldata
     setSettlementLayerChainIdCall(new_sl_chain_id).abi_encode()
+}
+
+/// Validates that a transaction provides enough gas limit and gas price
+/// to cover intrinsic resources (gas, computational native, and pubdata).
+///
+/// This mirrors the intrinsic-resource checks performed by the bootloader
+/// during L2 tx validation without requiring the full system infrastructure.
+///
+/// Please note, that it works only for Ethereum tx types (doesn't work for service txs)
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::result_unit_err)]
+pub fn validate_l2_tx_intrinsic_native_resources(
+    base_fee: U256,
+    native_price: U256,
+    pubdata_price: U256,
+    gas_limit: u64,
+    calldata: &[u8],
+    is_deployment: bool,
+    access_list_accounts: u64,
+    access_list_storage_keys: u64,
+    authorization_list_num: u64,
+    max_fee_per_gas: U256,
+    max_priority_fee_per_gas: U256,
+) -> Result<(), ()> {
+    // Validate fee fields
+    if max_priority_fee_per_gas > max_fee_per_gas {
+        return Err(());
+    }
+    if base_fee > max_fee_per_gas {
+        return Err(());
+    }
+
+    let calldata_length = calldata.len() as u64;
+    let calldata_tokens = {
+        let zero_bytes = calldata.iter().filter(|b| **b == 0).count() as u64;
+        let non_zero_bytes = calldata_length - zero_bytes;
+        zero_bytes
+            .saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR)
+            .saturating_add(non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR))
+    };
+
+    // Check gas limit covers intrinsic gas (bootloader rejects otherwise in
+    // create_resources_for_tx via checked_sub(intrinsic_gas))
+    let intrinsic_gas = calculate_tx_intrinsic_gas(
+        calldata_length,
+        calldata_tokens,
+        is_deployment,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+    );
+    if gas_limit < intrinsic_gas {
+        return Err(());
+    }
+
+    // following bootloader: native is unlimited on 0 base fee chains
+    if base_fee == 0 {
+        return Ok(());
+    }
+
+    // Compute effective gas price
+    let gas_price = {
+        let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
+        base_fee + priority_fee
+    };
+
+    // native_per_gas = ceil(gas_price / native_price)
+    if native_price.is_zero() {
+        return Err(());
+    }
+    let native_per_gas = u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(())?;
+
+    // native_per_pubdata = pubdata_price / native_price
+    let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price)).ok_or(())?;
+
+    let native_prepaid = native_per_gas.saturating_mul(gas_limit);
+
+    // Intrinsic pubdata
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false);
+    let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
+
+    let native_limit = native_prepaid
+        .checked_sub(intrinsic_pubdata_overhead)
+        .ok_or(())?;
+
+    // Cap at MAX_NATIVE_COMPUTATIONAL (excess is withheld for pubdata only)
+    let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
+
+    // Intrinsic computational native
+    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
+        calldata_length,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+        false,
+    );
+
+    native_limit
+        .checked_sub(intrinsic_computational_native)
+        .ok_or(())?;
+
+    Ok(())
 }
