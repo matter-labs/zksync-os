@@ -598,7 +598,7 @@ where
     let total_deposited = transaction.reserved[0].read();
     let to_transfer = total_deposited
         .checked_sub(max_fee_commitment)
-        .ok_or(internal_error!("mfc+tic"))?;
+        .ok_or(internal_error!("td-mfc"))?;
 
     // Transfer value from treasury to sender (the deposit minus max fee).
     // We want to ensure that the simulation of a transaction
@@ -652,7 +652,7 @@ where
 
     // TODO: add support for deployment transactions,
     // probably unify with execution logic for EOA
-    let (reverted, returndata) =
+    let (reverted, mut returndata) =
         match BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
             system,
             system_functions,
@@ -705,6 +705,8 @@ where
         system_log!(system, "Not enough gas for pubdata after execution\n");
         // Burn all remaining ergs.
         resources.exhaust_ergs();
+        // Reset returndata
+        returndata = Vec::new_in(system.get_allocator());
     }
 
     Ok(L1ExecutionOutcome {
