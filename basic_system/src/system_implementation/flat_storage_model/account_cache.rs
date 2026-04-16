@@ -14,6 +14,7 @@ use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
 use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
+use crypto::blake2s::blake2s_native_cost;
 use evm_interpreter::errors::EvmSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;

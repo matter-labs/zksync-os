@@ -580,44 +580,8 @@ where
         let num_blobs = system.metadata.num_blobs();
         let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
 
-        // Under `verify_intrinsic_native`, compare the native that was actually
-        // consumed for operations covered by the intrinsic computational native
-        // formula (everything charged through `intrinsic_tracker`, plus the
-        // per-site deltas accumulated during validation for the access list
-        // and authorization list) against the formula value. The formula must
-        // be an upper bound; otherwise a transaction could consume more native
-        // than was precharged.
         #[cfg(feature = "verify_intrinsic_native")]
-        {
-            use crate::bootloader::transaction_flow::gas_helpers::INTRINSIC_TRACKER_INITIAL_NATIVE;
-            let remaining = context.intrinsic_tracker.native().as_u64();
-            let actual_used = INTRINSIC_TRACKER_INITIAL_NATIVE.saturating_sub(remaining);
-            let formula = context.resources.intrinsic_computational_native_charged;
-            system_log!(
-                system,
-                "intrinsic native verification: formula={}, actually_used={}\n",
-                formula,
-                actual_used
-            );
-            assert!(
-                actual_used <= formula,
-                "intrinsic computational native formula ({}) is not an upper bound on actual consumption ({})",
-                formula,
-                actual_used
-            );
-            // Skip the overcharging check when authorization-list entries are
-            // present: failed auths (bad sig, wrong chain id, nonce overflow)
-            // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
-            // formula budgets worst-case success cost per entry.
-            if context.authorization_list_num == 0 {
-                assert!(
-                    formula <= actual_used * 2,
-                    "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
-                    formula,
-                    actual_used
-                );
-            }
-        }
+        Self::verify_intrinsic_native(system, &context);
 
         ZkTxResult {
             result,
@@ -939,6 +903,47 @@ where
                     to_charge_for_pubdata,
                 },
             ))
+        }
+    }
+
+    /// Compare the native that was actually consumed for operations covered by the
+    /// intrinsic computational native formula (everything charged through
+    /// `intrinsic_tracker`, plus the per-site deltas accumulated during validation
+    /// for the access list and authorization list) against the formula value. The
+    /// formula must be an upper bound; otherwise a transaction could consume more
+    /// native than was precharged.
+    #[cfg(feature = "verify_intrinsic_native")]
+    fn verify_intrinsic_native(
+        system: &mut System<S>,
+        context: &TxContextForPreAndPostProcessing<S>,
+    ) {
+        use crate::bootloader::transaction_flow::gas_helpers::INTRINSIC_TRACKER_INITIAL_NATIVE;
+        let remaining = context.intrinsic_tracker.native().as_u64();
+        let actual_used = INTRINSIC_TRACKER_INITIAL_NATIVE.saturating_sub(remaining);
+        let formula = context.resources.intrinsic_computational_native_charged;
+        system_log!(
+            system,
+            "intrinsic native verification: formula={}, actually_used={}\n",
+            formula,
+            actual_used
+        );
+        assert!(
+            actual_used <= formula,
+            "intrinsic computational native formula ({}) is not an upper bound on actual consumption ({})",
+            formula,
+            actual_used
+        );
+        // Skip the overcharging check when authorization-list entries are
+        // present: failed auths (bad sig, wrong chain id, nonce overflow)
+        // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
+        // formula budgets worst-case success cost per entry.
+        if context.authorization_list_num == 0 {
+            assert!(
+                formula <= actual_used * 2,
+                "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
+                formula,
+                actual_used
+            );
         }
     }
 }

@@ -25,7 +25,7 @@ use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoo
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
-use zk_ee::utils::Bytes32;
+use zk_ee::utils::{u256_try_to_u64, Bytes32};
 use zksync_os_interface::traits::EncodedTx;
 
 // Getters
@@ -415,22 +415,14 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         base_fee + priority_fee
     };
 
-    fn u256_try_to_u64(src: U256) -> Option<u64> {
-        if src > U256::from(u64::MAX) {
-            None
-        } else {
-            Some(src.as_limbs()[0])
-        }
-    }
-
     // native_per_gas = ceil(gas_price / native_price)
     if native_price.is_zero() {
         return Err(());
     }
-    let native_per_gas = u256_try_to_u64(gas_price.div_ceil(native_price)).ok_or(())?;
+    let native_per_gas = u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(())?;
 
     // native_per_pubdata = pubdata_price / native_price
-    let native_per_pubdata = u256_try_to_u64(pubdata_price.wrapping_div(native_price)).ok_or(())?;
+    let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price)).ok_or(())?;
 
     let native_prepaid = native_per_gas.saturating_mul(gas_limit);
 

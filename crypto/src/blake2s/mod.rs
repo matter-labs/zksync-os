@@ -22,6 +22,20 @@ mod delegated_extended;
 ))]
 pub use delegated_extended::{initialize_blake2s_delegation_context, Blake2s256};
 
+/// Native costs for blake2s hashing
+/// NOTE: To recompute if the blake coefficient changes
+pub const BLAKE2S_BASE_NATIVE_COST: u64 = 800;
+pub const BLAKE2S_ROUND_NATIVE_COST: u64 = 340;
+pub const BLAKE2S_CHUNK_SIZE: u64 = 64;
+
+// Helper to compute hashing native cost
+pub const fn blake2s_native_cost(len: usize) -> u64 {
+    let num_rounds = (len as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
+    num_rounds
+        .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
+        .saturating_add(BLAKE2S_BASE_NATIVE_COST)
+}
+
 // Multiple tests to compare delegation blake with external implementation.
 // To run - please execute the run_tests inside the main workload method.
 // Then compile the zksync_os (dump_bin.sh) - and run it (cargo test from zksync_os_runner)

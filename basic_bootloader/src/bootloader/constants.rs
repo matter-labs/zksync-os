@@ -7,6 +7,7 @@ use basic_system::system_implementation::flat_storage_model::cost_constants::{
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
     WARM_STORAGE_READ_NATIVE_COST,
 };
+use crypto::blake2s::blake2s_native_cost;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
@@ -72,25 +73,28 @@ pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
 // computational native consts
 /// Constant part of l2 tx intrinsic computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // nonce update
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    ACCOUNT_UPDATE_COST + // nonce update
     keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // balance change for fee prepayment
-    (WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_UPDATE_COST + // balance change for fee prepayment
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
 
 /// Service tx intrinsic computational native cost.
-pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     keccak256_native_cost_for_rounds_u64(2) + // keccak for full hash, 1 rounds worst case tx size + 1 round precharge for dynamic parts
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // balance change for fee prepayment
-    (WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST) * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_UPDATE_COST + // balance change for fee prepayment
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
 
 /// L2 tx calldata byte intrinsic computational native cost.
 pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
     DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover full hash
 
 /// Native computational cost to cover keccak256 hashing overhead for dynamic fields of the transaction per byte.
-/// NOTE: we are precharging 1 keccak round in the constant part since dynamic part, can consume 136*n + 1 bytes in encoding, so it will pay for ~n rounds, but consume (n + 1) rounds of keccak
+/// NOTE: this is approximate cost for hashing of 1 byte, but it shouldn't be used to estimate cost of one keccak call,
+/// it doesn't include static keccak256 cost part and keccak256 cost depends on the number of rounds, not byte length.
+/// So these things should be accounted separately: constant part of tx intrinsic cost includes keccak static part, and
+/// we are precharging 1 keccak round in the constant part to cover worst case number of rounds.
+/// Without extra round charge, fields can consume 136*n + 1 bytes in encoding, so cost will cover ~n rounds, but it should cover (n + 1) rounds of keccak.
 const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
     KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
 
@@ -101,7 +105,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 /// L2 tx access list account computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
     PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     30 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 30 - worst case contribution to rlp encoding (21 address, 9 keys list length encoding)
 
 /// L2 tx access list storage slot computational native cost.
@@ -115,9 +119,9 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     keccak256_native_cost_for_rounds_u64(1) + // auth message keccak cost (1 round)
     ECRECOVER_NATIVE_COST + // signature verification
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case account read
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + // nonce update
-    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + 1140 /* 1 round blake2s padded bytecode */ + // delegation write
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    ACCOUNT_UPDATE_COST + // nonce update
+    ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
     133 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for tx signing + full hash, 133 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 3 list overhead)
 
 /// Native computational overhead of 7702 auth.
@@ -128,6 +132,15 @@ pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
 
 /// Native computational overhead 2930 access list per slot.
 pub const PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Account read native computational cost in the worst case - cold, new(not present in the tree).
+pub const NEW_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_NEW_STORAGE_READ_NATIVE_COST;
+
+/// Account update native computational cost.
+pub const ACCOUNT_UPDATE_COST: u64 =
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
 
 /// Constant part of l1 tx intrinsic computational native cost.
 // Covers intrinsic L1 tx work not charged as tx-body computation.
