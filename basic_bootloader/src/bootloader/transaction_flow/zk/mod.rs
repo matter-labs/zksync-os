@@ -912,10 +912,9 @@ where
 
     /// Compare the native that was actually consumed for operations covered by the
     /// intrinsic computational native formula (everything charged through
-    /// `intrinsic_resources`, plus the per-site deltas accumulated during validation
-    /// for the access list and authorization list) against the formula value. The
-    /// formula must be an upper bound; otherwise a transaction could consume more
-    /// native than was precharged.
+    /// `intrinsic_resources`, including access-list warming and authorization-list
+    /// processing) against the formula value. The formula must be an upper bound;
+    /// otherwise a transaction could consume more native than was precharged.
     #[cfg(feature = "verify_intrinsic_native")]
     fn verify_intrinsic_native(
         system: &mut System<S>,
