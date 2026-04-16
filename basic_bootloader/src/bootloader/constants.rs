@@ -196,7 +196,7 @@ pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
 /// L1 tx calldata byte intrinsic computational native cost.
 pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = COPY_BYTE_NATIVE_COST;
 
-/// worse case pubdata for tx sender balance change
+/// Worst-case pubdata for tx sender balance change
 const SENDER_BALANCE_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 33/*worst case balance*/;
 
 /// Constant part of l2 tx intrinsic pubdata.
