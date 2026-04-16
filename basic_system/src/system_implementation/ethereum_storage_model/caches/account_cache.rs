@@ -2,6 +2,7 @@
 //! This caches the actual account data, which will
 //! then be published into the preimage storage.
 use super::super::cost_constants::*;
+use crate::cost_constants::blake2s_native_cost;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_implementation::caches::basic_account_properties::BasicAccountPropertiesMetadata;
 use crate::system_implementation::caches::cache_element_properties::CacheElementProperties;
@@ -14,7 +15,6 @@ use crate::system_implementation::ethereum_storage_model::caches::preimage::Prei
 use crate::system_implementation::ethereum_storage_model::caches::EMPTY_STRING_KECCAK_HASH;
 use crate::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH;
 use crate::system_implementation::flat_storage_model::BitsOrd160;
-use crate::cost_constants::blake2s_native_cost;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::errors::EvmSubsystemError;

@@ -11,10 +11,10 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_sol_types::sol;
 use alloy_sol_types::SolCall;
 use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
-use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_bootloader::bootloader::constants::{
     CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR, CALLDATA_ZERO_BYTE_TOKEN_FACTOR,
 };
+use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
     calculate_tx_intrinsic_gas,
