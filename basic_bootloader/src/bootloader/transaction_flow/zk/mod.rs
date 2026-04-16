@@ -943,7 +943,7 @@ where
         if context.authorization_list_num == 0 {
             assert!(
                 formula <= actual_used * 2,
-                "intrinsic computational native formula ({}) is overcharging more than twice comparing to actual consumption ({})",
+                "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",
                 formula,
                 actual_used
             );
