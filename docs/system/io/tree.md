@@ -17,7 +17,7 @@ To summarize some costs:
 - An existing read costs `DEPTH` hashes.
 - An empty read costs `2 * DEPTH` hashes (one for each of the neighbors).
 - An existing write costs `2 * DEPTH` hashes (one for the initial state of the leaf and one for the final one).
-- A new write costs `5 * DEPTH` hashes (2 for the "empty read", 1 for the update of the left neighbor and 2 for the update of the new leaf - for new leaf we need to open empty value to validate the merkle path).
+- A new write costs `5 * DEPTH` hashes: 2 for the "empty read", 1 for the update of the left neighbor, and 2 for the update of the new leaf. For the new leaf, we need to open the empty value to validate the Merkle path.
 
 Note that this costs only refer to the final effect of the entire block over each slot. So, if in a block a give slot is read initially with value `A`, then written with value `B` and then written again with value `C`, only the update `A -> C` will be performed on the tree. The rest of the interactions are handled by the caches, as explained in the [IO overview](io.md) and [caches](caches.md) sections. In addition, the number of hashing operations is amortized. For instance, we may insert several leaves with keys between 2 adjacent keys in the tree (and/or read missing keys there); instead of querying and folding Merkle paths for the corresponding 2 leaves multiple times, we query a Merkle path for them once and fold them together with other loaded paths (i.e., we never even fold separate Merkle paths). Similarly, hashes in Merkle paths close to the root will most probably be the same for a significant portion of paths, and we don't do duplicate hashing for them either.
 
