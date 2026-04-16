@@ -124,12 +124,11 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// Resources used to pay for system operations that are precharged by the
     /// intrinsic computational native formula (e.g. ecrecover, keccak of the
     /// signed/tx hash, account read, nonce write, fee prepayment, refund and
-    /// coinbase payment). In production this is `FORMAL_INFINITE` so call sites
-    /// behave exactly as before. With the `verify_intrinsic_native` feature it
-    /// starts at a finite `INTRINSIC_TRACKER_INITIAL_NATIVE` value so that the
-    /// actual native consumption can be recovered by subtracting the residual
-    /// and compared against the formula as an upper bound.
-    pub intrinsic_tracker: S::Resources,
+    /// coinbase payment). Always initialized to `FORMAL_INFINITE`. Under the
+    /// `verify_intrinsic_native` feature the actual native consumption is
+    /// recovered by subtracting the residual from `FORMAL_INFINITE` and
+    /// compared against the formula as an upper bound.
+    pub intrinsic_resources: S::Resources,
     /// Number of EIP-7702 authorization list entries in the transaction.
     /// Used by `verify_intrinsic_native` to skip the overcharging check when
     /// authorizations are present (failed auths consume much less native than
@@ -154,7 +153,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("validation_pubdata", &self.validation_pubdata)
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
-            .field("intrinsic_tracker", &self.intrinsic_tracker)
+            .field("intrinsic_resources", &self.intrinsic_resources)
             .field("authorization_list_num", &self.authorization_list_num)
             .finish()
     }
@@ -251,7 +250,7 @@ where
         // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
         // This ensures sender has sufficient funds before execution begins
         context
-            .intrinsic_tracker
+            .intrinsic_resources
             .with_infinite_ergs(|resources| {
                 system.io.update_account_nominal_token_balance(
                     ExecutionEnvironmentType::NoEE,
@@ -455,11 +454,11 @@ where
             let token_to_refund =
                 context.gas_price * U256::from(context.tx_gas_limit - context.gas_used); // can not overflow
 
-            // First refund the sender. Routed through `intrinsic_tracker` so
+            // First refund the sender. Routed through `intrinsic_resources` so
             // the native charge (precharged by the intrinsic formula) can be
             // verified under `verify_intrinsic_native`.
             context
-                .intrinsic_tracker
+                .intrinsic_resources
                 .with_infinite_ergs(|resources| {
                     system.io.update_account_nominal_token_balance(
                         ExecutionEnvironmentType::NoEE,
@@ -516,7 +515,7 @@ where
         let coinbase = system.get_coinbase();
         // Operator payment native is precharged by the intrinsic formula too.
         context
-            .intrinsic_tracker
+            .intrinsic_resources
             .with_infinite_ergs(|resources| {
                 system.io.update_account_nominal_token_balance(
                     ExecutionEnvironmentType::NoEE,
@@ -908,7 +907,7 @@ where
 
     /// Compare the native that was actually consumed for operations covered by the
     /// intrinsic computational native formula (everything charged through
-    /// `intrinsic_tracker`, plus the per-site deltas accumulated during validation
+    /// `intrinsic_resources`, plus the per-site deltas accumulated during validation
     /// for the access list and authorization list) against the formula value. The
     /// formula must be an upper bound; otherwise a transaction could consume more
     /// native than was precharged.
@@ -917,9 +916,9 @@ where
         system: &mut System<S>,
         context: &TxContextForPreAndPostProcessing<S>,
     ) {
-        use crate::bootloader::transaction_flow::gas_helpers::INTRINSIC_TRACKER_INITIAL_NATIVE;
-        let remaining = context.intrinsic_tracker.native().as_u64();
-        let actual_used = INTRINSIC_TRACKER_INITIAL_NATIVE.saturating_sub(remaining);
+        let initial = S::Resources::FORMAL_INFINITE.native().as_u64();
+        let remaining = context.intrinsic_resources.native().as_u64();
+        let actual_used = initial.saturating_sub(remaining);
         let formula = context.resources.intrinsic_computational_native_charged;
         system_log!(
             system,

@@ -197,38 +197,6 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
     }
 }
 
-/// Initial native budget for the `verify_intrinsic_native` tracker.
-///
-/// Must be strictly greater than every possible `formula_value` the tracker
-/// is ever compared against, so that the tracker never exhausts during a real
-/// transaction. We pick a value that far exceeds `MAX_NATIVE_COMPUTATIONAL`
-/// so saturation in the underlying DecreasingNative cannot happen in practice.
-#[cfg(feature = "verify_intrinsic_native")]
-pub const INTRINSIC_TRACKER_INITIAL_NATIVE: u64 = 1u64 << 50;
-
-/// Build the resources value used by the `verify_intrinsic_native` tracker.
-///
-/// In production (feature off) this is `FORMAL_INFINITE`, so the behavior of
-/// code that currently uses `S::Resources::FORMAL_INFINITE` is unchanged.
-/// With the feature on, ergs remain effectively infinite (so no call site
-/// unexpectedly OOGs) but the native component starts at a finite, known
-/// value so the actual native consumption can be recovered from the residual.
-pub fn make_intrinsic_tracker<S: EthereumLikeTypes>() -> S::Resources {
-    #[cfg(feature = "verify_intrinsic_native")]
-    {
-        S::Resources::from_ergs_and_native(
-            Ergs(u64::MAX),
-            <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
-                INTRINSIC_TRACKER_INITIAL_NATIVE,
-            ),
-        )
-    }
-    #[cfg(not(feature = "verify_intrinsic_native"))]
-    {
-        S::Resources::FORMAL_INFINITE
-    }
-}
-
 pub fn calculate_l2_tx_intrinsic_computational_native_resources(
     calldata_byte_length: u64,
     access_list_accounts: u64,

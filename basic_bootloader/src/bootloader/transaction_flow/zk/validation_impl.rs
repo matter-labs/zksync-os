@@ -7,8 +7,7 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, make_intrinsic_tracker,
-    L2ResourcesPolicy,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -206,14 +205,14 @@ where
         &tx_resources
     );
 
-    // We use `intrinsic_tracker` for operations whose native cost is already
+    // We use `intrinsic_resources` for operations whose native cost is already
     // included in the intrinsic computational native formula (ecrecover, tx
     // hash keccak, originator account read, nonce increment, and later the
-    // fee prepayment / refund / operator payment). In production the tracker
-    // is `FORMAL_INFINITE`, preserving the previous behavior. Under
-    // `verify_intrinsic_native` it starts at a known finite value so the
-    // consumed native can be recovered and checked against the formula.
-    let mut intrinsic_tracker = make_intrinsic_tracker::<S>();
+    // fee prepayment / refund / operator payment). The tracker is always
+    // `FORMAL_INFINITE`; under `verify_intrinsic_native` the actual native
+    // consumption is recovered by subtracting the residual from the initial
+    // FORMAL_INFINITE value.
+    let mut intrinsic_resources = S::Resources::FORMAL_INFINITE;
 
     // NOTE: we provided a "hint" for "from", so it's sequencer's risks here:
     // - either "from" is valid at it has at least enough balance, valid signature, etc to eventually pay for all validation
@@ -225,7 +224,7 @@ where
     // for RLP-encoded transactions.
     // We over-estimate using the total tx length
     if !transaction.is_service() {
-        charge_keccak(transaction.len(), &mut intrinsic_tracker)?;
+        charge_keccak(transaction.len(), &mut intrinsic_resources)?;
     }
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
@@ -236,7 +235,7 @@ where
         // Note that gas is charged already in intrinsic cost, so now
         // we only need to charge native resources.
         if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
-            intrinsic_tracker.charge(&Resources::from_native(
+            intrinsic_resources.charge(&Resources::from_native(
                 <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
                     ECRECOVER_NATIVE_COST,
                 ),
@@ -254,7 +253,7 @@ where
 
             let mut ecrecover_output = ArrayBuilder::default();
             // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
-            intrinsic_tracker.with_infinite_ergs(|resources| {
+            intrinsic_resources.with_infinite_ergs(|resources| {
                 S::SystemFunctions::secp256k1_ec_recover(
                     ecrecover_input.as_slice(),
                     &mut ecrecover_output,
@@ -284,13 +283,13 @@ where
             }
         }
     };
-    let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_tracker)?;
+    let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
 
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
     // intrinsic cost charged above
-    let originator_account_data = intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+    let originator_account_data = intrinsic_resources.with_infinite_ergs(|inf_resources| {
         system.io.read_account_properties(
             ExecutionEnvironmentType::NoEE,
             inf_resources,
@@ -313,7 +312,7 @@ where
     // Originator's nonce is incremented before authorization list
     // skipped for service transactions, for which we do not track nonce
     let old_nonce = if transaction.nonce().is_some() {
-        match intrinsic_tracker.with_infinite_ergs(|resources| {
+        match intrinsic_resources.with_infinite_ergs(|resources| {
             system
                 .io
                 .increment_nonce(ExecutionEnvironmentType::NoEE, resources, &from, 1u64)
@@ -366,7 +365,7 @@ where
 
     // Access list.
     // Gas is already included in the intrinsic gas charged above, so we are only charging native.
-    intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+    intrinsic_resources.with_infinite_ergs(|inf_resources| {
         parse_and_warm_up_access_list(system, inf_resources, &transaction)
     })?;
 
@@ -410,7 +409,7 @@ where
         if let Some(authorization_list) = transaction.authorization_list() {
             // Same as for the access list: gas is included in the intrinsic
             // gas above, so we are only charging native
-            intrinsic_tracker.with_infinite_ergs(|inf_resources| {
+            intrinsic_resources.with_infinite_ergs(|inf_resources| {
                 crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations(
                     system,
                     inf_resources,
@@ -492,7 +491,7 @@ where
         total_pubdata: 0,
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
-        intrinsic_tracker,
+        intrinsic_resources,
         authorization_list_num,
     })
 }
