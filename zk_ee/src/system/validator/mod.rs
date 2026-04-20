@@ -5,6 +5,7 @@
 //! - `finish_tx`: Validate after execution
 
 use crate::system::SystemTypes;
+use ruint::aliases::{B160, U256};
 
 /// Errors that can occur during transaction validation.
 #[derive(Debug)]
@@ -15,9 +16,21 @@ pub enum TxValidationError {
 
 pub type TxValidationResult = Result<(), TxValidationError>;
 
+/// Context passed to [`TxValidator::begin_tx`] before a transaction is executed.
+///
+/// Carries the static transaction fields that a policy may inspect when deciding
+/// whether to admit a transaction.
+pub struct BeginTxContext<'a> {
+    pub from: B160,
+    pub to: Option<B160>,
+    pub value: U256,
+    pub calldata: &'a [u8],
+    pub gas_limit: u64,
+}
+
 pub trait TxValidator<S: SystemTypes> {
     /// Is called before bootloader starts execution of a transaction
-    fn begin_tx(&mut self, calldata: &[u8]) -> TxValidationResult;
+    fn begin_tx(&mut self, ctx: &BeginTxContext<'_>) -> TxValidationResult;
 
     /// Is called after bootloader finishes execution of a transaction
     fn finish_tx(&mut self) -> TxValidationResult;
@@ -27,7 +40,7 @@ pub trait TxValidator<S: SystemTypes> {
 pub struct NopTxValidator;
 
 impl<S: SystemTypes> TxValidator<S> for NopTxValidator {
-    fn begin_tx(&mut self, _calldata: &[u8]) -> TxValidationResult {
+    fn begin_tx(&mut self, _ctx: &BeginTxContext<'_>) -> TxValidationResult {
         Ok(())
     }
 
