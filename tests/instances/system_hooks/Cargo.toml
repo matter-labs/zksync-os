@@ -11,9 +11,22 @@ categories.workspace = true
 
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
+zksync_os_tests_common = { path = "../../common" }
 hex = { workspace = true }
 alloy-sol-types = { workspace = true }
+
+# Optional heavy deps for the real-proof end-to-end FRI precompile test.
+# These are pulled in only when the `fri_proof_e2e` feature is active so
+# that the normal CI build stays fast.
+execution_utils = { workspace = true, optional = true, features = ["verifier_80"] }
+riscv_transpiler = { workspace = true, optional = true }
+flate2 = { version = "1", optional = true }
+bincode = { version = "2.0.1", features = ["serde"], optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 
 [features]
 e2e_proving = ["rig/e2e_proving"]
 cycle_marker = ["rig/cycle_marker"]
+# Enable this feature to run the real-proof FRI precompile integration test.
+# Requires proof/setup/layout fixture files (see the test for env vars).
+fri_proof_e2e = ["execution_utils", "riscv_transpiler", "flate2", "bincode", "serde"]

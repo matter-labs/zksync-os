@@ -11,7 +11,14 @@ categories.workspace = true
 
 [dependencies]
 alloy = { workspace = true, features = [
-    "serde",
+    "consensus",
+    "dyn-abi",
+    "eips",
+    "network",
+    "rlp",
+    "rpc",
+    "rpc-types",
+    "signers",
     "serde-bincode-compat",
 ] }
 

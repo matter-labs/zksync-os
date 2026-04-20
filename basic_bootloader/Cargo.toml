@@ -25,6 +25,9 @@ paste = { workspace = true }
 cfg-if = { workspace = true }
 serde-big-array = "0.5"
 
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+prover = { workspace = true, features = ["prover"] }
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"] }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }

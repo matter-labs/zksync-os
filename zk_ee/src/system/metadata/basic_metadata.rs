@@ -68,6 +68,11 @@ pub trait ZkSpecificPricingMetadata {
     fn get_pubdata_price(&self) -> U256;
 }
 
+/// Runtime block-scoped flag for Gateway-specific features.
+pub trait GatewayModeMetadata {
+    fn is_gateway(&self) -> bool;
+}
+
 /// Convenience super-trait for environments that expose both block- and tx-level
 /// metadata, plus a pluggable transaction metadata payload.
 pub trait BasicMetadata<IOTypes: SystemIOTypesConfig>:

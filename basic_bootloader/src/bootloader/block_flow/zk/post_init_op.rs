@@ -1,15 +1,17 @@
 use super::*;
 use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 
 impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where
     S::IO: IOSubsystemExt,
+    S::Metadata: GatewayModeMetadata,
 {
     fn post_init_op<Config: BasicBootloaderExecutionConfig>(
-        _system: &mut System<S>,
+        system: &mut System<S>,
         system_functions: &mut HooksStorage<S, <S as SystemTypes>::Allocator>,
     ) -> Result<(), InternalError> {
-        system_hooks::add_precompiles(system_functions)?;
+        system_hooks::add_precompiles(system_functions, system.metadata.is_gateway())?;
 
         #[cfg(not(feature = "disable_system_contracts"))]
         {

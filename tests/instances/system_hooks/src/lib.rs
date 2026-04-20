@@ -1174,3 +1174,447 @@ fn test_event_hooks_empty_topics() {
         }));
     }
 }
+
+// ---------------------------------------------------------------------------
+// FRI precompile tests
+// ---------------------------------------------------------------------------
+//
+// The full verification path (real Airbender proof → precompile returns true)
+// requires a proof fixture and is not covered here. These tests exercise:
+//   1. The precompile is not registered on non-gateway chains.
+//   2. On a gateway chain, querying an unverified statement hash returns false.
+//   3. FRI_PROOF_TX_TYPE is rejected when is_gateway = false.
+mod fri_precompile {
+    use super::*;
+    use rig::alloy::eips::eip2930::AccessList;
+    use rig::alloy::primitives::B256;
+    use rig::zksync_os_interface::types::ExecutionOutput;
+    use zksync_os_tests_common::zksync_tx::{
+        fri_proof_tx::UnsignedZKsyncFriProofTx, ZKsyncTxEnvelope,
+    };
+
+    // The FRI precompile lives at address 0x0000...0101 (FRI_PRECOMPILE_ADDRESS_LOW = 0x0101).
+    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+
+    /// Calling the FRI precompile on a non-gateway chain: the address has no
+    /// code and the call returns empty data (behaves like a call to an EOA),
+    /// not an error.  The precompile is not registered so the call is a no-op.
+    #[test]
+    fn fri_precompile_not_registered_on_non_gateway_chain() {
+        let mut tester = TestingFramework::new();
+        let wallet = tester.prefunded_random_signer();
+
+        // 32-byte input: some statement hash
+        let input = [0xabu8; 32];
+
+        let tx = ZKsyncTxEnvelope::from_eth_tx(
+            rig::alloy::consensus::TxLegacy {
+                chain_id: Some(37),
+                nonce: 0,
+                gas_price: 25_000,
+                gas_limit: 200_000,
+                to: rig::alloy::primitives::TxKind::Call(FRI_PRECOMPILE),
+                value: Default::default(),
+                input: input.to_vec().into(),
+            },
+            wallet,
+        );
+
+        let output = tester.execute_block(vec![tx]);
+
+        // Tx succeeds (calls empty account), but returns no data — precompile not installed.
+        assert!(
+            tx_succeeded(&output, 0),
+            "call to unregistered address must succeed"
+        );
+        let result = output.tx_results[0].as_ref().unwrap();
+        match &result.execution_result {
+            rig::zksync_os_interface::types::ExecutionResult::Success(ExecutionOutput::Call(
+                data,
+            )) => {
+                assert!(data.is_empty(), "unregistered address must return no data");
+            }
+            other => panic!("expected success with empty return, got: {other:?}"),
+        }
+    }
+
+    /// On a gateway chain, querying the FRI precompile with a hash that was
+    /// never verified returns ABI-encoded false (32 zero bytes).
+    #[test]
+    fn fri_precompile_returns_false_for_unverified_hash_on_gateway() {
+        let mut tester = TestingFramework::new().with_gateway_mode();
+        let wallet = tester.prefunded_random_signer();
+
+        // Any 32-byte statement hash that was never submitted as a proof.
+        let unverified_hash = [0xddu8; 32];
+
+        let tx = ZKsyncTxEnvelope::from_eth_tx(
+            rig::alloy::consensus::TxLegacy {
+                chain_id: Some(37),
+                nonce: 0,
+                gas_price: 25_000,
+                gas_limit: 200_000,
+                to: rig::alloy::primitives::TxKind::Call(FRI_PRECOMPILE),
+                value: Default::default(),
+                input: unverified_hash.to_vec().into(),
+            },
+            wallet,
+        );
+
+        let output = tester.execute_block(vec![tx]);
+
+        assert!(
+            tx_succeeded(&output, 0),
+            "call to FRI precompile must succeed"
+        );
+        let result = output.tx_results[0].as_ref().unwrap();
+        match &result.execution_result {
+            rig::zksync_os_interface::types::ExecutionResult::Success(ExecutionOutput::Call(
+                data,
+            )) => {
+                assert_eq!(data.len(), 32, "precompile must return 32 bytes");
+                assert_eq!(
+                    data.as_slice(),
+                    &[0u8; 32],
+                    "unverified hash must return false (all zeros)"
+                );
+            }
+            other => panic!("expected success with false return, got: {other:?}"),
+        }
+    }
+
+    /// A FRI_PROOF_TX_TYPE transaction submitted to a non-gateway chain must
+    /// be rejected during validation — it must not be included in the block.
+    #[test]
+    fn fri_proof_tx_rejected_on_non_gateway_chain() {
+        let mut tester = TestingFramework::new();
+        let wallet = tester.prefunded_random_signer();
+
+        // Construct a minimal FRI proof tx with one dummy statement hash.
+        // The sidecar oracle is empty (NoFriProofSidecar), but the tx should be
+        // rejected before sidecar resolution because is_gateway = false.
+        let statement_hash = B256::from([0x42u8; 32]);
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 500_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: Default::default(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![statement_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![tx]);
+
+        // The tx must be rejected (not just reverted) — tx_results entry is Err.
+        assert!(
+            output.tx_results[0].is_err(),
+            "FRI_PROOF_TX on non-gateway chain must be rejected, got: {:?}",
+            output.tx_results[0]
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Real-proof end-to-end FRI precompile test
+//
+// Gated behind the `fri_proof_e2e` Cargo feature so the normal workspace build
+// stays fast. Run with:
+//
+//   AIRBENDER_DEV_PATH=/Users/ra/Work/ZkSync/zksync-airbender \
+//   cargo test -p system_hooks_tests \
+//     --features system_hooks_tests/fri_proof_e2e \
+//     fri_precompile_e2e
+//
+// Override defaults with FRI_ORACLE_PATH, FRI_SETUP_PATH, and FRI_LAYOUT_PATH.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "fri_proof_e2e")]
+mod fri_precompile_e2e {
+    use super::*;
+    use rig::alloy::eips::eip2930::AccessList;
+    use rig::alloy::primitives::B256;
+    use rig::zksync_os_interface::types::ExecutionOutput;
+    use zksync_os_tests_common::zksync_tx::{
+        fri_proof_tx::UnsignedZKsyncFriProofTx, ZKsyncTxEnvelope,
+    };
+
+    use execution_utils::setups::{read_and_pad_binary, CompiledCircuitsSet};
+    use execution_utils::unified_circuit::{
+        flatten_proof_into_responses_for_unified_recursion,
+        get_unified_circuit_artifact_for_machine_type, verify_proof_in_unified_layer,
+    };
+    use execution_utils::unrolled::{UnrolledProgramProof, UnrolledProgramSetup};
+    use flate2::read::GzDecoder;
+    use riscv_transpiler::cycle::IWithoutByteAccessIsaConfigWithDelegation;
+    use std::io::Read;
+    use std::path::PathBuf;
+
+    const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+    // Address 0x0101 — the FRI precompile.
+    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+
+    fn repo_root() -> PathBuf {
+        // CARGO_MANIFEST_DIR = tests/instances/system_hooks
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repo root is three directories above the crate manifest")
+            .to_path_buf()
+    }
+
+    fn resolve_path(env_var: &str, default_relative: &str) -> PathBuf {
+        if let Ok(v) = std::env::var(env_var) {
+            PathBuf::from(v)
+        } else {
+            repo_root().join(default_relative)
+        }
+    }
+
+    fn maybe_decompress(bytes: &[u8]) -> Vec<u8> {
+        if bytes.starts_with(&[0x1f, 0x8b]) {
+            let mut out = Vec::new();
+            GzDecoder::new(bytes)
+                .read_to_end(&mut out)
+                .expect("gzip decompress");
+            out
+        } else {
+            bytes.to_vec()
+        }
+    }
+
+    fn decode_bincode<T: serde::de::DeserializeOwned>(bytes: &[u8], label: &str) -> T {
+        let (val, _): (T, usize) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+                .unwrap_or_else(|e| panic!("failed to decode {label}: {e}"));
+        val
+    }
+
+    fn encode_bincode<T: serde::Serialize>(value: &T, label: &str) -> Vec<u8> {
+        bincode::serde::encode_to_vec(value, bincode::config::standard())
+            .unwrap_or_else(|e| panic!("failed to encode {label}: {e}"))
+    }
+
+    fn airbender_dev_path() -> PathBuf {
+        std::env::var("AIRBENDER_DEV_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/Users/ra/Work/ZkSync/zksync-airbender"))
+    }
+
+    fn setup_from_proof(proof: &UnrolledProgramProof) -> UnrolledProgramSetup {
+        let (&family_idx, family_proofs) = proof
+            .circuit_families_proofs
+            .iter()
+            .next()
+            .expect("proof must contain a unified circuit family proof");
+        assert_eq!(
+            proof.circuit_families_proofs.len(),
+            1,
+            "unified recursion proof must contain exactly one circuit family"
+        );
+        let first_proof = family_proofs
+            .first()
+            .expect("unified circuit family must contain at least one proof");
+        assert_eq!(
+            first_proof.setup_tree_caps.len(),
+            2,
+            "expected exactly two setup caps for the unified verifier"
+        );
+
+        let setup_caps = core::array::from_fn(|idx| {
+            first_proof.setup_tree_caps[idx]
+                .clone()
+                .into_fixed_holder::<64>()
+        });
+
+        UnrolledProgramSetup {
+            expected_final_pc: proof.final_pc,
+            binary_hash: [0u8; 32],
+            circuit_families_setups: std::collections::BTreeMap::from([(family_idx, setup_caps)]),
+            // Not consumed by `flatten_unified_for_recursion`, but the struct
+            // is shared with the unrolled verifier path and requires the field.
+            inits_and_teardowns_setup: setup_caps,
+            end_params: [0u32; 8],
+        }
+    }
+
+    fn ensure_recursion_unified_artifacts(
+        proof: &UnrolledProgramProof,
+        setup_path: &PathBuf,
+        layout_path: &PathBuf,
+    ) -> (UnrolledProgramSetup, CompiledCircuitsSet) {
+        let setup = if setup_path.exists() {
+            let setup_bytes = std::fs::read(setup_path).expect("read setup");
+            decode_bincode(&setup_bytes, "UnrolledProgramSetup")
+        } else {
+            let setup = setup_from_proof(proof);
+            if let Some(parent) = setup_path.parent() {
+                std::fs::create_dir_all(parent).expect("create FRI fixture directory");
+            }
+            std::fs::write(
+                setup_path,
+                encode_bincode(&setup, "UnrolledProgramSetup fixture"),
+            )
+            .expect("write generated FRI setup fixture");
+            setup
+        };
+
+        if layout_path.exists() {
+            let layout_bytes = std::fs::read(layout_path).expect("read layout");
+            return (setup, decode_bincode(&layout_bytes, "CompiledCircuitsSet"));
+        }
+
+        let airbender = airbender_dev_path();
+        let bin_path = airbender.join("tools/verifier/recursion_in_unified_layer.bin");
+        assert!(
+            bin_path.exists(),
+            "missing Airbender unified verifier binary; set AIRBENDER_DEV_PATH or provide FRI_LAYOUT_PATH"
+        );
+
+        let (_, padded_binary_u32) = read_and_pad_binary(&bin_path);
+        let layout = get_unified_circuit_artifact_for_machine_type::<
+            IWithoutByteAccessIsaConfigWithDelegation,
+        >(&padded_binary_u32);
+
+        if let Some(parent) = layout_path.parent() {
+            std::fs::create_dir_all(parent).expect("create FRI fixture directory");
+        }
+
+        std::fs::write(
+            layout_path,
+            encode_bincode(&layout, "CompiledCircuitsSet fixture"),
+        )
+        .expect("write generated FRI layout fixture");
+
+        (setup, layout)
+    }
+
+    fn statement_versioned_hash(output: &[u32; 16]) -> B256 {
+        use rig::alloy::primitives::keccak256;
+        let mut buf = Vec::with_capacity(1 + 16 * 4);
+        buf.push(FRI_STATEMENT_HASH_VERSION);
+        for word in output.iter() {
+            buf.extend_from_slice(&word.to_le_bytes());
+        }
+        B256::from(keccak256(&buf).0)
+    }
+
+    /// Full end-to-end test: real Airbender proof → FRI precompile returns true.
+    ///
+    /// Loads a gzip-compressed `UnrolledProgramProof` from disk, runs the host-side
+    /// unified verifier, derives the `statement_versioned_hash`, then executes a
+    /// `FRI_PROOF_TX` inside a gateway-mode block and asserts that the FRI precompile
+    /// at 0x0101 returns ABI-encoded `true`.
+    #[test]
+    fn fri_precompile_returns_true_for_verified_proof() {
+        let proof_path = resolve_path(
+            "FRI_ORACLE_PATH",
+            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
+        );
+        let setup_path = resolve_path(
+            "FRI_SETUP_PATH",
+            "tests/fixtures/fri/recursion_unified_setup.bin",
+        );
+        let layout_path = resolve_path(
+            "FRI_LAYOUT_PATH",
+            "tests/fixtures/fri/recursion_unified_layouts.bin",
+        );
+
+        assert!(
+            proof_path.exists(),
+            "missing proof fixture at {}; set FRI_ORACLE_PATH",
+            proof_path.display()
+        );
+
+        // ----- 1. Decode proof --------------------------------------------------
+        let proof_bytes = std::fs::read(&proof_path).expect("read proof");
+        let proof_bytes = maybe_decompress(&proof_bytes);
+        let proof: UnrolledProgramProof = decode_bincode(&proof_bytes, "UnrolledProgramProof");
+
+        // ----- 2. Decode setup and compiled circuit layouts ---------------------
+        let (setup, compiled_layouts) =
+            ensure_recursion_unified_artifacts(&proof, &setup_path, &layout_path);
+
+        // ----- 3. Host-side verification → [u32; 16] output --------------------
+        // `verify_proof_in_unified_layer` flattens and runs the verifier in a
+        // dedicated thread with a large stack (1 << 27), matching the bootloader.
+        let verifier_output = verify_proof_in_unified_layer(
+            &proof,
+            &setup,
+            &compiled_layouts,
+            false, // input_is_unrolled = false → unified-over-unified path
+        )
+        .expect("proof must verify");
+
+        println!("Verifier output: {verifier_output:#010x?}");
+
+        // ----- 4. Derive statement_versioned_hash and oracle stream -------------
+        let stmt_hash = statement_versioned_hash(&verifier_output);
+        println!("statement_versioned_hash: {stmt_hash}");
+
+        let oracle_stream = flatten_proof_into_responses_for_unified_recursion(
+            &proof,
+            &setup,
+            &compiled_layouts,
+            false,
+        );
+
+        // ----- 5. Set up gateway-mode block with the proof sidecar --------------
+        let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
+        let mut tester =
+            TestingFramework::new().with_mock_fri_sidecars([(stmt_bytes32, oracle_stream)]);
+        let wallet = tester.prefunded_random_signer();
+
+        // ----- 6. Submit FRI_PROOF_TX that calls the FRI precompile -------------
+        //
+        // The FRI statement state is tx-scoped and cleared by `finish_tx()`.  The
+        // only way to observe it is from within the *same* transaction: the
+        // FRI_PROOF_TX verifies the proof during pre-execution, then calls the
+        // precompile (via `to` + `input`) in its execution body.  The precompile
+        // reads the tx-scoped state and returns ABI-encoded true.
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 5_000_000,
+            // Call the FRI precompile with the statement hash as input.
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: stmt_hash.0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![stmt_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        // The FRI_PROOF_TX must succeed and the precompile must return true.
+        assert!(
+            tx_succeeded(&output, 0),
+            "FRI_PROOF_TX must succeed, got: {:?}",
+            output.tx_results[0]
+        );
+        let result = output.tx_results[0].as_ref().unwrap();
+        match &result.execution_result {
+            rig::zksync_os_interface::types::ExecutionResult::Success(ExecutionOutput::Call(
+                data,
+            )) => {
+                assert_eq!(data.len(), 32, "FRI precompile must return 32 bytes");
+                let mut expected = [0u8; 32];
+                expected[31] = 1;
+                assert_eq!(
+                    data.as_slice(),
+                    &expected,
+                    "FRI precompile must return ABI-encoded true for verified statement hash"
+                );
+            }
+            other => panic!("expected success with true return, got: {other:?}"),
+        }
+    }
+}

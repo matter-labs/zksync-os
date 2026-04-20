@@ -65,14 +65,15 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { version = "0.1.0", default-features =  false }
 zksync_os_interface = {  version = "0.1.0" }
 
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
 
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
@@ -103,10 +104,15 @@ once_cell = "1.20.3"
 zerocopy = { version = "=0.8.28" }
 
 
-# [profile.dev]
-# opt-level = 0
-# lto = false
-# panic = "abort"
+[profile.dev]
+# The Airbender dependency graph currently triggers an LLVM/DWARF SIGBUS
+# on this toolchain when compiling debug-info-heavy host builds.
+# Disabling debuginfo for workspace dev/test builds avoids that path
+# without changing executable behavior.
+debug = false
+
+[profile.test]
+debug = false
 
 [profile.release]
 opt-level = 3
@@ -115,6 +121,5 @@ codegen-units = 1
 debug = true
 
 [patch.crates-io]
-#zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
-#zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
-
+zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
+zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }

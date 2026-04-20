@@ -104,6 +104,17 @@ impl<
 
 impl<
         IOTypes: SystemIOTypesConfig,
+        B: BasicBlockMetadata<IOTypes> + GatewayModeMetadata,
+        TX: BasicTransactionMetadata<IOTypes>,
+    > GatewayModeMetadata for SystemMetadata<IOTypes, B, TX>
+{
+    fn is_gateway(&self) -> bool {
+        self.block_level.is_gateway()
+    }
+}
+
+impl<
+        IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
     > BasicMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>

@@ -25,6 +25,7 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
+use crate::call_hooks::fri_precompile::fri_precompile_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
@@ -126,6 +127,7 @@ where
 ///
 pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
+    is_gateway: bool,
 ) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
@@ -201,6 +203,12 @@ where
             <S::SystemFunctions as SystemFunctions<_>>::P256Verify,
             P256VerifyErrors,
         >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
+    }
+    if is_gateway {
+        hooks.add_call_hook(
+            FRI_PRECOMPILE_ADDRESS_LOW,
+            SystemCallHook::new(fri_precompile_hook),
+        )?;
     }
     Ok(())
 }

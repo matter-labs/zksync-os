@@ -1,5 +1,6 @@
 use crate::alloc::string::ToString;
 use crate::bootloader::block_flow::BlockTransactionsDataKeeper;
+use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{BootloaderInterfaceError, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -21,11 +22,14 @@ use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
 use errors::system::SystemError;
-use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use metadata::basic_metadata::{BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
+use crypto::{sha3::Keccak256, MiniDigest};
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::oracle::IOOracle;
+use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -39,6 +43,10 @@ use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error};
+#[cfg(not(target_arch = "riscv32"))]
+use prover::nd_source_std;
+#[cfg(not(target_arch = "riscv32"))]
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
@@ -165,10 +173,108 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
     }
 }
 
+fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
+    let mut hasher = Keccak256::new();
+    hasher.update([FRI_STATEMENT_HASH_VERSION]);
+    for word in output.iter() {
+        hasher.update(word.to_le_bytes());
+    }
+    Bytes32::from_array(hasher.finalize())
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+fn drain_fri_verifier_iterator() -> usize {
+    let mut remaining = 0usize;
+    while nd_source_std::try_read_word().is_some() {
+        remaining += 1;
+    }
+    remaining
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+fn verify_fri_statement_host<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    statement_versioned_hash: Bytes32,
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    let mut response = system
+        .io
+        .oracle()
+        .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
+    let oracle_stream_len = response
+        .next()
+        .ok_or(TxError::Validation(InvalidTransaction::FriProofSidecarMissing))?;
+
+    if response.len() != oracle_stream_len {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofVerificationFailed,
+        ));
+    }
+
+    let mut oracle_stream = alloc::vec::Vec::with_capacity(oracle_stream_len);
+    for raw_word in response {
+        let word = u32::try_from(raw_word)
+            .map_err(|_| TxError::Validation(InvalidTransaction::FriProofVerificationFailed))?;
+        oracle_stream.push(word);
+    }
+
+    nd_source_std::set_iterator(oracle_stream.into_iter());
+    let verification_result = catch_unwind(AssertUnwindSafe(|| {
+        full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer()
+    }));
+    let remaining_words = drain_fri_verifier_iterator();
+    let output = verification_result
+        .map_err(|_| TxError::Validation(InvalidTransaction::FriProofVerificationFailed))?;
+
+    if remaining_words != 0 {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofVerificationFailed,
+        ));
+    }
+
+    let computed_statement_hash = statement_versioned_hash_from_verifier_output(&output);
+    if computed_statement_hash != statement_versioned_hash {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofStatementHashMismatch,
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn statement_hash_depends_on_all_verifier_words_and_version() {
+        let mut output = [0u32; 16];
+        for (idx, word) in output.iter_mut().enumerate() {
+            *word = idx as u32 + 1;
+        }
+
+        let baseline = statement_versioned_hash_from_verifier_output(&output);
+
+        output[8] ^= 0xdead_beef;
+        let changed_recursion_hash = statement_versioned_hash_from_verifier_output(&output);
+        assert_ne!(baseline, changed_recursion_hash);
+
+        let mut hasher = Keccak256::new();
+        for word in output.iter() {
+            hasher.update(word.to_le_bytes());
+        }
+        let without_version = Bytes32::from_array(hasher.finalize());
+        assert_ne!(changed_recursion_hash, without_version);
+    }
+}
+
 impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
+        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     type TransactionContext = TxContextForPreAndPostProcessing<S>;
@@ -271,10 +377,52 @@ where
 
     fn before_execute_transaction_payload(
         system: &mut System<S>,
-        _transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
+        if transaction.is_fri_proof() {
+            if !system.metadata.is_gateway() {
+                return Err(TxError::Validation(InvalidTransaction::FriProofTxNotSupported));
+            }
+
+            if let Some(statement_versioned_hashes) = transaction.statement_versioned_hashes() {
+                for statement_versioned_hash in statement_versioned_hashes.iter() {
+                    let statement_versioned_hash = Bytes32::from_array(
+                        *statement_versioned_hash.map_err(TxError::Validation)?,
+                    );
+                    #[cfg(not(target_arch = "riscv32"))]
+                    {
+                        verify_fri_statement_host(system, statement_versioned_hash)?;
+                        system
+                            .io
+                            .mark_current_fri_statement_verified(statement_versioned_hash);
+                    }
+                    #[cfg(target_arch = "riscv32")]
+                    {
+                        drop(
+                            system
+                                .io
+                                .oracle()
+                                .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?,
+                        );
+                        let output =
+                            crate::bootloader::fri_verifier::run_fri_verifier();
+                        let computed_statement_hash =
+                            statement_versioned_hash_from_verifier_output(&output);
+                        if computed_statement_hash != statement_versioned_hash {
+                            return Err(TxError::Validation(
+                                InvalidTransaction::FriProofStatementHashMismatch,
+                            ));
+                        }
+                        system
+                            .io
+                            .mark_current_fri_statement_verified(statement_versioned_hash);
+                    }
+                }
+            }
+        }
+
         // Charge for validation pubdata
         let (validation_pubdata, to_charge_for_pubdata) =
             get_resources_to_charge_for_pubdata(system, context.native_per_pubdata, None)?;
@@ -607,6 +755,7 @@ impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
+        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     fn execute_call<'a>(

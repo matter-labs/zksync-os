@@ -139,6 +139,12 @@ where
     let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
         .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
+    let fri_proof_intrinsic_native_cost = transaction
+        .statement_versioned_hashes()
+        .map(|hashes| {
+            FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(hashes.count as u64)
+        })
+        .unwrap_or(0);
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
     let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
@@ -152,7 +158,7 @@ where
         calldata_tokens,
         L2_TX_INTRINSIC_GAS,
         L2_TX_INTRINSIC_PUBDATA,
-        L2_TX_INTRINSIC_NATIVE_COST,
+        L2_TX_INTRINSIC_NATIVE_COST.saturating_add(fri_proof_intrinsic_native_cost),
     )?;
 
     system_log!(

@@ -97,6 +97,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 /// Uses CSR (control & status register) to communicate with outside oracle.
 mod csr {
     use riscv_common::{csr_read_word, csr_write_word};
+    use proof_running_system::io_oracle::try_read_prepared_fri_word;
 
     #[derive(Clone, Copy, Debug)]
     pub struct CSRBasedNonDeterminismSource;
@@ -109,7 +110,7 @@ mod csr {
             const {
                 assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
             }
-            csr_read_word() as usize
+            try_read_prepared_fri_word().unwrap_or_else(|| csr_read_word() as usize)
         }
         #[inline(always)]
         fn csr_write_impl(value: usize) {
@@ -157,7 +158,7 @@ core::arch::global_asm!(include_str!("memcpy.s"));
 unsafe fn load_to_ram(src: *const u8, dst_start: *mut u8, dst_end: *mut u8) {
     #[cfg(debug_assertions)]
     {
-        const ROM_BOUND: usize = 1 << 21;
+        const ROM_BOUND: usize = 1 << 22; // 4 MiB ROM (matches memory.x)
 
         debug_assert!(src.addr() < ROM_BOUND);
         debug_assert!(dst_start.addr() >= ROM_BOUND);
@@ -206,6 +207,11 @@ unsafe fn workload() -> ! {
     logger_log!(
         LoggerTy::default(),
         "Entry routine is done, moving into payload\n"
+    );
+
+    // Register the FRI proof verifier so the bootloader can call it on riscv32.
+    basic_bootloader::bootloader::fri_verifier::register_fri_verifier(
+        full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer,
     );
 
     // and crunch

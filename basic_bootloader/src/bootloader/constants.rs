@@ -61,6 +61,12 @@ pub const L2_TX_INTRINSIC_PUBDATA: u64 = COINBASE_BALANCE_INTRINSIC_PUBDATA;
 //  - Hashing of tx hash into rolling hash.
 pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
 
+/// Fixed verification budget charged for each referenced FRI statement hash in
+/// a `FRI_PROOF_TX_TYPE` transaction.
+pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 10_000_000;
+/// Current statement-hash version implicitly committed by FRI proof transactions.
+pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+
 /// Cost to convert zero byte of calldata into "token"
 pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 

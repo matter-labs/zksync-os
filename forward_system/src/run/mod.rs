@@ -1,4 +1,5 @@
 pub mod errors;
+mod fri_proof_sidecar;
 pub mod output;
 mod preimage_source;
 mod tree;
@@ -14,6 +15,7 @@ pub mod test_impl;
 mod tracing_impl;
 mod validator_impl;
 
+use crate::run::query_processors::FriProofResponder;
 use crate::run::query_processors::GenericPreimageResponder;
 use crate::run::query_processors::ReadStorageResponder;
 use crate::run::query_processors::ReadTreeResponder;
@@ -47,6 +49,7 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
+pub use fri_proof_sidecar::{FriProofSidecarSource, NoFriProofSidecar};
 pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
 use zksync_os_interface::traits::EncodedTx;
@@ -67,11 +70,18 @@ use zksync_os_interface::traits::TxListSource;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 
-pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
+pub fn run_block<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    FS: FriProofSidecarSource,
+    TR: TxResultCallback,
+>(
     block_context: BlockContext,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
+    fri_proof_sidecar: FS,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
@@ -87,12 +97,16 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
+    let fri_proof_responder = FriProofResponder {
+        sidecar_source: fri_proof_sidecar,
+    };
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
+    oracle.add_external_processor(fri_proof_responder);
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
@@ -110,6 +124,7 @@ pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
+    FS: FriProofSidecarSource,
     TR: TxResultCallback,
 >(
     block_context: BlockContext,
@@ -118,6 +133,7 @@ pub fn generate_proof_input<
     tree: T,
     preimage_source: PS,
     tx_source: TS,
+    fri_proof_sidecar: FS,
     tx_result_callback: TR,
 ) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
@@ -137,6 +153,9 @@ pub fn generate_proof_input<
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
+    let fri_proof_responder = FriProofResponder {
+        sidecar_source: fri_proof_sidecar,
+    };
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
@@ -145,6 +164,7 @@ pub fn generate_proof_input<
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
+    oracle.add_external_processor(fri_proof_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
@@ -292,11 +312,41 @@ pub fn make_oracle_for_proofs_and_dumps<T: ReadStorageTree, PS: PreimageSource, 
     add_uart: bool,
     use_native_callable_oracles: bool,
 ) -> ZkEENonDeterminismSource {
+    make_oracle_for_proofs_and_dumps_with_fri_sidecar(
+        block_context,
+        tree,
+        preimage_source,
+        tx_source,
+        NoFriProofSidecar,
+        proof_data,
+        da_commitment_scheme,
+        add_uart,
+        use_native_callable_oracles,
+    )
+}
+
+pub fn make_oracle_for_proofs_and_dumps_with_fri_sidecar<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    FS: FriProofSidecarSource,
+>(
+    block_context: BlockContext,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+    fri_proof_sidecar: FS,
+    proof_data: Option<ProofData<StorageCommitment>>,
+    da_commitment_scheme: Option<DACommitmentScheme>,
+    add_uart: bool,
+    use_native_callable_oracles: bool,
+) -> ZkEENonDeterminismSource {
     make_oracle_for_proofs_and_dumps_for_init_data(
         block_context,
         tree,
         preimage_source,
         tx_source,
+        fri_proof_sidecar,
         proof_data,
         da_commitment_scheme,
         add_uart,
@@ -308,11 +358,13 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
+    FS: FriProofSidecarSource,
 >(
     block_context: BlockContext,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
+    fri_proof_sidecar: FS,
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
@@ -329,6 +381,9 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
+    let fri_proof_responder = FriProofResponder {
+        sidecar_source: fri_proof_sidecar,
+    };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
         da_commitment_scheme,
@@ -339,6 +394,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
+    oracle.add_external_processor(fri_proof_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     if use_native_callable_oracles {
@@ -422,6 +478,9 @@ pub fn run_block_with_oracle_dump_ext<
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
+    let fri_proof_responder = FriProofResponder {
+        sidecar_source: NoFriProofSidecar,
+    };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
         da_commitment_scheme,
@@ -445,6 +504,7 @@ pub fn run_block_with_oracle_dump_ext<
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
+    oracle.add_external_processor(fri_proof_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
@@ -494,6 +554,9 @@ pub fn run_block_from_oracle_dump<
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
+    oracle.add_external_processor(FriProofResponder {
+        sidecar_source: NoFriProofSidecar,
+    });
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
@@ -541,12 +604,16 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let storage_responder = ReadStorageResponder { storage };
+    let fri_proof_responder = FriProofResponder {
+        sidecar_source: NoFriProofSidecar,
+    };
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(storage_responder);
+    oracle.add_external_processor(fri_proof_responder);
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 

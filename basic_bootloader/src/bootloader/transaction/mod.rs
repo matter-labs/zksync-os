@@ -9,6 +9,7 @@
 
 use super::errors::TxError;
 use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
+use crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
 use core::alloc::Allocator;
@@ -112,6 +113,14 @@ impl<A: Allocator> Transaction<A> {
         match self {
             Self::Abi(_) => false,
             Self::Rlp(tx) => tx.is_service(),
+        }
+    }
+
+    /// Returns true if this transaction is a FRI proof transaction.
+    pub fn is_fri_proof(&self) -> bool {
+        match self {
+            Self::Abi(_) => false,
+            Self::Rlp(tx) => tx.is_fri_proof(),
         }
     }
 
@@ -254,6 +263,14 @@ impl<A: Allocator> Transaction<A> {
         match self {
             Self::Abi(_) => None,
             Self::Rlp(tx) => tx.authorization_list(),
+        }
+    }
+
+    /// Returns the list of signed FRI statement hashes, if present.
+    pub fn statement_versioned_hashes<'a>(&'a self) -> Option<StatementVersionedHashesList<'a>> {
+        match self {
+            Self::Abi(_) => None,
+            Self::Rlp(tx) => tx.statement_versioned_hashes(),
         }
     }
 

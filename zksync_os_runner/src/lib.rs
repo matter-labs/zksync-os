@@ -3,7 +3,18 @@
 
 use common_constants::rom::ROM_SECOND_WORD_BITS;
 use common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
-use riscv_transpiler::ir::{preprocess_bytecode, FullUnsignedMachineDecoderConfig};
+use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions};
+
+/// Like `FullUnsignedMachineDecoderConfig` but with Zimop (mop.rr.*) support enabled.
+/// Required when the binary includes the FRI proof verifier compiled with `modular_ops`.
+struct FullUnsignedMachineWithMopDecoderConfig;
+
+impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
+    const SUPPORT_MOP: bool = true;
+    const SUPPORT_MUL_DIV: bool = true;
+    const SUPPORT_SIGNED_MUL_DIV: bool = false;
+    const SUPPORT_SUBWORD_MEM_ACCESS: bool = true;
+}
 use riscv_transpiler::vm::{
     DelegationsCounters, NonDeterminismCSRSource, RamWithRomRegion, SimpleTape, State, VM,
 };
@@ -59,7 +70,7 @@ fn run_inner(
 ) -> ([u32; 8], Option<u64>) {
     log::info!("ZK RISC-V transpiler is starting");
 
-    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(text_words);
+    let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(text_words);
     let tape = SimpleTape::new(&instructions);
     let mut ram =
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(bin_words, RAM_SIZE);
@@ -141,7 +152,7 @@ pub fn run_with_flamegraph(
     let text_path = img_path.with_extension("text");
     let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
 
-    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(&text_words);
+    let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
     let tape = SimpleTape::new(&instructions);
     let mut ram =
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
@@ -178,7 +189,7 @@ pub fn simulate_witness_tracing(
     let text_path = img_path.with_extension("text");
     let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
 
-    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(&text_words);
+    let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
     let tape = SimpleTape::new(&instructions);
     let mut ram =
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);

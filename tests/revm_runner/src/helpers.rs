@@ -138,6 +138,19 @@ pub fn zk_tx_into_revm_tx(
                 }
             }
         }
+        ZKsyncTxEnvelope::FriProof(fri_proof_tx) => (
+            Some(fri_proof_tx.max_fee_per_gas),
+            Some(fri_proof_tx.max_priority_fee_per_gas),
+            Some(fri_proof_tx.value),
+            fri_proof_tx.input.clone(),
+            Some(fri_proof_tx.chain_id),
+            fri_proof_tx.access_list.clone(),
+            Default::default(),
+            None,
+            fri_proof_tx.signer,
+            fri_proof_tx.gas_limit,
+            fri_proof_tx.nonce,
+        ),
         ZKsyncTxEnvelope::Custom(_, _) => {
             bail!("Custom transactions are not supported by REVM runner");
         }

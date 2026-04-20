@@ -3,7 +3,7 @@ use crate::run::errors::ForwardSubsystemError;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::validator_impl::ValidatorWrapped;
-use crate::run::{run_block, simulate_tx};
+use crate::run::{run_block, simulate_tx, NoFriProofSidecar};
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zksync_os_interface::tracing::{AnyTracer, AnyTxValidator};
 use zksync_os_interface::traits::{
@@ -49,6 +49,7 @@ impl RunBlock for RunBlockForward {
             storage,
             preimage_source,
             tx_source,
+            NoFriProofSidecar,
             tx_result_callback,
             &mut TracerWrapped(evm_tracer),
             &mut ValidatorWrapped(evm_tx_validator),

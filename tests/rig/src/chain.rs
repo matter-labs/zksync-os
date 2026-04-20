@@ -164,6 +164,7 @@ pub struct BlockContext {
     pub pubdata_limit: u64,
     pub mix_hash: U256,
     pub blob_fee: U256,
+    pub is_gateway: bool,
 }
 
 impl Default for BlockContext {
@@ -178,6 +179,7 @@ impl Default for BlockContext {
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
             blob_fee: U256::ONE,
+            is_gateway: false,
         }
     }
 }
@@ -610,6 +612,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
+            is_gateway: block_context.is_gateway,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -801,6 +804,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
+            is_gateway: block_context.is_gateway,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),

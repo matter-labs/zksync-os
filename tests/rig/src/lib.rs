@@ -13,6 +13,7 @@ pub mod assertions;
 pub mod chain;
 pub mod constants;
 pub mod evm_bytecode;
+pub mod fri;
 pub mod revm_consistency_checker;
 pub mod run_config;
 pub mod testing_utils;
@@ -35,6 +36,7 @@ pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::system_types::ForwardRunningSystem;
+pub use fri::{FriProofOracleFactory, InMemoryFriProofSidecarSource};
 #[cfg(feature = "gpu")]
 pub use gpu_prover;
 pub use log;
@@ -277,9 +279,25 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: enables Gateway mode for subsequent execution.
+    pub fn with_gateway_mode(mut self) -> Self {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        self
+    }
+
     /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
         self.block_context = block_context;
+        self
+    }
+
+    /// Setter: enables Gateway mode for subsequent execution.
+    pub fn enable_gateway_mode(&mut self) -> &mut Self {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
         self
     }
 
@@ -319,6 +337,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         oracle_factory: impl TestingOracleFactory<RANDOMIZED_TREE> + 'static,
     ) -> Self {
         self.oracle_factory = Some(Box::new(oracle_factory));
+        self
+    }
+
+    /// Builder: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`.
+    pub fn with_mock_fri_sidecars<I>(mut self, sidecars: I) -> Self
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u32>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(
+            sidecars.into_iter().collect(),
+        )));
         self
     }
 
@@ -418,6 +451,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
     ) -> &mut Self {
         self.oracle_factory = oracle_factory;
+        self
+    }
+
+    /// Setter: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`.
+    pub fn set_mock_fri_sidecars<I>(&mut self, sidecars: I) -> &mut Self
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u32>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(
+            sidecars.into_iter().collect(),
+        )));
         self
     }
 
