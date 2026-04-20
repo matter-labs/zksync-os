@@ -90,8 +90,14 @@ where
         S::IO: IOSubsystemExt,
     {
         // Pre-execution validation hook for L2 transactions only
-        let calldata = transaction.calldata();
-        let pre_validation = validator.begin_tx(calldata);
+        let ctx = BeginTxContext {
+            from: *transaction.from(),
+            to: transaction.to(),
+            value: *transaction.value(),
+            calldata: transaction.calldata(),
+            gas_limit: transaction.gas_limit(),
+        };
+        let pre_validation = validator.begin_tx(&ctx);
 
         if let Err(validation_err) = pre_validation {
             system_log!(

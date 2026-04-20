@@ -5,7 +5,7 @@ use crate::bootloader::TxError;
 use crate::bootloader::TxProcessingOutput;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::TxValidator;
+use zk_ee::system::validator::{BeginTxContext, TxValidator};
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::ReturnValues;
 use zk_ee::system::System;
