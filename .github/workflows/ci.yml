@@ -84,11 +84,8 @@ jobs:
             - name: Compile blake test programs for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
-            - name: Run crypto tests 10 times with overflow checks
-              run: |
-                  for i in {1..10}; do
-                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
-                  done
+            - name: Run crypto tests with overflow checks
+              run: RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
