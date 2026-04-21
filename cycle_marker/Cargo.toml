@@ -10,8 +10,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-riscv_transpiler = { workspace = true, optional = true }
+airbender-host = { workspace = true, optional = true }
 
 [features]
-use_riscv_transpiler = ["riscv_transpiler"]
+use_riscv_transpiler = ["airbender-host"]
 log_to_file = []
