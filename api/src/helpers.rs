@@ -408,13 +408,11 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         return Err(());
     }
 
-    // following bootloader: native is unlimited on 0 base fee chains
-    if base_fee == 0 {
-        return Ok(());
-    }
-
     // Compute effective gas price
-    let gas_price = {
+    let gas_price = if base_fee == 0 {
+        // Following bootloader: if base fee is zero, then we ignore priority fee
+        U256::ZERO
+    } else {
         let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
         base_fee + priority_fee
     };
@@ -428,13 +426,18 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     // native_per_pubdata = pubdata_price / native_price
     let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price)).ok_or(())?;
 
-    let native_prepaid = native_per_gas.saturating_mul(gas_limit);
+    // following bootloader behavior
+    let native_limit = if native_per_gas == 0 {
+        u64::MAX - 1
+    } else {
+        native_per_gas.saturating_mul(gas_limit)
+    };
 
     // Intrinsic pubdata
     let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false);
     let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
 
-    let native_limit = native_prepaid
+    let native_limit = native_limit
         .checked_sub(intrinsic_pubdata_overhead)
         .ok_or(())?;
 
