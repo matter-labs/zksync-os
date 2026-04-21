@@ -256,8 +256,12 @@ impl UsizeSerializable for BlockMetadataFromOracle {
                                             ExactSizeChain::new(
                                                 ExactSizeChain::new(
                                                     ExactSizeChain::new(
-                                                        UsizeSerializable::iter(&self.eip1559_basefee),
-                                                        UsizeSerializable::iter(&self.pubdata_price),
+                                                        UsizeSerializable::iter(
+                                                            &self.eip1559_basefee,
+                                                        ),
+                                                        UsizeSerializable::iter(
+                                                            &self.pubdata_price,
+                                                        ),
                                                     ),
                                                     UsizeSerializable::iter(&self.native_price),
                                                 ),

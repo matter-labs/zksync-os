@@ -49,6 +49,7 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
+pub use crate::run::query_processors::FriVerifierArtifacts;
 pub use fri_proof_sidecar::{FriProofSidecarSource, NoFriProofSidecar};
 pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
@@ -82,6 +83,7 @@ pub fn run_block<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
@@ -99,6 +101,7 @@ pub fn run_block<
     let tree_responder = ReadTreeResponder { tree };
     let fri_proof_responder = FriProofResponder {
         sidecar_source: fri_proof_sidecar,
+        artifacts: fri_verifier_artifacts,
     };
 
     let mut oracle = ZkEENonDeterminismSource::default();
@@ -134,6 +137,7 @@ pub fn generate_proof_input<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
     tx_result_callback: TR,
 ) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
@@ -155,6 +159,7 @@ pub fn generate_proof_input<
     let tree_responder = ReadTreeResponder { tree };
     let fri_proof_responder = FriProofResponder {
         sidecar_source: fri_proof_sidecar,
+        artifacts: fri_verifier_artifacts,
     };
 
     let mut oracle = ZkEENonDeterminismSource::default();
@@ -318,6 +323,7 @@ pub fn make_oracle_for_proofs_and_dumps<T: ReadStorageTree, PS: PreimageSource, 
         preimage_source,
         tx_source,
         NoFriProofSidecar,
+        None,
         proof_data,
         da_commitment_scheme,
         add_uart,
@@ -336,6 +342,7 @@ pub fn make_oracle_for_proofs_and_dumps_with_fri_sidecar<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
@@ -347,6 +354,7 @@ pub fn make_oracle_for_proofs_and_dumps_with_fri_sidecar<
         preimage_source,
         tx_source,
         fri_proof_sidecar,
+        fri_verifier_artifacts,
         proof_data,
         da_commitment_scheme,
         add_uart,
@@ -365,6 +373,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
@@ -383,6 +392,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     let tree_responder = ReadTreeResponder { tree };
     let fri_proof_responder = FriProofResponder {
         sidecar_source: fri_proof_sidecar,
+        artifacts: fri_verifier_artifacts,
     };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
@@ -480,6 +490,7 @@ pub fn run_block_with_oracle_dump_ext<
     let tree_responder = ReadTreeResponder { tree };
     let fri_proof_responder = FriProofResponder {
         sidecar_source: NoFriProofSidecar,
+        artifacts: None,
     };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
@@ -556,6 +567,7 @@ pub fn run_block_from_oracle_dump<
     oracle.add_external_processor(tree_responder);
     oracle.add_external_processor(FriProofResponder {
         sidecar_source: NoFriProofSidecar,
+        artifacts: None,
     });
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
@@ -606,6 +618,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     let storage_responder = ReadStorageResponder { storage };
     let fri_proof_responder = FriProofResponder {
         sidecar_source: NoFriProofSidecar,
+        artifacts: None,
     };
 
     let mut oracle = ZkEENonDeterminismSource::default();

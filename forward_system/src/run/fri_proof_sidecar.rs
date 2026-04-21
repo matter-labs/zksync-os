@@ -1,34 +1,25 @@
 use zk_ee::utils::Bytes32;
 
-/// Source of FRI proof oracle streams keyed by `statement_versioned_hash`.
+/// Source of raw FRI proof bytes keyed by `statement_versioned_hash`.
 ///
-/// The sidecar source is responsible for:
-/// 1. Holding the raw proof bytes received alongside each
-///    `FriProofTx` at admission time.
-/// 2. Decoding them (bincode-serialized `UnrolledProgramProof`).
-/// 3. Flattening them together with the verifier's setup / layout
-///    artifacts into the exact `u32` word sequence the Airbender
-///    unified verifier will read via `DefaultNonDeterminismSource::read_word()`.
+/// The sidecar is a dumb byte store: it holds the `UnrolledProgramProof`
+/// bytes that were received alongside each `FriProofTx` at admission
+/// time and hands them back when the bootloader issues a
+/// `FRI_PROOF_QUERY_ID` oracle query.
 ///
-/// The forward-system `FriProofResponder` calls this trait whenever the
-/// bootloader issues a `FRI_PROOF_QUERY_ID` query, and relays the
-/// resulting `Vec<u32>` as the query response iterator.
-///
-/// Keeping the flattening on the source side (rather than in the
-/// responder itself) keeps the responder stateless and means the
-/// server / test rig can choose whatever backing store and flattening
-/// pipeline fits its environment.
+/// All decoding and flattening of the proof into the verifier's
+/// oracle word stream happens inside `FriProofResponder`, which owns
+/// the setup and compiled circuit layouts required for that work.
 pub trait FriProofSidecarSource: 'static {
-    /// Returns the flattened `u32` oracle stream for the proof at this
-    /// `statement_versioned_hash`, ready to be consumed by the
-    /// `verify_unrolled_or_unified_circuit_recursion_layer` verifier.
+    /// Returns the raw (bincode-serialized) `UnrolledProgramProof`
+    /// bytes stored under this `statement_versioned_hash`.
     ///
     /// Returns `None` if the sidecar has no entry for this hash. In
     /// production that should never happen: the admission path
     /// pre-validates and populates the sidecar before the tx reaches
     /// execution. Returning `None` here causes the FRI tx handler to
     /// fail the binding check and reject the tx.
-    fn get_proof_oracle_stream(&mut self, statement_versioned_hash: Bytes32) -> Option<Vec<u32>>;
+    fn get_proof_bytes(&mut self, statement_versioned_hash: Bytes32) -> Option<Vec<u8>>;
 }
 
 /// A no-op sidecar source used when FRI proof verification is not
@@ -46,7 +37,7 @@ pub trait FriProofSidecarSource: 'static {
 pub struct NoFriProofSidecar;
 
 impl FriProofSidecarSource for NoFriProofSidecar {
-    fn get_proof_oracle_stream(&mut self, _statement_versioned_hash: Bytes32) -> Option<Vec<u32>> {
+    fn get_proof_bytes(&mut self, _statement_versioned_hash: Bytes32) -> Option<Vec<u8>> {
         None
     }
 }

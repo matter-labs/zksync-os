@@ -341,17 +341,49 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     /// Builder: installs a mock Gateway-side FRI sidecar source keyed by
-    /// `statement_versioned_hash`.
+    /// `statement_versioned_hash`. Each entry is a pair of the statement
+    /// hash and the raw (bincode-serialized) `UnrolledProgramProof`
+    /// bytes, exactly as the sequencer would receive them from the
+    /// operator.
+    ///
+    /// No verifier artifacts are configured: when the bootloader issues
+    /// a `FRI_PROOF_QUERY_ID` query the oracle-side `FriProofResponder`
+    /// will see the bytes but skip decoding, returning an empty
+    /// response. Use [`Self::with_mock_fri_sidecars_and_artifacts`] for
+    /// end-to-end flows that need actual flattening.
     pub fn with_mock_fri_sidecars<I>(mut self, sidecars: I) -> Self
     where
-        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u32>)>,
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
     {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
-        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(
-            sidecars.into_iter().collect(),
-        )));
+        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
+            sidecars.into_iter().collect();
+        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(sidecar_source)));
+        self
+    }
+
+    /// Builder: installs a mock FRI sidecar source together with the
+    /// verifier artifacts (setup + compiled circuit layouts) needed for
+    /// the oracle-side `FriProofResponder` to decode and flatten the
+    /// raw proof bytes into the verifier's oracle word stream.
+    pub fn with_mock_fri_sidecars_and_artifacts<I>(
+        mut self,
+        sidecars: I,
+        artifacts: forward_system::run::FriVerifierArtifacts,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
+            sidecars.into_iter().collect();
+        self.oracle_factory = Some(Box::new(
+            FriProofOracleFactory::new(sidecar_source).with_verifier_artifacts(artifacts),
+        ));
         self
     }
 
@@ -455,10 +487,11 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     /// Setter: installs a mock Gateway-side FRI sidecar source keyed by
-    /// `statement_versioned_hash`.
+    /// `statement_versioned_hash`. Each entry carries the raw
+    /// (bincode-serialized) `UnrolledProgramProof` bytes.
     pub fn set_mock_fri_sidecars<I>(&mut self, sidecars: I) -> &mut Self
     where
-        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u32>)>,
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
     {
         self.block_context
             .get_or_insert_with(Default::default)

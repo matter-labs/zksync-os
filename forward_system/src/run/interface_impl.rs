@@ -50,6 +50,7 @@ impl RunBlock for RunBlockForward {
             preimage_source,
             tx_source,
             NoFriProofSidecar,
+            None,
             tx_result_callback,
             &mut TracerWrapped(evm_tracer),
             &mut ValidatorWrapped(evm_tx_validator),

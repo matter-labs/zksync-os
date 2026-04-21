@@ -1082,7 +1082,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                         .zip(proof_input.iter())
                         .position(|(left, right)| left != right);
                     let window_start = first_diff.unwrap_or(0).saturating_sub(8);
-                    let window_end_native = core::cmp::min(window_start + 24, prover_input_forward.len());
+                    let window_end_native =
+                        core::cmp::min(window_start + 24, prover_input_forward.len());
                     let window_end_riscv = core::cmp::min(window_start + 24, proof_input.len());
                     panic!(
                         "prover input mismatch between native and RISC-V runs: native_len={}, riscv_len={}, first_diff={:?}, native_at_diff={:?}, riscv_at_diff={:?}, native_window={:?}, riscv_window={:?}",

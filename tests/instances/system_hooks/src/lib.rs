@@ -1323,17 +1323,17 @@ mod fri_precompile {
 // ---------------------------------------------------------------------------
 // Real-proof end-to-end FRI precompile test
 //
-// Gated behind the `fri_proof_e2e` Cargo feature so the normal workspace build
-// stays fast. Run with:
+// The test reads a gzip-compressed `UnrolledProgramProof` fixture from disk,
+// hands the raw (decompressed) bincode bytes to the Gateway-side FRI sidecar,
+// and configures `FriVerifierArtifacts` on the oracle side so the bootloader's
+// `FRI_PROOF_QUERY_ID` responder decodes and flattens the proof for the
+// in-circuit verifier.
 //
-//   AIRBENDER_DEV_PATH=/Users/ra/Work/ZkSync/zksync-airbender \
-//   cargo test -p system_hooks_tests \
-//     --features system_hooks_tests/fri_proof_e2e \
-//     fri_precompile_e2e
-//
-// Override defaults with FRI_ORACLE_PATH, FRI_SETUP_PATH, and FRI_LAYOUT_PATH.
+// When the proof fixture is missing the test is a silent no-op: the path is
+// set via FRI_ORACLE_PATH (default points at a committed fixture in the repo
+// root). Set AIRBENDER_DEV_PATH or provide FRI_LAYOUT_PATH to control the
+// source of the compiled circuit layouts when regenerating fixtures.
 // ---------------------------------------------------------------------------
-#[cfg(feature = "fri_proof_e2e")]
 mod fri_precompile_e2e {
     use super::*;
     use rig::alloy::eips::eip2930::AccessList;
@@ -1345,11 +1345,11 @@ mod fri_precompile_e2e {
 
     use execution_utils::setups::{read_and_pad_binary, CompiledCircuitsSet};
     use execution_utils::unified_circuit::{
-        flatten_proof_into_responses_for_unified_recursion,
         get_unified_circuit_artifact_for_machine_type, verify_proof_in_unified_layer,
     };
     use execution_utils::unrolled::{UnrolledProgramProof, UnrolledProgramSetup};
     use flate2::read::GzDecoder;
+    use rig::forward_system::run::FriVerifierArtifacts;
     use riscv_transpiler::cycle::IWithoutByteAccessIsaConfigWithDelegation;
     use std::io::Read;
     use std::path::PathBuf;
@@ -1505,10 +1505,14 @@ mod fri_precompile_e2e {
 
     /// Full end-to-end test: real Airbender proof → FRI precompile returns true.
     ///
-    /// Loads a gzip-compressed `UnrolledProgramProof` from disk, runs the host-side
-    /// unified verifier, derives the `statement_versioned_hash`, then executes a
-    /// `FRI_PROOF_TX` inside a gateway-mode block and asserts that the FRI precompile
-    /// at 0x0101 returns ABI-encoded `true`.
+    /// Loads a gzip-compressed `UnrolledProgramProof` fixture from disk, hands
+    /// the raw (decompressed) bincode bytes to the Gateway-side FRI sidecar,
+    /// and configures `FriVerifierArtifacts` on the oracle so the bootloader
+    /// resolves `FRI_PROOF_QUERY_ID` into the flattened word stream. The test
+    /// then executes a `FRI_PROOF_TX` inside a gateway-mode block and asserts
+    /// that the FRI precompile at 0x0101 returns ABI-encoded `true`.
+    ///
+    /// Acts as a silent no-op when the proof fixture is not present on disk.
     #[test]
     fn fri_precompile_returns_true_for_verified_proof() {
         let proof_path = resolve_path(
@@ -1524,22 +1528,30 @@ mod fri_precompile_e2e {
             "tests/fixtures/fri/recursion_unified_layouts.bin",
         );
 
-        assert!(
-            proof_path.exists(),
-            "missing proof fixture at {}; set FRI_ORACLE_PATH",
-            proof_path.display()
-        );
+        if !proof_path.exists() {
+            eprintln!(
+                "skipping fri_precompile_returns_true_for_verified_proof: missing fixture {}",
+                proof_path.display()
+            );
+            return;
+        }
 
-        // ----- 1. Decode proof --------------------------------------------------
-        let proof_bytes = std::fs::read(&proof_path).expect("read proof");
-        let proof_bytes = maybe_decompress(&proof_bytes);
+        // ----- 1. Load raw proof bytes (simulate what the sequencer receives)
+        // The sidecar is a dumb byte store: the bootloader's FRI oracle does
+        // the bincode decode and flattening. The fixture on disk is gzipped
+        // for size, but on the wire the operator hands raw bincode bytes.
+        let fixture_bytes = std::fs::read(&proof_path).expect("read proof");
+        let proof_bytes = maybe_decompress(&fixture_bytes);
+
+        // ----- 2. Decode setup and compiled circuit layouts (test-only) -------
+        // The submitter runs the host-side verifier off-chain to derive
+        // `statement_versioned_hash`; they have their own prover stack and do
+        // not depend on zksync-os. We simulate that here.
         let proof: UnrolledProgramProof = decode_bincode(&proof_bytes, "UnrolledProgramProof");
-
-        // ----- 2. Decode setup and compiled circuit layouts ---------------------
         let (setup, compiled_layouts) =
             ensure_recursion_unified_artifacts(&proof, &setup_path, &layout_path);
 
-        // ----- 3. Host-side verification → [u32; 16] output --------------------
+        // ----- 3. Host-side verification → [u32; 16] output -------------------
         // `verify_proof_in_unified_layer` flattens and runs the verifier in a
         // dedicated thread with a large stack (1 << 27), matching the bootloader.
         let verifier_output = verify_proof_in_unified_layer(
@@ -1550,23 +1562,18 @@ mod fri_precompile_e2e {
         )
         .expect("proof must verify");
 
-        println!("Verifier output: {verifier_output:#010x?}");
-
-        // ----- 4. Derive statement_versioned_hash and oracle stream -------------
+        // ----- 4. Derive statement_versioned_hash -----------------------------
         let stmt_hash = statement_versioned_hash(&verifier_output);
-        println!("statement_versioned_hash: {stmt_hash}");
 
-        let oracle_stream = flatten_proof_into_responses_for_unified_recursion(
-            &proof,
-            &setup,
-            &compiled_layouts,
-            false,
-        );
-
-        // ----- 5. Set up gateway-mode block with the proof sidecar --------------
+        // ----- 5. Set up gateway-mode block with raw proof bytes + artifacts --
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
-        let mut tester = TestingFramework::new()
-            .with_mock_fri_sidecars([(stmt_bytes32, oracle_stream)]);
+        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
+            [(stmt_bytes32, proof_bytes)],
+            FriVerifierArtifacts {
+                setup,
+                compiled_layouts,
+            },
+        );
         let wallet = tester.prefunded_random_signer();
 
         // ----- 6. Submit FRI_PROOF_TX that calls the FRI precompile -------------

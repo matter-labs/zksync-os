@@ -26,7 +26,7 @@ pub use self::ethereum_cl::EthereumCLResponder;
 pub use self::ethereum_header::EthereumTargetBlockHeaderResponder;
 pub use self::ethereum_initial_account_state::InMemoryEthereumInitialAccountStateResponder;
 pub use self::ethereum_initial_storage_slot_value::InMemoryEthereumInitialStorageSlotValueResponder;
-pub use self::fri_proof::FriProofResponder;
+pub use self::fri_proof::{FriProofResponder, FriVerifierArtifacts};
 pub use self::generic_preimage::GenericPreimageResponder;
 pub use self::read_storage::ReadStorageResponder;
 pub use self::read_tree::ReadTreeResponder;

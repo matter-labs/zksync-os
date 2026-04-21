@@ -86,7 +86,8 @@ impl<
         self.tx_level.verified_fri_statement()
     }
     fn set_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
-        self.tx_level.set_verified_fri_statement(statement_versioned_hash);
+        self.tx_level
+            .set_verified_fri_statement(statement_versioned_hash);
     }
 }
 
