@@ -15,7 +15,10 @@ external-default-features = "allow"
 [sources]
 unknown-registry = "warn"
 unknown-git = "warn"
-allow-git = ["https://github.com/matter-labs/zksync-airbender"]
+allow-git = [
+    "https://github.com/matter-labs/zksync-airbender",
+    "https://github.com/matter-labs/airbender-platform",
+]
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 

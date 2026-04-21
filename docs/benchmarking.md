@@ -51,11 +51,12 @@ Results are saved to `bench_results/` (gitignored). Negative % in effective cycl
 One-time setup (in addition to the standard Rust toolchain):
 
 ```bash
-rustup target add riscv32i-unknown-none-elf
 cargo install cargo-binutils
-rustup component add llvm-tools-preview rust-src
+cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 pip3 install matplotlib   # only needed for opcode frequency charts
 ```
+Rust components (`rust-src`, `llvm-tools-preview`) and the RISC-V target are
+installed automatically via `rust-toolchain.toml`.
 
 ## Interpreting Results
 

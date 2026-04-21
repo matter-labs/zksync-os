@@ -79,7 +79,6 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile blake test programs for RISC-V

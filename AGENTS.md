@@ -39,10 +39,11 @@ Reference docs:
 ## Build and Test
 Prerequisites (one-time):
 ```bash
-rustup target add riscv32i-unknown-none-elf
 cargo install cargo-binutils
-rustup component add llvm-tools-preview
+cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 ```
+Rust components (`rust-src`, `llvm-tools-preview`) and the RISC-V target are
+installed automatically via `rust-toolchain.toml`.
 
 Common commands:
 ```bash
