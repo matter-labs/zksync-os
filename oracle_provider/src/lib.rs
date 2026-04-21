@@ -13,7 +13,7 @@ compile_error!("ReadWitnessSource host recording requires a 64-bit little-endian
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use zk_ee::oracle::query_ids::{DISCONNECT_ORACLE_QUERY_ID, UART_QUERY_ID};
+use zk_ee::oracle::query_ids::{DISCONNECT_ORACLE_QUERY_ID, FRI_PROOF_QUERY_ID, UART_QUERY_ID};
 use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
@@ -332,9 +332,30 @@ impl IOOracle for ReadWitnessSource {
             read_items.push(len_u32);
         }
         let read_items = Rc::clone(&self.read_items);
-        let wrapped: Self::RawIterator<'a> = Box::new(inner.inspect(move |v| {
-            record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
-        }));
+        let wrapped: Self::RawIterator<'a> = if query_type == FRI_PROOF_QUERY_ID {
+            let mut remaining_fri_payload_words: Option<usize> = None;
+            Box::new(inner.inspect(move |v| {
+                let mut read_items = read_items.borrow_mut();
+                if let Some(remaining) = remaining_fri_payload_words.as_mut() {
+                    if *remaining == 0 {
+                        return;
+                    }
+                    read_items.push(*v as u32);
+                    *remaining -= 1;
+                    if *remaining != 0 {
+                        read_items.push((*v >> 32) as u32);
+                        *remaining -= 1;
+                    }
+                } else {
+                    record_usize_as_u32_words(&mut read_items, *v);
+                    remaining_fri_payload_words = Some(*v);
+                }
+            }))
+        } else {
+            Box::new(inner.inspect(move |v| {
+                record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
+            }))
+        };
 
         Ok(wrapped)
     }

@@ -19,17 +19,21 @@ use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::TxProcessingOutput;
 use alloc::format;
 use core::fmt::Write;
+use crypto::{sha3::Keccak256, MiniDigest};
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
 use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
+#[cfg(not(target_arch = "riscv32"))]
+use prover::nd_source_std;
 use ruint::aliases::U256;
-use crypto::{sha3::Keccak256, MiniDigest};
+#[cfg(not(target_arch = "riscv32"))]
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::oracle::IOOracle;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -43,10 +47,6 @@ use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error};
-#[cfg(not(target_arch = "riscv32"))]
-use prover::nd_source_std;
-#[cfg(not(target_arch = "riscv32"))]
-use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
@@ -203,21 +203,22 @@ where
         .io
         .oracle()
         .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
-    let oracle_stream_len = response
-        .next()
-        .ok_or(TxError::Validation(InvalidTransaction::FriProofSidecarMissing))?;
+    let oracle_stream_len = response.next().ok_or(TxError::Validation(
+        InvalidTransaction::FriProofSidecarMissing,
+    ))?;
 
-    if response.len() != oracle_stream_len {
+    if response.len() != oracle_stream_len.div_ceil(2) {
         return Err(TxError::Validation(
             InvalidTransaction::FriProofVerificationFailed,
         ));
     }
 
     let mut oracle_stream = alloc::vec::Vec::with_capacity(oracle_stream_len);
-    for raw_word in response {
-        let word = u32::try_from(raw_word)
-            .map_err(|_| TxError::Validation(InvalidTransaction::FriProofVerificationFailed))?;
-        oracle_stream.push(word);
+    for packed_words in response {
+        oracle_stream.push(packed_words as u32);
+        if oracle_stream.len() < oracle_stream_len {
+            oracle_stream.push((packed_words >> 32) as u32);
+        }
     }
 
     nd_source_std::set_iterator(oracle_stream.into_iter());
@@ -383,7 +384,9 @@ where
     ) -> Result<(), TxError> {
         if transaction.is_fri_proof() {
             if !system.metadata.is_gateway() {
-                return Err(TxError::Validation(InvalidTransaction::FriProofTxNotSupported));
+                return Err(TxError::Validation(
+                    InvalidTransaction::FriProofTxNotSupported,
+                ));
             }
 
             if let Some(statement_versioned_hashes) = transaction.statement_versioned_hashes() {
@@ -406,8 +409,7 @@ where
                                 .oracle()
                                 .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?,
                         );
-                        let output =
-                            crate::bootloader::fri_verifier::run_fri_verifier();
+                        let output = crate::bootloader::fri_verifier::run_fri_verifier();
                         let computed_statement_hash =
                             statement_versioned_hash_from_verifier_output(&output);
                         if computed_statement_hash != statement_versioned_hash {

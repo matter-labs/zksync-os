@@ -35,9 +35,8 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert_eq!(query_id, FRI_PROOF_QUERY_ID);
 
-        let statement_versioned_hash =
-            Bytes32::from_iter(&mut query.into_iter())
-                .expect("must deserialize statement_versioned_hash");
+        let statement_versioned_hash = Bytes32::from_iter(&mut query.into_iter())
+            .expect("must deserialize statement_versioned_hash");
 
         // Fetch the pre-flattened oracle stream for this statement from
         // the sidecar. The sidecar source is responsible for decoding
@@ -50,19 +49,24 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
         // the transaction. This is distinct from a present-but-empty
         // stream which would be [0] (one word: length prefix = 0).
         //
-        // When the sidecar is present the response is count-prefixed:
-        //   [oracle_stream_len, word_0, ..., word_N-1]
-        // The host path strips the prefix; the proving path strips it
-        // in `io_oracle::set_prepared_fri_response`.
+        // When the sidecar is present the response is count-prefixed and
+        // payload words are packed in pairs:
+        //   [oracle_stream_len, word_0 | (word_1 << 32), ...]
+        // The host path unpacks this representation. The CSR path naturally
+        // sees the low/high halves as consecutive verifier words.
         let Some(oracle_stream) = self
             .sidecar_source
             .get_proof_oracle_stream(statement_versioned_hash)
         else {
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
-        let mut response = Vec::with_capacity(oracle_stream.len() + 1);
+        let mut response = Vec::with_capacity(1 + oracle_stream.len().div_ceil(2));
         response.push(oracle_stream.len());
-        response.extend(oracle_stream.into_iter().map(|word| word as usize));
+        for pair in oracle_stream.chunks(2) {
+            let low = pair[0] as usize;
+            let high = pair.get(1).copied().unwrap_or(0) as usize;
+            response.push(low | (high << 32));
+        }
 
         DynUsizeIterator::from_constructor(response, |inner_ref| inner_ref.iter().copied())
     }
@@ -92,7 +96,11 @@ mod tests {
 
     fn run(responder: &mut FriProofResponder<DummyFriSidecarSource>) -> Vec<usize> {
         responder
-            .process_buffered_query(FRI_PROOF_QUERY_ID, query(), &oracle_provider::DummyMemorySource)
+            .process_buffered_query(
+                FRI_PROOF_QUERY_ID,
+                query(),
+                &oracle_provider::DummyMemorySource,
+            )
             .collect()
     }
 
@@ -103,7 +111,7 @@ mod tests {
                 response: Some(vec![7, 9, 13]),
             },
         };
-        assert_eq!(run(&mut responder), vec![3, 7, 9, 13]);
+        assert_eq!(run(&mut responder), vec![3, 7 | (9usize << 32), 13]);
     }
 
     #[test]

@@ -355,3 +355,4 @@ const HOOK_BASE_NATIVE_COST: u64 = 1000;
 
 /// Ergs cost per byte of bytecode for force deployments.
 const SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE: Ergs = Ergs(50 * ERGS_PER_GAS);
+

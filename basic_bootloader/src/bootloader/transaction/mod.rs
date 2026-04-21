@@ -8,8 +8,8 @@
 //!
 
 use super::errors::TxError;
-use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList;
+use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
 use core::alloc::Allocator;

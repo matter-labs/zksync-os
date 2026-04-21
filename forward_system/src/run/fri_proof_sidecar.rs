@@ -28,10 +28,7 @@ pub trait FriProofSidecarSource: 'static {
     /// pre-validates and populates the sidecar before the tx reaches
     /// execution. Returning `None` here causes the FRI tx handler to
     /// fail the binding check and reject the tx.
-    fn get_proof_oracle_stream(
-        &mut self,
-        statement_versioned_hash: Bytes32,
-    ) -> Option<Vec<u32>>;
+    fn get_proof_oracle_stream(&mut self, statement_versioned_hash: Bytes32) -> Option<Vec<u32>>;
 }
 
 /// A no-op sidecar source used when FRI proof verification is not
@@ -49,10 +46,7 @@ pub trait FriProofSidecarSource: 'static {
 pub struct NoFriProofSidecar;
 
 impl FriProofSidecarSource for NoFriProofSidecar {
-    fn get_proof_oracle_stream(
-        &mut self,
-        _statement_versioned_hash: Bytes32,
-    ) -> Option<Vec<u32>> {
+    fn get_proof_oracle_stream(&mut self, _statement_versioned_hash: Bytes32) -> Option<Vec<u32>> {
         None
     }
 }

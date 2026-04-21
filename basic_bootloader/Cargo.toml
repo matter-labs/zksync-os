@@ -29,6 +29,9 @@ serde-big-array = "0.5"
 prover = { workspace = true, features = ["prover"] }
 full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"] }
 
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "modular_ops", "blake2_with_compression"] }
+
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }
 alloy-rlp = { workspace = true }

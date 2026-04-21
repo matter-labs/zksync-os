@@ -612,7 +612,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -804,7 +803,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -1076,7 +1074,25 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                      filtered at least one transaction, and proof replay does not use it"
                 );
             } else {
-                assert_eq!(prover_input_forward, proof_input);
+                if prover_input_forward != proof_input {
+                    let first_diff = prover_input_forward
+                        .iter()
+                        .zip(proof_input.iter())
+                        .position(|(left, right)| left != right);
+                    let window_start = first_diff.unwrap_or(0).saturating_sub(8);
+                    let window_end_native = core::cmp::min(window_start + 24, prover_input_forward.len());
+                    let window_end_riscv = core::cmp::min(window_start + 24, proof_input.len());
+                    panic!(
+                        "prover input mismatch between native and RISC-V runs: native_len={}, riscv_len={}, first_diff={:?}, native_at_diff={:?}, riscv_at_diff={:?}, native_window={:?}, riscv_window={:?}",
+                        prover_input_forward.len(),
+                        proof_input.len(),
+                        first_diff,
+                        first_diff.and_then(|idx| prover_input_forward.get(idx).copied()),
+                        first_diff.and_then(|idx| proof_input.get(idx).copied()),
+                        &prover_input_forward[window_start..window_end_native],
+                        &proof_input[window_start..window_end_riscv],
+                    );
+                }
             }
             prover_input_forward
         } else {

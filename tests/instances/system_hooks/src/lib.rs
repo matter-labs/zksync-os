@@ -1565,8 +1565,8 @@ mod fri_precompile_e2e {
 
         // ----- 5. Set up gateway-mode block with the proof sidecar --------------
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
-        let mut tester =
-            TestingFramework::new().with_mock_fri_sidecars([(stmt_bytes32, oracle_stream)]);
+        let mut tester = TestingFramework::new()
+            .with_mock_fri_sidecars([(stmt_bytes32, oracle_stream)]);
         let wallet = tester.prefunded_random_signer();
 
         // ----- 6. Submit FRI_PROOF_TX that calls the FRI precompile -------------

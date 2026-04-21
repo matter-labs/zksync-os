@@ -1,9 +1,9 @@
 use super::super::*;
 use ruint::aliases::U256;
+use zk_ee::internal_error;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::utils::Bytes32;
-use zk_ee::{internal_error};
 
 /// Gateway-only precompile that reports whether a statement hash was verified
 /// earlier in the current transaction.

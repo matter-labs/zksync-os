@@ -17,8 +17,6 @@ proof_running_system = { path = "../proof_running_system", default-features = fa
 crypto = { path = "../crypto", optional = true }
 riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["custom_panic", "custom_allocator"]}
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
-# Activate modular_ops (Zimop-based field ops) for the riscv32 binary — reduces binary size significantly.
-# modular_ops must NOT be active in workspace builds (host arch) as the dev branch rejects it there.
 full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false, features = ["unified_verifier_only_security_80", "modular_ops", "blake2_with_compression"] }
 
 [profile.dev]
@@ -40,14 +38,14 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [profile.release.overrides."*"]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [features]
 scalloc = ["proof_running_system/scalloc"]
@@ -61,7 +59,3 @@ eth_stf = ["proof_running_system/eth_stf"]
 evm_tester = ["proof_running_system/evm_tester"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
-
-
-# [patch."https://github.com/matter-labs/zksync-airbender"]
-# blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile" }

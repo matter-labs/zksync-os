@@ -141,9 +141,7 @@ where
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
     let fri_proof_intrinsic_native_cost = transaction
         .statement_versioned_hashes()
-        .map(|hashes| {
-            FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(hashes.count as u64)
-        })
+        .map(|hashes| FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(hashes.count as u64))
         .unwrap_or(0);
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
