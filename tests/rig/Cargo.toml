@@ -11,23 +11,19 @@ categories.workspace = true
 
 [dependencies]
 basic_bootloader = { path = "../../basic_bootloader", features = ["verify_intrinsic_native"] }
-riscv_transpiler = { workspace = true }
 basic_system = { path = "../../basic_system" }
 evm_interpreter = { path = "../../evm_interpreter" }
 forward_system = { path = "../../forward_system" }
 oracle_provider = { path = "../../oracle_provider" }
 callable_oracles = { path = "../../callable_oracles/" }
 zk_ee = { path = "../../zk_ee" }
-zksync_os_runner = { path = "../../zksync_os_runner", features = ["flamegraph"] }
+zksync_os_runner = { path = "../../zksync_os_runner" }
 system_hooks = { path = "../../system_hooks"}
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
 zksync_os_interface = { workspace = true }
-cli = { workspace =  true, optional = true }
-prover_examples = { workspace = true, optional = true }
-execution_utils = { workspace = true, optional = true }
-gpu_prover = { workspace = true, optional = true }
+airbender-host = { workspace = true, optional = true }
 
 zksync_os_tests_common = { path = "../common" }
 zksync_os_revm_runner = { path = "../revm_runner" }
@@ -44,13 +40,10 @@ once_cell = { workspace = true }
 [features]
 default = ["testing"]
 testing = []
-airbender_cli = ["cli"]
-e2e_proving = ["prover_examples", "execution_utils"]
+e2e_proving = ["airbender-host"]
 no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
-simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
-gpu = ["cli/gpu", "gpu_prover"]
 production = ["forward_system/production"]
 # Features for test instances
 for_tests = ["forward_system/for_tests", "callable_oracles/testing"]

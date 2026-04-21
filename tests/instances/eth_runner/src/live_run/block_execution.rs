@@ -29,15 +29,6 @@ fn filter_skipped<T>(items: Vec<T>, skipped: &HashSet<usize>) -> Vec<T> {
         .collect()
 }
 
-#[cfg(feature = "gpu")]
-pub type GpuSharedState = rig::cli_lib::prover_utils::GpuSharedState;
-
-#[cfg(all(feature = "proving", not(feature = "gpu")))]
-pub type GpuSharedState<'a> = rig::cli_lib::prover_utils::GpuSharedState<'a>;
-
-#[cfg(not(feature = "proving"))]
-pub type GpuSharedState = ();
-
 /// Runs a block using prefetched traces.
 #[allow(clippy::too_many_arguments, unused_variables)]
 pub fn run_block(
@@ -48,7 +39,7 @@ pub fn run_block(
     persist_all: bool,
     chain_id: u64,
     single_tx: Option<u64>,
-    gpu_shared_state: &mut Option<&mut GpuSharedState>,
+    prover: &dyn airbender_host::Prover,
     only_forward: bool,
     block_traces: BlockTraces,
 ) -> Result<BlockStatus> {
@@ -175,32 +166,10 @@ pub fn run_block(
 
     info!("Actual gas used: {}", output.header.gas_used);
 
-    #[cfg(feature = "proving")]
-    {
-        let bin_path = rig::chain::get_zksync_os_img_path(&Some("evm_replay".to_string()))
-            .as_path()
-            .to_str()
-            .unwrap()
-            .to_string();
-        let witness: Vec<u8> = _prover_input.iter().flat_map(|x| x.to_be_bytes()).collect();
-        let input_hex = hex::encode(witness);
-        let non_determinism_data = rig::cli_lib::prover_utils::u32_from_hex_string(&input_hex);
-        let binary = rig::cli_lib::prover_utils::load_binary_from_path(&bin_path);
-        #[cfg(not(feature = "gpu"))]
-        let gpu_shared_state = &mut None;
-        let mut total_proof_time = Some(0f64);
-
+    if !only_forward {
         info!("Starting base layer proofs...");
-        rig::cli_lib::prover_utils::create_proofs_internal(
-            &binary,
-            non_determinism_data,
-            &rig::cli_lib::Machine::Standard,
-            1024,
-            None,
-            gpu_shared_state,
-            &mut total_proof_time,
-        );
-        info!("Done with base layer proofs");
+        let result = prover.prove(&_prover_input).expect("proving failed");
+        info!("Done with base layer proofs in {} cycles", result.cycles);
     }
 
     let db_write_start = Instant::now();

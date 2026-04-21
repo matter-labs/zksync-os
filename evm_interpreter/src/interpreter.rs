@@ -106,7 +106,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     #[inline]
     pub(crate) fn get_bytecode_unchecked(&self, offset: usize) -> u8 {
         self.bytecode
-            .as_ref()
             .get(offset)
             .copied()
             .unwrap_or(crate::opcodes::STOP)

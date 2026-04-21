@@ -31,7 +31,9 @@ use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
+use forward_system::system::system_types::ethereum::{
+    EthereumStorageSystemTypes, EthereumStorageSystemTypesWithPostOps,
+};
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
@@ -821,16 +823,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let da_commitment_scheme =
             da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256);
-        let oracle = oracle_factory.create_proof_oracle(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            Some(proof_data),
-            Some(da_commitment_scheme),
-            true,
-            false,
-        );
 
         let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
@@ -842,20 +834,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             true,
             false,
         );
-
-        #[cfg(feature = "simulate_witness_gen")]
-        let source_for_witness_bench = {
-            oracle_factory.create_proof_oracle(
-                block_metadata,
-                self.state_tree.clone(),
-                self.preimage_source.clone(),
-                tx_source.clone(),
-                Some(proof_data),
-                Some(da_commitment_scheme),
-                false,
-                false,
-            )
-        };
 
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
@@ -871,7 +849,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let block_output: BlockOutput = result_keeper.into();
 
-        let (prover_input_forward, pubdata, has_filtered_by_validator) = if do_prover_input_run {
+        let (prover_input_forward, pubdata) = if do_prover_input_run {
             let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
 
             let prover_input_oracle = oracle_factory.create_forward_oracle(
@@ -925,7 +903,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             } else {
                 assert_block_outputs_match(&block_output, &prover_input_block_output);
             }
-            (prover_input_forward, pubdata, has_filtered_by_validator)
+            (prover_input_forward, pubdata)
         } else {
             // We use the forward prover input run outputs to validate the risc-v run,
             // so we check consistency in config
@@ -933,7 +911,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 !do_riscv_run,
                 "Native prover input run should be performed if risc v run is enabled"
             );
-            (vec![], vec![], false)
+            (vec![], vec![])
         };
 
         trace!(
@@ -986,25 +964,23 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             }
         }
 
-        let proof_input = if do_riscv_run {
-            // We'll wrap the source, to collect all the reads.
-            let copy_source = ReadWitnessSource::new(oracle);
-            let items = copy_source.get_read_items();
+        if do_riscv_run {
+            let dist_dir = get_zksync_os_dist_dir(&app);
 
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
                 zksync_os_runner::run_with_flamegraph(
-                    get_zksync_os_img_path(&app),
-                    get_zksync_os_sym_path(&app),
+                    dist_dir.clone(),
+                    dist_dir.join("app.elf"),
                     1 << 36,
-                    copy_source,
+                    &prover_input_forward,
                     fg_options,
                 )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
+                    dist_dir,
                     1 << 36,
-                    copy_source,
+                    &prover_input_forward,
                 )
             };
 
@@ -1014,30 +990,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             );
             stats.effective_used = block_effective;
 
-            #[cfg(feature = "simulate_witness_gen")]
-            {
-                zksync_os_runner::simulate_witness_tracing(
-                    get_zksync_os_img_path(&None),
-                    source_for_witness_bench,
-                )
-            }
-
             // dump csr reads if env var set
             if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
                 // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
                 let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
                 // Write each u32 as an 8-character hexadecimal string without newlines
-                for num in items.borrow().iter() {
+                for num in prover_input_forward.iter() {
                     write!(file, "{num:08X}").expect("Failed to write to file");
                 }
                 debug!(
                     "Successfully wrote {} u32 csr reads elements to file: {}",
-                    items.borrow().len(),
+                    prover_input_forward.len(),
                     output_csr
                 );
             }
-
-            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
 
             debug!(
                 "{}Proof running output{} = 0x",
@@ -1068,22 +1034,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 assert_eq!(proof_output_u8, forward_storage_diff_hash);
 
                 #[cfg(feature = "e2e_proving")]
-                run_prover(items.borrow().as_slice());
+                run_prover(&prover_input_forward);
             }
-
-            if has_filtered_by_validator {
-                warn!(
-                    "Skipping native/proof witness equality checks because the custom validator \
-                     filtered at least one transaction, and proof replay does not use it"
-                );
-            } else {
-                assert_eq!(prover_input_forward, proof_input);
-            }
-            prover_input_forward
-        } else {
-            prover_input_forward
-        };
-        Ok((block_output, stats, proof_input, pubdata))
+        }
+        Ok((block_output, stats, prover_input_forward, pubdata))
     }
 
     pub fn make_eth_block_oracle(
@@ -1091,6 +1045,27 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
+    ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, false)
+    }
+
+    /// Build an oracle for the prover-input recording pass.
+    /// Uses native callable oracles that don't require RamPeek (guest memory access).
+    fn make_eth_block_oracle_for_prover_input(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+    ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, true)
+    }
+
+    fn make_eth_block_oracle_inner(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
@@ -1216,11 +1191,22 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(initial_values_responder.clone());
         oracle.add_external_processor(cl_responder.clone());
         oracle.add_external_processor(da_commitment_scheme_responder);
-        oracle.add_external_processor(
-            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
-        );
-        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
-        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
+        if use_native_callable_oracles {
+            // Native callable oracles compute results on the host without reading
+            // guest memory (RamPeek). Required for prover-input recording where
+            // there is no guest memory to read.
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
+        } else {
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
+        }
         oracle.add_external_processor(UARTPrintResponder);
 
         oracle
@@ -1283,22 +1269,46 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut nop_validator,
         )
         .expect("must succeed");
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
-
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-
         let proof_input = if only_forward {
             None
         } else {
-            let (_proof_output, _block_effective) = {
-                zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
-                    1 << 36,
-                    copy_source,
-                )
-            };
-            Some(items.borrow().iter().copied().collect::<Vec<u32>>())
+            // Record non-determinism input words by re-running with the Ethereum
+            // proving system types (EthereumStorageSystemTypesWithPostOps uses
+            // Ethereum MPT storage, matching the eth_stf RISC-V binary).
+            let prover_input_oracle = Self::make_eth_block_oracle_for_prover_input(
+                transactions,
+                witness,
+                block_header,
+                withdrawals,
+            );
+            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
+                ForwardRunningResultKeeper::new(NoopTxCallback);
+            let mut pi_tracer = NopTracer::default();
+            let mut pi_validator = NopTxValidator;
+            let (returned_oracle, _, _) = BasicBootloader::<
+                EthereumStorageSystemTypesWithPostOps<_>,
+                EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+                copy_source,
+                &mut (),
+                &mut pi_result_keeper,
+                &mut pi_tracer,
+                &mut pi_validator,
+            )
+            .expect("prover-input forward run must succeed");
+
+            assert_eq!(
+                result_keeper.storage_writes, pi_result_keeper.storage_writes,
+                "storage writes mismatch between forward and prover-input runs"
+            );
+
+            let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
+
+            // RISC-V simulation using pre-recorded input
+            let dist_dir = get_zksync_os_dist_dir(&app);
+            zksync_os_runner::run(dist_dir, 1 << 36, &prover_input_words);
+            Some(prover_input_words)
         };
         (Some(result_keeper), proof_input)
     }
@@ -1488,7 +1498,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
 // bunch of internal utility methods
 /// Returns the dist directory for the given app (e.g. `zksync_os/dist/for_tests`).
-fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
+pub fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("for_tests");
     let zksync_os_root = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
@@ -1498,57 +1508,26 @@ fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     zksync_os_root.join("dist").join(app)
 }
 
-fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
-    let filename = format!("app.{extension}");
-    get_zksync_os_dist_dir(app_name).join(filename)
-}
-
-pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "bin")
-}
-
-fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "elf")
-}
-
 // TODO: utils?
 pub fn is_account_properties_address(address: &B160) -> bool {
     address == &ACCOUNT_PROPERTIES_STORAGE_ADDRESS
 }
 
 #[cfg(feature = "e2e_proving")]
-fn run_prover(csr_reads: &[u32]) {
-    use execution_utils::unrolled::prove_unrolled_for_machine_configuration_into_program_proof;
-    use prover_examples::prover::worker::Worker;
-    use prover_examples::setups;
-    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-    use riscv_transpiler::cycle::IMStandardIsaConfigWithUnsignedMulDiv;
+fn run_prover(input_words: &[u32]) {
+    use airbender_host::{Program, Prover};
 
-    let img_path = get_zksync_os_img_path(&None);
-    let text_path = img_path.with_extension("text");
+    let dist_dir = get_zksync_os_dist_dir(&None);
+    let program = Program::load(&dist_dir).expect("failed to load program");
+    let prover = program
+        .cpu_prover()
+        .with_cycles(1 << 36)
+        .build()
+        .expect("failed to build prover");
 
-    let (_, binary_u32) = setups::read_and_pad_binary(&img_path);
-    let (_, text_u32) = setups::read_and_pad_binary(&text_path);
+    let result = prover.prove(input_words).expect("proving failed");
 
-    let mut non_determinism_source = QuasiUARTSource::default();
-    for word in csr_reads {
-        non_determinism_source.oracle.push_back(*word);
-    }
-
-    let worker = Worker::new_with_num_threads(8);
-
-    let _proof = prove_unrolled_for_machine_configuration_into_program_proof::<
-        IMStandardIsaConfigWithUnsignedMulDiv,
-    >(
-        &binary_u32,
-        &text_u32,
-        1 << 24,
-        non_determinism_source,
-        1 << 30, // RAM bound (1 GiB address space)
-        &worker,
-    );
-
-    info!("block proved successfully");
+    info!("block proved successfully in {} cycles", result.cycles);
 }
 
 #[cfg(test)]

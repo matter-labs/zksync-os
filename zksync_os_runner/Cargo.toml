@@ -10,13 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-riscv_transpiler = { workspace = true }
-execution_utils = { workspace = true }
-prover_examples = { workspace = true }
-common_constants = { workspace = true }
-cycle_marker = { path = "../cycle_marker" }
+airbender-host = { workspace = true }
+cycle_marker = { path = "../cycle_marker", optional = true }
 log = { workspace = true }
 
 [features]
-flamegraph = ["riscv_transpiler/flamegraph"]
-cycle_marker = ["cycle_marker/use_riscv_transpiler"]
+cycle_marker = ["dep:cycle_marker", "cycle_marker/use_riscv_transpiler"]
