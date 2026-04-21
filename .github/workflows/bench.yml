@@ -63,7 +63,7 @@ jobs:
         run: |
           rustup set profile minimal
           rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
+          cargo install cargo-binutils --locked
           rustup component add llvm-tools-preview
           rustup component add rust-src
           # Build for_tests binary with cycle markers for benchmarking.
@@ -111,7 +111,7 @@ jobs:
       - name: Setup
         run: |
           rustup set profile minimal
-          cargo install cargo-binutils
+          cargo install cargo-binutils --locked
       - uses: ./.github/actions/install-cargo-airbender
       - name: Compile for RISC-V
         working-directory: ./zksync_os

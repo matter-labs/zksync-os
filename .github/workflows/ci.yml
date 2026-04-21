@@ -29,7 +29,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
@@ -54,7 +54,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
@@ -79,7 +79,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile blake test programs for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
@@ -101,7 +101,7 @@ jobs:
               run: |
                   rustup toolchain install
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - name: Download ethereum execution spec tests fixtures
               working-directory: ./tests/evm_tester
               run: |
@@ -121,7 +121,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
@@ -142,7 +142,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
@@ -163,7 +163,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
@@ -184,7 +184,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
@@ -241,7 +241,7 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os

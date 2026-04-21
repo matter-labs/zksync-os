@@ -226,7 +226,7 @@ function corpus() {
 function install() {
     rustup set profile minimal
     rustup target add wasm32-unknown-unknown
-    cargo install cargo-binutils
+    cargo install cargo-binutils --locked
     cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
     cargo install cargo-fuzz
     cargo install rustfilt

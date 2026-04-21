@@ -17,11 +17,9 @@ The most recent documentation can be found here:
 Run the following commands to prepare your environment (only needed once):
 
 ```bash
-cargo install cargo-binutils
+cargo install cargo-binutils --locked
 cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 ```
-Rust components (`rust-src`, `llvm-tools-preview`) and the RISC-V target are
-installed automatically via `rust-toolchain.toml`.
 
 ZKsync OS is built for two targets:
 - Your host platform, used by the sequencer to execute blocks/batches.

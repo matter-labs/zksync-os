@@ -39,7 +39,7 @@ Reference docs:
 ## Build and Test
 Prerequisites (one-time):
 ```bash
-cargo install cargo-binutils
+cargo install cargo-binutils --locked
 cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 ```
 Rust components (`rust-src`, `llvm-tools-preview`) and the RISC-V target are
