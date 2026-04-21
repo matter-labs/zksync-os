@@ -3,7 +3,7 @@ description: Install the cargo-airbender build tool from airbender-platform
 inputs:
   rev:
     description: Git revision of airbender-platform to install from
-    default: "7e559f95"
+    default: "5b1e8104"
 runs:
   using: composite
   steps:

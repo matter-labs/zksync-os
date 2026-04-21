@@ -259,3 +259,30 @@ jobs:
             - name: Build fresh app bin
               run: |
                   zksync_os/reproduce/reproduce.sh
+
+    check_app_bin_reproducible:
+        name: Check that binaries can be built (--reproducible)
+        runs-on: [matterlabs-ci-runner]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Setup
+              run: |
+                  rustup set profile minimal
+                  cargo install cargo-binutils --locked
+            - uses: ./.github/actions/install-cargo-airbender
+            - name: Generate lockfiles
+              run: |
+                  cargo +nightly-2026-02-10 generate-lockfile
+                  cargo +nightly-2026-02-10 generate-lockfile --manifest-path zksync_os/Cargo.toml
+            - name: Build all binaries with --reproducible
+              working-directory: ./zksync_os
+              run: |
+                  ./dump_bin.sh --type for-tests --reproducible
+                  ./dump_bin.sh --type evm-replay --reproducible
+                  ./dump_bin.sh --type singleblock-batch --reproducible
+                  ./dump_bin.sh --type singleblock-batch-logging-enabled --reproducible
+                  ./dump_bin.sh --type multiblock-batch --reproducible
+                  ./dump_bin.sh --type multiblock-batch-logging-enabled --reproducible
