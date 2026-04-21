@@ -392,6 +392,7 @@ where
         tx_origin: *transaction.from(),
         tx_gas_price: gas_price,
         blobs,
+        verified_fri_statement: None,
     });
 
     // But the fee to charge is based on current block context, and not worst case of max fee (backward-compatible manner)

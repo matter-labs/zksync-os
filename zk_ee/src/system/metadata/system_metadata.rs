@@ -82,6 +82,12 @@ impl<
     fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
         self.tx_level.get_blob_hash(idx)
     }
+    fn verified_fri_statement(&self) -> Option<Bytes32> {
+        self.tx_level.verified_fri_statement()
+    }
+    fn set_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
+        self.tx_level.set_verified_fri_statement(statement_versioned_hash);
+    }
 }
 
 /// Assumes that ZK specific pricing metadata is implemented at the block level.

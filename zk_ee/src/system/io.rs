@@ -386,17 +386,6 @@ pub trait IOSubsystemExt: IOSubsystem {
     /// selfdestruct.
     fn finish_tx(&mut self) -> Result<(), InternalError>;
 
-    /// Records that a FRI statement hash was successfully verified for the
-    /// current transaction.
-    fn mark_current_fri_statement_verified(&mut self, statement_versioned_hash: Bytes32);
-
-    /// Returns whether a FRI statement hash was verified earlier in the current
-    /// transaction.
-    fn is_current_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool;
-
-    /// Clears tx-scoped FRI verification results.
-    fn clear_current_fri_statement_results(&mut self);
-
     /// Touch a slot (address, key) to make it warm.
     fn storage_touch(
         &mut self,

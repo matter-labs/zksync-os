@@ -2,7 +2,6 @@
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
-use alloc::collections::BTreeSet;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -55,7 +54,6 @@ pub struct FullIO<
     pub events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, N, A>,
     pub interop_root_storage: InteropRootStorage<SF, N, A>,
     pub new_settlement_layer_chain_id_storage: NewSettlementLayerChainIdStorage<SF, N, A>,
-    pub current_tx_verified_fri_statements: BTreeSet<Bytes32, A>,
     pub allocator: A,
     pub oracle: O,
     pub tx_number: u32,
@@ -497,8 +495,6 @@ impl<
             InteropRootStorage::<SF, N, A>::new_from_parts(allocator.clone());
         let new_settlement_layer_chain_id_storage =
             NewSettlementLayerChainIdStorage::<SF, N, A>::new_from_parts(allocator.clone());
-        let current_tx_verified_fri_statements = BTreeSet::new_in(allocator.clone());
-
         // we read da scheme during init as in future it should affect pubdata price
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -511,7 +507,6 @@ impl<
             events_storage,
             logs_storage,
             interop_root_storage,
-            current_tx_verified_fri_statements,
             allocator,
             oracle,
             tx_number: 0u32,
@@ -535,23 +530,8 @@ impl<
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {
         self.storage.finish_tx()?;
-        self.clear_current_fri_statement_results();
         self.tx_number += 1;
         Ok(())
-    }
-
-    fn mark_current_fri_statement_verified(&mut self, statement_versioned_hash: Bytes32) {
-        self.current_tx_verified_fri_statements
-            .insert(statement_versioned_hash);
-    }
-
-    fn is_current_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
-        self.current_tx_verified_fri_statements
-            .contains(statement_versioned_hash)
-    }
-
-    fn clear_current_fri_statement_results(&mut self) {
-        self.current_tx_verified_fri_statements.clear();
     }
 
     fn storage_touch(

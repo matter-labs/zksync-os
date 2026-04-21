@@ -54,6 +54,12 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Hash (commitment) of the `idx`-th blob for this transaction, if present.
     fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32>;
+
+    /// FRI statement hash verified during this transaction's pre-execution, if any.
+    fn verified_fri_statement(&self) -> Option<Bytes32>;
+
+    /// Record that a FRI statement hash was verified for the current transaction.
+    fn set_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32);
 }
 
 /// ZKsync-specific pricing knobs that are *not* standardized by Ethereum.

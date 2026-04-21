@@ -398,8 +398,8 @@ where
                     {
                         verify_fri_statement_host(system, statement_versioned_hash)?;
                         system
-                            .io
-                            .mark_current_fri_statement_verified(statement_versioned_hash);
+                            .metadata
+                            .set_verified_fri_statement(statement_versioned_hash);
                     }
                     #[cfg(target_arch = "riscv32")]
                     {
@@ -418,8 +418,8 @@ where
                             ));
                         }
                         system
-                            .io
-                            .mark_current_fri_statement_verified(statement_versioned_hash);
+                            .metadata
+                            .set_verified_fri_statement(statement_versioned_hash);
                     }
                 }
             }
