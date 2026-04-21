@@ -42,7 +42,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3
+              run: cargo test --release
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -67,7 +67,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release -j 3
+              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
     crypto_test:
         name: crypto crate tests
         runs-on: [matterlabs-ci-runner-high-performance]

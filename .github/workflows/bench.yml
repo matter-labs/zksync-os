@@ -76,9 +76,9 @@ jobs:
             OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/base_${blk} \
             OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/base_${blk} \
             MARKER_PATH=$(pwd)/base_block_${blk}.bench \
-            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
           done
-          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
       - uses: actions/upload-artifact@v4
         with:
           name: bench-base-results
@@ -125,9 +125,9 @@ jobs:
             OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/head_${blk} \
             OPCODE_STATS_PATH=$(pwd)/head_block_${blk}_opcode_stats.csv \
             MARKER_PATH=$(pwd)/head_block_${blk}.bench \
-            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
           done
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
       - uses: actions/upload-artifact@v4
         with:
           name: bench-head-results
