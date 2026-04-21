@@ -10,6 +10,7 @@ permissions: read-all
 env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 jobs:
     evm_state_tests:
@@ -22,16 +23,12 @@ jobs:
                   rustflags: ""
             - name: Setup
               run: |
-                  rustup toolchain install
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
+            - uses: ./.github/actions/install-cargo-airbender
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type evm-tester
             - name: Download ethereum execution spec tests fixtures
               working-directory: ./tests/evm_tester

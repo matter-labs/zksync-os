@@ -12,8 +12,8 @@ categories = ["cryptography"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-heapless = { version = "*", default-features = false }
-proof_running_system = { path = "../proof_running_system", default-features = false}
+airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95", default-features = false, features = ["allocator-custom"] }
+proof_running_system = { path = "../proof_running_system", default-features = false }
 crypto = { path = "../crypto", optional = true }
 riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["custom_panic", "custom_allocator"]}
 basic_bootloader = { path = "../basic_bootloader", default-features = false }

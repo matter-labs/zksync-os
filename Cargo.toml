@@ -75,6 +75,10 @@ full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbend
 cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95" }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95" }
+
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
@@ -97,7 +101,6 @@ serde_json = "1"
 log = "0.4.22"
 env_logger = "0.11.6"
 once_cell = "1.20.3"
-
 
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
