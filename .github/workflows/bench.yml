@@ -55,8 +55,8 @@ jobs:
           ref: ${{ needs.merge-base.outputs.sha }}
           fetch-depth: 1
           submodules: recursive
-      # The merge-base may predate the setup-toolchain composite action, so
-      # do the setup inline here rather than via ./.github/actions/...
+      # bench-base checks out the merge-base commit, which may predate the
+      # setup-toolchain composite action, so do the setup inline here.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
