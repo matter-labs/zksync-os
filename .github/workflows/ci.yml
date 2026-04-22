@@ -276,13 +276,20 @@ jobs:
             - name: Build all binaries with --reproducible
               working-directory: ./zksync_os
               run: |
+                  # Warm the shared airbender-cargo-registry Docker volume with
+                  # the widest feature set among the builds we'll do below, so
+                  # parallel invocations don't race on first-populate of the
+                  # registry (mkdir + unpack .cargo-ok). Once the registry holds
+                  # every crate any of these feature combinations needs, the
+                  # subsequent parallel builds only read from it.
+                  ./dump_bin.sh --type multiblock-batch-logging-enabled --reproducible
+
                   pids=()
                   ./dump_bin.sh --type for-tests --reproducible                       & pids+=($!)
                   ./dump_bin.sh --type evm-replay --reproducible                      & pids+=($!)
                   ./dump_bin.sh --type singleblock-batch --reproducible               & pids+=($!)
                   ./dump_bin.sh --type singleblock-batch-logging-enabled --reproducible & pids+=($!)
                   ./dump_bin.sh --type multiblock-batch --reproducible                & pids+=($!)
-                  ./dump_bin.sh --type multiblock-batch-logging-enabled --reproducible & pids+=($!)
                   rc=0
                   for pid in "${pids[@]}"; do
                       wait "$pid" || rc=$?
