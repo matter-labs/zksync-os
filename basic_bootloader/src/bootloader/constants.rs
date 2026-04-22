@@ -197,12 +197,15 @@ pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
 /// L1 tx calldata byte intrinsic computational native cost.
 pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = COPY_BYTE_NATIVE_COST;
 
-/// Worst-case pubdata for tx sender balance change
-const SENDER_BALANCE_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 33/*worst case balance*/;
+/// Worst-case pubdata for tx sender account change
+// Please note, we are charging for the balance change twice, because there are 3 potential changes on different stages:
+// fee prepayment during validation, potential increase during execution, and post execution refund. And due to our pubdata
+// charging approach, if execution balance change reverts validation balance change, pubdata can be "refunded" with execution pubdata payment.
+const SENDER_ACCOUNT_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 2 * 33/*worst case balance*/;
 
 /// Constant part of l2 tx intrinsic pubdata.
 pub const L2_TX_INTRINSIC_PUBDATA: u64 =
-    SENDER_BALANCE_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
+    SENDER_ACCOUNT_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 /// L2 tx authorization intrinsic pubdata.
 pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compression:
