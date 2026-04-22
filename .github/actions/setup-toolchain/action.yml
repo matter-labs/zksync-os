@@ -1,0 +1,20 @@
+name: Set up Rust toolchain
+description: |
+  Set up the Rust toolchain plus cargo-binutils and cargo-airbender for
+  zksync_os RISC-V builds. Uses the project's rust-toolchain.toml for the
+  compiler version.
+inputs:
+  rev:
+    description: Git revision of airbender-platform to install cargo-airbender from
+    default: "097f1489"
+runs:
+  using: composite
+  steps:
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: ""
+    - shell: bash
+      run: |
+        rustup set profile minimal
+        cargo install cargo-binutils --locked
+        cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev ${{ inputs.rev }} --locked
