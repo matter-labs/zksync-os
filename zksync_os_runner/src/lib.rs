@@ -16,9 +16,7 @@ use common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
 use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
 use riscv_transpiler::cycle::CycleMarkerHooks;
 use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions};
-use riscv_transpiler::vm::{
-    DelegationsCounters, RamWithRomRegion, SimpleTape, State, VM,
-};
+use riscv_transpiler::vm::{DelegationsCounters, RamWithRomRegion, SimpleTape, State, VM};
 use std::fs;
 use std::path::PathBuf;
 
@@ -108,8 +106,7 @@ fn run_inner(
     let bin_words = read_u32_words(program.app_bin());
     let text_words = read_u32_words(program.app_text());
 
-    let instructions =
-        preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
+    let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
     let tape = SimpleTape::new(&instructions);
     let mut ram =
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
@@ -126,14 +123,10 @@ fn run_inner(
             reverse_graph: false,
             frequency_recip: fg_options.frequency_recip,
         };
-        let mut profiler = VmFlamegraphProfiler::new(fg_config)
-            .expect("failed to initialize flamegraph profiler");
+        let mut profiler =
+            VmFlamegraphProfiler::new(fg_config).expect("failed to initialize flamegraph profiler");
         let (result, cm) = CycleMarkerHooks::with(|| {
-            VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<
-                _,
-                _,
-                _,
-            >(
+            VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<_, _, _>(
                 &mut state,
                 &mut ram,
                 &mut (),
@@ -177,8 +170,8 @@ fn run_inner(
 }
 
 fn read_u32_words(path: &std::path::Path) -> Vec<u32> {
-    let bytes = fs::read(path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    let bytes =
+        fs::read(path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
     assert!(
         bytes.len() % 4 == 0,
         "{} is not word-aligned: {} bytes",

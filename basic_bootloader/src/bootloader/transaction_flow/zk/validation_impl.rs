@@ -20,7 +20,9 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
-use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::basic_metadata::{
+    BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata,
+};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
@@ -51,11 +53,28 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
+        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,
     // but also takes into account ZK/L2 specific pieces, such as pubdata in state-diffs model,
     // or heavy mismatch between Ethereum/EVM cost model and proving complexity
+
+    // FRI proof verification runs as the very first validation step for
+    // `FriProofTx` transactions. A failure here drops the tx from the
+    // block entirely (no state change, no fee charge, no receipt in the
+    // block header). Running this first means that even the nonce /
+    // balance / fee checks below cannot commit work for a tx whose
+    // proofs we cannot accept.
+    //
+    // The verified hashes are installed on the tx-level metadata below
+    // when `set_tx_context` runs, so the FRI precompile can answer
+    // membership queries during the tx body execution.
+    let verified_fri_statements = if transaction.is_fri_proof() {
+        super::fri::verify_all_fri_statements(system, transaction)?
+    } else {
+        alloc::vec::Vec::new()
+    };
 
     // safe to panic, validated by the structure
     let from = *transaction.from();
@@ -392,7 +411,7 @@ where
         tx_origin: *transaction.from(),
         tx_gas_price: gas_price,
         blobs,
-        verified_fri_statements: alloc::vec::Vec::new(),
+        verified_fri_statements,
     });
 
     // But the fee to charge is based on current block context, and not worst case of max fee (backward-compatible manner)

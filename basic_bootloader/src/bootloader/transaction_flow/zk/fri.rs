@@ -15,6 +15,7 @@
 //! is valid only when that hash matches the one the submitter claimed.
 use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::transaction::Transaction;
 use crypto::{sha3::Keccak256, MiniDigest};
 #[cfg(not(target_arch = "riscv32"))]
 use prover::nd_source_std;
@@ -22,6 +23,7 @@ use prover::nd_source_std;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
 
@@ -38,6 +40,44 @@ pub(super) fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) 
         hasher.update(word.to_le_bytes());
     }
     Bytes32::from_array(hasher.finalize())
+}
+
+/// Verify every claimed `statement_versioned_hash` carried by a
+/// `FriProofTx` and return the list of hashes, in declaration order,
+/// so the caller can install it on the transaction-level metadata
+/// together with the rest of the tx context.
+///
+/// This is called as the very first step of `FriProofTx` validation.
+/// Any failure here (non-gateway chain, malformed hash list entry,
+/// missing sidecar, bad proof, statement-hash mismatch) is mapped to
+/// `TxError::Validation`, which causes the block loop to drop the tx
+/// from the block — no fees charged, no state committed, no receipt
+/// in the block header. The `tx_results` entry is still recorded so
+/// the sequencer can report the failure back to the submitter.
+pub(super) fn verify_all_fri_statements<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<alloc::vec::Vec<Bytes32>, TxError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: GatewayModeMetadata,
+{
+    if !system.metadata.is_gateway() {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofTxNotSupported,
+        ));
+    }
+
+    let mut verified = alloc::vec::Vec::new();
+    if let Some(statement_versioned_hashes) = transaction.statement_versioned_hashes() {
+        for statement_versioned_hash in statement_versioned_hashes.iter() {
+            let statement_versioned_hash =
+                Bytes32::from_array(*statement_versioned_hash.map_err(TxError::Validation)?);
+            verify_fri_statement(system, statement_versioned_hash)?;
+            verified.push(statement_versioned_hash);
+        }
+    }
+    Ok(verified)
 }
 
 /// Verify a single claimed `statement_versioned_hash` for the current
@@ -164,10 +204,7 @@ fn drain_fri_verifier_iterator() -> usize {
     remaining
 }
 
-fn check_statement_hash_matches(
-    output: &[u32; 16],
-    expected: Bytes32,
-) -> Result<(), TxError> {
+fn check_statement_hash_matches(output: &[u32; 16], expected: Bytes32) -> Result<(), TxError> {
     let computed = statement_versioned_hash_from_verifier_output(output);
     if computed != expected {
         return Err(TxError::Validation(

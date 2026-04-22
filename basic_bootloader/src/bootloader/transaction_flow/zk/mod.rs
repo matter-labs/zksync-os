@@ -273,29 +273,14 @@ where
 
     fn before_execute_transaction_payload(
         system: &mut System<S>,
-        transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        _transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
-        if transaction.is_fri_proof() {
-            if !system.metadata.is_gateway() {
-                return Err(TxError::Validation(
-                    InvalidTransaction::FriProofTxNotSupported,
-                ));
-            }
-
-            if let Some(statement_versioned_hashes) = transaction.statement_versioned_hashes() {
-                for statement_versioned_hash in statement_versioned_hashes.iter() {
-                    let statement_versioned_hash = Bytes32::from_array(
-                        *statement_versioned_hash.map_err(TxError::Validation)?,
-                    );
-                    fri::verify_fri_statement(system, statement_versioned_hash)?;
-                    system
-                        .metadata
-                        .push_verified_fri_statement(statement_versioned_hash);
-                }
-            }
-        }
+        // FRI proof verification for `FriProofTx` runs as the first
+        // step of `validate_and_prepare_context`, so by the time we
+        // reach here the `verified_fri_statements` list on the tx-level
+        // metadata is already populated.
 
         // Charge for validation pubdata
         let (validation_pubdata, to_charge_for_pubdata) =

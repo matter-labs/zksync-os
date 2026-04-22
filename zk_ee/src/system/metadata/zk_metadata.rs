@@ -43,7 +43,8 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
         self.blobs.get(idx).copied()
     }
     fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
-        self.verified_fri_statements.contains(statement_versioned_hash)
+        self.verified_fri_statements
+            .contains(statement_versioned_hash)
     }
     fn push_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
         self.verified_fri_statements.push(statement_versioned_hash);
