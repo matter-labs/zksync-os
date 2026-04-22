@@ -243,8 +243,6 @@ jobs:
             - name: Install cargo-fuzz
               run: cargo install cargo-fuzz --locked
             - name: Run regression tests
-              # fuzz.sh regression -> prepare() builds the zksync_os RISC-V
-              # binary via dump_bin.sh internally.
               working-directory: ./tests/fuzzer
               run: ./fuzz.sh regression
 

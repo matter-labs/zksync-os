@@ -312,10 +312,7 @@ function regression() {
 
     prepare
 
-    # -s none: regression replay does not need AddressSanitizer (the goal is
-    # to re-verify known inputs, not to rediscover UB). Dropping it also
-    # skips the implicit -Zbuild-std (stdlib rebuild), which is the single
-    # largest cost in `cargo fuzz build`.
+    # -s none: regression replay does not need AddressSanitizer
     RUST_MIN_STACK=33554432 cargo fuzz build -s none
     echo "Running regression tests on all fuzz targets..."
 
