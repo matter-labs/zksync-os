@@ -240,15 +240,13 @@ jobs:
                   rustup set profile minimal
                   cargo install cargo-binutils --locked
             - uses: ./.github/actions/install-cargo-airbender
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  ./dump_bin.sh --type for-tests
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz --locked
             - name: Run regression tests
+              # fuzz.sh regression -> prepare() builds the zksync_os RISC-V
+              # binary via dump_bin.sh internally.
               working-directory: ./tests/fuzzer
-              run: |
-                  ./fuzz.sh install
-                  ./fuzz.sh regression
+              run: ./fuzz.sh regression
 
     check_app_bin:
         name: Check that binaries can be built
