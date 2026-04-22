@@ -173,7 +173,7 @@ fn read_u32_words(path: &std::path::Path) -> Vec<u32> {
     let bytes =
         fs::read(path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
     assert!(
-        bytes.len() % 4 == 0,
+        bytes.len().is_multiple_of(4),
         "{} is not word-aligned: {} bytes",
         path.display(),
         bytes.len()
