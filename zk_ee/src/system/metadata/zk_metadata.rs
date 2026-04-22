@@ -372,10 +372,7 @@ mod tests {
         // Duplicates are intentionally preserved, not deduplicated.
         meta.push_verified_fri_statement(h1);
         assert_eq!(meta.verified_fri_statements.len(), 3);
-        assert_eq!(
-            meta.verified_fri_statements.as_slice(),
-            &[h1, h2, h1][..]
-        );
+        assert_eq!(meta.verified_fri_statements.as_slice(), &[h1, h2, h1][..]);
     }
 
     /// Pushing beyond `MAX_FRI_STATEMENTS_PER_TX` is an invariant
