@@ -963,9 +963,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let dist_dir = get_zksync_os_dist_dir(&app);
 
             let now = std::time::Instant::now();
-            let mut runner = zksync_os_runner::Runner::new(dist_dir.clone());
+            let mut runner = zksync_os_runner::Runner::new(dist_dir);
             if let Some(fg_options) = flamegraph {
-                runner = runner.with_flamegraph(fg_options, Some(dist_dir.join("app.elf")));
+                runner = runner.with_flamegraph(fg_options);
             }
             let zksync_os_runner::RunResult {
                 output: proof_output,

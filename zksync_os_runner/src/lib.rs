@@ -42,7 +42,6 @@ pub struct Runner {
     dist_dir: PathBuf,
     cycles: usize,
     flamegraph: Option<FlamegraphOptions>,
-    sym_path: Option<PathBuf>,
 }
 
 impl Runner {
@@ -51,7 +50,6 @@ impl Runner {
             dist_dir,
             cycles: DEFAULT_CYCLE_LIMIT,
             flamegraph: None,
-            sym_path: None,
         }
     }
 
@@ -60,15 +58,10 @@ impl Runner {
         self
     }
 
-    /// Enable flamegraph profiling. `sym_path` is the path to the ELF symbols
-    /// file used to resolve stack frames; if `None`, frames are raw addresses.
-    pub fn with_flamegraph(
-        mut self,
-        options: FlamegraphOptions,
-        sym_path: Option<PathBuf>,
-    ) -> Self {
+    /// Enable flamegraph profiling. Stack frames are resolved against
+    /// `<dist_dir>/app.elf` (always produced by `cargo airbender build`).
+    pub fn with_flamegraph(mut self, options: FlamegraphOptions) -> Self {
         self.flamegraph = Some(options);
-        self.sym_path = sym_path;
         self
     }
 
@@ -90,7 +83,7 @@ impl Runner {
                 output: fg_options.output_path,
                 sampling_rate: fg_options.frequency_recip,
                 inverse: false,
-                elf_path: self.sym_path,
+                elf_path: Some(self.dist_dir.join("app.elf")),
             };
             builder = builder.with_flamegraph(flamegraph_config);
         }
