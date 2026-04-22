@@ -26,7 +26,7 @@ pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
     pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_BLOCK }>,
-    pub verified_fri_statements: alloc::vec::Vec<Bytes32>,
+    pub verified_fri_statements: arrayvec::ArrayVec<Bytes32, { MAX_FRI_STATEMENTS_PER_TX }>,
 }
 
 impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<EthereumIOTypesConfig> {
@@ -47,7 +47,12 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
             .contains(statement_versioned_hash)
     }
     fn push_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
-        self.verified_fri_statements.push(statement_versioned_hash);
+        // Capacity is enforced by the validator (see
+        // `verify_all_fri_statements`), so reaching the cap here is an
+        // invariant violation — not a user-reachable path.
+        self.verified_fri_statements
+            .try_push(statement_versioned_hash)
+            .expect("FRI statement list exceeded MAX_FRI_STATEMENTS_PER_TX");
     }
 }
 
@@ -340,5 +345,49 @@ mod tests {
         let deserialized = BlockMetadataFromOracle::from_iter(&mut iter).unwrap();
 
         assert_eq!(original, deserialized);
+    }
+
+    /// Locks in the multi-hash contract on `TxLevelMetadata`:
+    ///   - `push_verified_fri_statement` appends in order
+    ///   - `is_fri_statement_verified` finds hashes at any position
+    ///   - unknown hashes return `false`
+    ///   - duplicates are preserved (the trait docs say a `FriProofTx`
+    ///     carrying a duplicate verifies twice)
+    #[test]
+    fn tx_metadata_accumulates_multiple_fri_statements() {
+        let mut meta = TxLevelMetadata::<EthereumIOTypesConfig>::default();
+        let h1 = Bytes32::from_array([1u8; 32]);
+        let h2 = Bytes32::from_array([2u8; 32]);
+        let h3 = Bytes32::from_array([3u8; 32]);
+
+        assert!(!meta.is_fri_statement_verified(&h1));
+
+        meta.push_verified_fri_statement(h1);
+        meta.push_verified_fri_statement(h2);
+
+        assert!(meta.is_fri_statement_verified(&h1));
+        assert!(meta.is_fri_statement_verified(&h2));
+        assert!(!meta.is_fri_statement_verified(&h3));
+
+        // Duplicates are intentionally preserved, not deduplicated.
+        meta.push_verified_fri_statement(h1);
+        assert_eq!(meta.verified_fri_statements.len(), 3);
+        assert_eq!(
+            meta.verified_fri_statements.as_slice(),
+            &[h1, h2, h1][..]
+        );
+    }
+
+    /// Pushing beyond `MAX_FRI_STATEMENTS_PER_TX` is an invariant
+    /// violation guarded at the validator level — the metadata impl
+    /// itself panics when over-pushed, matching the contract on
+    /// `BasicTransactionMetadata::push_verified_fri_statement`.
+    #[test]
+    #[should_panic(expected = "FRI statement list exceeded")]
+    fn tx_metadata_push_panics_past_cap() {
+        let mut meta = TxLevelMetadata::<EthereumIOTypesConfig>::default();
+        for i in 0..=MAX_FRI_STATEMENTS_PER_TX {
+            meta.push_verified_fri_statement(Bytes32::from_array([i as u8; 32]));
+        }
     }
 }

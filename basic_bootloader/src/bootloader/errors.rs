@@ -132,6 +132,8 @@ pub enum InvalidTransaction {
     FriProofVerificationFailed,
     /// FRI proof verified, but did not bind to the referenced statement hash.
     FriProofStatementHashMismatch,
+    /// FRI proof tx carries more than `MAX_FRI_STATEMENTS_PER_TX` hashes.
+    TooManyFriStatements,
 }
 
 ///

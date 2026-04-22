@@ -1503,6 +1503,64 @@ mod fri_precompile_e2e {
         B256::from(keccak256(&buf).0)
     }
 
+    /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
+    ///
+    /// Simulates the submitter side: decompress the on-disk fixture, decode
+    /// it, run the host-side verifier to derive `statement_versioned_hash`.
+    /// Returns `None` when the fixture is absent so callers can silent-skip.
+    fn load_proof_fixture(
+        fixture_relative: &str,
+        setup_path: &PathBuf,
+        layout_path: &PathBuf,
+    ) -> Option<(Vec<u8>, B256)> {
+        let proof_path = resolve_path("FRI_ORACLE_PATH_UNUSED", fixture_relative);
+        if !proof_path.exists() {
+            eprintln!(
+                "skipping FRI test: missing fixture {}",
+                proof_path.display()
+            );
+            return None;
+        }
+
+        let fixture_bytes = std::fs::read(&proof_path).expect("read proof");
+        let proof_bytes = maybe_decompress(&fixture_bytes);
+        let proof: UnrolledProgramProof = decode_bincode(&proof_bytes, "UnrolledProgramProof");
+        let (setup, compiled_layouts) =
+            ensure_recursion_unified_artifacts(&proof, setup_path, layout_path);
+        let verifier_output =
+            verify_proof_in_unified_layer(&proof, &setup, &compiled_layouts, false)
+                .expect("proof must verify");
+        let stmt_hash = statement_versioned_hash(&verifier_output);
+        Some((proof_bytes, stmt_hash))
+    }
+
+    fn default_setup_and_layout_paths() -> (PathBuf, PathBuf) {
+        let setup_path = resolve_path(
+            "FRI_SETUP_PATH",
+            "tests/fixtures/fri/recursion_unified_setup.bin",
+        );
+        let layout_path = resolve_path(
+            "FRI_LAYOUT_PATH",
+            "tests/fixtures/fri/recursion_unified_layouts.bin",
+        );
+        (setup_path, layout_path)
+    }
+
+    fn load_verifier_artifacts(
+        setup_path: &PathBuf,
+        layout_path: &PathBuf,
+    ) -> Option<FriVerifierArtifacts> {
+        if !setup_path.exists() || !layout_path.exists() {
+            return None;
+        }
+        let setup_bytes = std::fs::read(setup_path).expect("read setup");
+        let layout_bytes = std::fs::read(layout_path).expect("read layout");
+        Some(FriVerifierArtifacts {
+            setup: decode_bincode(&setup_bytes, "UnrolledProgramSetup"),
+            compiled_layouts: decode_bincode(&layout_bytes, "CompiledCircuitsSet"),
+        })
+    }
+
     /// Full end-to-end test: real Airbender proof → FRI precompile returns true.
     ///
     /// Loads a gzip-compressed `UnrolledProgramProof` fixture from disk, hands
@@ -1623,5 +1681,147 @@ mod fri_precompile_e2e {
             }
             other => panic!("expected success with true return, got: {other:?}"),
         }
+    }
+
+    /// E2E: a single `FRI_PROOF_TX` that carries two distinct verified
+    /// statement hashes. Both must verify, both must land on the
+    /// tx-level metadata, and the precompile must find both when
+    /// queried. We query the second hash (not the first) as calldata to
+    /// prove the predicate looks past position 0.
+    #[test]
+    fn fri_precompile_finds_any_of_multiple_verified_proofs() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+
+        let Some((proof_bytes_1, stmt_hash_1)) = load_proof_fixture(
+            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
+            &setup_path,
+            &layout_path,
+        ) else {
+            return;
+        };
+        let Some((proof_bytes_2, stmt_hash_2)) = load_proof_fixture(
+            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin",
+            &setup_path,
+            &layout_path,
+        ) else {
+            return;
+        };
+        assert_ne!(
+            stmt_hash_1, stmt_hash_2,
+            "fixtures must produce distinct statement hashes to exercise the multi-hash path"
+        );
+
+        let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
+            .expect("artifacts must be present if fixtures are");
+
+        let h1 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash_1.0);
+        let h2 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash_2.0);
+
+        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
+            [(h1, proof_bytes_1), (h2, proof_bytes_2)],
+            artifacts,
+        );
+        let wallet = tester.prefunded_random_signer();
+
+        // `input: stmt_hash_2.0` asks the precompile about the second
+        // hash (position 1 in the Vec), proving `contains` scans past
+        // index 0.
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 5_000_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: stmt_hash_2.0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![stmt_hash_1, stmt_hash_2],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        assert!(
+            tx_succeeded(&output, 0),
+            "multi-hash FRI_PROOF_TX must succeed, got: {:?}",
+            output.tx_results[0]
+        );
+        let result = output.tx_results[0].as_ref().unwrap();
+        match &result.execution_result {
+            rig::zksync_os_interface::types::ExecutionResult::Success(ExecutionOutput::Call(
+                data,
+            )) => {
+                let mut expected = [0u8; 32];
+                expected[31] = 1;
+                assert_eq!(
+                    data.as_slice(),
+                    &expected,
+                    "precompile must return true for stmt_hash_2, even though it is not the first hash pushed"
+                );
+            }
+            other => panic!("expected success with true return, got: {other:?}"),
+        }
+    }
+
+    /// Negative E2E: a `FRI_PROOF_TX` whose statement-hash list mixes
+    /// one valid hash and one hash that the sidecar knows nothing
+    /// about. The whole tx must be dropped from the block — the valid
+    /// hash from position 0 must NOT end up verified, because we reject
+    /// the tx before any hash gets pushed to metadata.
+    #[test]
+    fn fri_proof_tx_dropped_when_any_proof_missing() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+
+        let Some((valid_proof_bytes, valid_stmt_hash)) = load_proof_fixture(
+            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
+            &setup_path,
+            &layout_path,
+        ) else {
+            return;
+        };
+
+        let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
+            .expect("artifacts must be present if fixture is");
+
+        // The sidecar knows about `valid_stmt_hash` but NOT about
+        // `missing_stmt_hash` — the admission path failed to wire up
+        // the proof for that claim.
+        let missing_stmt_hash = B256::from([0xffu8; 32]);
+        assert_ne!(missing_stmt_hash, valid_stmt_hash);
+
+        let valid_h = rig::zk_ee::utils::Bytes32::from_array(valid_stmt_hash.0);
+        let valid_proof_bytes_for_sidecar = valid_proof_bytes;
+
+        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
+            [(valid_h, valid_proof_bytes_for_sidecar)],
+            artifacts,
+        );
+        let wallet = tester.prefunded_random_signer();
+
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 5_000_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: valid_stmt_hash.0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![valid_stmt_hash, missing_stmt_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        // tx must be dropped (Err in tx_results), not included-and-reverted.
+        assert!(
+            output.tx_results[0].is_err(),
+            "tx with a missing sidecar entry must be dropped; got: {:?}",
+            output.tx_results[0]
+        );
     }
 }

@@ -73,7 +73,7 @@ where
     let verified_fri_statements = if transaction.is_fri_proof() {
         super::fri::verify_all_fri_statements(system, transaction)?
     } else {
-        alloc::vec::Vec::new()
+        arrayvec::ArrayVec::new()
     };
 
     // safe to panic, validated by the structure

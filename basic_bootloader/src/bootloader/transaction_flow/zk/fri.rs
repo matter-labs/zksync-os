@@ -23,6 +23,7 @@ use prover::nd_source_std;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
 use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
@@ -57,7 +58,7 @@ pub(super) fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) 
 pub(super) fn verify_all_fri_statements<S: EthereumLikeTypes>(
     system: &mut System<S>,
     transaction: &Transaction<S::Allocator>,
-) -> Result<alloc::vec::Vec<Bytes32>, TxError>
+) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: GatewayModeMetadata,
@@ -68,13 +69,23 @@ where
         ));
     }
 
-    let mut verified = alloc::vec::Vec::new();
+    let mut verified = arrayvec::ArrayVec::<Bytes32, MAX_FRI_STATEMENTS_PER_TX>::new();
     if let Some(statement_versioned_hashes) = transaction.statement_versioned_hashes() {
+        // Reject the tx before running any verifier work if the hash
+        // list is larger than the per-tx cap. This keeps the validator
+        // O(cap) and bounds the stack size of `TxLevelMetadata`.
+        if statement_versioned_hashes.count > MAX_FRI_STATEMENTS_PER_TX {
+            return Err(TxError::Validation(
+                InvalidTransaction::TooManyFriStatements,
+            ));
+        }
         for statement_versioned_hash in statement_versioned_hashes.iter() {
             let statement_versioned_hash =
                 Bytes32::from_array(*statement_versioned_hash.map_err(TxError::Validation)?);
             verify_fri_statement(system, statement_versioned_hash)?;
-            verified.push(statement_versioned_hash);
+            verified
+                .try_push(statement_versioned_hash)
+                .expect("cap already checked against MAX_FRI_STATEMENTS_PER_TX");
         }
     }
     Ok(verified)
@@ -108,14 +119,21 @@ where
     #[cfg(target_arch = "riscv32")]
     {
         // On RISC-V the in-circuit verifier reads the proof stream via
-        // the CSR-backed non-determinism source, not the host oracle,
-        // so we only need to drain the bookkeeping response here.
-        drop(
-            system
-                .io
-                .oracle()
-                .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?,
-        );
+        // the CSR-backed non-determinism source, not through this
+        // host-side iterator. We still issue the query both to drive
+        // the CSR protocol AND to detect the sidecar-missing case: the
+        // CSR bridge yields `Some(_)` on the first `next()` when the
+        // sidecar has an entry, and `None` when it doesn't. Calling
+        // the in-circuit verifier with no proof data would otherwise
+        // abort the binary.
+        let mut response = system
+            .io
+            .oracle()
+            .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
+        response.next().ok_or(TxError::Validation(
+            InvalidTransaction::FriProofSidecarMissing,
+        ))?;
+        drop(response);
         let output = crate::bootloader::fri_verifier::run_fri_verifier();
         check_statement_hash_matches(&output, statement_versioned_hash)
     }

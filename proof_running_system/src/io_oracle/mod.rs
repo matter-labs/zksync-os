@@ -17,12 +17,20 @@ pub struct CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation> {
 
 pub struct CsrBasedIOOracleIterator<I: NonDeterminismCSRSourceImplementation> {
     remaining: usize,
+    /// Pre-read value yielded before any CSR read. Used by the FRI
+    /// query to expose `oracle_stream_len` as the first `next()`
+    /// result so callers can distinguish present-sidecar (some) from
+    /// missing-sidecar (none) without consuming an extra CSR word.
+    prefetched: Option<usize>,
     _marker: core::marker::PhantomData<I>,
 }
 
 impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIterator<I> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(v) = self.prefetched.take() {
+            return Some(v);
+        }
         if self.remaining == 0 {
             None
         } else {
@@ -34,7 +42,7 @@ impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIter
 
 impl<I: NonDeterminismCSRSourceImplementation> ExactSizeIterator for CsrBasedIOOracleIterator<I> {
     fn len(&self) -> usize {
-        self.remaining
+        self.remaining + usize::from(self.prefetched.is_some())
     }
 }
 
@@ -85,17 +93,35 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             //   [oracle_stream_len, word_0, word_1, ..., word_N-1].
             //
             // The host-side CSR bridge transports each host `usize` as two
-            // 32-bit reads. Consume the outer response length and the
-            // count-prefix pair here. The remaining packed proof words are then
-            // read directly by the Airbender verifier as low/high CSR halves.
+            // 32-bit reads. Consume the outer response length and, when
+            // present, the count-prefix pair. The remaining packed proof
+            // words are read directly by the Airbender verifier as
+            // low/high CSR halves, not through this iterator.
+            //
+            // `response_len == 0` means the sidecar has no entry for
+            // this statement hash. Return an iterator with nothing
+            // prefetched so the caller's `.next()` yields `None` and
+            // the bootloader maps it to `FriProofSidecarMissing`,
+            // mirroring forward-mode behavior.
             let response_len = NDS::csr_read_impl();
-            assert!(response_len != 0);
+            if response_len == 0 {
+                return Ok(CsrBasedIOOracleIterator::<NDS> {
+                    remaining: 0,
+                    prefetched: None,
+                    _marker: core::marker::PhantomData,
+                });
+            }
             let oracle_stream_len = NDS::csr_read_impl();
             let oracle_stream_len_high = NDS::csr_read_impl();
             assert!(oracle_stream_len_high == 0);
             assert!(2 * (1 + oracle_stream_len.div_ceil(2)) == response_len);
+            // Prefetch the stream length so the caller's `.next()`
+            // yields `Some(oracle_stream_len)` on a present sidecar,
+            // distinguishing it from the missing case above. No extra
+            // CSR read is consumed.
             return Ok(CsrBasedIOOracleIterator::<NDS> {
                 remaining: 0,
+                prefetched: Some(oracle_stream_len),
                 _marker: core::marker::PhantomData,
             });
         }
@@ -104,6 +130,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         let remaining_len = NDS::csr_read_impl();
         let it = CsrBasedIOOracleIterator::<NDS> {
             remaining: remaining_len,
+            prefetched: None,
             _marker: core::marker::PhantomData,
         };
 

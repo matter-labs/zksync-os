@@ -151,6 +151,7 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofSidecarMissing => {InvalidTransaction::InvalidStructure}
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofVerificationFailed => {InvalidTransaction::InvalidStructure}
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofStatementHashMismatch => {InvalidTransaction::InvalidStructure}
+            basic_bootloader::bootloader::errors::InvalidTransaction::TooManyFriStatements => {InvalidTransaction::InvalidStructure}
         }
     }
 }
