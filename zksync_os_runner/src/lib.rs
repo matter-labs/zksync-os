@@ -157,7 +157,10 @@ fn run_inner(
 
     #[cfg(feature = "cycle_marker")]
     {
-        let results = cycle_marker::print_cycle_markers(_cycle_markers);
+        // `cycle_marker::print_cycle_markers` takes `airbender_host::CycleMarker`
+        // but our VM yields `riscv_transpiler::cycle::CycleMarker`. The two
+        // types carry the same data and `From` is implemented upstream.
+        let results = cycle_marker::print_cycle_markers(_cycle_markers.into());
         block_effective = results.block_effective;
     }
 

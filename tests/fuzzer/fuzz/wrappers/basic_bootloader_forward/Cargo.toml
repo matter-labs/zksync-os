@@ -21,6 +21,13 @@ strum_macros = "0.27.1"
 paste = "1.0.15"
 cfg-if = "*"
 serde-big-array = "0.5"
+# Used by the FRI proof verification path in
+# basic_bootloader/src/bootloader/transaction_flow/zk/fri.rs and
+# basic_bootloader/src/bootloader/fri_verifier.rs. The wrapper rebuilds
+# basic_bootloader's lib.rs, so it needs the same deps the main crate
+# declares for the non-RISC-V target.
+prover = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", features = ["prover"] }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
