@@ -107,7 +107,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
     PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
-    31 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 30 - worst case contribution to rlp encoding (5 length of payload,  21 address, 5 keys list length encoding)
+    31 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 31 - worst case contribution to rlp encoding (5 length of payload,  21 address, 5 keys list length encoding)
 
 /// L2 tx access list storage slot computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
@@ -123,7 +123,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     ACCOUNT_UPDATE_COST + // nonce update
     ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
-    132 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for tx signing + full hash, 133 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 2 list overhead)
+    132 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for tx signing + full hash, 132 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 2 list overhead)
 
 /// Native computational overhead of 7702 auth.
 pub const PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
