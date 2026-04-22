@@ -55,20 +55,20 @@ jobs:
           ref: ${{ needs.merge-base.outputs.sha }}
           fetch-depth: 1
           submodules: recursive
+      # bench-base checks out the merge-base commit, which may predate the
+      # setup-toolchain composite action, so do the setup inline here.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          cargo install cargo-binutils --locked
+          cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: |
-          rustup set profile minimal
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils --locked
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
-          # Build for_tests binary with cycle markers for benchmarking.
-          # Fall back to plain for-tests on older base branches that lack this type.
-          ./dump_bin.sh --type for-tests-benchmarking || ./dump_bin.sh --type for-tests
+          ./dump_bin.sh --type for-tests-benchmarking
           ./dump_bin.sh --type evm-replay-benchmarking
       - name: Run benchmarks
         shell: bash
@@ -105,14 +105,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
           submodules: recursive
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-      - name: Setup
-        run: |
-          rustup set profile minimal
-          cargo install cargo-binutils --locked
-      - uses: ./.github/actions/install-cargo-airbender
+      - uses: ./.github/actions/setup-toolchain
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: |
