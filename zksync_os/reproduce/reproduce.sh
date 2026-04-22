@@ -1,35 +1,35 @@
 #!/bin/bash
 
-# Make sure to run from the main zksync-os directory.
-
 set -euo pipefail
 
-# Set source date epoch for reproducible builds
-SDE="$(git log -1 --format=%ct || echo 1700000000)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ZKSYNC_OS_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(dirname "$ZKSYNC_OS_DIR")"
 
-# create a fresh docker
-docker build \
-  --build-arg SOURCE_DATE_EPOCH="$SDE" \
-  --platform linux/amd64 \
-  -t zksync-os-bin \
-  -f zksync_os/reproduce/Dockerfile .
+# `cargo airbender build --reproducible` passes `--locked` to cargo, so
+# both the workspace root and the guest crate need a Cargo.lock regenerated
+cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$REPO_ROOT/Cargo.toml"
+cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$ZKSYNC_OS_DIR/Cargo.toml"
 
-cid="$(docker create --platform=linux/amd64 zksync-os-bin)"
+cd "$ZKSYNC_OS_DIR"
 
-# Map of dist/<app>/app.bin -> flat output name for backwards compatibility
-declare -A APPS=(
-    [for_tests]=for_tests.bin
-    [evm_replay]=evm_replay.bin
-    [singleblock_batch]=singleblock_batch.bin
-    [singleblock_batch_logging_enabled]=singleblock_batch_logging_enabled.bin
-    [multiblock_batch]=multiblock_batch.bin
-    [multiblock_batch_logging_enabled]=multiblock_batch_logging_enabled.bin
+TYPES=(
+    for-tests
+    evm-replay
+    singleblock-batch
+    singleblock-batch-logging-enabled
+    multiblock-batch
+    multiblock-batch-logging-enabled
 )
 
-for APP in "${!APPS[@]}"; do
-    OUT="${APPS[$APP]}"
-    docker cp "$cid":/zksync_os/zksync_os/dist/"$APP"/app.bin zksync_os/"$OUT"
-    md5sum "zksync_os/$OUT"
+for TYPE in "${TYPES[@]}"; do
+    ./dump_bin.sh --type "$TYPE" --reproducible
 done
 
-docker rm -f "$cid" >/dev/null
+# Copy dist/<app>/app.bin -> zksync_os/<app>.bin for backwards compatibility
+# with downstream consumers (release workflow, zksync-era, etc.).
+for TYPE in "${TYPES[@]}"; do
+    APP="${TYPE//-/_}"
+    cp -f "dist/${APP}/app.bin" "${APP}.bin"
+    md5sum "${APP}.bin"
+done

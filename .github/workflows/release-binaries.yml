@@ -22,6 +22,17 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          cargo install cargo-binutils --locked
+
+      - uses: ./.github/actions/install-cargo-airbender
+
       - name: Build binaries using reproducible script
         run: zksync_os/reproduce/reproduce.sh
 
