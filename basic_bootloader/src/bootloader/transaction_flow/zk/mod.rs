@@ -292,7 +292,7 @@ where
                     fri::verify_fri_statement(system, statement_versioned_hash)?;
                     system
                         .metadata
-                        .set_verified_fri_statement(statement_versioned_hash);
+                        .push_verified_fri_statement(statement_versioned_hash);
                 }
             }
         }

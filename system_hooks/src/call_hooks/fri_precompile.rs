@@ -58,8 +58,7 @@ where
 
     let verified = system
         .metadata
-        .verified_fri_statement()
-        .is_some_and(|h| h == statement_versioned_hash);
+        .is_fri_statement_verified(&statement_versioned_hash);
 
     // ABI-encode bool: 31 zero bytes followed by 0x01 (true) or 0x00 (false).
     let mut returndata_bytes = [0u8; 32];

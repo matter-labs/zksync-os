@@ -26,7 +26,7 @@ pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
     pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_BLOCK }>,
-    pub verified_fri_statement: Option<Bytes32>,
+    pub verified_fri_statements: alloc::vec::Vec<Bytes32>,
 }
 
 impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<EthereumIOTypesConfig> {
@@ -42,11 +42,11 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
     fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
         self.blobs.get(idx).copied()
     }
-    fn verified_fri_statement(&self) -> Option<Bytes32> {
-        self.verified_fri_statement
+    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
+        self.verified_fri_statements.contains(statement_versioned_hash)
     }
-    fn set_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
-        self.verified_fri_statement = Some(statement_versioned_hash);
+    fn push_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
+        self.verified_fri_statements.push(statement_versioned_hash);
     }
 }
 

@@ -55,11 +55,18 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
     /// Hash (commitment) of the `idx`-th blob for this transaction, if present.
     fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32>;
 
-    /// FRI statement hash verified during this transaction's pre-execution, if any.
-    fn verified_fri_statement(&self) -> Option<Bytes32>;
+    /// Returns whether a given FRI statement hash was verified during
+    /// this transaction's pre-execution. A `FriProofTx` may verify more
+    /// than one statement; this predicate lets callers check membership
+    /// without iterating the full list.
+    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool;
 
-    /// Record that a FRI statement hash was verified for the current transaction.
-    fn set_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32);
+    /// Record that a FRI statement hash was verified for the current
+    /// transaction. Appends to the per-tx list; duplicates are
+    /// deliberately not deduplicated — a `FriProofTx` carrying a
+    /// duplicate hash in its `statement_versioned_hashes` list verifies
+    /// that statement twice, and the metadata reflects that intent.
+    fn push_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32);
 }
 
 /// ZKsync-specific pricing knobs that are *not* standardized by Ethereum.

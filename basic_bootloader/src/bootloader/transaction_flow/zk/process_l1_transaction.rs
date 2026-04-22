@@ -509,7 +509,7 @@ where
         tx_gas_price: gas_price,
         tx_origin: from,
         blobs: ArrayVec::new(),
-        verified_fri_statement: None,
+        verified_fri_statements: alloc::vec::Vec::new(),
     });
 
     // Start a frame, to revert minting of value if execution fails
