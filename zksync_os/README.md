@@ -16,7 +16,7 @@ It will request data by writing the payload to that register, and afterwards try
 
 During simulation, the airbender-platform transpiler intercepts the opcodes writing to
 this register and serves pre-recorded non-determinism words passed to
-`zksync_os_runner::run`.
+`zksync_os_runner::Runner::run`.
 
 This means that zksync_os code MUST be run within the transpiler VM environment.
 
