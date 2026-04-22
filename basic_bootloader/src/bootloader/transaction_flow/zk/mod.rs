@@ -1,6 +1,5 @@
 use crate::alloc::string::ToString;
 use crate::bootloader::block_flow::BlockTransactionsDataKeeper;
-use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{BootloaderInterfaceError, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -19,21 +18,14 @@ use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::TxProcessingOutput;
 use alloc::format;
 use core::fmt::Write;
-use crypto::{sha3::Keccak256, MiniDigest};
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
 use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
-#[cfg(not(target_arch = "riscv32"))]
-use prover::nd_source_std;
 use ruint::aliases::U256;
-#[cfg(not(target_arch = "riscv32"))]
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
-use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -50,6 +42,7 @@ use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
+mod fri;
 pub mod process_l1_transaction;
 mod validation_impl;
 
@@ -170,104 +163,6 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
             .field("pubdata_used", &self.pubdata_used)
             .field("to_charge_for_pubdata", &self.to_charge_for_pubdata)
             .finish()
-    }
-}
-
-fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
-    let mut hasher = Keccak256::new();
-    hasher.update([FRI_STATEMENT_HASH_VERSION]);
-    for word in output.iter() {
-        hasher.update(word.to_le_bytes());
-    }
-    Bytes32::from_array(hasher.finalize())
-}
-
-#[cfg(not(target_arch = "riscv32"))]
-fn drain_fri_verifier_iterator() -> usize {
-    let mut remaining = 0usize;
-    while nd_source_std::try_read_word().is_some() {
-        remaining += 1;
-    }
-    remaining
-}
-
-#[cfg(not(target_arch = "riscv32"))]
-fn verify_fri_statement_host<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    statement_versioned_hash: Bytes32,
-) -> Result<(), TxError>
-where
-    S::IO: IOSubsystemExt,
-{
-    let mut response = system
-        .io
-        .oracle()
-        .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
-    let oracle_stream_len = response.next().ok_or(TxError::Validation(
-        InvalidTransaction::FriProofSidecarMissing,
-    ))?;
-
-    if response.len() != oracle_stream_len.div_ceil(2) {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
-    }
-
-    let mut oracle_stream = alloc::vec::Vec::with_capacity(oracle_stream_len);
-    for packed_words in response {
-        oracle_stream.push(packed_words as u32);
-        if oracle_stream.len() < oracle_stream_len {
-            oracle_stream.push((packed_words >> 32) as u32);
-        }
-    }
-
-    nd_source_std::set_iterator(oracle_stream.into_iter());
-    let verification_result = catch_unwind(AssertUnwindSafe(|| {
-        full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer()
-    }));
-    let remaining_words = drain_fri_verifier_iterator();
-    let output = verification_result
-        .map_err(|_| TxError::Validation(InvalidTransaction::FriProofVerificationFailed))?;
-
-    if remaining_words != 0 {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
-    }
-
-    let computed_statement_hash = statement_versioned_hash_from_verifier_output(&output);
-    if computed_statement_hash != statement_versioned_hash {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofStatementHashMismatch,
-        ));
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn statement_hash_depends_on_all_verifier_words_and_version() {
-        let mut output = [0u32; 16];
-        for (idx, word) in output.iter_mut().enumerate() {
-            *word = idx as u32 + 1;
-        }
-
-        let baseline = statement_versioned_hash_from_verifier_output(&output);
-
-        output[8] ^= 0xdead_beef;
-        let changed_recursion_hash = statement_versioned_hash_from_verifier_output(&output);
-        assert_ne!(baseline, changed_recursion_hash);
-
-        let mut hasher = Keccak256::new();
-        for word in output.iter() {
-            hasher.update(word.to_le_bytes());
-        }
-        let without_version = Bytes32::from_array(hasher.finalize());
-        assert_ne!(changed_recursion_hash, without_version);
     }
 }
 
@@ -394,33 +289,10 @@ where
                     let statement_versioned_hash = Bytes32::from_array(
                         *statement_versioned_hash.map_err(TxError::Validation)?,
                     );
-                    #[cfg(not(target_arch = "riscv32"))]
-                    {
-                        verify_fri_statement_host(system, statement_versioned_hash)?;
-                        system
-                            .metadata
-                            .set_verified_fri_statement(statement_versioned_hash);
-                    }
-                    #[cfg(target_arch = "riscv32")]
-                    {
-                        drop(
-                            system
-                                .io
-                                .oracle()
-                                .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?,
-                        );
-                        let output = crate::bootloader::fri_verifier::run_fri_verifier();
-                        let computed_statement_hash =
-                            statement_versioned_hash_from_verifier_output(&output);
-                        if computed_statement_hash != statement_versioned_hash {
-                            return Err(TxError::Validation(
-                                InvalidTransaction::FriProofStatementHashMismatch,
-                            ));
-                        }
-                        system
-                            .metadata
-                            .set_verified_fri_statement(statement_versioned_hash);
-                    }
+                    fri::verify_fri_statement(system, statement_versioned_hash)?;
+                    system
+                        .metadata
+                        .set_verified_fri_statement(statement_versioned_hash);
                 }
             }
         }
