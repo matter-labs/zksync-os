@@ -23,14 +23,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -48,14 +41,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -73,14 +59,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile blake test programs for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -115,14 +94,7 @@ jobs:
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -136,14 +108,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-c3d]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -157,14 +122,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -178,14 +136,7 @@ jobs:
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
               run: ./dump_bin.sh
@@ -235,14 +186,7 @@ jobs:
             - uses: actions/setup-node@v3
               with:
                   node-version: "20"
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils --locked
-            - uses: ./.github/actions/install-cargo-airbender
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
