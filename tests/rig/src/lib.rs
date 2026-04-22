@@ -538,6 +538,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: ensures the account exists in chain state by creating an empty account if needed.
+    pub fn ensure_account_exists(&mut self, address: ruint::aliases::B160) -> &mut Self {
+        self.chain.ensure_account_exists(address);
+        self
+    }
+
     /// Setter: deploys EVM bytecode at the provided address.
     pub fn set_evm_contract(
         &mut self,

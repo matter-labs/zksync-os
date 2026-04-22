@@ -24,9 +24,9 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
         Result<TxProcessingOutputOwned, basic_bootloader::bootloader::errors::InvalidTransaction>,
     >,
     pub new_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
-    pub block_pubdata_used: u64,
     pub tx_result_callback: TR,
     pub block_computational_native_used: u64,
+    pub block_pubdata_used: u64,
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
@@ -38,9 +38,9 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             storage_writes: vec![],
             tx_results: vec![],
             new_preimages: vec![],
-            block_pubdata_used: 0,
             tx_result_callback,
             block_computational_native_used: 0,
+            block_pubdata_used: 0,
         }
     }
 }

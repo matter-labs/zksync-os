@@ -6,7 +6,7 @@
 use rig::alloy::consensus::{TxEip1559, TxLegacy};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::TxKind;
-use rig::chain::RunConfig;
+use rig::chain::{get_zksync_os_dist_dir, RunConfig};
 use rig::forward_system::run::{
     generate_batch_proof_input, generate_legacy_batch_proof_input, BatchBlockInput,
 };
@@ -14,10 +14,8 @@ use rig::log::debug;
 use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
 use rig::zk_ee::common_structs::DACommitmentScheme;
-use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::{alloy, testing_signer, TestingFramework};
-use std::path::PathBuf;
+use rig::{testing_signer, BlockContext, BlockOutput, TestingFramework};
 
 const TEST_STACK_SIZE: usize = 64 << 20;
 
@@ -84,7 +82,7 @@ fn new_multiblock_batch_tester() -> TestingFramework {
 fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
-    let batch_tester = new_multiblock_batch_tester();
+    let mut batch_tester = new_multiblock_batch_tester();
     let block1_context = BlockContext {
         timestamp: 42,
         ..Default::default()
@@ -93,6 +91,9 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         timestamp: 43,
         ..Default::default()
     };
+
+    batch_tester.ensure_account_exists(block1_context.coinbase);
+    batch_tester.ensure_account_exists(block2_context.coinbase);
 
     let mint_tx = {
         let mint_tx = TxLegacy {
@@ -227,10 +228,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     // only equal to the legacy witness, but also produces the expected final
     // public input hash when executed by the batch prover.
 
-       let multiblock_dist_dir = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
-        .join("zksync_os")
-        .join("dist")
-        .join("multiblock_batch");
+    let multiblock_dist_dir = get_zksync_os_dist_dir(&Some("multiblock_batch".to_string()));
 
     let proof_output = zksync_os_runner::Runner::new(multiblock_dist_dir)
         .run(&batch_output.prover_input)
@@ -252,11 +250,13 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
 fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
-    let batch_tester = new_multiblock_batch_tester();
+    let mut batch_tester = new_multiblock_batch_tester();
     let block_context = BlockContext {
         timestamp: 42,
         ..Default::default()
     };
+
+    batch_tester.ensure_account_exists(block_context.coinbase);
 
     let mint_tx = {
         let mint_tx = TxLegacy {
@@ -333,10 +333,7 @@ fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         "single-block batch public input should commit to the batch output hash"
     );
 
-    let multiblock_dist_dir = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
-        .join("zksync_os")
-        .join("dist")
-        .join("multiblock_batch");
+    let multiblock_dist_dir = get_zksync_os_dist_dir(&Some("multiblock_batch".to_string()));
     let proof_output = zksync_os_runner::Runner::new(multiblock_dist_dir)
         .run(&batch_output.prover_input)
         .output;

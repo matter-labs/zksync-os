@@ -372,11 +372,11 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     oracle.add_external_processor(ReadTreeResponder {
         tree: batch_state.clone(),
     });
-    oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
+    oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
     oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
+        callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
     );
-    oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
+    oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
 
     let mut oracle = ReadWitnessSource::new(oracle);
     let mut tracer = NopTracer::default();
