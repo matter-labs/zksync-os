@@ -2,7 +2,26 @@
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
 
-    use prover::{cs::machine::Machine, field::Mersenne31Field};
+    use riscv_transpiler::ir::{
+        preprocess_bytecode, DecodingOptions, InstructionName,
+    };
+
+    /// Decoder config used to preprocess ZKsync OS binaries when
+    /// checking them for unsupported opcodes.
+    ///
+    /// Mirrors the decoder config the runtime uses in `zksync_os_runner`
+    /// so that "supported by the binary checker" matches "decodable by
+    /// the simulator." MOP is enabled because `full_statement_verifier`
+    /// (linked for Gateway FRI verification) emits `mop.rr.*` via the
+    /// Zimop extension, and the airbender `dev` prover supports MOP.
+    struct BinaryCheckerDecoderConfig;
+
+    impl DecodingOptions for BinaryCheckerDecoderConfig {
+        const SUPPORT_MOP: bool = true;
+        const SUPPORT_MUL_DIV: bool = true;
+        const SUPPORT_SIGNED_MUL_DIV: bool = false;
+        const SUPPORT_SUBWORD_MEM_ACCESS: bool = true;
+    }
 
     fn read_text_section(app_dist_path: &str) -> Vec<u32> {
         let mut binary = vec![];
@@ -26,13 +45,49 @@ mod tests {
 
     fn verify_binary(app: &str) {
         let text_section = read_text_section(app);
-        type M = prover::cs::machine::machine_configurations::full_isa_with_delegation_no_exceptions_no_signed_mul_div::FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv;
-        let unsupported_opcodes =
-            <M as Machine<Mersenne31Field>>::verify_bytecode_base(&text_section);
-        if unsupported_opcodes.len() > 0 {
-            for (pc, opcode) in unsupported_opcodes.into_iter() {
+
+        // Decode the text section with our MOP-aware decoder options;
+        // any slot that ends up as `InstructionName::Illegal` is an
+        // opcode the simulator would not recognize.
+        //
+        // Two classes of `Illegal` decodes are expected and benign:
+        //
+        //   1. Delegation fillers. The decoder compresses Blake2s /
+        //      BigInt / KeccakSpecial5 CSR dispatches (a repeated
+        //      opcode) into a single `ZicsrDelegation` instruction and
+        //      leaves the N-1 filler slots as `Illegal`. We skip any
+        //      `Illegal` whose raw opcode matches the preceding slot.
+        //
+        //   2. Canonical UNIMP (`csrrw x0, cycle, x0` → `0xc0001073`).
+        //      The Rust compiler emits this on `-C panic=abort` to
+        //      mark unreachable code paths. It's never executed in a
+        //      well-formed run and airbender explicitly treats this
+        //      encoding as the canonical UNIMP marker.
+        const CANONICAL_UNIMP: u32 = 0xc0001073;
+
+        let instructions = preprocess_bytecode::<BinaryCheckerDecoderConfig>(&text_section);
+        let illegal: Vec<(usize, u32)> = instructions
+            .iter()
+            .enumerate()
+            .filter_map(|(pc, instr)| {
+                if instr.name != InstructionName::Illegal {
+                    return None;
+                }
+                let opcode = text_section[pc];
+                if opcode == CANONICAL_UNIMP {
+                    return None;
+                }
+                if pc > 0 && text_section[pc - 1] == opcode {
+                    return None;
+                }
+                Some((pc, opcode))
+            })
+            .collect();
+
+        if !illegal.is_empty() {
+            for (pc, opcode) in &illegal {
                 println!(
-                    "Potentially unsupported opcode 0x{:08x} at PC = 0x{:08x}",
+                    "Unsupported opcode 0x{:08x} at PC = 0x{:08x}",
                     opcode, pc
                 );
             }
