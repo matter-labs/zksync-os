@@ -44,12 +44,6 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
-// Includes:
-//  - Transferring fee to coinbase.
-//  - Transferring the gas refund.
-//  - Hashing of tx hash into rolling hash.
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
-
 /// Fixed verification budget charged for each referenced FRI statement hash in
 /// a `FRI_PROOF_TX_TYPE` transaction.
 pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 10_000_000;

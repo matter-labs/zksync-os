@@ -56,9 +56,9 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
     fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32>;
 
     /// Returns whether a given FRI statement hash was verified during
-    /// this transaction's pre-execution. A `FriProofTx` may verify more
-    /// than one statement; this predicate lets callers check membership
-    /// without iterating the full list.
+    /// this transaction's validation phase. A `FriProofTx` may verify
+    /// more than one statement; this predicate lets callers check
+    /// membership without iterating the full list.
     fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool;
 
     /// Record that a FRI statement hash was verified for the current

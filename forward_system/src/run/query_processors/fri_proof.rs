@@ -84,12 +84,15 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
 
+        // Production sidecars are populated only after the server/admission
+        // layer has decoded and verified the proof against these artifacts.
+        // Decode/flatten failures here therefore indicate a sequencer-side
+        // bug or corrupted local sidecar state, not malformed bytes accepted
+        // directly from an untrusted transaction.
+        //
         // Decode failure maps to an empty response, same as a missing
         // sidecar entry. The bootloader rejects the transaction with
-        // `FriProofSidecarMissing`. Sidecar bytes come from the
-        // operator's store keyed by a user-supplied statement hash, so
-        // we must not panic on malformed bytes (AGENTS.md: no panics on
-        // paths reachable from external input).
+        // `FriProofSidecarMissing`.
         let bincode_config = bincode_v2::config::standard();
         let Ok((proof, _)) = bincode_v2::serde::decode_from_slice::<UnrolledProgramProof, _>(
             &proof_bytes,
