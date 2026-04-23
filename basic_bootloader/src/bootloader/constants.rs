@@ -249,3 +249,13 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + TREASURY_BALANCE_INTRINSIC_PUBDATA
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
+
+/// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
+/// from block start. Accounts for the fixed envelope written by
+/// `write_pubdata`: 1 byte (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash)
+/// + 8 bytes (timestamp).
+pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 32 + 8;
+
+/// Intrinsic per-block native overhead, applied to block-limit enforcement
+/// from block start. Covers fixed pre-tx-loop system work.
+pub const BLOCK_INTRINSIC_NATIVE: u64 = 0;

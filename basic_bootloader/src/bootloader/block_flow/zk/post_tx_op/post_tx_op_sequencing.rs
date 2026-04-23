@@ -52,6 +52,8 @@ where
         )?;
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
+        result_keeper.record_block_native_used(block_data.block_computational_native_used);
+        result_keeper.record_block_pubdata_used(block_data.block_pubdata_used);
 
         let mut logger = system.get_logger();
         logger_log!(logger, "Basic header information was created\n");
