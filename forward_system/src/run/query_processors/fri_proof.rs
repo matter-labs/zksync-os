@@ -91,12 +91,10 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
         // we must not panic on malformed bytes (AGENTS.md: no panics on
         // paths reachable from external input).
         let bincode_config = bincode_v2::config::standard();
-        let Ok((proof, _)) =
-            bincode_v2::serde::decode_from_slice::<UnrolledProgramProof, _>(
-                &proof_bytes,
-                bincode_config,
-            )
-        else {
+        let Ok((proof, _)) = bincode_v2::serde::decode_from_slice::<UnrolledProgramProof, _>(
+            &proof_bytes,
+            bincode_config,
+        ) else {
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
         let oracle_stream = flatten_proof_into_responses_for_unified_recursion(

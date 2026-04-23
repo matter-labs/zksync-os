@@ -22,9 +22,12 @@ mod tests {
 
     impl DecodingOptions for BinaryCheckerDecoderConfig {
         const SUPPORT_MOP: bool = true;
-        const SUPPORT_MUL_DIV: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
-        const SUPPORT_SIGNED_MUL_DIV: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
-        const SUPPORT_SUBWORD_MEM_ACCESS: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
+        const SUPPORT_MUL_DIV: bool =
+            <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
+        const SUPPORT_SIGNED_MUL_DIV: bool =
+            <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
+        const SUPPORT_SUBWORD_MEM_ACCESS: bool =
+            <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
     }
 
     fn read_text_section(app_dist_path: &str) -> Vec<u32> {
