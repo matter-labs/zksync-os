@@ -1244,6 +1244,7 @@ fn test_precompiles() {
 // Test vectors for precompiles gated behind the `pectra` feature (EIP-152 BLAKE2F and
 // EIP-2537 BLS12-381). Values come from the EIP specifications and well-known group identities
 // (G + 0 = G, G * 1 = G, e(0, 0) = 1).
+// TODO(EVM-1409): merge with precompiles tests
 #[cfg(feature = "pectra")]
 const PECTRA_TESTS: [Test; 6] = [
     // BLAKE2F: EIP-152 test vector (rounds = 12, message = "abc" padded, f = 1).
@@ -1290,6 +1291,7 @@ const PECTRA_TESTS: [Test; 6] = [
     },
 ];
 
+// TODO(EVM-1409): merge with precompiles tests
 #[cfg(feature = "pectra")]
 #[test]
 fn test_pectra_precompiles() {
