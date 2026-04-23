@@ -114,7 +114,7 @@ impl<I: ExactSizeIterator<Item = usize>> SafeUsizeReadable for ExactSizeIterRead
 ///
 /// This is an unsafe trait that provides direct access to raw data without bounds checking.
 /// Implementers must ensure the underlying data destination has sufficient space available.
-pub trait UsizeWriteable {
+pub trait UsizeWritable {
     /// Writes a single `usize` value to the underlying data destination.
     ///
     /// # Safety
@@ -124,17 +124,17 @@ pub trait UsizeWriteable {
     unsafe fn write_usize(&mut self, value: usize);
 }
 
-/// Safe wrapper around `UsizeWriteable` that provides bounds checking.
+/// Safe wrapper around `UsizeWritable` that provides bounds checking.
 ///
-/// This trait extends `UsizeWriteable` with length information and safe writing methods
+/// This trait extends `UsizeWritable` with length information and safe writing methods
 /// that return errors instead of causing undefined behavior on insufficient space.
-pub trait SafeUsizeWritable: UsizeWriteable {
+pub trait SafeUsizeWritable: UsizeWritable {
     /// Returns the number of `usize` values that can be written.
     fn len(&self) -> usize;
 
     fn try_write(&mut self, value: usize) -> Result<(), ()> {
         unsafe {
-            UsizeWriteable::write_usize(self, value); // TODO actual checking?
+            UsizeWritable::write_usize(self, value); // TODO actual checking?
         }
         Ok(())
     }
@@ -155,7 +155,7 @@ pub trait AsUsizeWritable: Sized {
         Self: 'a;
 }
 
-/// Adapter that wraps mutable iterators to implement `UsizeWriteable`.
+/// Adapter that wraps mutable iterators to implement `UsizeWritable`.
 ///
 /// This wrapper allows any iterator over mutable references to copyable types to be used
 /// as a `usize` data destination. It handles the conversion from `usize` values to the
@@ -182,7 +182,7 @@ impl<'a, T: 'static + Clone + Copy, I: Iterator<Item = &'a mut T>> From<I>
 
 // TODO: specialize in case of aligned iterator
 
-impl<'a, I: Iterator<Item = &'a mut u8>> UsizeWriteable for WriteIterWrapper<'a, u8, I> {
+impl<'a, I: Iterator<Item = &'a mut u8>> UsizeWritable for WriteIterWrapper<'a, u8, I> {
     unsafe fn write_usize(&mut self, value: usize) {
         let le_bytes = value.to_ne_bytes();
         for (src, dst) in le_bytes.into_iter().zip(&mut self.inner) {
@@ -191,7 +191,7 @@ impl<'a, I: Iterator<Item = &'a mut u8>> UsizeWriteable for WriteIterWrapper<'a,
     }
 }
 
-impl<'a, I: Iterator<Item = &'a mut usize>> UsizeWriteable for WriteIterWrapper<'a, usize, I> {
+impl<'a, I: Iterator<Item = &'a mut usize>> UsizeWritable for WriteIterWrapper<'a, usize, I> {
     unsafe fn write_usize(&mut self, value: usize) {
         *self.inner.next().unwrap_unchecked() = value;
     }

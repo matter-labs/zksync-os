@@ -3,16 +3,18 @@ use crate::bootloader::constants::*;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
+use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
-    create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+    calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::ERGS_PER_GAS;
+use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
@@ -24,9 +26,8 @@ use zk_ee::system::metadata::basic_metadata::{
     BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata,
 };
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
-use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
+use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
 use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
@@ -111,7 +112,7 @@ where
     }
 
     // EIP-7623
-    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata, false);
+    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata);
     #[cfg(feature = "eip_7623")]
     require!(
         minimal_gas_used <= tx_gas_limit,
@@ -158,24 +159,69 @@ where
     let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
         .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
-    let fri_proof_intrinsic_native_cost = transaction
+    let statement_versioned_hashes_num = transaction
         .statement_versioned_hashes()
-        .map(|hashes| FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(hashes.count as u64))
+        .map(|hashes| hashes.count as u64)
         .unwrap_or(0);
+    let fri_proof_intrinsic_native_cost =
+        FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(statement_versioned_hashes_num);
 
-    // Now we will materialize resources, from which we will try to charge intrinsic cost on top
-    let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
+    let mut access_list_accounts = 0;
+    let mut access_list_storage_keys = 0;
+    if let Some(iter) = transaction.access_list_iter() {
+        for AccessListForAddress {
+            address: _,
+            slots_list,
+        } in iter
+        {
+            access_list_accounts += 1;
+            access_list_storage_keys += slots_list.count as u64;
+        }
+    }
+    #[cfg(feature = "eip-7702")]
+    let authorization_list_num = if let Some(authorization_list) = transaction.authorization_list()
+    {
+        authorization_list.len() as u64
+    } else {
+        0u64
+    };
+    #[cfg(not(feature = "eip-7702"))]
+    let authorization_list_num = 0;
+
+    let is_deployment = transaction.is_deployment().is_some();
+    if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
+        return Err(TxError::Validation(
+            InvalidTransaction::CreateInitCodeSizeLimit,
+        ));
+    }
+    let intrinsic_gas = calculate_tx_intrinsic_gas(
+        calldata.len() as u64,
+        calldata_tokens,
+        is_deployment,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+    );
+    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
+        calldata.len() as u64,
+        access_list_accounts,
+        access_list_storage_keys,
+        authorization_list_num,
+        transaction.is_service(),
+    );
+    let intrinsic_pubdata =
+        calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
+
+    // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
+    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
         system,
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
         native_per_pubdata,
-        transaction.is_deployment().is_some(),
-        calldata.len() as u64,
-        calldata_tokens,
-        L2_TX_INTRINSIC_GAS,
-        L2_TX_INTRINSIC_PUBDATA,
-        L2_TX_INTRINSIC_NATIVE_COST.saturating_add(fri_proof_intrinsic_native_cost),
+        intrinsic_gas,
+        intrinsic_computational_native.saturating_add(fri_proof_intrinsic_native_cost),
+        intrinsic_pubdata,
     )?;
 
     system_log!(
@@ -183,6 +229,15 @@ where
         "Prepared resources for transaction: {:?}\n",
         &tx_resources
     );
+
+    // We use `intrinsic_resources` for operations whose native cost is already
+    // included in the intrinsic computational native formula (ecrecover, tx
+    // hash keccak, originator account read, nonce increment, and later the
+    // fee prepayment / refund / operator payment). The tracker is always
+    // `FORMAL_INFINITE`; under `verify_intrinsic_native` the actual native
+    // consumption is recovered by subtracting the residual from the initial
+    // FORMAL_INFINITE value.
+    let mut intrinsic_resources = S::Resources::FORMAL_INFINITE;
 
     // NOTE: we provided a "hint" for "from", so it's sequencer's risks here:
     // - either "from" is valid at it has at least enough balance, valid signature, etc to eventually pay for all validation
@@ -193,7 +248,9 @@ where
     // We have to charge native for this hash, as it's computed during parsing
     // for RLP-encoded transactions.
     // We over-estimate using the total tx length
-    charge_keccak(transaction.len(), &mut tx_resources.main_resources)?;
+    if !transaction.is_service() {
+        charge_keccak(transaction.len(), &mut intrinsic_resources)?;
+    }
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
     // Only service transactions have no signature,
@@ -203,14 +260,11 @@ where
         // Note that gas is charged already in intrinsic cost, so now
         // we only need to charge native resources.
         if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
-            tx_resources
-                .main_resources
-                .charge(&Resources::from_ergs_and_native(
-                    Ergs::empty(),
-                    <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
-                        ECRECOVER_NATIVE_COST,
-                    ),
-                ))?;
+            intrinsic_resources.charge(&Resources::from_native(
+                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                    ECRECOVER_NATIVE_COST,
+                ),
+            ))?;
         } else {
             if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
                 return Err(InvalidTransaction::MalleableSignature.into());
@@ -223,22 +277,20 @@ where
             ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
-            // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
             let mut logger = system.get_logger();
             let allocator = system.get_allocator();
-            tx_resources
-                .main_resources
-                .with_infinite_ergs(|resources| {
-                    S::SystemFunctionsExt::secp256k1_ec_recover(
-                        ecrecover_input.as_slice(),
-                        &mut ecrecover_output,
-                        resources,
-                        system.io.oracle(),
-                        &mut logger,
-                        allocator,
-                    )
-                    .map_err(SystemError::from)
-                })?;
+            // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
+            intrinsic_resources.with_infinite_ergs(|resources| {
+                S::SystemFunctionsExt::secp256k1_ec_recover(
+                    ecrecover_input.as_slice(),
+                    &mut ecrecover_output,
+                    resources,
+                    system.io.oracle(),
+                    &mut logger,
+                    allocator,
+                )
+                .map_err(SystemError::from)
+            })?;
 
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
@@ -260,28 +312,25 @@ where
             }
         }
     };
-    let tx_hash: Bytes32 = transaction.transaction_hash(&mut tx_resources.main_resources)?;
+    let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
 
     // any IO starts here
 
     // now we can perform IO related parts. Getting originator's properties is included into the
-    // intrinsic cost charnged above
-    let originator_account_data =
-        tx_resources
-            .main_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    ExecutionEnvironmentType::NoEE,
-                    inf_resources,
-                    &from,
-                    AccountDataRequest::empty()
-                        .with_ee_version()
-                        .with_nonce()
-                        .with_has_bytecode()
-                        .with_is_delegated()
-                        .with_nominal_token_balance(),
-                )
-            })?;
+    // intrinsic cost charged above
+    let originator_account_data = intrinsic_resources.with_infinite_ergs(|inf_resources| {
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::NoEE,
+            inf_resources,
+            &from,
+            AccountDataRequest::empty()
+                .with_ee_version()
+                .with_nonce()
+                .with_has_bytecode()
+                .with_is_delegated()
+                .with_nominal_token_balance(),
+        )
+    })?;
 
     // EIP-3607: Reject transactions from senders with deployed code modulo delegations
     // We skip it for simulation to allow simulate calls between contracts
@@ -292,7 +341,7 @@ where
     // Originator's nonce is incremented before authorization list
     // skipped for service transactions, for which we do not track nonce
     let old_nonce = if transaction.nonce().is_some() {
-        match tx_resources.main_resources.with_infinite_ergs(|resources| {
+        match intrinsic_resources.with_infinite_ergs(|resources| {
             system
                 .io
                 .increment_nonce(ExecutionEnvironmentType::NoEE, resources, &from, 1u64)
@@ -343,8 +392,11 @@ where
         }
     }
 
-    // Access list
-    parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, &transaction)?;
+    // Access list.
+    // Gas is already included in the intrinsic gas charged above, so we are only charging native.
+    intrinsic_resources.with_infinite_ergs(|inf_resources| {
+        parse_and_warm_up_access_list(system, inf_resources, &transaction)
+    })?;
 
     // Parse blobs, if any
     // No need to feature gate this part, as blobs() should return an empty list
@@ -384,11 +436,15 @@ where
     #[cfg(feature = "eip-7702")]
     {
         if let Some(authorization_list) = transaction.authorization_list() {
-            crate::bootloader::transaction::authorization_list:: parse_authorization_list_and_apply_delegations(
+            // Same as for the access list: gas is included in the intrinsic
+            // gas above, so we are only charging native
+            intrinsic_resources.with_infinite_ergs(|inf_resources| {
+                crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations(
                     system,
-                    &mut tx_resources.main_resources,
+                    inf_resources,
                     authorization_list,
-                )?;
+                )
+            })?;
         }
     }
 
@@ -465,40 +521,37 @@ where
         total_pubdata: 0,
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
+        intrinsic_resources,
+        authorization_list_num,
+        statement_versioned_hashes_num,
     })
 }
 
 ///
-/// Compute number of calldata tokens and intrinsic gas,
-/// following EIP-7623 if enabled.
+/// Compute number of calldata tokens and EIP-7623 floor gas,
+/// floor gas == 0, if EIP-7623 disabled.
 ///
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     system: &mut System<S>,
     calldata: &[u8],
-    is_l1_tx: bool,
 ) -> (u64, u64) {
     let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
     let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
     let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
     let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
-    let intrinsic_gas = if is_l1_tx {
-        L1_TX_INTRINSIC_L2_GAS
-    } else {
-        L2_TX_INTRINSIC_GAS
-    };
 
     #[cfg(feature = "eip_7623")]
     {
         let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let intrinsic_gas = intrinsic_gas.saturating_add(floor_tokens_gas_cost);
+        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
         (num_tokens, intrinsic_gas)
     }
 
     #[cfg(not(feature = "eip_7623"))]
     {
-        (num_tokens, intrinsic_gas)
+        (num_tokens, 0)
     }
 }

@@ -48,6 +48,7 @@ exclude = [
     "crypto/src/blake2s/test_program",
     "circuit_test_program",
     "tests/evm_tester",
+    "tests/evm_divergence_validator",
     "tests/instances/eth_runner",
 ]
 
@@ -62,8 +63,12 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "3a0637feae62cbedb053006f9db6a0b044174ac8", default-features = false }
-zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "3a0637feae62cbedb053006f9db6a0b044174ac8" }
+# TODO: switch to a tagged crates.io release once `is_gateway` lands
+# upstream. Until then we pin to the commit on `ra/add-gw-to-blockcontext`
+# that adds the field `BlockContext.is_gateway` used by FRI precompile
+# work.
+zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42", default-features = false }
+zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42" }
 
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false }

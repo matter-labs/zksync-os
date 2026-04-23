@@ -15,9 +15,6 @@ categories = ["cryptography"]
 airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95", default-features = false, features = ["allocator-custom"] }
 proof_running_system = { path = "../proof_running_system", default-features = false }
 crypto = { path = "../crypto", optional = true }
-riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["custom_panic", "custom_allocator"]}
-basic_bootloader = { path = "../basic_bootloader", default-features = false }
-full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false, features = ["unified_verifier_only_security_80", "modular_ops", "blake2_with_compression"] }
 
 [profile.dev]
 opt-level = 0

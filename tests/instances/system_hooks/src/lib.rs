@@ -6,17 +6,20 @@
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
+use rig::evm_bytecode;
+use rig::forward_system::system::tracers::call_tracer::CallTracer;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
-use rig::testing_utils::call_address_and_measure_gas_cost;
+use rig::testing_utils::{call_address_and_measure_gas_cost, get_first_traced_call_to};
 use rig::tx_failed;
 use rig::tx_succeeded;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, L1TxBuilder,
     ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
@@ -338,6 +341,64 @@ fn test_contract_deployer_temp_hook() {
         }
         success
     }));
+
+    let mut account = AccountProperties::default();
+    rig::zksync_os_api::helpers::set_properties_code(&mut account, &[0x01, 0x23, 0x45, 0x67, 0x89]);
+    let expected_account_hash = account.compute_hash();
+
+    let actual_hash = output
+        .storage_writes
+        .iter()
+        .find(|write| {
+            write.account.0 == ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes()
+                && write.account_key.0
+                    == address_into_special_storage_key(&B160::from_limbs([0x10002, 0, 0]))
+                        .as_u8_array()
+        })
+        .expect("Corresponding write for force deploy not found")
+        .value;
+
+    assert_eq!(expected_account_hash.as_u8_array(), actual_hash.0);
+}
+
+/// COMPLEX_UPGRADER (0x800f) is an authorized caller for set_bytecode_on_address (0x7002).
+#[test]
+fn test_set_bytecode_on_address_from_complex_upgrader() {
+    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
+    let set_bytecode_hook_address = address!("0000000000000000000000000000000000007002");
+
+    let bytecode = hex::decode("0123456789").unwrap();
+    let code_hash = Bytes32::from_array(
+        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    let calldata =
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+            .unwrap();
+
+    let mut tester = TestingFramework::new()
+        .with_preimage(code_hash, &bytecode)
+        .with_balance(
+            complex_upgrader_address,
+            U256::from(1_000_000_000_000_000_u64),
+        );
+
+    let tx = L1TxBuilder::new()
+        .from(complex_upgrader_address)
+        .to(set_bytecode_hook_address)
+        .input(calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+
+    assert!(
+        tx_succeeded(&output, 0),
+        "COMPLEX_UPGRADER must be authorized to call set_bytecode_on_address"
+    );
 
     let mut account = AccountProperties::default();
     rig::zksync_os_api::helpers::set_properties_code(&mut account, &[0x01, 0x23, 0x45, 0x67, 0x89]);
@@ -969,9 +1030,9 @@ fn test_l1_messenger_gas_charging() {
     let gas_used =
         call_address_and_measure_gas_cost(l1_messenger_address, sender, 0, calldata, vec![]);
 
-    // Verify that gas was charged - this should include the hook gas cost + keccak + LOG costs
-    // The hook should charge keccak256 costs + LOG costs
-    assert_eq!(gas_used, 9238);
+    // Gas charged by the L1Messenger system contract's EVM bytecode (keccak + LOG costs).
+    // The hook itself charges 0 ergs.
+    assert_eq!(gas_used, 9202);
 }
 
 #[test]
@@ -994,7 +1055,7 @@ fn test_l2_base_token_withdraw_gas_charging() {
         vec![],
     );
 
-    assert_eq!(gas_used, 52401);
+    assert_eq!(gas_used, 52359);
 }
 
 #[test]
@@ -1035,7 +1096,7 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
 
     // Verify that gas was charged - this should include hook gas cost + memory copy costs + L1 message costs + event costs
     // The hook should charge copy costs + L1 message costs + event emission costs
-    assert_eq!(gas_used, 54440);
+    assert_eq!(gas_used, 54392);
 }
 
 #[test]
@@ -1141,21 +1202,24 @@ fn test_mint_base_token_hook_rejects_non_zero_value() {
 
 #[test]
 fn test_event_hooks_empty_topics() {
+    let sender = address!("1234567890123456789012345678901234567890");
     for test_contract_address in [L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS] {
         // Contract that emits a log with empty topics array - this should be handled gracefully
         let test_contract = Address::from(test_contract_address.to_be_bytes());
 
-        // Bytecode that emits LOG0 (no topics)
-        // PUSH1 0x00    -> 6000  (data offset)
-        // PUSH1 0x00    -> 6000  (data length)
-        // LOG0          -> a0    (emit log with no topics)
-        // STOP          -> 00
-        let test_contract_bytecode = hex::decode("60006000a000").unwrap();
+        // Default stub emits LOG0 (no topics). For SystemContext, keep that behavior
+        // on the test's empty-calldata call, but return slot 0 for non-empty
+        // calldata so currentSettlementLayerChainId() still works.
+        let test_contract_bytecode = if test_contract_address == SYSTEM_CONTEXT_ADDRESS {
+            hex::decode("365f14600e575f545f5260205ff35b60006000a000").unwrap()
+        } else {
+            hex::decode("60006000a000").unwrap()
+        };
         let mut tester =
             TestingFramework::new().with_evm_contract(test_contract, &test_contract_bytecode);
 
         let tx = L1TxBuilder::new()
-            .from(address!("1234567890123456789012345678901234567890"))
+            .from(sender)
             .to(test_contract)
             .input(hex::decode("").unwrap())
             .gas_price(1000)
@@ -1824,4 +1888,163 @@ mod fri_precompile_e2e {
             output.tx_results[0]
         );
     }
+}
+
+/// Measures the gas cost of BALANCE on `target` by deploying a probe contract,
+/// executing it, and reading the stored gas measurement from slot 0.
+fn measure_balance_gas_cost(target: Address) -> u64 {
+    measure_balance_gas_cost_inner(target, false)
+}
+
+/// Same as [`measure_balance_gas_cost`] but skips the REVM consistency check.
+fn measure_balance_gas_cost_without_revm_check(target: Address) -> u64 {
+    measure_balance_gas_cost_inner(target, true)
+}
+
+fn measure_balance_gas_cost_inner(target: Address, skip_revm_check: bool) -> u64 {
+    let probe_address = address!("cccccccccccccccccccccccccccccccccccccccc");
+    let sender = address!("dddddddddddddddddddddddddddddddddddddddd");
+    let bytecode = evm_bytecode::balance_gas_probe(target);
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(probe_address, &bytecode)
+        .with_balance(
+            sender,
+            alloy::primitives::U256::from(1_000_000_000_000_000_u64),
+        );
+    if skip_revm_check {
+        tester = tester.without_revm_consistency_check();
+    }
+
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(probe_address)
+        .input(Vec::new())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(tx_succeeded(&output, 0), "probe tx must succeed");
+
+    let slot = tester
+        .get_storage_slot(&probe_address, U256::ZERO)
+        .expect("slot 0 must be written");
+    slot.into_u256_be().as_limbs()[0]
+}
+
+/// EVM precompiles (0x01..0x0a) must be warm at transaction start.
+/// System hook addresses (0x7001, 0x7002, 0x7100) must be cold.
+#[test]
+fn test_precompiles_warm_hooks_cold_at_tx_start() {
+    // Overhead between the two GAS snapshots: PUSH20(3) + POP(2) + GAS(2) = 7
+    const OVERHEAD: u64 = 7;
+    const WARM_BALANCE: u64 = 100 + OVERHEAD;
+    const COLD_BALANCE: u64 = 2600 + OVERHEAD;
+
+    // EVM precompiles should be warm
+    let ecrecover = address!("0000000000000000000000000000000000000001");
+    let sha256 = address!("0000000000000000000000000000000000000002");
+    let identity = address!("0000000000000000000000000000000000000004");
+
+    assert_eq!(
+        measure_balance_gas_cost(ecrecover),
+        WARM_BALANCE,
+        "ecrecover (0x01) must be warm"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(sha256),
+        WARM_BALANCE,
+        "sha256 (0x02) must be warm"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(identity),
+        WARM_BALANCE,
+        "identity (0x04) must be warm"
+    );
+
+    // System hook addresses should be cold (these were incorrectly warmed before the A1 fix)
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+    let set_bytecode_hook = address!("0000000000000000000000000000000000007002");
+    let mint_hook = address!("0000000000000000000000000000000000007100");
+    let contract_deployer = address!("0000000000000000000000000000000000008006");
+
+    assert_eq!(
+        measure_balance_gas_cost(l1_messenger_hook),
+        COLD_BALANCE,
+        "l1_messenger hook (0x7001) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(set_bytecode_hook),
+        COLD_BALANCE,
+        "set_bytecode hook (0x7002) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(mint_hook),
+        COLD_BALANCE,
+        "mint hook (0x7100) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(contract_deployer),
+        COLD_BALANCE,
+        "contract_deployer hook (0x8006) must be cold"
+    );
+
+    // blake2f (0x09) is not enabled in test/production builds, so it must be cold
+    let blake2f = address!("0000000000000000000000000000000000000009");
+    assert_eq!(
+        measure_balance_gas_cost(blake2f),
+        COLD_BALANCE,
+        "blake2f (0x09) must be cold"
+    );
+
+    // point_eval (0x0a) is enabled via eip-4844 feature in test builds, so it is warm here.
+    // Note: in production builds point_eval is NOT enabled, so it would be cold there.
+    // Skip REVM consistency check because REVM does not warm point_eval.
+    let point_eval = address!("000000000000000000000000000000000000000a");
+    assert_eq!(
+        measure_balance_gas_cost_without_revm_check(point_eval),
+        WARM_BALANCE,
+        "point_eval (0x0a) must be warm (enabled via eip-4844 in test builds)"
+    );
+}
+
+/// L1 messenger hook must not charge EVM gas (ergs) even for authorized calls.
+/// This enforces the "indistinguishable from a call to an empty account" invariant.
+#[test]
+fn test_l1_messenger_hook_authorized_no_ergs_charge() {
+    let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Valid calldata: abi.encodePacked(address msg.sender, bytes message)
+    let hook_calldata = hex::decode(
+        "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    .unwrap();
+
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
+
+    let tx = L1TxBuilder::new()
+        .from(l1_messenger_contract)
+        .to(l1_messenger_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let mut tracer = CallTracer::default();
+    let mut nop_validator = NopTxValidator;
+    let output = tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut nop_validator);
+
+    assert!(
+        tx_succeeded(&output, 0),
+        "authorized L1 messenger hook call must succeed"
+    );
+
+    let call =
+        get_first_traced_call_to(l1_messenger_hook, &tracer).expect("call to hook must be traced");
+    assert_eq!(
+        call.gas_used, 0,
+        "L1 messenger hook must not charge EVM gas (ergs)"
+    );
 }

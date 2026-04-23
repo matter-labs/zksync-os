@@ -20,7 +20,6 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
@@ -123,6 +122,25 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     pub native_used: u64,
     pub initial_resources: S::Resources,
     pub resources_before_refund: S::Resources,
+    /// Resources used to pay for system operations that are precharged by the
+    /// intrinsic computational native formula (e.g. ecrecover, keccak of the
+    /// signed/tx hash, account read, nonce write, fee prepayment, refund and
+    /// coinbase payment). Always initialized to `FORMAL_INFINITE`. Under the
+    /// `verify_intrinsic_native` feature the actual native consumption is
+    /// recovered by subtracting the residual from `FORMAL_INFINITE` and
+    /// compared against the formula as an upper bound.
+    pub intrinsic_resources: S::Resources,
+    /// Number of EIP-7702 authorization list entries in the transaction.
+    /// Used by `verify_intrinsic_native` to skip the overcharging check when
+    /// authorizations are present (failed auths consume much less native than
+    /// the worst-case formula budgets).
+    pub authorization_list_num: u64,
+    /// Number of FRI statement hashes referenced by the transaction.
+    /// Used by `verify_intrinsic_native` to skip the overcharging check when
+    /// FRI proofs are present: the budget covers the RISC-V in-circuit
+    /// verification cost, which is much higher than the forward-mode host
+    /// verification that runs during the check.
+    pub statement_versioned_hashes_num: u64,
 }
 
 impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
@@ -142,6 +160,12 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("validation_pubdata", &self.validation_pubdata)
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
+            .field("intrinsic_resources", &self.intrinsic_resources)
+            .field("authorization_list_num", &self.authorization_list_num)
+            .field(
+                "statement_versioned_hashes_num",
+                &self.statement_versioned_hashes_num,
+            )
             .finish()
     }
 }
@@ -238,8 +262,7 @@ where
         // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
         // This ensures sender has sufficient funds before execution begins
         context
-            .resources
-            .main_resources
+            .intrinsic_resources
             .with_infinite_ergs(|resources| {
                 system.io.update_account_nominal_token_balance(
                     ExecutionEnvironmentType::NoEE,
@@ -258,6 +281,7 @@ where
                     );
                 }
                 SubsystemError::LeafDefect(internal_error) => internal_error.into(),
+                // shouldn't be reachable as we are using infinite resources
                 SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
                     RuntimeError::FatalRuntimeError(_) => {
                         TxError::oon_as_validation(out_of_native_resources!().into())
@@ -282,14 +306,12 @@ where
         // reach here the `verified_fri_statements` list on the tx-level
         // metadata is already populated.
 
-        // Charge for validation pubdata
-        let (validation_pubdata, to_charge_for_pubdata) =
-            get_resources_to_charge_for_pubdata(system, context.native_per_pubdata, None)?;
-        context.validation_pubdata = validation_pubdata;
-        Self::charge_for_validation_pubdata_using_withheld(
-            &mut context.resources,
-            &to_charge_for_pubdata,
-        )?;
+        // we are saving amount of pubdata spent during validation,
+        // it's already covered by intrinsic cost, so it will be excluded
+        // from pubdata payment after execution.
+        // In the future we may consider using intrinsic pubdata here,
+        // so worst case validation pubdata will be "refunded" if not used
+        context.validation_pubdata = system.net_pubdata_used()?;
 
         // Save resources to be able to calculate computational native consumption after everything
         let initial_resources = context.resources.main_resources.clone();
@@ -449,18 +471,21 @@ where
             let token_to_refund =
                 context.gas_price * U256::from(context.tx_gas_limit - context.gas_used); // can not overflow
 
-            let mut inf_resources = S::Resources::FORMAL_INFINITE;
-            // First refund the sender
-            system
-                .io
-                .update_account_nominal_token_balance(
-                    ExecutionEnvironmentType::NoEE,
-                    &mut inf_resources,
-                    &refund_recipient,
-                    &token_to_refund,
-                    false,
-                    Config::SIMULATION,
-                )
+            // First refund the sender. Routed through `intrinsic_resources` so
+            // the native charge (precharged by the intrinsic formula) can be
+            // verified under `verify_intrinsic_native`.
+            context
+                .intrinsic_resources
+                .with_infinite_ergs(|resources| {
+                    system.io.update_account_nominal_token_balance(
+                        ExecutionEnvironmentType::NoEE,
+                        resources,
+                        &refund_recipient,
+                        &token_to_refund,
+                        false,
+                        Config::SIMULATION,
+                    )
+                })
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
                     SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
@@ -505,17 +530,19 @@ where
             .ok_or(internal_error!("gu*gpfo"))?;
 
         let coinbase = system.get_coinbase();
-        let mut inf_resources = S::Resources::FORMAL_INFINITE;
-        system
-            .io
-            .update_account_nominal_token_balance(
-                ExecutionEnvironmentType::NoEE,
-                &mut inf_resources,
-                &coinbase,
-                &token_to_pay_operator,
-                false,
-                Config::SIMULATION,
-            )
+        // Operator payment native is precharged by the intrinsic formula too.
+        context
+            .intrinsic_resources
+            .with_infinite_ergs(|resources| {
+                system.io.update_account_nominal_token_balance(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &coinbase,
+                    &token_to_pay_operator,
+                    false,
+                    Config::SIMULATION,
+                )
+            })
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
                 SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
@@ -564,10 +591,18 @@ where
             format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
         );
 
-        use crate::bootloader::constants::L2_TX_INTRINSIC_PUBDATA;
+        use crate::bootloader::transaction_flow::gas_helpers::calculate_l2_tx_intrinsic_pubdata;
 
         let num_blobs = system.metadata.num_blobs();
         let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
+
+        #[cfg(feature = "verify_intrinsic_native")]
+        Self::verify_intrinsic_native(system, &context);
+
+        let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
+            context.authorization_list_num,
+            transaction.is_service(),
+        );
 
         ZkTxResult {
             result,
@@ -579,7 +614,7 @@ where
             gas_refunded: context.gas_refunded,
             native_used: context.native_used,
             computational_native_used,
-            pubdata_used: context.total_pubdata + L2_TX_INTRINSIC_PUBDATA,
+            pubdata_used: context.total_pubdata + intrinsic_pubdata,
             blob_gas_used,
         }
     }
@@ -893,35 +928,47 @@ where
         }
     }
 
-    ///
-    /// Charge validation pubdata using both main and withheld resources.
-    /// First try to use withheld.
-    ///
-    fn charge_for_validation_pubdata_using_withheld(
-        resources: &mut ResourcesForTx<S>,
-        to_charge_for_pubdata: &S::Resources,
-    ) -> Result<(), SystemError> {
-        if resources.withheld.has_enough(to_charge_for_pubdata) {
-            // Simple case, just spend directly from withheld
-            resources.withheld.charge(to_charge_for_pubdata)?;
-            return Ok(());
+    /// Compare the native that was actually consumed for operations covered by the
+    /// intrinsic computational native formula (everything charged through
+    /// `intrinsic_resources`, including access-list warming and authorization-list
+    /// processing) against the formula value. The formula must be an upper bound;
+    /// otherwise a transaction could consume more native than was precharged.
+    #[cfg(feature = "verify_intrinsic_native")]
+    fn verify_intrinsic_native(
+        system: &mut System<S>,
+        context: &TxContextForPreAndPostProcessing<S>,
+    ) {
+        let initial = S::Resources::FORMAL_INFINITE.native().as_u64();
+        let remaining = context.intrinsic_resources.native().as_u64();
+        let actual_used = initial.saturating_sub(remaining);
+        let formula = context.resources.intrinsic_computational_native_charged;
+        system_log!(
+            system,
+            "intrinsic native verification: formula={}, actually_used={}\n",
+            formula,
+            actual_used
+        );
+        assert!(
+            actual_used <= formula,
+            "intrinsic computational native formula ({}) is not an upper bound on actual consumption ({})",
+            formula,
+            actual_used
+        );
+        // Skip the overcharging check when authorization-list entries are
+        // present: failed auths (bad sig, wrong chain id, nonce overflow)
+        // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
+        // formula budgets worst-case success cost per entry.
+        //
+        // Also skip when FRI statement hashes are present: the budget
+        // covers in-circuit RISC-V verification, which is much more
+        // expensive than the host-mode verifier this check runs under.
+        if context.authorization_list_num == 0 && context.statement_versioned_hashes_num == 0 {
+            assert!(
+                formula <= actual_used * 2,
+                "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",
+                formula,
+                actual_used
+            );
         }
-
-        if resources.withheld.is_empty() {
-            // Simple case, just spend directly from main resources
-            resources.main_resources.charge(to_charge_for_pubdata)?;
-            return Ok(());
-        }
-
-        // General case: first compute the part that should be charged from
-        // withheld.
-        let to_charge_from_main = to_charge_for_pubdata.diff(resources.withheld.clone());
-        // Then charge from withheld, this will return an Err with OON and zero it out.
-        // We ignore the error and continue charging from the main resources.
-        if resources.withheld.charge(to_charge_for_pubdata).is_ok() {
-            return Err(internal_error!("Withheld should be insufficient, checked above").into());
-        }
-        resources.main_resources.charge(&to_charge_from_main)?;
-        Ok(())
     }
 }

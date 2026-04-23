@@ -12,7 +12,7 @@ use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
 use rig::zk_ee::system::tracer::NopTracer;
-use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
+use rig::zk_ee::system::validator::{BeginTxContext, TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -37,7 +37,7 @@ impl LoggingTxValidator {
 }
 
 impl TxValidator<ForwardRunningSystem> for LoggingTxValidator {
-    fn begin_tx(&mut self, _calldata: &[u8]) -> Result<(), TxValidationError> {
+    fn begin_tx(&mut self, _ctx: &BeginTxContext<'_>) -> Result<(), TxValidationError> {
         self.begin_calls += 1;
         println!("[TxValidator] begin_tx called (#{})", self.begin_calls);
 

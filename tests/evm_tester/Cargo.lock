@@ -2111,6 +2111,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "capstone"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2134,6 +2135,11 @@ dependencies = [
 name = "cc"
 version = "1.2.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+name = "cc"
+version = "1.2.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> origin/draft-0.4.0
 checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
 dependencies = [
  "find-msvc-tools",
@@ -2218,6 +2224,7 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+<<<<<<< HEAD
 
 [[package]]
 name = "cmake"
@@ -2227,6 +2234,8 @@ checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
 dependencies = [
  "cc",
 ]
+=======
+>>>>>>> origin/draft-0.4.0
 
 [[package]]
 name = "coins-ledger"
@@ -2308,6 +2317,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "const-random"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87e00182fe74b066627d63b85fd550ac2998d4b0bd86bfed477a0ae4c7c71359"
+dependencies = [
+ "const-random-macro",
+]
+
+[[package]]
+name = "const-random-macro"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
+dependencies = [
+ "getrandom 0.2.17",
+ "once_cell",
+ "tiny-keccak",
+]
+
+[[package]]
+>>>>>>> origin/draft-0.4.0
 name = "const_for"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,6 +2555,11 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+<<<<<<< HEAD
+=======
+ "super-seq-macro",
+ "syn 2.0.117",
+>>>>>>> origin/draft-0.4.0
  "type-map",
 ]
 
@@ -3010,6 +3047,7 @@ version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender.git?branch=dev#b4817570fc43da8d789846d48719478122701037"
 dependencies = [
  "clap 4.6.0",
+<<<<<<< HEAD
  "full_statement_verifier",
  "gpu_prover",
  "log",
@@ -3017,6 +3055,9 @@ dependencies = [
  "prover_examples",
  "riscv_common",
  "riscv_transpiler",
+=======
+ "risc_v_simulator",
+>>>>>>> origin/draft-0.4.0
  "serde",
  "serde_json",
  "setups",
@@ -3369,6 +3410,22 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.4.2"
+<<<<<<< HEAD
+=======
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0de51e6874e94e7bf76d726fc5d13ba782deca734ff60d5bb2fb2607c7406555"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi 6.0.0",
+ "wasip2",
+ "wasip3",
+]
+
+[[package]]
+name = "gimli"
+version = "0.29.0"
+>>>>>>> origin/draft-0.4.0
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0de51e6874e94e7bf76d726fc5d13ba782deca734ff60d5bb2fb2607c7406555"
 dependencies = [
@@ -3394,6 +3451,7 @@ name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+<<<<<<< HEAD
 
 [[package]]
 name = "gpu_prover"
@@ -3422,6 +3480,8 @@ dependencies = [
  "verifier_common",
  "worker",
 ]
+=======
+>>>>>>> origin/draft-0.4.0
 
 [[package]]
 name = "group"
@@ -4002,6 +4062,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "inits_and_teardowns"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender.git?branch=dev#b4817570fc43da8d789846d48719478122701037"
@@ -4024,6 +4085,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/draft-0.4.0
 name = "interprocess"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4254,6 +4317,23 @@ name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
+<<<<<<< HEAD
+=======
+
+[[package]]
+name = "lib-rv32-asm"
+version = "0.2.0"
+source = "git+https://github.com/shamatar/lib-rv32.git#869f82795f82314f17014a04fb6f2c31808e6b42"
+dependencies = [
+ "lib-rv32-common",
+ "log",
+]
+
+[[package]]
+name = "lib-rv32-common"
+version = "0.2.0"
+source = "git+https://github.com/shamatar/lib-rv32.git#869f82795f82314f17014a04fb6f2c31808e6b42"
+>>>>>>> origin/draft-0.4.0
 
 [[package]]
 name = "libc"
@@ -4635,6 +4715,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+<<<<<<< HEAD
 ]
 
 [[package]]
@@ -4644,6 +4725,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad2e855e8019f99e4b94ac33670eb4e4f570a2e044f3749a0b2c7f83b841e52c"
 dependencies = [
  "cc",
+=======
+>>>>>>> origin/draft-0.4.0
 ]
 
 [[package]]
@@ -4676,6 +4759,12 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+<<<<<<< HEAD
+=======
+dependencies = [
+ "portable-atomic",
+]
+>>>>>>> origin/draft-0.4.0
 
 [[package]]
 name = "once_cell_polyfill"
@@ -5198,6 +5287,10 @@ dependencies = [
  "serde",
  "serde-big-array",
  "serde_json",
+<<<<<<< HEAD
+=======
+ "syn 2.0.117",
+>>>>>>> origin/draft-0.4.0
  "trace_holder",
  "transcript",
  "unroll",
@@ -5431,6 +5524,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags 2.11.0",
+<<<<<<< HEAD
+=======
+]
+
+[[package]]
+name = "reduced_risc_v_log_23_machine"
+version = "0.1.0"
+source = "git+https://github.com/matter-labs/zksync-airbender?tag=v0.5.2#b93c285d292891f3c27a3cf0110be09cde30ac4f"
+dependencies = [
+ "circuit_common",
+ "prover",
+ "serde",
+ "serde_json",
+ "verifier_generator",
+]
+
+[[package]]
+name = "reduced_risc_v_machine"
+version = "0.1.0"
+source = "git+https://github.com/matter-labs/zksync-airbender?tag=v0.5.2#b93c285d292891f3c27a3cf0110be09cde30ac4f"
+dependencies = [
+ "circuit_common",
+ "prover",
+ "serde",
+ "serde_json",
+ "verifier_generator",
+>>>>>>> origin/draft-0.4.0
 ]
 
 [[package]]
@@ -5802,6 +5922,37 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "rhai"
+version = "1.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f9ef5dabe4c0b43d8f1187dc6beb67b53fe607fff7e30c5eb7f71b814b8c2c1"
+dependencies = [
+ "ahash",
+ "bitflags 2.11.0",
+ "num-traits",
+ "once_cell",
+ "rhai_codegen",
+ "smallvec",
+ "smartstring",
+ "thin-vec",
+ "web-time",
+]
+
+[[package]]
+name = "rhai_codegen"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4322a2a4e8cf30771dd9f27f7f37ca9ac8fe812dddd811096a98483080dabe6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+>>>>>>> origin/draft-0.4.0
 name = "rig"
 version = "0.1.0"
 dependencies = [
@@ -6350,6 +6501,7 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+<<<<<<< HEAD
 ]
 
 [[package]]
@@ -6359,6 +6511,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
 dependencies = [
  "serde",
+=======
+>>>>>>> origin/draft-0.4.0
 ]
 
 [[package]]
@@ -6450,10 +6604,15 @@ dependencies = [
  "serde",
  "serde-big-array",
  "serde_json",
+<<<<<<< HEAD
  "sha3",
  "shift_binary_csr",
  "syn 2.0.117",
  "unified_reduced_machine",
+=======
+ "syn 2.0.117",
+ "verifier_common",
+>>>>>>> origin/draft-0.4.0
 ]
 
 [[package]]
@@ -6694,6 +6853,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "super-seq-macro"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a7568b180699c2138a4bfaadda9a33a7419251489e58760d3b4e74d6588da3d"
+dependencies = [
+ "proc-macro2",
+ "rhai",
+ "syn 2.0.117",
+]
+
+[[package]]
+>>>>>>> origin/draft-0.4.0
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7017,6 +7190,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "toml"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7041,6 +7215,11 @@ dependencies = [
 name = "toml_datetime"
 version = "1.0.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+name = "toml_datetime"
+version = "1.0.1+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> origin/draft-0.4.0
 checksum = "9b320e741db58cac564e26c607d3cc1fdc4a88fd36c879568c07856ed83ff3e9"
 dependencies = [
  "serde_core",
@@ -7048,6 +7227,7 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
+<<<<<<< HEAD
 version = "0.22.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
@@ -7068,6 +7248,14 @@ checksum = "8ca1a40644a28bce036923f6a431df0b34236949d111cc07cb6dca830c9ef2e1"
 dependencies = [
  "indexmap 2.13.0",
  "toml_datetime 1.0.1+spec-1.1.0",
+=======
+version = "0.25.5+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ca1a40644a28bce036923f6a431df0b34236949d111cc07cb6dca830c9ef2e1"
+dependencies = [
+ "indexmap 2.13.0",
+ "toml_datetime",
+>>>>>>> origin/draft-0.4.0
  "toml_parser",
  "winnow 1.0.0",
 ]
@@ -7468,6 +7656,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+<<<<<<< HEAD
 name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7477,6 +7666,11 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+name = "url"
+version = "2.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> origin/draft-0.4.0
 checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
 dependencies = [
  "form_urlencoded",
@@ -8389,6 +8583,10 @@ name = "zk_ee"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+<<<<<<< HEAD
+=======
+ "bitflags 2.11.0",
+>>>>>>> origin/draft-0.4.0
  "cfg-if",
  "crypto",
  "cycle_marker",
@@ -8429,12 +8627,22 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.1.0"
+<<<<<<< HEAD
 source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=3a0637feae62cbedb053006f9db6a0b044174ac8#3a0637feae62cbedb053006f9db6a0b044174ac8"
+=======
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3c242a34b6a73138ff0bf188e27c13c702e726ae3039ebabbc9e04c9a3915b4"
+>>>>>>> origin/draft-0.4.0
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.1.0"
+<<<<<<< HEAD
 source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=3a0637feae62cbedb053006f9db6a0b044174ac8#3a0637feae62cbedb053006f9db6a0b044174ac8"
+=======
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c16ee5a12acbbfc01740d32fbc84f0ac86890f0532534bc548ecca9037f74c96"
+>>>>>>> origin/draft-0.4.0
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

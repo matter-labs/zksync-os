@@ -2,9 +2,7 @@
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
 
-    use riscv_transpiler::ir::{
-        preprocess_bytecode, DecodingOptions, InstructionName,
-    };
+    use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions, InstructionName};
 
     /// Decoder config used to preprocess ZKsync OS binaries when
     /// checking them for unsupported opcodes.
@@ -86,10 +84,7 @@ mod tests {
 
         if !illegal.is_empty() {
             for (pc, opcode) in &illegal {
-                println!(
-                    "Unsupported opcode 0x{:08x} at PC = 0x{:08x}",
-                    opcode, pc
-                );
+                println!("Unsupported opcode 0x{:08x} at PC = 0x{:08x}", opcode, pc);
             }
             panic!("Unsupported opcodes in binary");
         }

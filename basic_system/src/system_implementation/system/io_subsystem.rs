@@ -1,7 +1,6 @@
 //! Implementation of the IO subsystem.
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
-use crate::system_functions::keccak256::Keccak256Impl;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -29,7 +28,6 @@ use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
-    memory::ArrayBuilder,
     system::{
         errors::system::SystemError, AccountData, AccountDataRequest, EthereumLikeIOSubsystem,
         IOResultKeeper, IOSubsystem, IOSubsystemExt, Maybe,
@@ -217,10 +215,12 @@ impl<
 
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
-        let mut data_hash = ArrayBuilder::default();
-        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone())
-            .map_err(SystemError::from)?;
-        let data_hash = Bytes32::from_array(data_hash.build());
+        // Compute data hash directly: the native cost for this keccak is already
+        // pre-charged above (included in `hashing_native_cost`), and this function
+        // must not charge ergs — EVM gas accounting is the caller's responsibility
+        // (the L1Messenger system contract charges it before invoking the hook).
+        use crypto::MiniDigest;
+        let data_hash = Bytes32::from_array(crypto::sha3::Keccak256::digest(data));
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
             .push_message(self.tx_number, address, data, data_hash)?;
