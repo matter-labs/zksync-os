@@ -12,8 +12,10 @@ use crate::bootloader::transaction_flow::gas_helpers::{
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
+use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
+use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -210,6 +212,20 @@ where
     // consumption is recovered by subtracting the residual from the initial
     // FORMAL_INFINITE value.
     let mut intrinsic_resources = S::Resources::FORMAL_INFINITE;
+
+    // There are 2 things that are done outside the tx flow, but we still need to charge the user for them
+    // 1. Calldata copying
+    intrinsic_resources.charge(&Resources::from_native(
+        <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+            calldata.len() as u64 * COPY_BYTE_NATIVE_COST,
+        ),
+    ))?;
+    // 2. Hashing tx hash into the rolling hash after the execution
+    intrinsic_resources.charge(&Resources::from_native(
+        <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+            keccak256_native_cost_for_rounds_u64(1),
+        ),
+    ))?;
 
     // NOTE: we provided a "hint" for "from", so it's sequencer's risks here:
     // - either "from" is valid at it has at least enough balance, valid signature, etc to eventually pay for all validation

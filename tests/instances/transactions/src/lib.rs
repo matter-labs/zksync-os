@@ -2165,7 +2165,7 @@ fn test_pubdata_native_calculation_overflow() {
 
     // Set extremely high native_per_pubdata to trigger overflow in current_pubdata_spent.checked_mul(native_per_pubdata)
     let native_price = U256::from(1);
-    let pubdata_price = U256::from(u64::MAX / 150); // Huge pubdata price to trigger overflow
+    let pubdata_price = U256::from(u64::MAX / 200); // Huge pubdata price to trigger overflow
 
     let block_context = BlockContext {
         native_price,
