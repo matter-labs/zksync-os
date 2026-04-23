@@ -2,6 +2,11 @@ use basic_system::cost_constants::{
     blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
 use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
+#[cfg(feature = "eip-2935")]
+use basic_system::system_implementation::flat_storage_model::cost_constants::{
+    COLD_EXISTING_STORAGE_READ_NATIVE_COST, COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
+    WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
+};
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
     COLD_NEW_STORAGE_READ_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -250,12 +255,48 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
 
+/// Native cost of the EIP-2935 pre-tx-loop work: a cold read of the
+/// `HISTORY_STORAGE_ADDRESS` account properties followed by a cold write of
+/// the history slot.
+///
+/// We assume `HISTORY_STORAGE_ADDRESS` exists in the tree — it's deployed via
+/// genesis or an earlier block and is only absent at block number 0, which
+/// cannot run EIP-2935 anyway. That lets us use the cold-EXISTING path for
+/// the account read rather than the NEW worst case (which
+/// `NEW_COLD_ACCOUNT_READ_COST` bundles for other callers).
+///
+/// The slot write keeps the cold-NEW worst case so the reserve holds during
+/// the first 8191-block cycle when slots are freshly touched.
+#[cfg(feature = "eip-2935")]
+const EIP_2935_INTRINSIC_NATIVE: u64 =
+    // Cold read of HISTORY_STORAGE_ADDRESS account properties (assume exists)
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+        + WARM_STORAGE_READ_NATIVE_COST
+        + COLD_EXISTING_STORAGE_READ_NATIVE_COST
+        // Cold write of the history slot (worst case: new slot)
+        + WARM_STORAGE_READ_NATIVE_COST
+        + WARM_STORAGE_WRITE_EXTRA_NATIVE_COST
+        + COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
+#[cfg(not(feature = "eip-2935"))]
+const EIP_2935_INTRINSIC_NATIVE: u64 = 0;
+
+/// Pubdata cost of the EIP-2935 history-slot write. One state diff:
+/// 32-byte derived key + worst-case 33-byte compressed value (the parent-hash
+/// value does not compress, so the `Nothing` strategy applies — same shape
+/// as `ASSET_TRACKER_INTRINSIC_PUBDATA`).
+#[cfg(feature = "eip-2935")]
+const EIP_2935_INTRINSIC_PUBDATA: u64 = 32 + 33;
+#[cfg(not(feature = "eip-2935"))]
+const EIP_2935_INTRINSIC_PUBDATA: u64 = 0;
+
 /// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
-/// from block start. Accounts for the fixed envelope written by
-/// `write_pubdata`: 1 byte (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash)
-/// + 8 bytes (timestamp).
-pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 32 + 8;
+/// from block start. Accounts for:
+/// - the fixed envelope written by `write_pubdata`: 1 byte
+///   (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash) + 8 bytes (timestamp),
+/// - the EIP-2935 history-slot diff when the feature is enabled.
+pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 32 + 8 + EIP_2935_INTRINSIC_PUBDATA;
 
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
-/// from block start. Covers fixed pre-tx-loop system work.
-pub const BLOCK_INTRINSIC_NATIVE: u64 = 0;
+/// from block start. Covers fixed pre-tx-loop system work — currently just
+/// the EIP-2935 historical block hash write when the feature is enabled.
+pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE;
