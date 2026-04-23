@@ -3,6 +3,7 @@
 //! then be published into the preimage storage.
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
+use crate::cost_constants::blake2s_native_cost;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_implementation::caches::basic_account_properties::BasicAccountPropertiesMetadata;
 use crate::system_implementation::caches::cache_element_properties::CacheElementProperties;

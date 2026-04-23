@@ -4,12 +4,13 @@ use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccount
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
-use ruint::aliases::U256;
+use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::Resources;
+use zk_ee::system::{IOSubsystem, Resource, Resources};
+use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 
@@ -130,29 +131,15 @@ pub fn calculate_interop_roots_rolling_hash<'a>(
 ///
 /// Reads SL chain id from the SystemContext(0x800b) contract.
 ///
-pub fn read_settlement_layer_chain_id<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32> + Default,
-    SF: StackFactory<N>,
-    const N: usize,
-    O: IOOracle,
-    const PROOF_ENV: bool,
->(
-    io: &mut FullIO<
-        A,
-        R,
-        P,
-        SF,
-        N,
-        O,
-        FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
-        PROOF_ENV,
-    >,
-) -> U256 {
-    use zk_ee::system::IOSubsystem;
+pub fn read_settlement_layer_chain_id<IO: IOSubsystem>(io: &mut IO) -> U256
+where
+    IO::IOTypes: SystemIOTypesConfig<Address = B160, StorageKey = Bytes32, StorageValue = Bytes32>,
+{
+    // This helper is intentionally generic over the IO subsystem so it can be
+    // reused from bootloader transaction flow code that only has access to
+    // `System<S>::io`.
     const SL_CHAIN_ID_STORAGE_SLOT: Bytes32 = Bytes32::ZERO;
-    let mut inf_resources = R::FORMAL_INFINITE;
+    let mut inf_resources = IO::Resources::FORMAL_INFINITE;
     let chain_id = io
         .storage_read::<false>(
             ExecutionEnvironmentType::NoEE,

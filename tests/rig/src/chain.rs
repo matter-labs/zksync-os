@@ -205,6 +205,9 @@ pub struct RunConfig {
     // Whether to replay the block in REVM and assert no state divergences.
     // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
     pub check_revm_consistency: bool,
+    /// When true, REVM computes gas independently instead of using
+    /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
+    pub revm_independent_gas: bool,
     pub update_state_after_block_execution: bool,
 }
 
@@ -227,6 +230,7 @@ impl Default for RunConfig {
             do_prover_input_run: true,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
+            revm_independent_gas: false,
             flamegraph: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
@@ -786,6 +790,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             do_prover_input_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
+            revm_independent_gas: _,
             update_state_after_block_execution,
         } = run_config;
 

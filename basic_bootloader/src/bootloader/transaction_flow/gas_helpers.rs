@@ -1,6 +1,17 @@
+use super::super::*;
+use crate::bootloader::constants::{
+    L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L2_TX_INTRINSIC_PUBDATA,
+    L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+    SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, TX_INTRINSIC_GAS,
+};
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
-use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
+use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::out_of_native_resources;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
@@ -8,8 +19,6 @@ use zk_ee::system::{Computational, Ergs, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
-
-use super::super::*;
 
 /// Policy trait for handling arithmetic validation errors during resource creation.
 ///
@@ -188,6 +197,122 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
     }
 }
 
+pub fn calculate_l2_tx_intrinsic_computational_native_resources(
+    calldata_byte_length: u64,
+    access_list_accounts: u64,
+    access_list_storages: u64,
+    authorization_list_num: u64,
+    is_service: bool,
+) -> u64 {
+    let mut intrinsic_computational_native_resources = if is_service {
+        SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST
+    } else {
+        L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST
+    };
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(calldata_byte_length.saturating_mul(if is_service {
+            SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE
+        } else {
+            L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE
+        }));
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
+            access_list_accounts
+                .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS),
+        );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
+            access_list_storages
+                .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY),
+        );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
+            authorization_list_num
+                .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION),
+        );
+
+    intrinsic_computational_native_resources
+}
+
+pub fn calculate_l1_tx_intrinsic_computational_native_resources(calldata_byte_length: u64) -> u64 {
+    let mut intrinsic_computational_native_resources = L1_TX_INTRINSIC_NATIVE_COST;
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
+            calldata_byte_length
+                .saturating_mul(L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE),
+        );
+
+    intrinsic_computational_native_resources
+}
+
+/// Total intrinsic gas for transaction, in EVM gas units.
+/// This function used both for L1 and L2 transactions.
+///
+/// Computes the analogue of revm's `intrinsic_cost`: the gas that must be
+/// pre-charged before the transaction body runs. Per EIP-2930/EIP-7702 the
+/// per-address, per-storage-key and per-authorization costs are part of this
+/// intrinsic gas. Moving them into this helper means the inner access-list /
+/// authorization-list processors only need to account for native resources —
+/// gas is already deducted from `main_resources` when the tx's resources are
+/// materialized.
+pub fn calculate_tx_intrinsic_gas(
+    calldata_len: u64,
+    calldata_tokens: u64,
+    is_deployment: bool,
+    access_list_accounts: u64,
+    access_list_storage_keys: u64,
+    authorization_list_num: u64,
+) -> u64 {
+    let mut intrinsic_gas = TX_INTRINSIC_GAS;
+
+    if is_deployment {
+        intrinsic_gas = intrinsic_gas.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
+        let initcode_gas_cost =
+            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
+        intrinsic_gas = intrinsic_gas.saturating_add(initcode_gas_cost);
+    }
+    intrinsic_gas =
+        intrinsic_gas.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
+
+    // EIP-2930 access list: per-address + per-storage-key.
+    intrinsic_gas = intrinsic_gas.saturating_add(
+        access_list_accounts.saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS),
+    );
+    intrinsic_gas = intrinsic_gas.saturating_add(
+        access_list_storage_keys
+            .saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY),
+    );
+
+    // EIP-7702 authorization list: per-authorization. We precharge the
+    // empty-account cost; when the authority turns out to be non-empty the
+    // delta (NEWACCOUNT - PER_AUTH_BASE_COST) is added back as a gas refund
+    // inside `validate_and_apply_delegation`.
+    intrinsic_gas = intrinsic_gas.saturating_add(
+        authorization_list_num.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT),
+    );
+
+    intrinsic_gas
+}
+
+pub fn calculate_l2_tx_intrinsic_pubdata(authorization_list_num: u64, is_service: bool) -> u64 {
+    if is_service {
+        // there is no intrinsic pubdata for service txs
+        return 0;
+    }
+    let mut intrinsic_pubdata = L2_TX_INTRINSIC_PUBDATA;
+
+    intrinsic_pubdata = intrinsic_pubdata.saturating_add(
+        authorization_list_num.saturating_mul(L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION),
+    );
+
+    intrinsic_pubdata
+}
+
 ///
 /// Create initial resources for a transaction.
 ///
@@ -202,12 +327,9 @@ pub fn create_resources_for_tx<S: EthereumLikeTypes, P: ResourcesCreationErrorPo
     free_native: bool,
     native_prepaid_from_gas: u64,
     native_per_pubdata_byte: u64,
-    is_deployment: bool,
-    calldata_len: u64,
-    calldata_tokens: u64,
     intrinsic_gas: u64,
+    intrinsic_computational_native: u64,
     intrinsic_pubdata: u64,
-    intrinsic_native: u64,
 ) -> Result<ResourcesForTx<S>, P::Error>
 where
     S::Metadata: ZkSpecificPricingMetadata,
@@ -226,7 +348,7 @@ where
         native_prepaid_from_gas
     };
 
-    // Charge pubdata overhead
+    // Charge intrinsic pubdata
     let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
     let native_limit = match native_limit.checked_sub(intrinsic_pubdata_overhead) {
         Some(val) => val,
@@ -257,12 +379,8 @@ where
         )
     };
 
-    // Charge for calldata and intrinsic native
-    let calldata_native = calldata_len
-        .saturating_mul(evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST);
-    let intrinsic_computational_native_charged = calldata_native.saturating_add(intrinsic_native);
-
-    let native_limit = match native_limit.checked_sub(intrinsic_computational_native_charged) {
+    // Charge intrinsic computational native
+    let native_limit = match native_limit.checked_sub(intrinsic_computational_native) {
         Some(val) => val,
         None => P::handle_arithmetic_error(
             system,
@@ -275,29 +393,12 @@ where
             native_limit,
         );
 
-    // Intrinsic overhead - he can quickly check deployment cost and calldata tokens cost
-    let mut intrinsic_overhead = intrinsic_gas;
-
-    if is_deployment {
-        if calldata_len > MAX_INITCODE_SIZE as u64 {
-            return Err(P::from_validation_error(
-                InvalidTransaction::CreateInitCodeSizeLimit,
-            ));
-        }
-        intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
-        let initcode_gas_cost =
-            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
-        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
-    }
-    intrinsic_overhead =
-        intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
-
     // Check if intrinsic gas exceeds gas limit
-    let gas_limit_for_tx = match gas_limit.checked_sub(intrinsic_overhead) {
+    let gas_limit_for_tx = match gas_limit.checked_sub(intrinsic_gas) {
         Some(val) => val,
         None => P::handle_arithmetic_error(
             system,
-            P::intrinsic_gas_overflow_error(intrinsic_overhead, gas_limit),
+            P::intrinsic_gas_overflow_error(intrinsic_gas, gas_limit),
         )?,
     };
 
@@ -307,7 +408,7 @@ where
     Ok(ResourcesForTx {
         main_resources,
         withheld,
-        intrinsic_computational_native_charged,
+        intrinsic_computational_native_charged: intrinsic_computational_native,
     })
 }
 

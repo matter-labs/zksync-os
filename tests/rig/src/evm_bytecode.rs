@@ -61,8 +61,23 @@ impl BytecodeBuilder {
         self
     }
 
+    pub fn sload(mut self) -> Self {
+        self.bytes.push(0x54);
+        self
+    }
+
     pub fn sstore(mut self) -> Self {
         self.bytes.push(0x55);
+        self
+    }
+
+    pub fn add(mut self) -> Self {
+        self.bytes.push(0x01);
+        self
+    }
+
+    pub fn calldataload(mut self) -> Self {
+        self.bytes.push(0x35);
         self
     }
 
@@ -169,6 +184,21 @@ impl BytecodeBuilder {
         self
     }
 
+    pub fn balance(mut self) -> Self {
+        self.bytes.push(0x31);
+        self
+    }
+
+    pub fn sub(mut self) -> Self {
+        self.bytes.push(0x03);
+        self
+    }
+
+    pub fn swap1(mut self) -> Self {
+        self.bytes.push(0x90);
+        self
+    }
+
     pub fn selfdestruct(mut self) -> Self {
         self.bytes.push(0xff);
         self
@@ -243,6 +273,27 @@ pub fn selfdestruct(beneficiary: Address) -> Vec<u8> {
     BytecodeBuilder::new()
         .push_address(beneficiary)
         .selfdestruct()
+        .finish()
+}
+
+/// Builds bytecode that measures gas cost of `BALANCE` on `target` and stores
+/// the result in storage slot 0.
+///
+/// Layout: GAS | PUSH20 target | BALANCE | POP | GAS | SWAP1 | SUB | PUSH0 | SSTORE
+///
+/// The stored value equals the gas consumed between the two GAS snapshots,
+/// which includes PUSH20(3) + BALANCE(100 or 2600) + POP(2) + GAS(2) overhead.
+pub fn balance_gas_probe(target: Address) -> Vec<u8> {
+    BytecodeBuilder::new()
+        .gas()
+        .push_address(target)
+        .balance()
+        .pop()
+        .gas()
+        .swap1()
+        .sub()
+        .push0()
+        .sstore()
         .finish()
 }
 

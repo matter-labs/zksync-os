@@ -2,6 +2,7 @@ use super::*;
 use crate::bootloader::block_flow::tx_loop::TxLoopOp;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use crate::bootloader::transaction_flow::MinimalTransactionOutput;
+use evm_interpreter::precompile_addresses::PRECOMPILE_ADDRESSES_LOWS;
 use zk_ee::system::Resource;
 use zk_ee::system::{AccountDataRequest, IOTeardown};
 use zk_ee::system_log;
@@ -91,9 +92,9 @@ where
 
                 system_log!(system, "====================================\n");
                 system_log!(system, "TX execution begins for transaction {tx_counter}\n");
-                // all precompiles must be formally warm
+                // all EVM precompiles must be formally warm
                 {
-                    for address_low in system_functions.all_call_hooked_addresses_iter() {
+                    for &address_low in PRECOMPILE_ADDRESSES_LOWS {
                         let address = B160::from_limbs([address_low as u64, 0, 0]);
                         let mut inf_resources = S::Resources::FORMAL_INFINITE;
                         system
