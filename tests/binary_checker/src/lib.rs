@@ -2,23 +2,29 @@
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
 
-    use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions, InstructionName};
+    use riscv_transpiler::ir::{
+        preprocess_bytecode, DecodingOptions, FullUnsignedMachineDecoderConfig, InstructionName,
+    };
 
     /// Decoder config used to preprocess ZKsync OS binaries when
     /// checking them for unsupported opcodes.
     ///
-    /// Mirrors the decoder config the runtime uses in `zksync_os_runner`
-    /// so that "supported by the binary checker" matches "decodable by
-    /// the simulator." MOP is enabled because `full_statement_verifier`
-    /// (linked for Gateway FRI verification) emits `mop.rr.*` via the
-    /// Zimop extension, and the airbender `dev` prover supports MOP.
+    /// Extends upstream's canonical `FullUnsignedMachineDecoderConfig`
+    /// with MOP support. The newer airbender prover drives its own
+    /// bytecode preprocessing through this transpiler decoder (no
+    /// separate prover-side decode stage), so "decodes here" ==
+    /// "decodes in the prover". MOPs are enabled because
+    /// `full_statement_verifier` (linked for Gateway FRI verification)
+    /// emits `mop.rr.*` via the Zimop extension, and from the prover's
+    /// perspective MOPs are always supported when the transpiler
+    /// emits them.
     struct BinaryCheckerDecoderConfig;
 
     impl DecodingOptions for BinaryCheckerDecoderConfig {
         const SUPPORT_MOP: bool = true;
-        const SUPPORT_MUL_DIV: bool = true;
-        const SUPPORT_SIGNED_MUL_DIV: bool = false;
-        const SUPPORT_SUBWORD_MEM_ACCESS: bool = true;
+        const SUPPORT_MUL_DIV: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
+        const SUPPORT_SIGNED_MUL_DIV: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
+        const SUPPORT_SUBWORD_MEM_ACCESS: bool = <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
     }
 
     fn read_text_section(app_dist_path: &str) -> Vec<u32> {

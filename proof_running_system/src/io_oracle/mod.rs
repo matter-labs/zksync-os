@@ -113,6 +113,16 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             }
             let oracle_stream_len = NDS::csr_read_impl();
             let oracle_stream_len_high = NDS::csr_read_impl();
+            // These asserts guard invariants established by the
+            // forward-mode `FriProofResponder` that produced the
+            // recorded non-determinism stream this guest replays.
+            // They are NOT validating user input: the user-controlled
+            // part (the statement hash) is a separate CSR round-trip
+            // that has already completed. The bytes read here come
+            // from a stream our own sequencer code generated. A
+            // violation would mean forward/proving encode disagreement
+            // — an unrecoverable prover-side corruption with no guest
+            // path to reject, so we panic.
             assert!(oracle_stream_len_high == 0);
             assert!(2 * (1 + oracle_stream_len.div_ceil(2)) == response_len);
             // Prefetch the stream length so the caller's `.next()`
