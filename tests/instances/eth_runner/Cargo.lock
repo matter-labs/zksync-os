@@ -448,7 +448,7 @@ dependencies = [
  "alloy-pubsub",
  "alloy-rpc-client",
  "alloy-rpc-types-anvil",
- "alloy-rpc-types-debug 1.8.3",
+ "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
  "alloy-rpc-types-trace",
  "alloy-rpc-types-txpool",
@@ -557,7 +557,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-anvil",
  "alloy-rpc-types-beacon",
- "alloy-rpc-types-debug 1.8.3",
+ "alloy-rpc-types-debug",
  "alloy-rpc-types-engine",
  "alloy-rpc-types-eth",
  "alloy-rpc-types-trace",
@@ -616,19 +616,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2145138f3214928f08cd13da3cb51ef7482b5920d8ac5a02ecd4e38d1a8f6d1e"
 dependencies = [
  "alloy-primitives",
- "derive_more",
- "serde",
- "serde_with",
-]
-
-[[package]]
-name = "alloy-rpc-types-debug"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea21739e232c221779741eba7e7b9bc19ad8ff777b72736647ae519f5c9f6f33"
-dependencies = [
- "alloy-primitives",
- "alloy-rlp",
  "derive_more",
  "serde",
  "serde_with",
@@ -3069,7 +3056,7 @@ version = "0.1.0"
 dependencies = [
  "airbender-host",
  "alloy",
- "alloy-rpc-types-debug 2.0.1",
+ "alloy-rpc-types-debug",
  "anyhow",
  "basic_system",
  "bincode 2.0.1",
@@ -6002,7 +5989,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
- "alloy-rpc-types-debug 1.8.3",
+ "alloy-rpc-types-debug",
  "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
