@@ -179,61 +179,75 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPre
         resources: &mut R,
         allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
-        if input.len() == 0 {
-            return Err(interface_error!(
-                Bls12PrecompileInterfaceError::InvalidInputSize
-            ));
-        }
-        let cost = compute_cost(
-            input.len(),
-            G1_MSM_PAIR_LEN,
-            BLS12_381_G1_MSM_PER_POINT_GAS,
-            &DISCOUNT_TABLE_G1_MSM,
-        );
-        let cost_ergs = Ergs(cost * ERGS_PER_GAS);
-        // TODO(EVM-1237): add native model
-        let cost_native = 0;
-        resources.charge(&R::from_ergs_and_native(
-            cost_ergs,
-            <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-        ))?;
-
-        if !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
-            return Err(interface_error!(
-                Bls12PrecompileInterfaceError::InvalidInputSize
-            ));
-        }
-
-        let num_pairs = input.len() / G1_MSM_PAIR_LEN;
-        let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
-        let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
-
-        // arkworks MSM allocates inside, so we will do it our way, just parse here
-        // G1Projective::msm_bigint(bases, bigints)
-
-        // parse to use Peppinger algorithm
-        for pair_encoding in input.as_chunks::<G1_MSM_PAIR_LEN>().0.iter() {
-            let point = parse_g1_with_subgroup_check(
-                pair_encoding[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
-            )?;
-            let scalar = parse_integer(
-                pair_encoding
-                    [G1_SERIALIZATION_LEN..(G1_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
-                    .try_into()
-                    .unwrap(),
-            );
-            points.push(point);
-            scalars.push(scalar);
-        }
-
-        let result: G1Projective = msm(&points, scalars, allocator);
-
-        let result = result.into_affine();
-
-        write_g1(result, output)?;
-
-        Ok(())
+        cycle_marker::wrap_with_resources!("bls12_381_g1_msm", resources, {
+            bls12_381_g1_msm_as_system_function_inner(input, output, resources, allocator)
+        })
     }
+}
+
+fn bls12_381_g1_msm_as_system_function_inner<
+    D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
+    R: Resources,
+    A: core::alloc::Allocator + Clone,
+>(
+    input: &[u8],
+    output: &mut D,
+    resources: &mut R,
+    allocator: A,
+) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
+    if input.len() == 0 {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+    let cost = compute_cost(
+        input.len(),
+        G1_MSM_PAIR_LEN,
+        BLS12_381_G1_MSM_PER_POINT_GAS,
+        &DISCOUNT_TABLE_G1_MSM,
+    );
+    let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+    // TODO(EVM-1237): add native model
+    let cost_native = 0;
+    resources.charge(&R::from_ergs_and_native(
+        cost_ergs,
+        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
+    ))?;
+
+    if !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+
+    let num_pairs = input.len() / G1_MSM_PAIR_LEN;
+    let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
+    let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
+
+    // arkworks MSM allocates inside, so we will do it our way, just parse here
+    // G1Projective::msm_bigint(bases, bigints)
+
+    // parse to use Peppinger algorithm
+    for pair_encoding in input.as_chunks::<G1_MSM_PAIR_LEN>().0.iter() {
+        let point = parse_g1_with_subgroup_check(
+            pair_encoding[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
+        )?;
+        let scalar = parse_integer(
+            pair_encoding[G1_SERIALIZATION_LEN..(G1_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
+                .try_into()
+                .unwrap(),
+        );
+        points.push(point);
+        scalars.push(scalar);
+    }
+
+    let result: G1Projective = msm(&points, scalars, allocator);
+
+    let result = result.into_affine();
+
+    write_g1(result, output)?;
+
+    Ok(())
 }
 
 pub struct Bls12381G2MSMPrecompile;
@@ -248,60 +262,74 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPre
         resources: &mut R,
         allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
-        if input.len() == 0 {
-            return Err(interface_error!(
-                Bls12PrecompileInterfaceError::InvalidInputSize
-            ));
-        }
-        let cost = compute_cost(
-            input.len(),
-            G2_MSM_PAIR_LEN,
-            BLS12_381_G2_MSM_PER_POINT_GAS,
-            &DISCOUNT_TABLE_G2_MSM,
-        );
-        let cost_ergs = Ergs(cost * ERGS_PER_GAS);
-        // TODO(EVM-1237): add native model
-        let cost_native = 0;
-        resources.charge(&R::from_ergs_and_native(
-            cost_ergs,
-            <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-        ))?;
-
-        if !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
-            return Err(interface_error!(
-                Bls12PrecompileInterfaceError::InvalidInputSize
-            ));
-        }
-
-        let num_pairs = input.len() / G2_MSM_PAIR_LEN;
-
-        let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
-        let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
-
-        // arkworks MSM allocates inside, so we will do it our way, just parse here
-        // G1Projective::msm_bigint(bases, bigints)
-
-        // parse to use Peppinger algorithm
-        for pair_encoding in input.as_chunks::<G2_MSM_PAIR_LEN>().0.iter() {
-            let point = parse_g2_with_subgroup_check(
-                pair_encoding[0..G2_SERIALIZATION_LEN].try_into().unwrap(),
-            )?;
-            let scalar = parse_integer(
-                pair_encoding
-                    [G2_SERIALIZATION_LEN..(G2_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
-                    .try_into()
-                    .unwrap(),
-            );
-            points.push(point);
-            scalars.push(scalar);
-        }
-
-        let result: G2Projective = msm(&points, scalars, allocator);
-
-        let result = result.into_affine();
-
-        write_g2(result, output)?;
-
-        Ok(())
+        cycle_marker::wrap_with_resources!("bls12_381_g2_msm", resources, {
+            bls12_381_g2_msm_as_system_function_inner(input, output, resources, allocator)
+        })
     }
+}
+
+fn bls12_381_g2_msm_as_system_function_inner<
+    D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
+    R: Resources,
+    A: core::alloc::Allocator + Clone,
+>(
+    input: &[u8],
+    output: &mut D,
+    resources: &mut R,
+    allocator: A,
+) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
+    if input.len() == 0 {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+    let cost = compute_cost(
+        input.len(),
+        G2_MSM_PAIR_LEN,
+        BLS12_381_G2_MSM_PER_POINT_GAS,
+        &DISCOUNT_TABLE_G2_MSM,
+    );
+    let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+    // TODO(EVM-1237): add native model
+    let cost_native = 0;
+    resources.charge(&R::from_ergs_and_native(
+        cost_ergs,
+        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
+    ))?;
+
+    if !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+
+    let num_pairs = input.len() / G2_MSM_PAIR_LEN;
+
+    let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
+    let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
+
+    // arkworks MSM allocates inside, so we will do it our way, just parse here
+    // G1Projective::msm_bigint(bases, bigints)
+
+    // parse to use Peppinger algorithm
+    for pair_encoding in input.as_chunks::<G2_MSM_PAIR_LEN>().0.iter() {
+        let point = parse_g2_with_subgroup_check(
+            pair_encoding[0..G2_SERIALIZATION_LEN].try_into().unwrap(),
+        )?;
+        let scalar = parse_integer(
+            pair_encoding[G2_SERIALIZATION_LEN..(G2_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
+                .try_into()
+                .unwrap(),
+        );
+        points.push(point);
+        scalars.push(scalar);
+    }
+
+    let result: G2Projective = msm(&points, scalars, allocator);
+
+    let result = result.into_affine();
+
+    write_g2(result, output)?;
+
+    Ok(())
 }

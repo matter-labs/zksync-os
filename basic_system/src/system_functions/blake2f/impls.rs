@@ -66,60 +66,72 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
         resources: &mut R,
         _allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Blake2FPrecompileErrors>> {
-        if input.len() != INPUT_LEN {
+        cycle_marker::wrap_with_resources!("blake2f", resources, {
+            blake2f_as_system_function_inner(input, output, resources)
+        })
+    }
+}
+
+fn blake2f_as_system_function_inner<
+    D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
+    R: Resources,
+>(
+    input: &[u8],
+    output: &mut D,
+    resources: &mut R,
+) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Blake2FPrecompileErrors>> {
+    if input.len() != INPUT_LEN {
+        return Err(interface_error!(
+            Blake2FPrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+    // we will very quickly parse number of round
+    let num_rounds = u32::from_be_bytes(input.as_chunks::<4>().0[0]);
+    let cost_ergs = Ergs(((num_rounds as u64) * GAS_PER_ROUND) * ERGS_PER_GAS);
+    // TODO(EVM-1237): add native model
+    let cost_native = 0;
+    resources.charge(&R::from_ergs_and_native(
+        cost_ergs,
+        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
+    ))?;
+
+    let (mut state, message_block, (t0, t1), finalization_flag) =
+        parse_blake2_state(input[4..].try_into().unwrap());
+
+    let finalization_flag = match finalization_flag {
+        0 => false,
+        1 => true,
+        _ => {
             return Err(interface_error!(
-                Blake2FPrecompileInterfaceError::InvalidInputSize
+                Blake2FPrecompileInterfaceError::InvalidBooleanFlag
             ));
         }
-        // we will very quickly parse number of round
-        let num_rounds = u32::from_be_bytes(input.as_chunks::<4>().0[0]);
-        let cost_ergs = Ergs(((num_rounds as u64) * GAS_PER_ROUND) * ERGS_PER_GAS);
-        // TODO(EVM-1237): add native model
-        let cost_native = 0;
-        resources.charge(&R::from_ergs_and_native(
-            cost_ergs,
-            <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-        ))?;
+    };
 
-        let (mut state, message_block, (t0, t1), finalization_flag) =
-            parse_blake2_state(input[4..].try_into().unwrap());
+    let mut extended_state = [0u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS];
+    extended_state[..BLAKE2B_STATE_WIDTH_IN_U64_WORDS].copy_from_slice(&state);
+    extended_state[BLAKE2B_STATE_WIDTH_IN_U64_WORDS..].copy_from_slice(&BLAKE2B_IV);
 
-        let finalization_flag = match finalization_flag {
-            0 => false,
-            1 => true,
-            _ => {
-                return Err(interface_error!(
-                    Blake2FPrecompileInterfaceError::InvalidBooleanFlag
-                ));
-            }
-        };
-
-        let mut extended_state = [0u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS];
-        extended_state[..BLAKE2B_STATE_WIDTH_IN_U64_WORDS].copy_from_slice(&state);
-        extended_state[BLAKE2B_STATE_WIDTH_IN_U64_WORDS..].copy_from_slice(&BLAKE2B_IV);
-
-        extended_state[12] ^= t0;
-        extended_state[13] ^= t1;
-        if finalization_flag {
-            extended_state[14] = !extended_state[14];
-        }
-
-        round_function_for_num_rounds(&mut extended_state, &message_block, num_rounds as usize);
-
-        for i in 0..BLAKE2B_STATE_WIDTH_IN_U64_WORDS {
-            state[i] ^= extended_state[i] ^ extended_state[i + BLAKE2B_STATE_WIDTH_IN_U64_WORDS];
-        }
-
-        // Serialize state back to little-endian bytes (matches Blake2B wire format on LE targets).
-        let mut result_bytes =
-            [0u8; BLAKE2B_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>()];
-        for (i, word) in state.iter().enumerate() {
-            result_bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
-        }
-        output
-            .try_extend(result_bytes)
-            .map_err(|_| out_of_return_memory!())?;
-
-        Ok(())
+    extended_state[12] ^= t0;
+    extended_state[13] ^= t1;
+    if finalization_flag {
+        extended_state[14] = !extended_state[14];
     }
+
+    round_function_for_num_rounds(&mut extended_state, &message_block, num_rounds as usize);
+
+    for i in 0..BLAKE2B_STATE_WIDTH_IN_U64_WORDS {
+        state[i] ^= extended_state[i] ^ extended_state[i + BLAKE2B_STATE_WIDTH_IN_U64_WORDS];
+    }
+
+    // Serialize state back to little-endian bytes (matches Blake2B wire format on LE targets).
+    let mut result_bytes = [0u8; BLAKE2B_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>()];
+    for (i, word) in state.iter().enumerate() {
+        result_bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
+    }
+    output
+        .try_extend(result_bytes)
+        .map_err(|_| out_of_return_memory!())?;
+
+    Ok(())
 }
