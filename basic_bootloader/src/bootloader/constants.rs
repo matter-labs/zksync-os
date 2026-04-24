@@ -5,13 +5,15 @@ use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_
 #[cfg(feature = "eip-2935")]
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
     COLD_EXISTING_STORAGE_READ_NATIVE_COST, COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
-    WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
+    PREIMAGE_CACHE_GET_NATIVE_COST,
 };
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
     COLD_NEW_STORAGE_READ_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
     WARM_STORAGE_READ_NATIVE_COST,
 };
+#[cfg(feature = "eip-2935")]
+use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
@@ -263,19 +265,26 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
 /// genesis or an earlier block and is only absent at block number 0, which
 /// cannot run EIP-2935 anyway. That lets us use the cold-EXISTING path for
 /// the account read rather than the NEW worst case (which
-/// `NEW_COLD_ACCOUNT_READ_COST` bundles for other callers).
+/// `NEW_COLD_ACCOUNT_READ_COST` bundles for other callers). Because the
+/// account is non-empty, the cold read also pays a decommitment of the
+/// account properties preimage.
 ///
 /// The slot write keeps the cold-NEW worst case so the reserve holds during
-/// the first 8191-block cycle when slots are freshly touched.
+/// the first 8191-block cycle when slots are freshly touched. This matches
+/// what the storage layer actually charges in `materialize_element`
+/// (warm read + cold-new read-extra) followed by `charge_storage_write_extra`
+/// (cold-new write-extra).
 #[cfg(feature = "eip-2935")]
 const EIP_2935_INTRINSIC_NATIVE: u64 =
     // Cold read of HISTORY_STORAGE_ADDRESS account properties (assume exists)
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
         + WARM_STORAGE_READ_NATIVE_COST
         + COLD_EXISTING_STORAGE_READ_NATIVE_COST
+        + PREIMAGE_CACHE_GET_NATIVE_COST
+        + blake2s_native_cost(AccountProperties::ENCODED_SIZE)
         // Cold write of the history slot (worst case: new slot)
         + WARM_STORAGE_READ_NATIVE_COST
-        + WARM_STORAGE_WRITE_EXTRA_NATIVE_COST
+        + COLD_NEW_STORAGE_READ_NATIVE_COST
         + COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 #[cfg(not(feature = "eip-2935"))]
 const EIP_2935_INTRINSIC_NATIVE: u64 = 0;
