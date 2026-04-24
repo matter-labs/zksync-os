@@ -329,11 +329,9 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
             // Something terrible happened (fatal error)
         }
 
-        if let Some((_, _)) = self.pending_call_opcodes.remove(&self.current_call_depth) {
-            // Looks like call frame finished immediately after call-like opcode
-            // Should not happen since even out-of-bounds execution is interpreted as STOP opcode
-            unreachable!();
-        }
+        // Note: pending_call_opcodes entry may exist here for pseudo-frames
+        // (pre-check failures in before_reading_callee). We intentionally leave it
+        // for the parent frame's next before_evm_interpreter_execution_step to consume.
 
         self.current_call_depth -= 1;
 

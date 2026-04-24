@@ -110,7 +110,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
     fn handle_requested_external_call<const IS_ENTRY_FRAME: bool>(
         &mut self,
         caller_ee_type: ExecutionEnvironmentType,
-        call_request: ExternalCallRequest<S>,
+        mut call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
@@ -129,6 +129,33 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             "External call with parameters:\n{:?}\n",
             &call_request,
         );
+
+        // Pre-checks before even reading the callee, shouldn't warm up the callee
+        // on failure
+        match SupportedEEVMState::before_reading_callee(
+            // We use EVM as default
+            if caller_ee_type == ExecutionEnvironmentType::NoEE {
+                ExecutionEnvironmentType::EVM
+            } else {
+                caller_ee_type
+            },
+            self.system,
+            &mut call_request,
+            self.callstack_height,
+            tracer,
+        ) {
+            Ok(success) => {
+                if !success {
+                    return Ok(CompletedExecution {
+                        resources_returned: call_request.available_resources,
+                        result: CallResult::Failed {
+                            return_values: ReturnValues::empty(),
+                        },
+                    });
+                }
+            }
+            Err(e) => return Err(wrap_error!(e)),
+        }
 
         // We begin execution of the requested call in the caller's context. This is necessary
         // because the execution environment does not charge the caller's frame for reading

@@ -71,6 +71,31 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
+    /// Pre-checks to be performed before reading callee
+    pub fn before_reading_callee<'a, 'i: 'ee, 'h: 'ee>(
+        ee_version: ExecutionEnvironmentType,
+        system: &mut System<S>,
+        call_request: &mut ExternalCallRequest<S>,
+        callstack_depth: usize,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        match ee_version {
+            ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::<S>::before_reading_callee(
+                system,
+                call_request,
+                callstack_depth,
+                tracer,
+            )
+            .map_err(wrap_error!()),
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
+                InterfaceError::UnsupportedExecutionEnvironment
+            )),
+        }
+    }
+
     /// Pre-checks and operations that should not be rolled back if call fails
     pub fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         ee_version: ExecutionEnvironmentType,
