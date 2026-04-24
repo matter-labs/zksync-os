@@ -172,6 +172,15 @@ impl U256 {
     }
 
     #[inline(always)]
+    pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
+        let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
+        self.as_limbs_mut().copy_from_slice(&t.as_limbs()[0..4]);
+        let mut high = Self::ZERO;
+        high.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
+        high
+    }
+
+    #[inline(always)]
     pub fn overflowing_add_assign_with_carry_propagation(
         &mut self,
         rhs: &Self,
