@@ -78,12 +78,12 @@ impl U256 {
 
     #[inline(always)]
     pub fn zero() -> Self {
-        Self(DelegatedU256::zero())
+        Self::from_limbs([0, 0, 0, 0])
     }
 
     #[inline(always)]
     pub fn one() -> Self {
-        Self(DelegatedU256::one())
+        Self::from_limbs([1, 0, 0, 0])
     }
 
     pub fn bytereverse(&mut self) {

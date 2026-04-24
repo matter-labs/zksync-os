@@ -16,7 +16,7 @@ fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>
 /// Oracle-backed U256 division with remainder.
 ///
 /// Delegation cost: 5 calls (2 MUL + 1 ADD + 1 SUB + 1 EQ).
-/// All temporaries are constructed from raw limbs (zero delegation cost).
+#[inline]
 pub fn u256_div_rem_with_advice<O: IOOracle>(
     dividend_or_quotient: &mut U256,
     divisor_or_remainder: &mut U256,
@@ -37,28 +37,21 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     let q_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    // Verify: q * d + r == n, no 256-bit overflow, r < d.
-    //
-    // Construct both halves from raw limbs (free) instead of cloning (1 MEMCOPY each).
-    // Use widening_mul_assign_into (2 MUL) instead of widening_mul_assign (1 MEMCOPY + 2 MUL).
     let mut check_lo = U256::from_limbs(q_limbs);
     let mut check_hi = U256::from_limbs(q_limbs);
-    check_lo.widening_mul_assign_into(&mut check_hi, divisor_or_remainder); // MUL_LOW + MUL_HIGH
+    check_lo.widening_mul_assign_into(&mut check_hi, divisor_or_remainder);
 
     let remainder = U256::from_limbs(r_limbs);
-    let carry = check_lo.overflowing_add_assign(&remainder); // ADD
+    let carry = check_lo.overflowing_add_assign(&remainder);
 
-    // Combined: !carry && check_hi == 0 && check_lo == dividend
     core::ops::BitXorAssign::bitxor_assign(&mut check_lo, dividend_or_quotient);
     core::ops::BitOrAssign::bitor_assign(&mut check_lo, &check_hi);
-    assert!(!carry && check_lo.is_zero()); // EQ
+    assert!(!carry && check_lo.is_zero());
 
-    // r < d via subtraction borrow (construct from limbs to avoid clone)
     let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(divisor_or_remainder); // SUB
+    let borrow = r_check.overflowing_sub_assign(divisor_or_remainder);
     assert!(borrow);
 
-    // Write output from raw limbs (no delegation — just stack moves)
     *dividend_or_quotient = U256::from_limbs(q_limbs);
     *divisor_or_remainder = remainder;
 }
@@ -67,7 +60,7 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 ///
 /// Delegation cost: 10 calls (6 MUL + 2 ADD + 1 SUB + 1 EQ),
 /// plus 1 conditional ADD for carry propagation.
-/// All temporaries are constructed from raw limbs (zero delegation cost).
+#[inline]
 pub fn u256_mulmod_with_advice<O: IOOracle>(
     a: &mut U256,
     b: &mut U256,
@@ -95,50 +88,38 @@ pub fn u256_mulmod_with_advice<O: IOOracle>(
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    // Verify: q*m + r == a*b, no 512-bit overflow, r < m.
-    //
-    // All temporaries constructed from raw limbs (free) instead of clone (MEMCOPY).
-    // widening_mul_assign_into (2 MUL) instead of widening_mul_assign (3 = MEMCOPY + 2 MUL).
-
-    // (p0_lo, p0_hi) = widening_mul(q_lo, m)
     let mut p0_lo = U256::from_limbs(q_lo_limbs);
     let mut p0_hi = U256::from_limbs(q_lo_limbs);
-    p0_lo.widening_mul_assign_into(&mut p0_hi, modulus_or_result); // 2 MUL
+    p0_lo.widening_mul_assign_into(&mut p0_hi, modulus_or_result);
 
-    // (p1_lo, p1_hi) = widening_mul(q_hi, m)
     let mut p1_lo = U256::from_limbs(q_hi_limbs);
     let mut p1_hi = U256::from_limbs(q_hi_limbs);
-    p1_lo.widening_mul_assign_into(&mut p1_hi, modulus_or_result); // 2 MUL
+    p1_lo.widening_mul_assign_into(&mut p1_hi, modulus_or_result);
 
-    // check_lo = p0_lo + r
     let remainder = U256::from_limbs(r_limbs);
-    let c1 = p0_lo.overflowing_add_assign(&remainder); // ADD
+    let c1 = p0_lo.overflowing_add_assign(&remainder);
 
-    // check_hi = p0_hi + p1_lo + c1
-    let c2a = p0_hi.overflowing_add_assign(&p1_lo); // ADD
+    let c2a = p0_hi.overflowing_add_assign(&p1_lo);
     let c2b = if c1 {
-        p0_hi.overflowing_add_assign(&U256::one()) // ADD (conditional)
+        p0_hi.overflowing_add_assign(&U256::one())
     } else {
         false
     };
     assert!(!(c2a | c2b));
 
-    // (ab_lo, ab_hi) = widening_mul(a, b) — construct from operand limbs, no clone
     let a_limbs = *a.as_limbs();
     let mut ab_lo = U256::from_limbs(a_limbs);
     let mut ab_hi = U256::from_limbs(a_limbs);
-    ab_lo.widening_mul_assign_into(&mut ab_hi, b); // 2 MUL
+    ab_lo.widening_mul_assign_into(&mut ab_hi, b);
 
-    // Combined: p1_hi == 0 && p0_lo == ab_lo && p0_hi == ab_hi
     core::ops::BitXorAssign::bitxor_assign(&mut p0_lo, &ab_lo);
     core::ops::BitXorAssign::bitxor_assign(&mut p0_hi, &ab_hi);
     core::ops::BitOrAssign::bitor_assign(&mut p0_lo, &p0_hi);
     core::ops::BitOrAssign::bitor_assign(&mut p0_lo, &p1_hi);
-    assert!(p0_lo.is_zero()); // 1 EQ
+    assert!(p0_lo.is_zero());
 
-    // r < m (construct from limbs to avoid clone)
     let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(modulus_or_result); // SUB
+    let borrow = r_check.overflowing_sub_assign(modulus_or_result);
     assert!(borrow);
 
     *modulus_or_result = remainder;
