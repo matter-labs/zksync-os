@@ -3,211 +3,6 @@ use core::ops::{
 };
 use delegated_u256::*;
 
-// ---------------------------------------------------------------------------
-// Oracle CSR helpers for non-deterministic division hints (RISC-V only)
-// ---------------------------------------------------------------------------
-
-/// Oracle query ID for U256 division hints.
-/// Must match `zk_ee::oracle::query_ids::U256_DIV_REM_ADVICE_QUERY_ID`.
-#[cfg(target_arch = "riscv32")]
-#[allow(dead_code)]
-const U256_DIV_REM_ADVICE_QUERY_ID: u32 = 0x4005_0030;
-
-/// Oracle query ID for U256 mulmod hints.
-/// Must match `zk_ee::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID`.
-#[cfg(target_arch = "riscv32")]
-#[allow(dead_code)]
-const U256_MULMOD_ADVICE_QUERY_ID: u32 = 0x4005_0031;
-
-/// Write a word to the oracle CSR (address 0x7c0).
-/// Mirrors `riscv_common::csr_write_word`.
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-#[allow(dead_code)]
-fn oracle_csr_write(value: usize) {
-    unsafe {
-        core::arch::asm!(
-            "csrrw x0, 0x7c0, {rd}",
-            rd = in(reg) value,
-            options(nomem, nostack, preserves_flags)
-        )
-    }
-}
-
-/// Read a word from the oracle CSR (address 0x7c0).
-/// Mirrors `riscv_common::csr_read_word`.
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-#[allow(dead_code)]
-fn oracle_csr_read() -> u32 {
-    let output;
-    unsafe {
-        core::arch::asm!(
-            "csrrw {rd}, 0x7c0, x0",
-            rd = out(reg) output,
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-    output
-}
-
-/// Read a U256 from the oracle CSR stream (4 limbs, each as two u32 reads).
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-#[allow(dead_code)]
-fn read_u256_from_csr() -> U256 {
-    // SAFETY: `[u64; 4]` is a plain integer array with no drop glue and no
-    // validity invariants beyond being initialized. The loop below writes every
-    // element exactly once via `iter_mut()` before `from_limbs` reads them.
-    let mut limbs: [u64; 4] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-    for limb in limbs.iter_mut() {
-        let lo = oracle_csr_read() as u64;
-        let hi = oracle_csr_read() as u64;
-        *limb = lo | (hi << 32);
-    }
-    U256::from_limbs(limbs)
-}
-
-/// Query the oracle for `(quotient, remainder)` and verify the hint using delegated arithmetic.
-///
-/// The oracle response is untrusted. Verification ensures:
-/// - `q * d + r == n` (widening mul + add + equality)
-/// - No 256-bit overflow (`hi == 0`, no carry)
-/// - `r < d` (remainder is fully reduced)
-///
-/// Together these uniquely determine `q` and `r` for given `(n, d)`.
-#[cfg(target_arch = "riscv32")]
-#[allow(dead_code)]
-fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
-    // ---- Send oracle query ----
-    oracle_csr_write(U256_DIV_REM_ADVICE_QUERY_ID as usize);
-    oracle_csr_write(2); // 2 u32 words to follow
-    oracle_csr_write((dividend as *const U256).addr());
-    oracle_csr_write((divisor as *const U256).addr());
-
-    // Response: 4 q limbs + 4 r limbs = 16 u32 reads.
-    let response_len = oracle_csr_read();
-    assert_eq!(response_len, 16);
-
-    let quotient = read_u256_from_csr();
-    let remainder = read_u256_from_csr();
-
-    // ---- Verify hint ----
-    // Check: q * d + r == n (original dividend), with no 256-bit overflow.
-
-    // widening_mul_assign_into(low, high, rhs) computes: low = low_256(low * rhs),
-    // high = high_256(low * rhs). Both `low` and `high` must start as the same value
-    // (the original multiplicand) because MUL_LOW overwrites `low` first.
-    let mut check_lo = quotient.clone();
-    let mut check_hi = quotient.clone();
-    check_lo
-        .0
-        .widening_mul_assign_into(&mut check_hi.0, &divisor.0);
-
-    // check_lo += r
-    let carry = check_lo.0.overflowing_add_assign(&remainder.0);
-
-    // No overflow: high part must be zero and no carry from addition
-    assert!(!carry && check_hi.0.is_zero_mut());
-
-    // q * d + r must equal the original dividend
-    assert!(check_lo == *dividend);
-
-    // Remainder must be strictly less than divisor (fully reduced).
-    assert!(remainder < *divisor);
-
-    // ---- Write results ----
-    *dividend = quotient;
-    *divisor = remainder;
-}
-
-/// Query the oracle for mulmod hint `(q, r)` such that `a * b == q * m + r` with `r < m`.
-///
-/// The oracle response is untrusted. Verification ensures:
-/// - `q * m + r == a * b` (widening muls + adds + equality)
-/// - No 512-bit overflow in `q * m + r`
-/// - `r < m` (remainder is fully reduced)
-///
-/// Together these uniquely determine `r` for given `(a, b, m)`.
-///
-/// Panics if `modulus_or_result` is zero (caller must guard against this).
-///
-/// `q` is up to 512 bits (two U256 words: q_lo, q_hi).
-#[cfg(target_arch = "riscv32")]
-#[allow(dead_code)]
-fn oracle_mulmod(a: &mut U256, b: &mut U256, modulus_or_result: &mut U256) {
-    // ---- Send oracle query ----
-    oracle_csr_write(U256_MULMOD_ADVICE_QUERY_ID as usize);
-    oracle_csr_write(3); // 3 u32 words to follow
-    oracle_csr_write((a as *const U256).addr());
-    oracle_csr_write((b as *const U256).addr());
-    oracle_csr_write((modulus_or_result as *const U256).addr());
-
-    // Response: q_lo (4 limbs) + q_hi (4 limbs) + r (4 limbs) = 24 u32 reads.
-    let response_len = oracle_csr_read();
-    assert_eq!(response_len, 24);
-
-    let q_lo = read_u256_from_csr();
-    let q_hi = read_u256_from_csr();
-    let remainder = read_u256_from_csr();
-
-    // ---- Verify hint ----
-    // Check: q*m + r == a*b, with no overflow beyond 512 bits.
-    //
-    // q = q_lo + q_hi * 2^256, so:
-    // q*m = q_lo*m + (q_hi*m) << 256
-    //
-    // Let (p0_lo, p0_hi) = widening_mul(q_lo, m)
-    // Let (p1_lo, p1_hi) = widening_mul(q_hi, m)
-    //
-    // Then q*m + r has:
-    //   low 256:  p0_lo + r
-    //   high 256: p0_hi + p1_lo + carry
-    //   overflow: p1_hi + carry2 (must be zero)
-
-    // (p0_lo, p0_hi) = widening_mul(q_lo, m)
-    let mut p0_lo = q_lo.clone();
-    let mut p0_hi = q_lo.clone();
-    p0_lo
-        .0
-        .widening_mul_assign_into(&mut p0_hi.0, &modulus_or_result.0);
-
-    // (p1_lo, p1_hi) = widening_mul(q_hi, m)
-    let mut p1_lo = q_hi.clone();
-    let mut p1_hi = q_hi.clone();
-    p1_lo
-        .0
-        .widening_mul_assign_into(&mut p1_hi.0, &modulus_or_result.0);
-
-    // p1_hi must be zero (result fits in 512 bits)
-    assert!(p1_hi.0.is_zero_mut());
-
-    // check_lo = p0_lo + r
-    let c1 = p0_lo.0.overflowing_add_assign(&remainder.0);
-
-    // check_hi = p0_hi + p1_lo + c1
-    let c2a = p0_hi.0.overflowing_add_assign(&p1_lo.0);
-    let c2b = p0_hi
-        .0
-        .overflowing_add_assign_with_carry(&U256::from_limbs([0, 0, 0, 0]).0, c1);
-    assert!(!(c2a | c2b));
-
-    // Compute (ab_lo, ab_hi) = widening_mul(a, b)
-    let mut ab_lo = a.clone();
-    let mut ab_hi = a.clone();
-    ab_lo.0.widening_mul_assign_into(&mut ab_hi.0, &b.0);
-
-    // q*m + r must equal a*b
-    assert!(p0_lo == ab_lo);
-    assert!(p0_hi == ab_hi);
-
-    // Remainder must be strictly less than modulus
-    assert!(remainder < *modulus_or_result);
-
-    // ---- Write result ----
-    *modulus_or_result = remainder;
-}
-
 // Even though we derive, internally we use delegation circuit for equality, ordering and cloning
 // See DelegatedU256 implementations for details
 #[derive(Clone, Hash, PartialEq, Eq, Ord, PartialOrd, Debug)]
@@ -398,14 +193,13 @@ impl U256 {
     }
 
     #[inline(always)]
-    /// Panics if divisor is 0
+    /// Panics if divisor is 0.
+    /// Note: EVM opcodes use the IOOracle-based advice path in zk_ee instead.
+    /// This software fallback is used by div_ceil, add_mod, and tests.
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         let is_zero = divisor_or_remainder.0.is_zero_mut();
         assert!(is_zero == false);
 
-        // The oracle_div_rem path is ready but dormant: the native prover-input
-        // run (NativeArithmeticQuery) does not yet emit div_rem oracle entries,
-        // so the RISC-V witness replay would desynchronize.
         ruint::algorithms::div(
             dividend_or_quotient.as_limbs_mut(),
             divisor_or_remainder.as_limbs_mut(),
@@ -498,14 +292,13 @@ impl U256 {
         modulus_or_result.clone_from(a);
     }
 
+    /// Note: EVM MULMOD opcode uses the IOOracle-based advice path in zk_ee instead.
+    /// This software fallback is used by tests.
     pub fn mul_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
         if modulus_or_result.0.is_zero_mut() {
             return;
         }
 
-        // The oracle_mulmod path is ready but dormant: the native prover-input
-        // run (NativeArithmeticQuery) does not yet emit mulmod oracle entries,
-        // so the RISC-V witness replay would desynchronize.
         let mut product = [0u64; 8];
         let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
         ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
