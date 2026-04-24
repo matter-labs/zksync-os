@@ -33,6 +33,45 @@ use super::{
 };
 
 const BEACON_ROOTS: Address = address!("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02");
+/// Deposit contract
+const DEPOSIT_CONTRACT: Address = address!("0x00000000219ab540356cBB839Cbe05303d7705Fa");
+/// EIP-7002 withdrawal request system contract
+const WITHDRAWAL_REQUEST_CONTRACT: Address =
+    address!("0x00000961Ef480Eb55e80D19Ad83579a64c007002");
+/// EIP-7251 consolidation request system contract
+const CONSOLIDATION_REQUEST_CONTRACT: Address =
+    address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
+
+/// Blob base fee update fraction.
+/// Cancun uses 3338477, Prague (EIP-7840) uses 5007716.
+#[cfg(not(feature = "evm_tester_pectra"))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 3_338_477;
+#[cfg(feature = "evm_tester_pectra")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5_007_716;
+
+const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
+
+/// Compute blob gas price from excess blob gas using the correct update fraction for the hardfork.
+fn calc_blob_gasprice(excess_blob_gas: u64) -> u128 {
+    fake_exponential(
+        MIN_BASE_FEE_PER_BLOB_GAS,
+        excess_blob_gas as u128,
+        BLOB_BASE_FEE_UPDATE_FRACTION as u128,
+    )
+}
+
+/// Approximation of `factor * e ** (numerator / denominator)` using Taylor expansion.
+fn fake_exponential(factor: u128, numerator: u128, denominator: u128) -> u128 {
+    let mut i = 1u128;
+    let mut output = 0u128;
+    let mut numerator_accum = factor * denominator;
+    while numerator_accum > 0 {
+        output += numerator_accum;
+        numerator_accum = (numerator_accum * numerator) / (denominator * i);
+        i += 1;
+    }
+    output / denominator
+}
 
 #[derive(Debug)]
 pub struct Case {
@@ -252,10 +291,11 @@ impl Case {
         test_definition: &StateTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let mut cases = vec![];
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         let mut indexes_for_expected_results = vec![];
         // The boolean represents if the expectException flag is set.
@@ -422,6 +462,7 @@ impl Case {
         test_definition: &BlockchainTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let prestate = test_definition.pre.clone();
         let expected_state = ExpectStructure::get_expected_result(&test_definition.post_state);
@@ -430,7 +471,7 @@ impl Case {
             return vec![];
         }
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         // Apply hash-based filter
         if test_definition
@@ -496,13 +537,14 @@ impl Case {
         test_definition: &TestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         match test_definition {
             TestStructure::State(test) => {
-                Self::from_ethereum_spec_state_test(test, filters, hardfork_version)
+                Self::from_ethereum_spec_state_test(test, filters, hardfork_version, hardfork_was_overridden)
             }
             TestStructure::Blockchain(test) => {
-                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version)
+                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version, hardfork_was_overridden)
             }
         }
     }
@@ -578,8 +620,11 @@ impl Case {
         let mut expected: Option<String> = None;
         let mut actual: Option<String> = None;
 
-        // Ignore beacon roots address
+        // Ignore system contracts not handled by EVM tester
         self.expected_state.remove(&BEACON_ROOTS);
+        self.expected_state.remove(&DEPOSIT_CONTRACT);
+        self.expected_state.remove(&WITHDRAWAL_REQUEST_CONTRACT);
+        self.expected_state.remove(&CONSOLIDATION_REQUEST_CONTRACT);
 
         // TODO merge with prestate!
         for (address, filler_struct) in self.expected_state {
@@ -744,11 +789,10 @@ impl Case {
             .env
             .current_excess_blob_gas
             .map(|excess_blob_gas| {
-                U256::from(alloy::eips::eip4844::calc_blob_gasprice(
-                    excess_blob_gas
-                        .try_into()
-                        .expect("excess_blob_gas overflows u64"),
-                ))
+                let excess: u64 = excess_blob_gas
+                    .try_into()
+                    .expect("excess_blob_gas overflows u64");
+                U256::from(calc_blob_gasprice(excess))
             })
             .unwrap_or(U256::MAX);
         system_context.blob_fee = blob_fee;

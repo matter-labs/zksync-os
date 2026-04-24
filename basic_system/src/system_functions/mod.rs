@@ -2,6 +2,8 @@ use core::alloc::Allocator;
 use zk_ee::memory::MinimalByteAddressableSlice;
 use zk_ee::system::{MissingSystemFunction, Resources, SystemFunctions, SystemFunctionsExt};
 
+pub mod blake2f;
+pub mod bls12_381;
 pub mod bn254_ecadd;
 pub mod bn254_ecmul;
 pub mod bn254_pairing_check;
@@ -47,6 +49,14 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctions<R> for NoStdSystemFun
     type Bn254PairingCheck = bn254_pairing_check::Bn254PairingCheckImpl;
     type RipeMd160 = ripemd160::RipeMd160Impl;
     type PointEvaluation = point_evaluation::PointEvaluationImpl;
+    type Bls12G1Add = bls12_381::Bls12381G1AdditionPrecompile;
+    type Bls12G2Add = bls12_381::Bls12381G2AdditionPrecompile;
+    type Bls12G1Msm = bls12_381::Bls12381G1MSMPrecompile;
+    type Bls12G2Msm = bls12_381::Bls12381G2MSMPrecompile;
+    type Bls12PairingCheck = bls12_381::Bls12381PairingCheckPrecompile;
+    type Bls12MapFpToG1 = bls12_381::Bls12381G1MappingPrecompile;
+    type Bls12MapFp2ToG2 = bls12_381::Bls12381G2MappingPrecompile;
+    type Blake2F = blake2f::Blake2FPrecompile;
 }
 
 impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>

@@ -71,7 +71,7 @@ impl ZKsyncOS {
         let encoded_txs: Vec<EncodedTx> = transactions
             .iter()
             .map(|transaction| encode_transaction(transaction, &system_context))
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let block_gas_limit: u64 = system_context
             .block_gas_limit
