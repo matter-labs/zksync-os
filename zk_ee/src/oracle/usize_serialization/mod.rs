@@ -378,7 +378,6 @@ impl<T: UsizeDeserializable, U: UsizeDeserializable> UsizeDeserializable for (T,
     }
 }
 
-// Only UsizeSerializable has a default impl
 impl<T: UsizeSerializable, const N: usize> UsizeSerializable for [T; N] {
     const USIZE_LEN: usize = <T as UsizeSerializable>::USIZE_LEN * N;
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -386,5 +385,18 @@ impl<T: UsizeSerializable, const N: usize> UsizeSerializable for [T; N] {
             core::iter::empty::<usize>(),
             core::array::from_fn(|i| Some(UsizeSerializable::iter(&self[i]))),
         )
+    }
+}
+
+impl<T: UsizeDeserializable, const N: usize> UsizeDeserializable for [T; N] {
+    const USIZE_LEN: usize = <T as UsizeDeserializable>::USIZE_LEN * N;
+
+    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut result: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
+        for slot in result.iter_mut() {
+            slot.write(<T as UsizeDeserializable>::from_iter(src)?);
+        }
+        // SAFETY: all N elements were initialized by the loop above.
+        Ok(unsafe { result.as_ptr().cast::<[T; N]>().read() })
     }
 }

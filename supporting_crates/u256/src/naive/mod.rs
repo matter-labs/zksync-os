@@ -165,6 +165,25 @@ impl U256 {
     }
 
     #[inline(always)]
+    pub fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
+        let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
+        self.as_limbs_mut().copy_from_slice(&t.as_limbs()[0..4]);
+        high.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
+    }
+
+    #[inline(always)]
+    pub fn overflowing_add_assign_with_carry_propagation(
+        &mut self,
+        rhs: &Self,
+        carry: bool,
+    ) -> bool {
+        let (t, of1) = self.0.overflowing_add(rhs.0);
+        let (t, of2) = t.overflowing_add(ruint::aliases::U256::from(carry as u64));
+        self.0 = t;
+        of1 | of2
+    }
+
+    #[inline(always)]
     /// Panics if divisor is 0
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         let (q, r) = dividend_or_quotient.0.div_rem(divisor_or_remainder.0);
