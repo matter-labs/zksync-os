@@ -49,6 +49,7 @@ fn oracle_csr_read() -> u32 {
 
 /// Read a U256 from the oracle CSR stream (4 limbs, each as two u32 reads).
 #[cfg(target_arch = "riscv32")]
+#[inline(always)]
 fn read_u256_from_csr() -> U256 {
     // SAFETY: `[u64; 4]` is a plain integer array with no drop glue and no
     // validity invariants beyond being initialized. The loop below writes every
