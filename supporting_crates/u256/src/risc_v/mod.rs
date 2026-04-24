@@ -47,6 +47,21 @@ fn oracle_csr_read() -> u32 {
     output
 }
 
+/// Read a U256 from the oracle CSR stream (4 limbs, each as two u32 reads).
+#[cfg(target_arch = "riscv32")]
+fn read_u256_from_csr() -> U256 {
+    // SAFETY: `[u64; 4]` is a plain integer array with no drop glue and no
+    // validity invariants beyond being initialized. The loop below writes every
+    // element exactly once via `iter_mut()` before `from_limbs` reads them.
+    let mut limbs: [u64; 4] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+    for limb in limbs.iter_mut() {
+        let lo = oracle_csr_read() as u64;
+        let hi = oracle_csr_read() as u64;
+        *limb = lo | (hi << 32);
+    }
+    U256::from_limbs(limbs)
+}
+
 /// Query the oracle for `(quotient, remainder)` and verify the hint using delegated arithmetic.
 ///
 /// The oracle response is untrusted. Verification ensures:
@@ -58,51 +73,23 @@ fn oracle_csr_read() -> u32 {
 #[cfg(target_arch = "riscv32")]
 fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
     // ---- Send oracle query ----
-    // Protocol: write query_id, write input_len, write input words,
-    //           read response_len, read response words.
-    // Two u32 pointer writes get packed into 1 usize by QueryBuffer.
     oracle_csr_write(U256_DIV_REM_ADVICE_QUERY_ID as usize);
     oracle_csr_write(2); // 2 u32 words to follow
     oracle_csr_write((dividend as *const U256).addr());
     oracle_csr_write((divisor as *const U256).addr());
 
-    // Response: 8 usize values (4 q limbs + 4 r limbs), delivered as 16 u32 reads.
-    // Must be a full assert (not debug_assert): a wrong length would leave stale words
-    // in the CSR stream and corrupt framing for all subsequent oracle queries.
+    // Response: 4 q limbs + 4 r limbs = 16 u32 reads.
     let response_len = oracle_csr_read();
     assert_eq!(response_len, 16);
 
-    // ---- Read quotient hint ----
-    #[allow(invalid_value, clippy::uninit_assumed_init)]
-    let quotient: U256 = unsafe {
-        let mut q: U256 = core::mem::MaybeUninit::uninit().assume_init();
-        let limbs = q.as_limbs_mut();
-        for limb in limbs.iter_mut() {
-            let lo = oracle_csr_read() as u64;
-            let hi = oracle_csr_read() as u64;
-            *limb = lo | (hi << 32);
-        }
-        q
-    };
-
-    // ---- Read remainder hint ----
-    #[allow(invalid_value, clippy::uninit_assumed_init)]
-    let remainder: U256 = unsafe {
-        let mut r: U256 = core::mem::MaybeUninit::uninit().assume_init();
-        let limbs = r.as_limbs_mut();
-        for limb in limbs.iter_mut() {
-            let lo = oracle_csr_read() as u64;
-            let hi = oracle_csr_read() as u64;
-            *limb = lo | (hi << 32);
-        }
-        r
-    };
+    let quotient = read_u256_from_csr();
+    let remainder = read_u256_from_csr();
 
     // ---- Verify hint ----
     // Check: q * d + r == n (original dividend), with no 256-bit overflow.
 
     // widening_mul_assign_into(low, high, rhs) computes: low = low_256(low * rhs),
-    // high = high_256(high * rhs). Both `low` and `high` must start as the same value
+    // high = high_256(low * rhs). Both `low` and `high` must start as the same value
     // (the original multiplicand) because MUL_LOW overwrites `low` first.
     let mut check_lo = quotient.clone();
     let mut check_hi = quotient.clone();
@@ -120,7 +107,6 @@ fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
     assert!(check_lo == *dividend);
 
     // Remainder must be strictly less than divisor (fully reduced).
-    // Ord::cmp on DelegatedU256 uses a scratch copy, so it is non-destructive.
     assert!(remainder < *divisor);
 
     // ---- Write results ----
@@ -153,44 +139,9 @@ fn oracle_mulmod(a: &mut U256, b: &mut U256, modulus_or_result: &mut U256) {
     let response_len = oracle_csr_read();
     assert_eq!(response_len, 24);
 
-    // ---- Read q_lo hint ----
-    #[allow(invalid_value, clippy::uninit_assumed_init)]
-    let q_lo: U256 = unsafe {
-        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
-        let limbs = v.as_limbs_mut();
-        for limb in limbs.iter_mut() {
-            let lo = oracle_csr_read() as u64;
-            let hi = oracle_csr_read() as u64;
-            *limb = lo | (hi << 32);
-        }
-        v
-    };
-
-    // ---- Read q_hi hint ----
-    #[allow(invalid_value, clippy::uninit_assumed_init)]
-    let q_hi: U256 = unsafe {
-        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
-        let limbs = v.as_limbs_mut();
-        for limb in limbs.iter_mut() {
-            let lo = oracle_csr_read() as u64;
-            let hi = oracle_csr_read() as u64;
-            *limb = lo | (hi << 32);
-        }
-        v
-    };
-
-    // ---- Read remainder hint ----
-    #[allow(invalid_value, clippy::uninit_assumed_init)]
-    let remainder: U256 = unsafe {
-        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
-        let limbs = v.as_limbs_mut();
-        for limb in limbs.iter_mut() {
-            let lo = oracle_csr_read() as u64;
-            let hi = oracle_csr_read() as u64;
-            *limb = lo | (hi << 32);
-        }
-        v
-    };
+    let q_lo = read_u256_from_csr();
+    let q_hi = read_u256_from_csr();
+    let remainder = read_u256_from_csr();
 
     // ---- Verify hint ----
     // Check: q*m + r == a*b, with no overflow beyond 512 bits.
@@ -556,11 +507,9 @@ impl U256 {
 
         #[cfg(not(target_arch = "riscv32"))]
         {
-            let mut product = [a.clone(), a.clone()];
-            let (low, high) = product.split_at_mut(1);
-            Self::widening_mul_assign_into(&mut low[0], &mut high[0], &*b);
-            let product: &mut [u64; 8] = unsafe { core::mem::transmute(&mut product[0]) };
-            ruint::algorithms::div(product, modulus_or_result.as_limbs_mut());
+            let mut product = [0u64; 8];
+            let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
+            ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
         }
     }
 
