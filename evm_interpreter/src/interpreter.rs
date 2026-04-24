@@ -117,7 +117,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         hooks: &mut HooksStorage<S, S::Allocator>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExitCode, EvmSubsystemError> {
+    ) -> Result<ExitCode, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut cycles = 0;
         let result = loop {
             let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
@@ -154,12 +157,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::ADD => self.wrapped_add(),
                     opcodes::MUL => self.wrapping_mul(),
                     opcodes::SUB => self.wrapping_sub(),
-                    opcodes::DIV => self.div(),
-                    opcodes::SDIV => self.sdiv(),
-                    opcodes::MOD => self.rem(),
-                    opcodes::SMOD => self.smod(),
+                    opcodes::DIV => self.div(system),
+                    opcodes::SDIV => self.sdiv(system),
+                    opcodes::MOD => self.rem(system),
+                    opcodes::SMOD => self.smod(system),
                     opcodes::ADDMOD => self.addmod(),
-                    opcodes::MULMOD => self.mulmod(),
+                    opcodes::MULMOD => self.mulmod(system),
                     opcodes::EXP => self.eval_exp(),
                     opcodes::SIGNEXTEND => self.sign_extend(),
                     opcodes::LT => self.lt(),
