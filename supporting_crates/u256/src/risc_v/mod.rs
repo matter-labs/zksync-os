@@ -13,6 +13,12 @@ use delegated_u256::*;
 #[allow(dead_code)]
 const U256_DIV_REM_ADVICE_QUERY_ID: u32 = 0x4005_0030;
 
+/// Oracle query ID for U256 mulmod hints.
+/// Must match `zk_ee::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID`.
+#[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
+const U256_MULMOD_ADVICE_QUERY_ID: u32 = 0x4005_0031;
+
 /// Write a word to the oracle CSR (address 0x7c0).
 /// Mirrors `riscv_common::csr_write_word`.
 #[cfg(target_arch = "riscv32")]
@@ -125,6 +131,128 @@ fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
     // ---- Write results ----
     *dividend = quotient;
     *divisor = remainder;
+}
+
+/// Query the oracle for mulmod hint `(q, r)` such that `a * b == q * m + r` with `r < m`.
+///
+/// The oracle response is untrusted. Verification ensures:
+/// - `q * m + r == a * b` (widening muls + adds + equality)
+/// - No 512-bit overflow in `q * m + r`
+/// - `r < m` (remainder is fully reduced)
+///
+/// Together these uniquely determine `r` for given `(a, b, m)`.
+///
+/// Panics if `modulus_or_result` is zero (caller must guard against this).
+///
+/// `q` is up to 512 bits (two U256 words: q_lo, q_hi).
+#[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
+fn oracle_mulmod(a: &mut U256, b: &mut U256, modulus_or_result: &mut U256) {
+    // ---- Send oracle query ----
+    oracle_csr_write(U256_MULMOD_ADVICE_QUERY_ID as usize);
+    oracle_csr_write(3); // 3 u32 words to follow
+    oracle_csr_write((a as *const U256).addr());
+    oracle_csr_write((b as *const U256).addr());
+    oracle_csr_write((modulus_or_result as *const U256).addr());
+
+    // Response: q_lo (4 limbs) + q_hi (4 limbs) + r (4 limbs) = 24 u32 reads.
+    let response_len = oracle_csr_read();
+    assert_eq!(response_len, 24);
+
+    // ---- Read q_lo hint ----
+    #[allow(invalid_value, clippy::uninit_assumed_init)]
+    let q_lo: U256 = unsafe {
+        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
+        let limbs = v.as_limbs_mut();
+        for limb in limbs.iter_mut() {
+            let lo = oracle_csr_read() as u64;
+            let hi = oracle_csr_read() as u64;
+            *limb = lo | (hi << 32);
+        }
+        v
+    };
+
+    // ---- Read q_hi hint ----
+    #[allow(invalid_value, clippy::uninit_assumed_init)]
+    let q_hi: U256 = unsafe {
+        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
+        let limbs = v.as_limbs_mut();
+        for limb in limbs.iter_mut() {
+            let lo = oracle_csr_read() as u64;
+            let hi = oracle_csr_read() as u64;
+            *limb = lo | (hi << 32);
+        }
+        v
+    };
+
+    // ---- Read remainder hint ----
+    #[allow(invalid_value, clippy::uninit_assumed_init)]
+    let remainder: U256 = unsafe {
+        let mut v: U256 = core::mem::MaybeUninit::uninit().assume_init();
+        let limbs = v.as_limbs_mut();
+        for limb in limbs.iter_mut() {
+            let lo = oracle_csr_read() as u64;
+            let hi = oracle_csr_read() as u64;
+            *limb = lo | (hi << 32);
+        }
+        v
+    };
+
+    // ---- Verify hint ----
+    // Check: q*m + r == a*b, with no overflow beyond 512 bits.
+    //
+    // q = q_lo + q_hi * 2^256, so:
+    // q*m = q_lo*m + (q_hi*m) << 256
+    //
+    // Let (p0_lo, p0_hi) = widening_mul(q_lo, m)
+    // Let (p1_lo, p1_hi) = widening_mul(q_hi, m)
+    //
+    // Then q*m + r has:
+    //   low 256:  p0_lo + r
+    //   high 256: p0_hi + p1_lo + carry
+    //   overflow: p1_hi + carry2 (must be zero)
+
+    // (p0_lo, p0_hi) = widening_mul(q_lo, m)
+    let mut p0_lo = q_lo.clone();
+    let mut p0_hi = q_lo.clone();
+    p0_lo
+        .0
+        .widening_mul_assign_into(&mut p0_hi.0, &modulus_or_result.0);
+
+    // (p1_lo, p1_hi) = widening_mul(q_hi, m)
+    let mut p1_lo = q_hi.clone();
+    let mut p1_hi = q_hi.clone();
+    p1_lo
+        .0
+        .widening_mul_assign_into(&mut p1_hi.0, &modulus_or_result.0);
+
+    // p1_hi must be zero (result fits in 512 bits)
+    assert!(p1_hi.0.is_zero_mut());
+
+    // check_lo = p0_lo + r
+    let c1 = p0_lo.0.overflowing_add_assign(&remainder.0);
+
+    // check_hi = p0_hi + p1_lo + c1
+    let c2a = p0_hi.0.overflowing_add_assign(&p1_lo.0);
+    let c2b = p0_hi
+        .0
+        .overflowing_add_assign_with_carry(&U256::from_limbs([0, 0, 0, 0]).0, c1);
+    assert!(!(c2a | c2b));
+
+    // Compute (ab_lo, ab_hi) = widening_mul(a, b)
+    let mut ab_lo = a.clone();
+    let mut ab_hi = a.clone();
+    ab_lo.0.widening_mul_assign_into(&mut ab_hi.0, &b.0);
+
+    // q*m + r must equal a*b
+    assert!(p0_lo == ab_lo);
+    assert!(p0_hi == ab_hi);
+
+    // Remainder must be strictly less than modulus
+    assert!(remainder < *modulus_or_result);
+
+    // ---- Write result ----
+    *modulus_or_result = remainder;
 }
 
 // Even though we derive, internally we use delegation circuit for equality, ordering and cloning
