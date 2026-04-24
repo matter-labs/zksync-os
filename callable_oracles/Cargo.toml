@@ -26,3 +26,4 @@ hex = { workspace = true }
 [features]
 default = ["evaluate"]
 evaluate = ["riscv_transpiler"]
+testing = []

@@ -21,6 +21,7 @@ use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncSpecificTxEnvelope;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
+mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
@@ -117,7 +118,7 @@ fn run_base_system() {
             .from(address!("1234000000000000000000000000000000000000"))
             .to(common_target_address())
             .value(alloy::primitives::U256::from(100))
-            .gas_price(1000)
+            .gas_price(10_000)
             .gas_limit(21_000)
             .build()
             .into()
@@ -128,7 +129,7 @@ fn run_base_system() {
             .from(wallet.address())
             .to(to)
             .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into())
-            .gas_price(1000)
+            .gas_price(10_000)
             .gas_limit(40_000)
             .nonce(3)
             .build()
@@ -1188,12 +1189,12 @@ fn test_expensive_pubdata() {
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
-    // Validation uses 40 bytes of pubdata, we want the validation
+    // Validation uses 134 bytes of pubdata, we want the validation
     // pubdata charge to be > MAX_NATIVE_COMPUTATIONAL (2^35), to
     // ensure we use withheld resources for it.
     let native_price = U256::from(100);
-    // Value s.t. (pubdata_price / native_price) * 40 > MAX_NATIVE_COMPUTATIONAL
-    let pubdata_price = U256::from(85899346000u64);
+    // Value s.t. (pubdata_price / native_price) * 134 > MAX_NATIVE_COMPUTATIONAL
+    let pubdata_price = U256::from(25641596000u64);
 
     let block_context = BlockContext {
         native_price,
@@ -1687,7 +1688,7 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
     let base_fee = 1_000u128;
     let simulation_total_deposited = U256::from(1_000u64);
     let execution_total_deposited =
-        U256::from(gas_limit) * U256::from(base_fee) + value + U256::from(100u64);
+        U256::from(gas_limit) * U256::from(base_fee) + value + U256::from(100_000u64);
 
     let simulation_tx = L1TxBuilder::new()
         .from(from)
@@ -1759,6 +1760,18 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         "Mismatch in gas used between simulation and execution"
     );
     assert!(simulation_result.pubdata_used >= execution_result.pubdata_used);
+    // Expected number of bytes simulation will overestimate for pubdata.
+    // It's important to check that the introduction of the asset tracker
+    // call doesn't increment this difference.
+    println!(
+        "sim: {}, execution {}",
+        simulation_result.pubdata_used, execution_result.pubdata_used
+    );
+    let expected_pubdata_diff_before_asset_tracker = 61;
+    assert!(
+        simulation_result.pubdata_used
+            >= execution_result.pubdata_used + expected_pubdata_diff_before_asset_tracker
+    );
 }
 
 /// Check that gas price doesn't affect gas used in simulation.

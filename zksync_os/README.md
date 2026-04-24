@@ -2,7 +2,7 @@
 
 This crate contains the main zksync_os program. All the configuration and data is fed to it through the CSR register (see section below).
 
-It is compiled into RISC-V format — run `./dump_bin.sh` to create the `.bin`, `.text`, and `.elf` files. The `.bin` and `.text` files are used by `zksync_os_runner` to simulate execution via the `riscv_transpiler` VM.
+It is compiled into RISC-V format via `cargo airbender build` (see `./dump_bin.sh`), which produces `dist/<app>/app.{bin,elf,text}` plus a `manifest.toml`. Those artifacts are consumed by `zksync_os_runner` to simulate execution via the airbender-platform transpiler.
 
 ## Outputs
 
@@ -14,12 +14,14 @@ the 'output' of this execution.
 zkOS communicates with oracles via CSR (Control and Status Register) `0x7c0`.
 It will request data by writing the payload to that register, and afterwards try to read the data from the register itself.
 
-During simulation, this is handled by the `riscv_transpiler` VM — it intercepts the
-opcodes writing to this register and forwards them to the `NonDeterminismCSRSource`
-implementation provided by the runner.
+During simulation, the airbender-platform transpiler intercepts the opcodes writing to
+this register and serves pre-recorded non-determinism words passed to
+`zksync_os_runner::run`.
 
 This means that zksync_os code MUST be run within the transpiler VM environment.
 
 ## How to prove & verify
 
-You'll have to use the tools from the `zksync-airbender` repo. See [Proving tests with CLI](../docs/proving_tests_with_cli.md) for instructions.
+Use the `airbender-host` `CpuProver` / `GpuProver` APIs (used by `tests/rig` and
+`tests/instances/eth_runner` when the `e2e_proving` / `proving` / `gpu` features are
+enabled). See [Proving tests with CLI](../docs/proving_tests_with_cli.md) for instructions.

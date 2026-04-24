@@ -70,8 +70,10 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions<false>;
-    type SystemFunctionsExt = NoStdSystemFunctions<false>;
+    // USE_ADVICE = true: proof environment must use oracle advice for ecrecover/modexp
+    // to match the proving binary's oracle query sequence
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;

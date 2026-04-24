@@ -29,6 +29,19 @@ pub const SHA256_CHUNK_SIZE: usize = 64;
 pub const RIPEMD160_BASE_NATIVE_COST: u64 = 1_600;
 pub const RIPEMD160_ROUND_NATIVE_COST: u64 = 4_200;
 pub const RIPEMD160_CHUNK_SIZE: usize = 64;
+/// Native costs for blake2s hashing.
+/// NOTE: To recompute if the blake coefficient changes.
+pub const BLAKE2S_BASE_NATIVE_COST: u64 = 800;
+pub const BLAKE2S_ROUND_NATIVE_COST: u64 = 340;
+pub const BLAKE2S_CHUNK_SIZE: usize = 64;
+
+/// Helper to compute blake2s hashing native cost for a given input length.
+pub const fn blake2s_native_cost(len: usize) -> u64 {
+    let num_rounds = len.div_ceil(BLAKE2S_CHUNK_SIZE) as u64;
+    num_rounds
+        .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
+        .saturating_add(BLAKE2S_BASE_NATIVE_COST)
+}
 pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(46_000, 1650, 0);
 pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(600_000, 41_000, 0);
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);

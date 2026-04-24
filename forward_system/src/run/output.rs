@@ -63,10 +63,10 @@ impl<TR: TxResultCallback>
             storage_writes,
             tx_results,
             new_preimages,
+            block_computational_native_used,
+            block_pubdata_used,
             ..
         } = value;
-
-        let mut block_computational_native_used = 0;
 
         // We cannot simply use `enumerate` here, because some transactions can be invalid
         // Invalid transactions are not counted in the tx_number for events/logs, so we need
@@ -88,7 +88,6 @@ impl<TR: TxResultCallback>
                         } else {
                             ExecutionResult::Revert(output.output)
                         };
-                        block_computational_native_used += output.computational_native_used;
                         let o = TxOutput {
                             gas_used: output.gas_used,
                             gas_refunded: output.gas_refunded,
@@ -143,8 +142,7 @@ impl<TR: TxResultCallback>
             account_diffs,
             published_preimages,
             computational_native_used: block_computational_native_used,
-            // TODO: will be populated in the follow-up PR
-            pubdata_used: 0,
+            pubdata_used: block_pubdata_used,
         }
     }
 }

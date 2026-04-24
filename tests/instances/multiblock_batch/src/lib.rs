@@ -14,7 +14,6 @@ use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA
 use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{alloy, testing_signer, TestingFramework};
-use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
 
 fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
@@ -82,15 +81,12 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         vec![block1_pubdata.as_slice(), block2_pubdata.as_slice()],
     );
 
-    let multinblock_program_path = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
+    let multiblock_dist_dir = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
         .join("zksync_os")
-        .join("multiblock_batch.bin");
+        .join("dist")
+        .join("multiblock_batch");
 
-    let proof_output = zksync_os_runner::run(
-        multinblock_program_path,
-        1 << 36,
-        QuasiUARTSource::new_with_reads(batch_input),
-    );
+    let proof_output = zksync_os_runner::run(multiblock_dist_dir, 1 << 36, &batch_input);
 
     debug!("Proof running output = 0x",);
     for word in proof_output.into_iter() {

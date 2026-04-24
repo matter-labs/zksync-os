@@ -23,11 +23,11 @@ pub fn zk_tx_into_revm_tx(
     gas_used_override: Option<u64>,
     force_revert: bool,
     block_gas_limit: u64,
+    settlement_layer_chain_id: Option<U256>,
 ) -> anyhow::Result<ZKsyncTx<TxEnv>> {
     let mut blob_hashes = vec![];
     let mut max_fee_per_blob_gas = 0;
     let mut authorization_list = vec![];
-    let mut is_service_tx = false;
     let (
         gas_price,
         gas_priority_fee,
@@ -121,7 +121,6 @@ pub fn zk_tx_into_revm_tx(
                 ZKsyncSpecificTxEnvelope::Service(service_tx) => {
                     let gas_limit = block_gas_limit;
                     let nonce = 0; // Service transactions don't have nonces, use neutral placeholder.
-                    is_service_tx = true;
                     (
                         Some(0u128),
                         Some(0u128),
@@ -173,9 +172,9 @@ pub fn zk_tx_into_revm_tx(
         .base(tx_env_builder)
         .mint(to_mint)
         .refund_recipient(refund_recipient)
+        .settlement_layer_chain_id(settlement_layer_chain_id)
         .gas_used_override(gas_used_override)
         .force_fail(force_revert)
-        .service_tx(is_service_tx)
         .build()
         .map_err(|e| anyhow!("Failed to build TxEnv: {e:?}"))
 }
@@ -242,7 +241,7 @@ mod tests {
     #[test]
     fn custom_tx_is_rejected() {
         let tx = ZKsyncTxEnvelope::new_custom_tx_type(TransactionRequest::default(), 0xff);
-        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000).unwrap_err();
+        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None).unwrap_err();
         assert!(err.to_string().contains("Custom transactions"));
     }
 
@@ -252,7 +251,7 @@ mod tests {
             gas_limit: (u64::MAX as u128) + 1,
             ..Default::default()
         });
-        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000).unwrap_err();
+        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None).unwrap_err();
         assert!(err.to_string().contains("gas_limit"));
     }
 

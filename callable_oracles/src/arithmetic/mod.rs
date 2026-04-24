@@ -1,7 +1,8 @@
 use basic_system::system_functions::modexp::{
     ModExpAdviceParams, ModExpAdviceParams64, MODEXP_ADVICE_QUERY_ID,
 };
-use oracle_provider::{OracleQueryProcessor, RamPeek};
+use oracle_provider::OracleQueryProcessor;
+use oracle_provider::RamPeek;
 use zk_ee::oracle::query_ids::U256_DIV_REM_ADVICE_QUERY_ID;
 
 use crate::utils::{
@@ -56,19 +57,6 @@ impl ArithmeticQueryOutput {
 
         Box::new(n)
     }
-}
-
-fn div_rem_output(
-    mut dividend: Vec<u64>,
-    mut divisor: Vec<u64>,
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    ruint::algorithms::div(&mut dividend, &mut divisor);
-
-    ArithmeticQueryOutput {
-        quotient: dividend,
-        remainder: divisor,
-    }
-    .into_usize_iterator()
 }
 
 fn u256_div_rem_output(
@@ -149,14 +137,20 @@ impl OracleQueryProcessor for ArithmeticQuery {
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.a_ptr > 0);
         assert!(arg.a_len > 0);
-        let n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
+        let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
         assert_eq!(arg.b_ptr, 0);
         assert_eq!(arg.b_len, 0);
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
-        let d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
+        let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
 
-        div_rem_output(n, d)
+        ruint::algorithms::div(&mut n, &mut d);
+
+        ArithmeticQueryOutput {
+            quotient: n,
+            remainder: d,
+        }
+        .into_usize_iterator()
     }
 }
 
@@ -201,32 +195,27 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
             .checked_mul(4)
             .expect("modulus_len overflow");
 
-        let n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
-        let d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
+        let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
+        let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
 
-        div_rem_output(n, d)
+        ruint::algorithms::div(&mut n, &mut d);
+
+        ArithmeticQueryOutput {
+            quotient: n,
+            remainder: d,
+        }
+        .into_usize_iterator()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
+    use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
-    use oracle_provider::RamPeek;
-
-    #[derive(Default)]
-    struct TestMemorySource {
-        words: BTreeMap<u32, u32>,
-    }
 
     impl TestMemorySource {
-        fn insert_u32(&mut self, address: u32, value: u32) {
-            assert!(address.is_multiple_of(4));
-            self.words.insert(address, value);
-        }
-
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
             for (idx, value) in values.iter().copied().enumerate() {
                 let word_address = address + (idx as u32) * 8;
@@ -253,12 +242,6 @@ mod tests {
         }
     }
 
-    impl RamPeek for TestMemorySource {
-        fn peek_word(&self, address: u32) -> u32 {
-            self.words.get(&address).copied().unwrap_or(0)
-        }
-    }
-
     fn patterned_u64_words(len: usize, seed: u64) -> Vec<u64> {
         let mut state = seed;
         let mut words = Vec::with_capacity(len);
@@ -279,6 +262,97 @@ mod tests {
         *words.last_mut().expect("large input must be non-empty") |= 1 << 63;
 
         words
+    }
+
+    /// Helper: write a ModExpAdviceParams struct and data into TestMemorySource, then run the
+    /// oracle query processor. Returns (quotient_u64_words, remainder_u64_words).
+    fn run_division_query(dividend_u64: &[u64], modulus_u64: &[u64]) -> (Vec<u64>, Vec<u64>) {
+        let a_digits = dividend_u64.len().div_ceil(4);
+        let m_digits = modulus_u64.len().div_ceil(4);
+        let a_u64_count = a_digits * 4;
+
+        const PARAMS_ADDR: u32 = 0x100;
+        const A_ADDR: u32 = 0x200;
+        let m_addr: u32 = A_ADDR + (a_u64_count as u32) * 8;
+
+        let mut memory = TestMemorySource::default();
+        memory.insert_modexp_params(
+            PARAMS_ADDR,
+            ModExpAdviceParams {
+                op: 0,
+                a_ptr: A_ADDR,
+                a_len: a_digits as u32,
+                b_ptr: 0,
+                b_len: 0,
+                modulus_ptr: m_addr,
+                modulus_len: m_digits as u32,
+            },
+        );
+        memory.insert_u64_words(A_ADDR, dividend_u64);
+        memory.insert_u64_words(m_addr, modulus_u64);
+
+        let result: Vec<usize> = ArithmeticQuery
+            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![PARAMS_ADDR as usize], &memory)
+            .collect();
+
+        assert!(!result.is_empty(), "Expected at least a header word");
+        let header = result[0] as u64;
+        let q_len_u32 = (header & 0xFFFF_FFFF) as usize;
+        let r_len_u32 = (header >> 32) as usize;
+        let q_len = q_len_u32 / 2;
+        let r_len = r_len_u32 / 2;
+        assert_eq!(result.len(), 1 + q_len + r_len);
+
+        let quotient: Vec<u64> = result[1..1 + q_len].iter().map(|&x| x as u64).collect();
+        let remainder: Vec<u64> = result[1 + q_len..].iter().map(|&x| x as u64).collect();
+        (quotient, remainder)
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_basic_division() {
+        // 10 / 3 = q=3, r=1
+        let (q, r) = run_division_query(&[10, 0, 0, 0], &[3, 0, 0, 0]);
+        assert_eq!(q, vec![3]);
+        assert_eq!(r, vec![1]);
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_exact_division() {
+        // 15 / 5 = q=3, r=0
+        let (q, r) = run_division_query(&[15, 0, 0, 0], &[5, 0, 0, 0]);
+        assert_eq!(q, vec![3]);
+        assert!(r.is_empty(), "remainder should be zero (stripped)");
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_dividend_smaller_than_modulus() {
+        // 2 / 7 = q=0, r=2
+        let (q, r) = run_division_query(&[2, 0, 0, 0], &[7, 0, 0, 0]);
+        assert!(q.is_empty(), "quotient should be zero (stripped)");
+        assert_eq!(r, vec![2]);
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_dividend_fewer_digits_than_modulus() {
+        // a=5 (1 DelegatedU256 digit), m=2^64+3 (2 DelegatedU256 digits)
+        // 5 < 2^64+3, so q=0, r=5
+        let (q, r) = run_division_query(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
+        assert!(q.is_empty(), "quotient should be zero (stripped)");
+        assert_eq!(r, vec![5]);
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_multi_digit_quotient() {
+        // 2^128 / 3 = 0x55555555555555555555555555555555 remainder 1
+        let (q, r) = run_division_query(&[0, 0, 1, 0], &[3, 0, 0, 0]);
+        assert_eq!(q, vec![0x5555555555555555, 0x5555555555555555]);
+        assert_eq!(r, vec![1]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn riscv_arithmetic_query_division_by_zero() {
+        let _ = run_division_query(&[10, 0, 0, 0], &[0, 0, 0, 0]);
     }
 
     #[test]
@@ -389,6 +463,32 @@ mod tests {
         assert!(r_len.is_multiple_of(2));
         assert!(q_len > 2, "quotient should span multiple u64 limbs");
         assert!(r_len > 2, "remainder should span multiple u64 limbs");
+    }
+
+    #[test]
+    #[should_panic(expected = "A u32 should've been passed in")]
+    fn arithmetic_query_panics_on_empty_query() {
+        let memory = TestMemorySource::default();
+        let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![], &memory);
+    }
+
+    #[test]
+    #[should_panic(expected = "A single RISC-V ptr should've been passed")]
+    fn arithmetic_query_panics_on_extra_args() {
+        let memory = TestMemorySource::default();
+        let _ = ArithmeticQuery.process_buffered_query(
+            MODEXP_ADVICE_QUERY_ID,
+            vec![0x100, 0x200],
+            &memory,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn arithmetic_query_panics_on_misaligned_pointer() {
+        let memory = TestMemorySource::default();
+        let _ =
+            ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x101], &memory);
     }
 
     #[test]

@@ -21,19 +21,18 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     CARGO_INCREMENTAL=0 \
     TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Toolchain (paths pinned so absolute paths don’t leak)
+# Toolchain (paths pinned so absolute paths don't leak)
 ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
 ENV PATH=/opt/cargo/bin:$PATH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git build-essential libssl-dev pkg-config \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-02-10 --profile minimal
-RUN rustup target add riscv32i-unknown-none-elf \
+ENV ZKSYNC_USE_CUDA_STUBS=true
+RUN rustup component add rust-src \
+ && rustup component add llvm-tools-preview \
  && cargo install cargo-binutils --locked \
- && rustup component add llvm-tools-preview
-
-ENV CARGO_TARGET_RISCV32I_UNKNOWN_NONE_ELF_AR=llvm-ar
-ENV CARGO_TARGET_RISCV32I_UNKNOWN_NONE_ELF_RANLIB=llvm-ranlib
+ && cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --rev 7e559f95 --locked
 
 
 COPY . zksync_os

@@ -57,7 +57,6 @@ use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 
@@ -297,7 +296,7 @@ where
         &mut self,
         buffer_constructor: impl FnOnce(usize) -> B,
     ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
+        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,

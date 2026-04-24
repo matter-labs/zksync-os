@@ -26,7 +26,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use bytecodes::{
     INTEROP_CENTER_FEE_MOCK_BYTECODE, L2_CHAIN_ASSET_HANDLER_BYTECODE,
-    L2_INTEROP_ROOT_STORAGE_BYTECODE, SYSTEM_CONTEXT_BYTECODE,
+    L2_INTEROP_ROOT_STORAGE_BYTECODE,
 };
 
 const L2_CHAIN_ASSET_HANDLER_ADDRESS: B160 = B160::from_limbs([0x1000a, 0, 0]);
@@ -55,20 +55,13 @@ fn with_interop_root_storage_contract(tester: TestingFramework) -> TestingFramew
 }
 
 fn with_system_context_contracts(tester: TestingFramework) -> TestingFramework {
-    let system_context_bytecode =
-        hex::decode(SYSTEM_CONTEXT_BYTECODE).expect("system context bytecode must decode");
     let chain_asset_handler_bytecode = hex::decode(L2_CHAIN_ASSET_HANDLER_BYTECODE)
         .expect("chain asset handler bytecode must decode");
 
-    tester
-        .with_evm_contract(
-            b160_to_address(SYSTEM_CONTEXT_ADDRESS),
-            &system_context_bytecode,
-        )
-        .with_evm_contract(
-            b160_to_address(L2_CHAIN_ASSET_HANDLER_ADDRESS),
-            &chain_asset_handler_bytecode,
-        )
+    tester.with_evm_contract(
+        b160_to_address(L2_CHAIN_ASSET_HANDLER_ADDRESS),
+        &chain_asset_handler_bytecode,
+    )
 }
 
 fn with_interop_center_contract(tester: TestingFramework) -> TestingFramework {
@@ -431,8 +424,8 @@ fn test_set_sl_chain_id_not_first_block_batch_fails() {
 /// same block should succeed.
 #[test]
 fn test_set_sl_chain_id_after_upgrade_tx() {
-    // Deploy system context contracts so the service tx actually executes,
-    // plus a trivial success contract for the upgrade tx target.
+    // The rig predeploys SystemContext; this test only needs a trivial success
+    // contract for the upgrade tx target.
     let upgrade_target = address!("0000000000000000000000000000000000010003");
     let success_bytecode = hex::decode("60006000f3").unwrap(); // RETURN(0,0)
 

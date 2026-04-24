@@ -13,6 +13,7 @@ pub mod assertions;
 pub mod chain;
 pub mod constants;
 pub mod evm_bytecode;
+pub mod predeployed_contracts;
 pub mod revm_consistency_checker;
 pub mod run_config;
 pub mod testing_utils;
@@ -29,17 +30,12 @@ pub use basic_system;
 pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
-#[cfg(feature = "airbender_cli")]
-pub use cli_lib;
 pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::system_types::ForwardRunningSystem;
-#[cfg(feature = "gpu")]
-pub use gpu_prover;
 pub use log;
 pub use oracle_provider;
-pub use riscv_transpiler;
 pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
@@ -113,8 +109,11 @@ impl TestingFramework<true> {
     pub fn new_with_randomized_tree() -> Self {
         init_logger();
 
+        let mut chain = Chain::empty_randomized(None);
+        crate::predeployed_contracts::install_default_predeployed_contracts(&mut chain);
+
         Self {
-            chain: Chain::empty_randomized(None),
+            chain,
             block_context: None,
             da_commitment_scheme: None,
             run_config: Some(Default::default()),
@@ -136,8 +135,11 @@ impl TestingFramework<false> {
     pub fn new() -> Self {
         init_logger();
 
+        let mut chain = Chain::empty(None);
+        crate::predeployed_contracts::install_default_predeployed_contracts(&mut chain);
+
         Self {
-            chain: Chain::empty(None),
+            chain,
             block_context: None,
             da_commitment_scheme: None,
             run_config: Some(Default::default()),
@@ -164,9 +166,14 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> Result<(), String> {
         let block_context_interface =
             generate_block_context_interface(&pre_block_chain, &block_context);
+        let independent_gas = self
+            .run_config
+            .as_ref()
+            .is_some_and(|c| c.revm_independent_gas);
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
-        });
+        })
+        .with_independent_gas(independent_gas);
 
         revm_runner
             .run(
@@ -252,6 +259,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Builder: sets the chain ID used for block metadata and transaction signing.
     pub fn with_chain_id(mut self, chain_id: u64) -> Self {
         self.chain.set_chain_id(chain_id);
+        crate::predeployed_contracts::install_default_predeployed_contracts(&mut self.chain);
         self
     }
 
@@ -511,6 +519,16 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Returns execution metadata of the most recently executed block, if any.
     pub fn last_executed_block_info(&self) -> Option<&LastExecutedBlockInfo> {
         self.last_executed_block_info.as_ref()
+    }
+
+    /// Returns a reference to the underlying chain state.
+    pub fn chain(&self) -> &Chain<RANDOMIZED_TREE> {
+        &self.chain
+    }
+
+    /// Returns the block context that will be used for the next block execution.
+    pub fn block_context(&self) -> Option<&BlockContext> {
+        self.block_context.as_ref()
     }
 
     /// Builds and executes an ERC20 transfer block using default fee settings.

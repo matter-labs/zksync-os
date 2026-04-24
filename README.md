@@ -17,8 +17,8 @@ The most recent documentation can be found here:
 Run the following commands to prepare your environment (only needed once):
 
 ```bash
-rustup target add riscv32i-unknown-none-elf
-cargo install cargo-binutils && rustup component add llvm-tools-preview
+cargo install cargo-binutils --locked
+cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 ```
 
 ZKsync OS is built for two targets:

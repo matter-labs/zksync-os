@@ -387,9 +387,22 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         // Sanity check
         assert!(self.create_operation_requested.is_none());
 
-        // We can have some edge cases when tx fails before any call frame is created
-        // In this case currently we just push `None` here
-        let top_level_call = self.finished_calls.pop();
+        // We can have some edge cases when tx fails before any call frame is created.
+        // In this case currently we just push `None` here.
+        let top_level_call = match self.finished_calls.len() {
+            0 => None,
+            1 => self.finished_calls.pop(),
+            _ => {
+                // Some transaction flows (notably L1 tx processing) can perform
+                // several independent top-level calls inside one transaction.
+                // Preserve all of them in the recorded tx trace instead of only
+                // keeping the last one.
+                let mut finished_calls = core::mem::take(&mut self.finished_calls);
+                let mut root_call = finished_calls.remove(0);
+                root_call.calls.extend(finished_calls);
+                Some(root_call)
+            }
+        };
         self.transactions.push(top_level_call);
     }
 

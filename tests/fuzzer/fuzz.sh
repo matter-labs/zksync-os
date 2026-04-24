@@ -225,11 +225,9 @@ function corpus() {
 
 function install() {
     rustup set profile minimal
-    rustup target add riscv32i-unknown-none-elf
     rustup target add wasm32-unknown-unknown
-    cargo install cargo-binutils
-    rustup component add llvm-tools-preview
-    rustup component add rust-src
+    cargo install cargo-binutils --locked
+    cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
     cargo install cargo-fuzz
     cargo install rustfilt
     # this is required for merging coverage (lcov) files
