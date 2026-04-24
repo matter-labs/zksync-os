@@ -63,60 +63,77 @@
 //! Any change to the format requires updating all four sites and the
 //! round-trip test in this module.
 
-extern crate alloc;
+// The packer/unpacker operate on `usize`-sized containers that carry
+// two `u32` verifier words each (low | high << 32). That packing is
+// only meaningful when `usize` is at least 64 bits wide — every
+// participating site (the forward-mode responder, the host-side
+// bootloader consumer, and the forward-mode recorder) runs on host,
+// where `usize == u64`. The RISC-V guest (`target_arch = "riscv32"`,
+// `usize == u32`) doesn't call these helpers at all: it consumes
+// payload words directly via the CSR bridge as raw `u32` halves, not
+// as packed `usize`s. So we scope the helpers and their tests to
+// host builds; compiling them on the guest target would produce
+// `usize` shift overflows that are dead code anyway.
+#[cfg(not(target_arch = "riscv32"))]
+mod host_impl {
+    extern crate alloc;
 
-use alloc::vec::Vec;
+    use alloc::vec::Vec;
 
-/// Pack an FRI verifier word stream into the oracle response shape.
-///
-/// Returns a `Vec<usize>` in the format:
-/// `[oracle_stream_len, word_0 | (word_1 << 32), ...]`.
-///
-/// Roundtrips with [`unpack_fri_oracle_payload`]: feeding the payload
-/// portion of this output (everything after the length prefix) into
-/// the unpacker with `verifier_word_count = stream.len()` yields the
-/// original `stream`.
-pub fn pack_fri_oracle_response(stream: &[u32]) -> Vec<usize> {
-    let mut response = Vec::with_capacity(1 + stream.len().div_ceil(2));
-    response.push(stream.len());
-    for pair in stream.chunks(2) {
-        let low = pair[0] as usize;
-        let high = pair.get(1).copied().unwrap_or(0) as usize;
-        response.push(low | (high << 32));
-    }
-    response
-}
-
-/// Unpack the payload portion of an FRI oracle response into the
-/// verifier word stream the Airbender unified verifier expects.
-///
-/// `packed` must be the sequence of `packed_i` words that follow the
-/// length prefix; the caller is responsible for having already
-/// consumed the prefix and passing its value as `verifier_word_count`.
-///
-/// Returns `None` if the payload length doesn't match
-/// `ceil(verifier_word_count / 2)`, which indicates a malformed
-/// response (structural mismatch the caller should treat as a
-/// validation failure).
-pub fn unpack_fri_oracle_payload<I>(packed: I, verifier_word_count: usize) -> Option<Vec<u32>>
-where
-    I: ExactSizeIterator<Item = usize>,
-{
-    if packed.len() != verifier_word_count.div_ceil(2) {
-        return None;
-    }
-
-    let mut stream = Vec::with_capacity(verifier_word_count);
-    for packed_words in packed {
-        stream.push(packed_words as u32);
-        if stream.len() < verifier_word_count {
-            stream.push((packed_words >> 32) as u32);
+    /// Pack an FRI verifier word stream into the oracle response shape.
+    ///
+    /// Returns a `Vec<usize>` in the format:
+    /// `[oracle_stream_len, word_0 | (word_1 << 32), ...]`.
+    ///
+    /// Roundtrips with [`unpack_fri_oracle_payload`]: feeding the payload
+    /// portion of this output (everything after the length prefix) into
+    /// the unpacker with `verifier_word_count = stream.len()` yields the
+    /// original `stream`.
+    pub fn pack_fri_oracle_response(stream: &[u32]) -> Vec<usize> {
+        let mut response = Vec::with_capacity(1 + stream.len().div_ceil(2));
+        response.push(stream.len());
+        for pair in stream.chunks(2) {
+            let low = pair[0] as usize;
+            let high = pair.get(1).copied().unwrap_or(0) as usize;
+            response.push(low | (high << 32));
         }
+        response
     }
-    Some(stream)
+
+    /// Unpack the payload portion of an FRI oracle response into the
+    /// verifier word stream the Airbender unified verifier expects.
+    ///
+    /// `packed` must be the sequence of `packed_i` words that follow the
+    /// length prefix; the caller is responsible for having already
+    /// consumed the prefix and passing its value as `verifier_word_count`.
+    ///
+    /// Returns `None` if the payload length doesn't match
+    /// `ceil(verifier_word_count / 2)`, which indicates a malformed
+    /// response (structural mismatch the caller should treat as a
+    /// validation failure).
+    pub fn unpack_fri_oracle_payload<I>(packed: I, verifier_word_count: usize) -> Option<Vec<u32>>
+    where
+        I: ExactSizeIterator<Item = usize>,
+    {
+        if packed.len() != verifier_word_count.div_ceil(2) {
+            return None;
+        }
+
+        let mut stream = Vec::with_capacity(verifier_word_count);
+        for packed_words in packed {
+            stream.push(packed_words as u32);
+            if stream.len() < verifier_word_count {
+                stream.push((packed_words >> 32) as u32);
+            }
+        }
+        Some(stream)
+    }
 }
 
-#[cfg(test)]
+#[cfg(not(target_arch = "riscv32"))]
+pub use host_impl::{pack_fri_oracle_response, unpack_fri_oracle_payload};
+
+#[cfg(all(test, not(target_arch = "riscv32")))]
 mod tests {
     use super::*;
 
