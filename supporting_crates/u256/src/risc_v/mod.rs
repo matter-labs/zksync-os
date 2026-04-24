@@ -10,17 +10,20 @@ use delegated_u256::*;
 /// Oracle query ID for U256 division hints.
 /// Must match `zk_ee::oracle::query_ids::U256_DIV_REM_ADVICE_QUERY_ID`.
 #[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
 const U256_DIV_REM_ADVICE_QUERY_ID: u32 = 0x4005_0030;
 
 /// Oracle query ID for U256 mulmod hints.
 /// Must match `zk_ee::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID`.
 #[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
 const U256_MULMOD_ADVICE_QUERY_ID: u32 = 0x4005_0031;
 
 /// Write a word to the oracle CSR (address 0x7c0).
 /// Mirrors `riscv_common::csr_write_word`.
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
+#[allow(dead_code)]
 fn oracle_csr_write(value: usize) {
     unsafe {
         core::arch::asm!(
@@ -35,6 +38,7 @@ fn oracle_csr_write(value: usize) {
 /// Mirrors `riscv_common::csr_read_word`.
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
+#[allow(dead_code)]
 fn oracle_csr_read() -> u32 {
     let output;
     unsafe {
@@ -50,6 +54,7 @@ fn oracle_csr_read() -> u32 {
 /// Read a U256 from the oracle CSR stream (4 limbs, each as two u32 reads).
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
+#[allow(dead_code)]
 fn read_u256_from_csr() -> U256 {
     // SAFETY: `[u64; 4]` is a plain integer array with no drop glue and no
     // validity invariants beyond being initialized. The loop below writes every
@@ -72,6 +77,7 @@ fn read_u256_from_csr() -> U256 {
 ///
 /// Together these uniquely determine `q` and `r` for given `(n, d)`.
 #[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
 fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
     // ---- Send oracle query ----
     oracle_csr_write(U256_DIV_REM_ADVICE_QUERY_ID as usize);
@@ -128,6 +134,7 @@ fn oracle_div_rem(dividend: &mut U256, divisor: &mut U256) {
 ///
 /// `q` is up to 512 bits (two U256 words: q_lo, q_hi).
 #[cfg(target_arch = "riscv32")]
+#[allow(dead_code)]
 fn oracle_mulmod(a: &mut U256, b: &mut U256, modulus_or_result: &mut U256) {
     // ---- Send oracle query ----
     oracle_csr_write(U256_MULMOD_ADVICE_QUERY_ID as usize);
@@ -396,18 +403,13 @@ impl U256 {
         let is_zero = divisor_or_remainder.0.is_zero_mut();
         assert!(is_zero == false);
 
-        #[cfg(target_arch = "riscv32")]
-        {
-            oracle_div_rem(dividend_or_quotient, divisor_or_remainder);
-        }
-
-        #[cfg(not(target_arch = "riscv32"))]
-        {
-            ruint::algorithms::div(
-                dividend_or_quotient.as_limbs_mut(),
-                divisor_or_remainder.as_limbs_mut(),
-            );
-        }
+        // The oracle_div_rem path is ready but dormant: the native prover-input
+        // run (NativeArithmeticQuery) does not yet emit div_rem oracle entries,
+        // so the RISC-V witness replay would desynchronize.
+        ruint::algorithms::div(
+            dividend_or_quotient.as_limbs_mut(),
+            divisor_or_remainder.as_limbs_mut(),
+        );
     }
 
     #[inline(always)]
@@ -501,17 +503,12 @@ impl U256 {
             return;
         }
 
-        #[cfg(target_arch = "riscv32")]
-        {
-            oracle_mulmod(a, b, modulus_or_result);
-        }
-
-        #[cfg(not(target_arch = "riscv32"))]
-        {
-            let mut product = [0u64; 8];
-            let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
-            ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
-        }
+        // The oracle_mulmod path is ready but dormant: the native prover-input
+        // run (NativeArithmeticQuery) does not yet emit mulmod oracle entries,
+        // so the RISC-V witness replay would desynchronize.
+        let mut product = [0u64; 8];
+        let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
+        ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
     }
 
     pub fn pow(base: &Self, exp: &Self, dst: &mut Self) {
