@@ -34,6 +34,7 @@ hex = { workspace = true }
 bincode = "1.3"
 bincode_v2 = { package = "bincode", version = "2.0.1", features = ["serde"] }
 execution_utils = { workspace = true, features = ["verifier_80"] }
+log = { workspace = true }
 strum_macros = { workspace = true }
 paste = { workspace = true }
 

@@ -333,6 +333,13 @@ impl IOOracle for ReadWitnessSource {
         }
         let read_items = Rc::clone(&self.read_items);
         let wrapped: Self::RawIterator<'a> = if query_type == FRI_PROOF_QUERY_ID {
+            // FRI oracle responses use the custom packing defined in
+            // `zk_ee::oracle::fri_proof_packing`. We can't use the
+            // helpers there because this code is a streaming recorder
+            // (`.inspect`), not a `Vec` transform — but we must record
+            // byte-identical to what the prover will consume over CSR,
+            // so the packing rules below must stay in sync with that
+            // module. See the doc there for the format spec.
             let mut remaining_fri_payload_words: Option<usize> = None;
             Box::new(inner.inspect(move |v| {
                 let mut read_items = read_items.borrow_mut();

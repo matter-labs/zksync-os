@@ -89,8 +89,14 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         }
         assert!(remaining_len == 0);
         if query_type == FRI_PROOF_QUERY_ID {
-            // FRI proof sidecar responses are count-prefixed:
-            //   [oracle_stream_len, word_0, word_1, ..., word_N-1].
+            // FRI oracle responses use the custom packing defined in
+            // `zk_ee::oracle::fri_proof_packing` (count-prefix plus
+            // two verifier u32 words per payload usize). We can't use
+            // the helpers there: this code runs in the guest
+            // (`no_std`, no `alloc`) and consumes CSR reads
+            // word-by-word rather than operating on a `Vec<usize>`.
+            // The framing invariants below must stay in sync with
+            // that module's doc — see it for the format spec.
             //
             // The host-side CSR bridge transports each host `usize` as two
             // 32-bit reads. Consume the outer response length and, when

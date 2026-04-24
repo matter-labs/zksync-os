@@ -15,17 +15,6 @@ pub const BLAKE2F_HOOK_ADDRESS_LOW: u16 = 0x0009;
 pub const POINT_EVAL_HOOK_ADDRESS_LOW: u16 = 0x000a;
 #[cfg(feature = "p256_precompile")]
 pub const P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW: u16 = 0x0100;
-/// FRI precompile (Gateway only, runtime-gated by `metadata.is_gateway`).
-/// Looks up a `statement_versioned_hash` in tx-scoped state and returns
-/// a boolean indicating whether it was verified earlier in the current
-/// tx. Always compiled in; registration at `add_precompiles` time is
-/// conditional on the runtime `is_gateway` flag.
-///
-/// Intentionally NOT in `PRECOMPILE_ADDRESSES_LOWS`: that list drives
-/// EVM semantics (cold-access discount via `is_precompile`), and FRI is
-/// a ZKsync-only hook with no EVM spec. Dispatch is via `HooksStorage`,
-/// independent of the precompile list.
-pub const FRI_PRECOMPILE_ADDRESS_LOW: u16 = 0x0101;
 
 pub const BLS12_G1ADD_ADDRESS_LOW: u16 = 0x0b;
 pub const BLS12_G1MSM_ADDRESS_LOW: u16 = 0x0c;

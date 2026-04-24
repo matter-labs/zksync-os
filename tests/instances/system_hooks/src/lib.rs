@@ -1829,41 +1829,117 @@ mod fri_precompile_e2e {
         }
     }
 
-    /// Negative E2E: a `FRI_PROOF_TX` whose statement-hash list mixes
-    /// one valid hash and one hash that the sidecar knows nothing
-    /// about. The whole tx must be dropped from the block — the valid
-    /// hash from position 0 must NOT end up verified, because we reject
-    /// the tx before any hash gets pushed to metadata.
-    #[test]
-    fn fri_proof_tx_dropped_when_any_proof_missing() {
-        let (setup_path, layout_path) = default_setup_and_layout_paths();
+    // NOTE: previously this module also contained negative FRI tests
+    // (`fri_proof_tx_dropped_when_any_proof_missing`,
+    // `fri_proof_tx_rejects_statement_hash_mismatch`,
+    // `fri_proof_tx_rejects_corrupted_proof_bytes`) that asserted the
+    // sequencer would drop txs with bad FRI proofs. Those properties
+    // are no longer the sequencer's job: under the current design
+    // (`VERIFY_FRI_PROOFS = false` on forward-mode configs) the
+    // sequencer trusts the admission layer and doesn't run the
+    // verifier on its own. The in-circuit verifier (prover) is the
+    // final authority. Moving those negative cases to rig-level
+    // coverage requires wiring proving-mode execution into the rig,
+    // which is out of scope for this PR.
 
-        let Some((valid_proof_bytes, valid_stmt_hash)) = load_proof_fixture(
+    /// Pins the validation order: cheap structural checks (here:
+    /// nonce) run BEFORE FRI-specific validation. On proving-config
+    /// runs, FRI verification is still the most expensive validation
+    /// step (up to 8 in-circuit verifier runs); on forward-config
+    /// runs it's trivial, but the ordering still matters because
+    /// `build_verified_fri_statements_list` installs state on
+    /// `TxLevelMetadata` and we do not want that to happen for a tx
+    /// that will be dropped anyway.
+    ///
+    /// We assert this by constructing a FRI_PROOF_TX that is
+    /// malformed on two dimensions — wrong nonce AND a statement
+    /// hash the sidecar doesn't know about (irrelevant on the
+    /// sequencer path, would reject on the proving path) — and
+    /// confirming the surfaced error is the nonce error.
+    #[test]
+    fn fri_verification_runs_after_nonce_check() {
+        use rig::zksync_os_interface::error::InvalidTransaction;
+
+        let missing_stmt_hash = B256::from([0xffu8; 32]);
+
+        let mut tester = TestingFramework::new()
+            .with_mock_fri_sidecars(std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>());
+        let wallet = tester.prefunded_random_signer();
+
+        // Account nonce at tx start is 0; we submit nonce=7 so the
+        // nonce check fails with NonceTooHigh.
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 7,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 5_000_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: missing_stmt_hash.0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![missing_stmt_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        assert!(
+            matches!(
+                output.tx_results[0],
+                Err(InvalidTransaction::NonceTooHigh { .. })
+            ),
+            "tx with bogus nonce and bad FRI proof must surface the nonce \
+             error, not the FRI error — FRI verification must run AFTER \
+             nonce check to avoid DoS amplification; got: {:?}",
+            output.tx_results[0]
+        );
+    }
+
+    /// Pins the validator-level dedup policy for duplicate FRI
+    /// statement hashes within a single `FriProofTx`:
+    ///
+    ///   - The submitter pays for N slots as submitted (raw count
+    ///     drives `fri_proof_intrinsic_native_cost` and the per-tx
+    ///     `MAX_FRI_STATEMENTS_PER_TX` cap).
+    ///   - The validator skips re-verifying a hash it has already
+    ///     verified within the same tx — the precompile's membership
+    ///     check treats duplicates identically, so extra runs carry
+    ///     no information.
+    ///   - `TxLevelMetadata.verified_fri_statements` holds each hash
+    ///     at most once.
+    ///
+    /// We observe the dedup indirectly: each actual verifier run
+    /// triggers one sidecar lookup. The rig executes each block in
+    /// two forward passes (result-keeper + prover-input), so one
+    /// unique hash verified per pass gives a counter of 2. Without
+    /// dedup, `vec![h, h]` would verify twice per pass (counter = 4).
+    #[test]
+    fn fri_proof_tx_dedups_duplicate_statement_hashes() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some((proof_bytes, stmt_hash)) = load_proof_fixture(
             "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
             &setup_path,
             &layout_path,
         ) else {
             return;
         };
-
         let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
             .expect("artifacts must be present if fixture is");
 
-        // The sidecar knows about `valid_stmt_hash` but NOT about
-        // `missing_stmt_hash` — the admission path failed to wire up
-        // the proof for that claim.
-        let missing_stmt_hash = B256::from([0xffu8; 32]);
-        assert_ne!(missing_stmt_hash, valid_stmt_hash);
-
-        let valid_h = rig::zk_ee::utils::Bytes32::from_array(valid_stmt_hash.0);
-        let valid_proof_bytes_for_sidecar = valid_proof_bytes;
-
-        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
-            [(valid_h, valid_proof_bytes_for_sidecar)],
-            artifacts,
-        );
+        let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
+        let (tester, sidecar_lookups) = TestingFramework::new()
+            .with_mock_fri_sidecars_and_artifacts_with_counter(
+                [(stmt_bytes32, proof_bytes)],
+                artifacts,
+            );
+        let mut tester = tester;
         let wallet = tester.prefunded_random_signer();
 
+        // Same hash listed twice: the submitter pays for 2 slots, the
+        // validator must run the verifier only once (the second slot
+        // finds the hash already present and skips).
         let unsigned = UnsignedZKsyncFriProofTx {
             chain_id: 37,
             nonce: 0,
@@ -1872,19 +1948,151 @@ mod fri_precompile_e2e {
             gas_limit: 5_000_000,
             to: FRI_PRECOMPILE,
             value: Default::default(),
-            input: valid_stmt_hash.0.to_vec().into(),
+            input: stmt_hash.0.to_vec().into(),
             access_list: AccessList::default(),
-            statement_versioned_hashes: vec![valid_stmt_hash, missing_stmt_hash],
+            statement_versioned_hashes: vec![stmt_hash, stmt_hash],
         };
         let signed = unsigned.sign(wallet);
         let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
 
         let output = tester.execute_block(vec![fri_tx]);
 
-        // tx must be dropped (Err in tx_results), not included-and-reverted.
+        // Tx succeeds and the precompile returns true for the
+        // (single) verified hash.
         assert!(
-            output.tx_results[0].is_err(),
-            "tx with a missing sidecar entry must be dropped; got: {:?}",
+            tx_succeeded(&output, 0),
+            "duplicate-hash FRI_PROOF_TX must succeed, got: {:?}",
+            output.tx_results[0]
+        );
+
+        // Two forward passes × one unique hash = 2 lookups.
+        // Without dedup this would be 4 (2 passes × 2 hashes).
+        let lookups = sidecar_lookups.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            lookups, 2,
+            "expected exactly one sidecar lookup per forward pass \
+             (unique hashes × passes = 1 × 2 = 2), got {}; the \
+             validator must dedup duplicate statement hashes instead \
+             of re-verifying them",
+            lookups
+        );
+    }
+
+    /// Pins that the FRI intrinsic native cost is enforced during
+    /// validation: a `FriProofTx` whose gas limit is too low to cover
+    /// `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF * num_statements` must
+    /// be rejected with `OutOfNativeResourcesDuringValidation` — the
+    /// verifier never runs.
+    ///
+    /// Numeric setup (rig defaults):
+    ///   `native_price = 10`, `base_fee = 1000`.
+    /// With `max_fee_per_gas = 2_000, max_priority_fee = 1`, the
+    /// effective `gas_price ≈ 1_001`, so `native_per_gas ≈ 101`.
+    /// `gas_limit = 30_000` gives a native budget of ~3.03M, well
+    /// under the 10M charged for a single FRI statement, and well
+    /// above the tx's intrinsic gas (21_000) so the gas check itself
+    /// passes and we land on the native check.
+    #[test]
+    fn fri_proof_tx_insufficient_gas_for_verifier_is_rejected() {
+        use rig::zksync_os_interface::error::InvalidTransaction;
+
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some((proof_bytes, stmt_hash)) = load_proof_fixture(
+            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
+            &setup_path,
+            &layout_path,
+        ) else {
+            return;
+        };
+        let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
+            .expect("artifacts must be present if fixture is");
+
+        let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
+        let mut tester = TestingFramework::new()
+            .with_mock_fri_sidecars_and_artifacts([(stmt_bytes32, proof_bytes)], artifacts);
+        let wallet = tester.prefunded_random_signer();
+
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2_000,
+            gas_limit: 30_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: stmt_hash.0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![stmt_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        assert!(
+            matches!(
+                output.tx_results[0],
+                Err(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+            ),
+            "tx whose gas budget cannot cover the FRI intrinsic native \
+             charge must be rejected during validation; got: {:?}",
+            output.tx_results[0]
+        );
+    }
+
+    // NOTE: see the NOTE earlier in this module for why
+    // `fri_proof_tx_rejects_statement_hash_mismatch` and
+    // `fri_proof_tx_rejects_corrupted_proof_bytes` were removed.
+
+    /// Pins the per-tx cap on `statement_versioned_hashes`:
+    /// `MAX_FRI_STATEMENTS_PER_TX = 8`. A 9-hash list must be rejected
+    /// at validation.
+    ///
+    /// Observable maps to `InvalidStructure` via the forward-system
+    /// converter; we assert on that and on "tx dropped" — the specific
+    /// `TooManyFriStatements` variant is only visible in bootloader
+    /// traces.
+    #[test]
+    fn fri_proof_tx_rejects_list_over_cap() {
+        use rig::zksync_os_interface::error::InvalidTransaction;
+
+        // 9 distinct hashes, one over the cap of 8.
+        let hashes: Vec<B256> = (0..9u8).map(|i| B256::from([i; 32])).collect();
+
+        // Empty sidecar — the cap check runs before the verifier, so
+        // we don't need proof bytes for the first eight entries.
+        let mut tester = TestingFramework::new()
+            .with_mock_fri_sidecars(std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>());
+        let wallet = tester.prefunded_random_signer();
+
+        // Gas budget must cover `9 × FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF`
+        // (90M native) so we actually land on the cap check inside
+        // `build_verified_fri_statements_list` rather than being
+        // bounced earlier by `OutOfNativeResourcesDuringValidation`.
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 5_000_000,
+            to: FRI_PRECOMPILE,
+            value: Default::default(),
+            input: hashes[0].0.to_vec().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: hashes,
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        assert!(
+            matches!(
+                output.tx_results[0],
+                Err(InvalidTransaction::InvalidStructure)
+            ),
+            "tx with 9 statement hashes (cap=8) must be rejected; \
+             got: {:?}",
             output.tx_results[0]
         );
     }

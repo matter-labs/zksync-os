@@ -153,7 +153,7 @@ fn fuzz(input: FuzzInput) {
             .expect("Failed to initialize the mock system");
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
-    system_hooks::add_precompiles(&mut system_functions, false).expect("Should add precompiles");
+    system_hooks::add_precompiles(&mut system_functions).expect("Should add precompiles");
 
     system_hooks::add_l1_messenger(&mut system_functions).expect("Should add l1_messenger");
     system_hooks::add_set_bytecode_on_address_hook(&mut system_functions)

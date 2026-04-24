@@ -61,22 +61,6 @@ where
     // but also takes into account ZK/L2 specific pieces, such as pubdata in state-diffs model,
     // or heavy mismatch between Ethereum/EVM cost model and proving complexity
 
-    // FRI proof verification runs as the very first validation step for
-    // `FriProofTx` transactions. A failure here drops the tx from the
-    // block entirely (no state change, no fee charge, no receipt in the
-    // block header). Running this first means that even the nonce /
-    // balance / fee checks below cannot commit work for a tx whose
-    // proofs we cannot accept.
-    //
-    // The verified hashes are installed on the tx-level metadata below
-    // when `set_tx_context` runs, so the FRI precompile can answer
-    // membership queries during the tx body execution.
-    let verified_fri_statements = if transaction.is_fri_proof() {
-        super::fri::verify_all_fri_statements(system, transaction)?
-    } else {
-        arrayvec::ArrayVec::new()
-    };
-
     // safe to panic, validated by the structure
     let from = *transaction.from();
     let tx_gas_limit = transaction.gas_limit();
@@ -461,6 +445,33 @@ where
                 balance: originator_account_data.nominal_token_balance.0,
             },
         ));
+    }
+
+    // FRI proof handling, split into two steps:
+    //
+    // 1. Structural admission (is_gateway, cap, dedup) always runs
+    //    and produces the hash list to install on tx-level metadata.
+    //    No oracle query, no verifier work — cheap.
+    // 2. Oracle-driven verification runs only when
+    //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under
+    //    `BasicBootloaderProvingExecutionConfig` (the RISC-V guest
+    //    and the host prover-input recording pass that feeds it).
+    //    The sequencer's forward run, `eth_call`, and ETH-replay all
+    //    set this flag false and trust the admission layer's FRI
+    //    check — same trust model as `VALIDATE_EOA_SIGNATURE = false`
+    //    for signatures.
+    //
+    // The verified hashes are installed on tx-level metadata below
+    // via `set_tx_context`, so the FRI precompile can answer
+    // membership queries during the tx body.
+    let verified_fri_statements = if transaction.is_fri_proof() {
+        super::fri::build_verified_fri_statements_list(system, transaction)?
+    } else {
+        arrayvec::ArrayVec::new()
+    };
+
+    if Config::VERIFY_FRI_PROOFS && transaction.is_fri_proof() {
+        super::fri::drive_fri_verification(system, &verified_fri_statements)?;
     }
 
     system.set_tx_context(TxLevelMetadata {

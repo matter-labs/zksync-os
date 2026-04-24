@@ -395,6 +395,31 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Same as [`Self::with_mock_fri_sidecars_and_artifacts`] but also
+    /// returns a shared counter that reports how many times the
+    /// bootloader queried the sidecar source for proof bytes during
+    /// this block's execution. Intended for tests that need to pin
+    /// validator-level dedup behavior.
+    pub fn with_mock_fri_sidecars_and_artifacts_with_counter<I>(
+        mut self,
+        sidecars: I,
+        artifacts: forward_system::run::FriVerifierArtifacts,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicUsize>)
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
+            sidecars.into_iter().collect();
+        let counter = sidecar_source.lookup_counter();
+        self.oracle_factory = Some(Box::new(
+            FriProofOracleFactory::new(sidecar_source).with_verifier_artifacts(artifacts),
+        ));
+        (self, counter)
+    }
+
     /// Builder: installs selected system contracts into the in-memory chain state.
     pub fn with_system_contracts(
         mut self,

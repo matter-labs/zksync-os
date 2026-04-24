@@ -127,7 +127,6 @@ where
 ///
 pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
-    is_gateway: bool,
 ) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
@@ -204,13 +203,29 @@ where
             P256VerifyErrors,
         >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
     }
-    if is_gateway {
-        hooks.add_call_hook(
-            FRI_PRECOMPILE_ADDRESS_LOW,
-            SystemCallHook::new(fri_precompile_hook),
-        )?;
-    }
     Ok(())
+}
+
+/// Register the FRI proof verification hook at
+/// `FRI_PRECOMPILE_ADDRESS`.
+///
+/// This is a ZKsync-only system hook, not an EVM precompile — it
+/// answers membership queries against the per-tx list of FRI
+/// statements verified during validation. Callers decide whether to
+/// install it based on chain configuration (Gateway chains yes,
+/// others no); this function doesn't gate itself so the decision is
+/// visible at the post-init-op site alongside the other system
+/// hook registrations.
+pub fn add_fri_proof_verification_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
+where
+    S::IO: IOSubsystemExt,
+{
+    hooks.add_call_hook(
+        FRI_PRECOMPILE_ADDRESS_LOW,
+        SystemCallHook::new(fri_precompile_hook),
+    )
 }
 
 pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(

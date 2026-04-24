@@ -16,6 +16,7 @@
 //! responses MUST be validated by the calling code before use.
 
 pub mod basic_queries;
+pub mod fri_proof_packing;
 pub mod query_ids;
 pub mod simple_oracle_query;
 pub mod usize_serialization;

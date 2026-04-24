@@ -86,10 +86,6 @@ impl<
         self.tx_level
             .is_fri_statement_verified(statement_versioned_hash)
     }
-    fn push_verified_fri_statement(&mut self, statement_versioned_hash: Bytes32) {
-        self.tx_level
-            .push_verified_fri_statement(statement_versioned_hash);
-    }
 }
 
 /// Assumes that ZK specific pricing metadata is implemented at the block level.

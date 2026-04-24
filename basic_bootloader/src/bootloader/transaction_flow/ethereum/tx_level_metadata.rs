@@ -37,5 +37,4 @@ impl<const MAX_BLOBS: usize> BasicTransactionMetadata<EthereumIOTypesConfig>
     fn is_fri_statement_verified(&self, _statement_versioned_hash: &Bytes32) -> bool {
         false
     }
-    fn push_verified_fri_statement(&mut self, _statement_versioned_hash: Bytes32) {}
 }

@@ -1,38 +1,59 @@
 //! ZKsync OS RISC-V runner.
 //!
-//! Wraps the `riscv_transpiler` VM with a decoder configured for the
-//! ZKsync OS binary's instruction set. In particular the `zksync_os`
-//! binary is built with `+zimop`, which means `full_statement_verifier`
-//! (compiled with `modular_ops`) emits `mop.rr.*` instructions for
-//! modular arithmetic in the FRI verifier. That forces us to enable
-//! `SUPPORT_MOP` in the decoder — `airbender_host::TranspilerRunner`
-//! hardcodes `FullUnsignedMachineDecoderConfig` (no MOP), so we run the
-//! VM directly here instead of going through it. We still use
-//! `airbender_host::Program::load()` for manifest parsing and sha256
-//! verification of the distributed artifacts.
+//! The VM driver below (preprocess → build state/RAM/nd source → run
+//! the basic unrolled VM with or without a flamegraph profiler) is a
+//! fork of `airbender_host::TranspilerRunner`
+//! (`crates/airbender-host/src/runner/transpiler_runner.rs` in the
+//! airbender-platform repo). The only deliberate divergence is the
+//! decoder config: `TranspilerRunner` hardcodes
+//! `FullUnsignedMachineDecoderConfig` (no MOP), but the `zksync_os`
+//! binary is built with `+zimop` so that `full_statement_verifier`
+//! (compiled with `modular_ops`) can emit `mop.rr.*` instructions for
+//! the FRI verifier's modular arithmetic. We run the VM ourselves with
+//! [`FullUnsignedMachineWithMopDecoderConfig`] so those instructions
+//! decode correctly.
+//!
+//! We still use `airbender_host::Program::load()` for manifest parsing
+//! and sha256 verification of the distributed artifacts — that part is
+//! not duplicated.
+//!
+//! TODO(airbender): once `TranspilerRunner` accepts a generic decoder
+//! config (or exposes a MOP-aware variant), collapse this file to a
+//! thin wrapper that just picks the right decoder and delegates.
 use airbender_host::Program;
 use common_constants::rom::ROM_SECOND_WORD_BITS;
 use common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
 use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
 use riscv_transpiler::cycle::CycleMarkerHooks;
-use riscv_transpiler::ir::{preprocess_bytecode, DecodingOptions};
+use riscv_transpiler::ir::{
+    preprocess_bytecode, DecodingOptions, FullUnsignedMachineDecoderConfig,
+};
 use riscv_transpiler::vm::{DelegationsCounters, RamWithRomRegion, SimpleTape, State, VM};
 use std::fs;
 use std::path::PathBuf;
 
 /// Decoder config used by the FRI-aware RISC-V runner.
 ///
-/// Matches `FullUnsignedMachineDecoderConfig` but with `SUPPORT_MOP`
-/// enabled so the `mop.rr.*` instructions emitted by
-/// `full_statement_verifier` (compiled with `modular_ops`) decode
-/// correctly.
+/// Extends upstream's canonical `FullUnsignedMachineDecoderConfig`
+/// with MOP support. The newer airbender prover drives its own
+/// bytecode preprocessing through this transpiler decoder, and from
+/// the prover's perspective MOPs are always supported when the
+/// transpiler emits them. We enable `SUPPORT_MOP` because
+/// `full_statement_verifier` (compiled with `modular_ops`) emits
+/// `mop.rr.*` instructions for the FRI verifier's modular arithmetic;
+/// the other three flags are inherited so this config stays in sync
+/// with upstream if the base ISA definition changes. Mirrors the
+/// `BinaryCheckerDecoderConfig` pattern in `tests/binary_checker`.
 struct FullUnsignedMachineWithMopDecoderConfig;
 
 impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
     const SUPPORT_MOP: bool = true;
-    const SUPPORT_MUL_DIV: bool = true;
-    const SUPPORT_SIGNED_MUL_DIV: bool = false;
-    const SUPPORT_SUBWORD_MEM_ACCESS: bool = true;
+    const SUPPORT_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
+    const SUPPORT_SIGNED_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
+    const SUPPORT_SUBWORD_MEM_ACCESS: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
 }
 
 /// Total RAM size (1 GiB address space).

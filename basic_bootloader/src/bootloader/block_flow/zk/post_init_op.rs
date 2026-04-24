@@ -11,7 +11,14 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, <S as SystemTypes>::Allocator>,
     ) -> Result<(), InternalError> {
-        system_hooks::add_precompiles(system_functions, system.metadata.is_gateway())?;
+        system_hooks::add_precompiles(system_functions)?;
+
+        // Gateway-only system hook: answers `is this FRI statement
+        // hash verified in the current tx?` via the per-tx metadata
+        // populated during validation.
+        if system.metadata.is_gateway() {
+            system_hooks::add_fri_proof_verification_hook(system_functions)?;
+        }
 
         #[cfg(not(feature = "disable_system_contracts"))]
         {

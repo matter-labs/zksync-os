@@ -1,26 +1,35 @@
-//! FRI proof verification used during the pre-execution validation of
-//! `FriProofTx` transactions.
+//! FRI proof handling for `FriProofTx` transactions.
 //!
-//! The entry point is [`verify_fri_statement`], which takes the
-//! `statement_versioned_hash` carried by the transaction and either:
-//!   - (host path) reads the proof oracle stream from the sidecar via
-//!     `FRI_PROOF_QUERY_ID`, feeds it into the host-side unified
-//!     verifier, and rebinds the output hash to the transaction; or
-//!   - (RISC-V path) drains the same query so that the bootloader's
-//!     CSR-based non-determinism source can serve the stream to the
-//!     in-circuit verifier, then rebinds the output hash to the tx.
+//! This module has two responsibilities that run in different
+//! execution configs:
 //!
-//! Both paths produce a `[u32; 16]` verifier output that we hash with
-//! [`statement_versioned_hash_from_verifier_output`]. The transaction
-//! is valid only when that hash matches the one the submitter claimed.
+//! - [`build_verified_fri_statements_list`] — structural admission
+//!   checks (is_gateway, cap, dedup) that produce the hash list to
+//!   install on `TxLevelMetadata`. Runs in every config. Does not
+//!   touch the oracle or the verifier.
+//!
+//! - [`drive_fri_verification`] — runs only when
+//!   `Config::VERIFY_FRI_PROOFS == true`, i.e. in
+//!   `BasicBootloaderProvingExecutionConfig`. Two sub-behaviors:
+//!     - **Host (recording pass)**: issue the oracle query and drain
+//!       the response so `ReadWitnessSource` captures the proof
+//!       stream the RISC-V guest will replay.
+//!     - **RISC-V guest**: drive the CSR-based non-determinism
+//!       source and invoke the in-circuit unified verifier. The
+//!       circuit is the final authority; bad proofs make the block
+//!       fail to prove.
+//!
+//! The sequencer's forward run, `eth_call`, and ETH-replay paths all
+//! set `VERIFY_FRI_PROOFS = false` and never call
+//! [`drive_fri_verification`]. FRI proof validity in those configs is
+//! trusted from the admission layer, analogous to how the sequencer
+//! trusts `VALIDATE_EOA_SIGNATURE = false` for tx signatures.
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::Transaction;
+#[cfg(any(target_arch = "riscv32", test))]
 use crypto::{sha3::Keccak256, MiniDigest};
-#[cfg(not(target_arch = "riscv32"))]
-use prover::nd_source_std;
-#[cfg(not(target_arch = "riscv32"))]
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
@@ -34,6 +43,12 @@ use zk_ee::utils::Bytes32;
 /// Format: `keccak256(version_byte || word_0_le || ... || word_15_le)`.
 /// The version byte lets us evolve the encoding without risking
 /// collisions with previously emitted hashes.
+///
+/// Used on the RISC-V path after the in-circuit verifier returns, to
+/// rebind the derived hash to the claimed `statement_versioned_hash`.
+/// Host-mode builds don't run the verifier (admission-layer trust),
+/// so this helper is only compiled in when it has a caller.
+#[cfg(any(target_arch = "riscv32", test))]
 pub(super) fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
     let mut hasher = Keccak256::new();
     hasher.update([FRI_STATEMENT_HASH_VERSION]);
@@ -43,24 +58,29 @@ pub(super) fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) 
     Bytes32::from_array(hasher.finalize())
 }
 
-/// Verify every claimed `statement_versioned_hash` carried by a
-/// `FriProofTx` and return the list of hashes, in declaration order,
-/// so the caller can install it on the transaction-level metadata
-/// together with the rest of the tx context.
+/// Structural admission checks for a `FriProofTx`'s statement-hash
+/// list: enforce `is_gateway`, cap against `MAX_FRI_STATEMENTS_PER_TX`,
+/// and dedup. Returns the unique hash list in declaration order, ready
+/// to install on `TxLevelMetadata.verified_fri_statements`.
 ///
-/// This is called as the very first step of `FriProofTx` validation.
-/// Any failure here (non-gateway chain, malformed hash list entry,
-/// missing sidecar, bad proof, statement-hash mismatch) is mapped to
-/// `TxError::Validation`, which causes the block loop to drop the tx
-/// from the block — no fees charged, no state committed, no receipt
-/// in the block header. The `tx_results` entry is still recorded so
-/// the sequencer can report the failure back to the submitter.
-pub(super) fn verify_all_fri_statements<S: EthereumLikeTypes>(
-    system: &mut System<S>,
+/// This runs in ALL configs — sequencer forward, `eth_call`, recording
+/// pass, prover. It does not query the oracle, does not touch the
+/// sidecar, and does not run any verifier. Callers that must also
+/// verify the proofs drive the oracle query separately via
+/// [`drive_fri_verification`].
+///
+/// Rationale for skipping verification at the sequencer: admission
+/// (outside zksync-os) is the FRI gatekeeper, analogous to signature
+/// verification. The in-circuit verifier run by the prover is the
+/// final authority. Duplicating that work inside the sequencer's
+/// bootloader is wasted CPU — same reason
+/// `VALIDATE_EOA_SIGNATURE = false` on the forward-sim config skips
+/// signature checks.
+pub(super) fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
+    system: &System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError>
 where
-    S::IO: IOSubsystemExt,
     S::Metadata: GatewayModeMetadata,
 {
     if !system.metadata.is_gateway() {
@@ -79,10 +99,20 @@ where
                 InvalidTransaction::TooManyFriStatements,
             ));
         }
+        // Dedup: re-verifying the same hash within a tx produces the
+        // same result and the precompile's membership check cannot
+        // distinguish "verified once" from "verified N times". We skip
+        // redundant slots but do NOT adjust the submitter's gas/native
+        // charge — the submitter asked for N slots and pays for N
+        // slots (`statement_versioned_hashes_num` in
+        // `validation_impl.rs` uses the raw count). `verified` holds
+        // the unique set, so `TxLevelMetadata` stores each hash once.
         for statement_versioned_hash in statement_versioned_hashes.iter() {
             let statement_versioned_hash =
                 Bytes32::from_array(*statement_versioned_hash.map_err(TxError::Validation)?);
-            verify_fri_statement(system, statement_versioned_hash)?;
+            if verified.contains(&statement_versioned_hash) {
+                continue;
+            }
             verified
                 .try_push(statement_versioned_hash)
                 .expect("cap already checked against MAX_FRI_STATEMENTS_PER_TX");
@@ -91,18 +121,56 @@ where
     Ok(verified)
 }
 
-/// Verify a single claimed `statement_versioned_hash` for the current
-/// transaction.
+/// Drive the `FRI_PROOF_QUERY_ID` oracle query for each hash in
+/// `verified` and, on the RISC-V guest only, invoke the in-circuit
+/// verifier.
 ///
-/// Returns `Ok(())` when the FRI verifier accepts the proof and the
-/// derived statement hash matches `statement_versioned_hash`. Maps any
-/// other outcome to the appropriate `InvalidTransaction` variant.
+/// Called only when `Config::VERIFY_FRI_PROOFS == true`:
+///   - Proving (RISC-V guest): in-circuit verifier runs; a failure
+///     aborts the binary and the block fails to prove.
+///   - Prover-input recording pass (host, `ProvingExecutionConfig`):
+///     the oracle query is issued purely so `ReadWitnessSource`
+///     captures the proof stream. The host-side verifier is NOT run
+///     — the circuit is the final authority and any extra host
+///     verifier run would be the duplicated admission-layer work
+///     Antonio flagged.
 ///
-/// In the host path we read the proof stream from the sidecar and run
-/// the verifier directly here. In the RISC-V path the verifier runs
-/// in-circuit via the non-determinism CSR, so we only drain the oracle
-/// response here to keep the host-side query machinery in sync and
-/// then call the runtime entry point.
+/// The structural hash list (`verified`) is already populated by
+/// [`build_verified_fri_statements_list`]; this function only adds
+/// the oracle-side work.
+pub(super) fn drive_fri_verification<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    verified: &[Bytes32],
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    for statement_versioned_hash in verified {
+        verify_fri_statement(system, *statement_versioned_hash)?;
+    }
+    Ok(())
+}
+
+/// Issue the `FRI_PROOF_QUERY_ID` oracle query for a single claimed
+/// `statement_versioned_hash`, then either drain the response (host)
+/// or invoke the in-circuit verifier (RISC-V guest).
+///
+/// The oracle query itself is issued in both modes. What differs is
+/// what the caller does with the response:
+///
+/// - **Host (`not(target_arch = "riscv32")`)**: drain so
+///   `ReadWitnessSource` captures the full proof stream for the
+///   prover to replay later. The host does not verify — the
+///   in-circuit verifier is the final authority and the host is not
+///   an admission check (that happens upstream).
+/// - **RISC-V guest**: only consume the sidecar-present signal (the
+///   length prefix). Proof bytes reach the in-circuit verifier
+///   through CSR reads directly, not through this iterator. Missing
+///   sidecar → `FriProofSidecarMissing`. Proof bytes present →
+///   delegate to
+///   `full_statement_verifier`, which aborts the binary on a bad
+///   proof (the in-circuit verifier has no fallible entry point
+///   today).
 pub(super) fn verify_fri_statement<S: EthereumLikeTypes>(
     system: &mut System<S>,
     statement_versioned_hash: Bytes32,
@@ -110,118 +178,64 @@ pub(super) fn verify_fri_statement<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    #[cfg(not(target_arch = "riscv32"))]
-    {
-        let oracle_stream = read_fri_proof_oracle_stream(system, statement_versioned_hash)?;
-        let output = run_host_verifier(oracle_stream)?;
-        check_statement_hash_matches(&output, statement_versioned_hash)
-    }
-    #[cfg(target_arch = "riscv32")]
-    {
-        // On RISC-V the in-circuit verifier reads the proof stream via
-        // the CSR-backed non-determinism source, not through this
-        // host-side iterator. We still issue the query both to drive
-        // the CSR protocol AND to detect the sidecar-missing case: the
-        // CSR bridge yields `Some(_)` on the first `next()` when the
-        // sidecar has an entry, and `None` when it doesn't. Calling
-        // the in-circuit verifier with no proof data would otherwise
-        // abort the binary.
-        let mut response = system
-            .io
-            .oracle()
-            .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
-        response.next().ok_or(TxError::Validation(
-            InvalidTransaction::FriProofSidecarMissing,
-        ))?;
-        drop(response);
-        let output = crate::bootloader::fri_verifier::run_fri_verifier();
-        check_statement_hash_matches(&output, statement_versioned_hash)
-    }
-}
-
-/// Host path: fetch the flattened `u32` oracle stream for this
-/// statement hash from the sidecar. Returns the payload words with the
-/// length prefix already stripped and the low/high packing already
-/// unpacked.
-#[cfg(not(target_arch = "riscv32"))]
-fn read_fri_proof_oracle_stream<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    statement_versioned_hash: Bytes32,
-) -> Result<alloc::vec::Vec<u32>, TxError>
-where
-    S::IO: IOSubsystemExt,
-{
+    #[allow(unused_mut)] // only the RISC-V arm mutates (calls `.next()`)
     let mut response = system
         .io
         .oracle()
         .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
 
-    // Empty response from the responder → sidecar has no entry for this
-    // hash (or verifier artifacts are missing on the oracle side). Reject.
-    let oracle_stream_len = response.next().ok_or(TxError::Validation(
-        InvalidTransaction::FriProofSidecarMissing,
-    ))?;
-
-    // Payload is packed two `u32`s per `usize` (low | high << 32).
-    if response.len() != oracle_stream_len.div_ceil(2) {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
+    #[cfg(not(target_arch = "riscv32"))]
+    {
+        // Drain the iterator so `ReadWitnessSource` (in
+        // `oracle_provider`) captures every word. Without this drain
+        // the prover's CSR replay would be missing the proof bytes.
+        for _ in response {}
+        Ok(())
     }
-
-    let mut oracle_stream = alloc::vec::Vec::with_capacity(oracle_stream_len);
-    for packed_words in response {
-        oracle_stream.push(packed_words as u32);
-        if oracle_stream.len() < oracle_stream_len {
-            oracle_stream.push((packed_words >> 32) as u32);
-        }
+    #[cfg(target_arch = "riscv32")]
+    {
+        // On RISC-V the iterator only carries the sidecar-present
+        // signal: `Some(length_prefix)` when the sidecar has an entry
+        // for this hash, `None` when it doesn't. Proof bytes are
+        // consumed by the in-circuit verifier through a separate CSR
+        // channel. Calling the verifier with no proof data would
+        // otherwise abort the binary.
+        response.next().ok_or(TxError::Validation(
+            InvalidTransaction::FriProofSidecarMissing,
+        ))?;
+        drop(response);
+        // SAFETY INVARIANT: the non-determinism stream the in-circuit
+        // verifier reads here is a replay of what `FriProofResponder`
+        // produced during the prover-input recording pass (host
+        // mode, `ProvingExecutionConfig`), captured word-for-word by
+        // `ReadWitnessSource` (in `oracle_provider`). The bootloader
+        // itself no longer runs a host-side verifier — FRI proofs
+        // are accepted by the admission layer (outside zksync-os),
+        // and the in-circuit verifier below is the final authority.
+        //
+        // Malformed bytes reaching this point would hit an assertion
+        // inside the unified verifier and abort the RISC-V binary —
+        // the guest has no fallible-verify primitive today, so the
+        // failure mode is "block fails to prove", not "tx rejected".
+        // In the current design the possible sources of malformed
+        // bytes are (a) a compromised/buggy admission layer, or
+        // (b) a recorder bug in `ReadWitnessSource`. Both are
+        // sequencer-side operational issues; there is no user-facing
+        // path to reach here with adversarially-chosen bytes.
+        //
+        // TODO: once `full_statement_verifier` exposes a fallible
+        // entry point, map its error to `FriProofVerificationFailed`
+        // here so block-level proving failures become tx-level
+        // rejections.
+        // The verifier reads proof bytes from the CSR-backed
+        // non-determinism source directly and returns 16 u32 words
+        // identifying the proved statement.
+        let output = full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer();
+        check_statement_hash_matches(&output, statement_versioned_hash)
     }
-    Ok(oracle_stream)
 }
 
-/// Host path: feed `oracle_stream` into the unified verifier and
-/// return its 16-word output.
-///
-/// The upstream verifier panics on malformed input (it was written
-/// assuming trusted input from the prover). Proofs here come from an
-/// untrusted sidecar, so we catch the panic and map it to a validation
-/// error — required by the bootloader's no-panic-on-external-input
-/// policy. We also fail the transaction if the verifier finishes but
-/// leaves unread words in the stream, since a valid run consumes it
-/// exactly.
-///
-/// TODO: upstream a fallible entry point in `full_statement_verifier`
-/// so we can drop `catch_unwind`.
-#[cfg(not(target_arch = "riscv32"))]
-fn run_host_verifier(oracle_stream: alloc::vec::Vec<u32>) -> Result<[u32; 16], TxError> {
-    nd_source_std::set_iterator(oracle_stream.into_iter());
-    let verification_result = catch_unwind(AssertUnwindSafe(|| {
-        full_statement_verifier::unified_circuit_statement::verify_unrolled_or_unified_circuit_recursion_layer()
-    }));
-    let remaining_words = drain_fri_verifier_iterator();
-    let output = verification_result
-        .map_err(|_| TxError::Validation(InvalidTransaction::FriProofVerificationFailed))?;
-
-    if remaining_words != 0 {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
-    }
-
-    Ok(output)
-}
-
-/// Host path: consume any oracle words the verifier left behind so the
-/// next tx starts with an empty non-determinism source.
-#[cfg(not(target_arch = "riscv32"))]
-fn drain_fri_verifier_iterator() -> usize {
-    let mut remaining = 0usize;
-    while nd_source_std::try_read_word().is_some() {
-        remaining += 1;
-    }
-    remaining
-}
-
+#[cfg(target_arch = "riscv32")]
 fn check_statement_hash_matches(output: &[u32; 16], expected: Bytes32) -> Result<(), TxError> {
     let computed = statement_versioned_hash_from_verifier_output(output);
     if computed != expected {

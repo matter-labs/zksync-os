@@ -3,6 +3,7 @@ use crate::run::FriProofSidecarSource;
 use execution_utils::setups::CompiledCircuitsSet;
 use execution_utils::unified_circuit::flatten_proof_into_responses_for_unified_recursion;
 use execution_utils::unrolled::{UnrolledProgramProof, UnrolledProgramSetup};
+use zk_ee::oracle::fri_proof_packing::pack_fri_oracle_response;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::utils::Bytes32;
@@ -74,30 +75,61 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
         // The host path unpacks this representation. The CSR path
         // naturally sees the low/high halves as consecutive verifier
         // words.
+        // All three failure modes below produce an empty oracle response
+        // so the bootloader rejects the tx with `FriProofSidecarMissing`.
+        // The interface cannot distinguish them, but each has a very
+        // different operational meaning — we log them separately so
+        // operators can tell "user submitted bad hash" from "sequencer
+        // is misconfigured".
+        //
+        // (a) No sidecar entry — expected transient case (user's proof
+        //     upload raced tx gossip, or user submitted a hash they
+        //     never proved). High volume possible; debug level avoids
+        //     log flood.
         let Some(proof_bytes) = self
             .sidecar_source
             .get_proof_bytes(statement_versioned_hash)
         else {
+            log::debug!(
+                "FRI sidecar has no entry for statement_versioned_hash={:?}",
+                statement_versioned_hash
+            );
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
+        // (b) No verifier artifacts configured — sequencer misconfig on
+        //     a gateway chain. EVERY FRI tx will be rejected until this
+        //     is fixed, so this is an actionable alert, not a one-off.
         let Some(artifacts) = self.artifacts.as_ref() else {
+            log::error!(
+                "FRI verifier artifacts not configured on gateway chain — every \
+                 FRI_PROOF_TX will be rejected until setup/layout artifacts are \
+                 wired into FriProofResponder (statement_versioned_hash={:?})",
+                statement_versioned_hash
+            );
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
 
-        // Production sidecars are populated only after the server/admission
-        // layer has decoded and verified the proof against these artifacts.
-        // Decode/flatten failures here therefore indicate a sequencer-side
-        // bug or corrupted local sidecar state, not malformed bytes accepted
-        // directly from an untrusted transaction.
-        //
-        // Decode failure maps to an empty response, same as a missing
-        // sidecar entry. The bootloader rejects the transaction with
-        // `FriProofSidecarMissing`.
+        // (c) Sidecar bytes are not a valid bincode-encoded
+        //     `UnrolledProgramProof`. Production sidecars are populated
+        //     only after the admission layer decoded+verified the proof
+        //     against these same artifacts, so a decode failure here
+        //     means corrupted local sidecar state (disk bitrot, a bug
+        //     that wrote wrong bytes, an upgrade that changed the
+        //     encoding). Neither case is user-driven; surface it as an
+        //     error so ops can correlate with the sidecar hash.
         let bincode_config = bincode_v2::config::standard();
         let Ok((proof, _)) = bincode_v2::serde::decode_from_slice::<UnrolledProgramProof, _>(
             &proof_bytes,
             bincode_config,
         ) else {
+            log::error!(
+                "FRI sidecar bytes failed bincode decode — likely corrupted \
+                 sidecar state or encoding mismatch; tx will be rejected as if \
+                 the sidecar were missing (statement_versioned_hash={:?}, \
+                 proof_bytes_len={})",
+                statement_versioned_hash,
+                proof_bytes.len()
+            );
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
         let oracle_stream = flatten_proof_into_responses_for_unified_recursion(
@@ -107,13 +139,10 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
             false,
         );
 
-        let mut response = Vec::with_capacity(1 + oracle_stream.len().div_ceil(2));
-        response.push(oracle_stream.len());
-        for pair in oracle_stream.chunks(2) {
-            let low = pair[0] as usize;
-            let high = pair.get(1).copied().unwrap_or(0) as usize;
-            response.push(low | (high << 32));
-        }
+        // Pack into the shared FRI oracle response layout
+        // (see `zk_ee::oracle::fri_proof_packing`): length prefix
+        // followed by two verifier words per payload usize.
+        let response = pack_fri_oracle_response(&oracle_stream);
 
         DynUsizeIterator::from_constructor(response, |inner_ref| inner_ref.iter().copied())
     }
