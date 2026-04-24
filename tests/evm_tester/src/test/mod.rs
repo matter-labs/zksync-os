@@ -210,6 +210,7 @@ impl Test {
         _mutation_path: Option<String>,
         name_override: Option<String>,
         hardfork_override: Option<String>,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let cleaned_str = str.replace("0x:bigint ", "");
         let test_structure: HashMap<String, TestStructure> =
@@ -230,7 +231,7 @@ impl Test {
                 }
             }
 
-            let cases = Case::from_ethereum_spec_test(&test_definition, filters, &hardfork);
+            let cases = Case::from_ethereum_spec_test(&test_definition, filters, &hardfork, hardfork_was_overridden);
 
             // read mutants
             // filter all files in directory by regexp and run

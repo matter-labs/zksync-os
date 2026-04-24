@@ -40,6 +40,10 @@ use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::internal_error;
+#[cfg(feature = "blake2f")]
+use zk_ee::system::base_system_functions::Blake2FPrecompileErrors;
+#[cfg(feature = "bls12_381")]
+use zk_ee::system::base_system_functions::Bls12PrecompileErrors;
 #[cfg(feature = "p256_precompile")]
 use zk_ee::system::base_system_functions::P256VerifyErrors;
 use zk_ee::system::errors::internal::InternalError;
@@ -168,15 +172,24 @@ where
         <S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck,
         Bn254PairingCheckErrors,
     >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
+    #[cfg(feature = "blake2f")]
+    add_precompile::<
+        _,
+        _,
+        <S::SystemFunctions as SystemFunctions<_>>::Blake2F,
+        Blake2FPrecompileErrors,
+    >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
+
+    #[cfg(all(feature = "mock-unsupported-precompiles", not(feature = "blake2f")))]
+    add_precompile::<
+        _,
+        _,
+        crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
+        MissingSystemFunctionErrors,
+    >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
+
     #[cfg(feature = "mock-unsupported-precompiles")]
     {
-        add_precompile::<
-            _,
-            _,
-            crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
-            MissingSystemFunctionErrors,
-        >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
-
         #[cfg(not(feature = "point_eval_precompile"))]
         add_precompile::<
             _,
@@ -202,6 +215,53 @@ where
             P256VerifyErrors,
         >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
     }
+
+    #[cfg(feature = "bls12_381")]
+    {
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Add,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G1ADD_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Add,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G2ADD_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Msm,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G1MSM_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Msm,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G2MSM_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12PairingCheck,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_PAIRING_CHECK_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFpToG1,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_MAP_FP_TO_G1_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFp2ToG2,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_MAP_FP2_TO_G2_ADDRESS_LOW)?;
+    }
+
     Ok(())
 }
 

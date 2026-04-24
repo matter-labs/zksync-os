@@ -41,12 +41,11 @@ pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
 
     res
 };
-pub const KZG_VERSIONED_HASH_VERSION_BYTE: u8 = 0x01;
 
 pub fn versioned_hash_for_kzg(data: &[u8]) -> [u8; 32] {
     use crypto::sha256::Digest;
     let mut hash: [u8; 32] = crypto::sha256::Sha256::digest(data).into();
-    hash[0] = KZG_VERSIONED_HASH_VERSION_BYTE;
+    hash[0] = VERSIONED_HASH_VERSION_KZG;
 
     hash
 }
@@ -160,7 +159,7 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(commitment.clone());
         let mut versioned_hash = hasher.finalize().to_vec();
-        versioned_hash[0] = KZG_VERSIONED_HASH_VERSION_BYTE;
+        versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
 
         let z = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000").to_vec();
         let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9").to_vec();
@@ -192,7 +191,7 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(commitment.clone());
         let mut versioned_hash = hasher.finalize().to_vec();
-        versioned_hash[0] = KZG_VERSIONED_HASH_VERSION_BYTE;
+        versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
 
         let z = hex!("0000000000000000000000000000000000000000000000000000000000000000").to_vec();
         let y = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001").to_vec();
@@ -258,7 +257,7 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(commitment.clone());
         let mut versioned_hash = hasher.finalize().to_vec();
-        versioned_hash[0] = KZG_VERSIONED_HASH_VERSION_BYTE;
+        versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
 
         // Set z to field modulus (invalid)
         let invalid_z = [
@@ -298,7 +297,7 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(commitment.clone());
         let mut versioned_hash = hasher.finalize().to_vec();
-        versioned_hash[0] = KZG_VERSIONED_HASH_VERSION_BYTE;
+        versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
 
         let z = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000").to_vec();
         // Set y to field modulus (invalid)
@@ -335,7 +334,7 @@ mod tests {
         let commitment = [0u8; 48]; // Identity commitment
         let hash = versioned_hash_for_kzg(&commitment);
 
-        assert_eq!(hash[0], KZG_VERSIONED_HASH_VERSION_BYTE);
+        assert_eq!(hash[0], VERSIONED_HASH_VERSION_KZG);
 
         let expected_hash = [
             1, 176, 118, 31, 135, 176, 129, 213, 207, 16, 117, 124, 204, 137, 241, 43, 227, 85,

@@ -1,17 +1,10 @@
-// NOTE: we implement 7002 contract as non-solidity/non-EMV contract as:
-// - there is no GAS opcode in the reference bytecode
-// - whatever will be the gas supplied to the frame - it'll be sufficient to pop as up to upper bound of elements
-// - and to be honest, putting bytecode into execution client is so-so idea, and instead consensus can be instead reached on implementation
-// Bytecode for this contract will anyway exist for requests creation in transactions themselves
-
 use core::fmt::Write;
 use ruint::aliases::B160;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::AccountDataRequest;
-use zk_ee::system::Computational;
 use zk_ee::system::IOSubsystemExt;
-use zk_ee::system::Resources;
+use zk_ee::system::Resource;
 use zk_ee::system::System;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
 use zk_ee::system_log;
@@ -29,24 +22,18 @@ pub fn eip4788_system_part<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    let mut resources = S::Resources::from_native(
-        <S::Resources as Resources>::Native::from_computational(u64::MAX),
-    );
+    let mut resources = S::Resources::FORMAL_INFINITE;
 
-    let props = resources.with_infinite_ergs(|resources| {
-        system.io.read_account_properties(
-            ExecutionEnvironmentType::NoEE,
-            resources,
-            &BEACON_ROOTS_ADDRESS,
-            AccountDataRequest::empty()
-                .with_nonce()
-                .with_observable_bytecode_len(),
-        )
-    })?;
+    let props = system.io.read_account_properties(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &BEACON_ROOTS_ADDRESS,
+        AccountDataRequest::empty()
+            .with_observable_bytecode_len()
+            .with_is_delegated(),
+    )?;
 
-    let is_contract = props.nonce.0 == 1 && props.observable_bytecode_len.0 > 0;
-    if is_contract == false {
-        // fail silently
+    if !props.is_contract() {
         return Ok(());
     }
 
@@ -70,25 +57,21 @@ where
     beacon_root_slot.as_u8_array_mut()[24..32]
         .copy_from_slice(&(timestamp_idx + HISTORY_BUFFER_LENGTH).to_be_bytes());
 
-    resources.with_infinite_ergs(|resources| {
-        system.io.storage_write::<false>(
-            ExecutionEnvironmentType::NoEE,
-            resources,
-            &BEACON_ROOTS_ADDRESS,
-            &timestamp_slot,
-            &timestamp_value,
-        )
-    })?;
+    system.io.storage_write::<false>(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &BEACON_ROOTS_ADDRESS,
+        &timestamp_slot,
+        &timestamp_value,
+    )?;
 
-    resources.with_infinite_ergs(|resources| {
-        system.io.storage_write::<false>(
-            ExecutionEnvironmentType::NoEE,
-            resources,
-            &BEACON_ROOTS_ADDRESS,
-            &beacon_root_slot,
-            &beacon_root,
-        )
-    })?;
+    system.io.storage_write::<false>(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &BEACON_ROOTS_ADDRESS,
+        &beacon_root_slot,
+        &beacon_root,
+    )?;
 
     Ok(())
 }
