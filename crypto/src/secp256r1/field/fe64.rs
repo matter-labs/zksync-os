@@ -1,8 +1,5 @@
 // based on https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/field/field64.rs
-use core::{
-    mem::MaybeUninit,
-    ops::{AddAssign, MulAssign, SubAssign},
-};
+use core::ops::{AddAssign, MulAssign, SubAssign};
 
 use crate::secp256r1::u64_arithmetic::*;
 
@@ -68,14 +65,14 @@ impl FieldElement {
 
     pub(crate) fn to_be_bytes(mut self) -> [u8; 32] {
         self = self.to_integer();
-        let mut r: [MaybeUninit<u8>; 32] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut r = [0u8; 32];
 
-        r[0..8].copy_from_slice(&self.0[3].to_be_bytes().map(MaybeUninit::new));
-        r[8..16].copy_from_slice(&self.0[2].to_be_bytes().map(MaybeUninit::new));
-        r[16..24].copy_from_slice(&self.0[1].to_be_bytes().map(MaybeUninit::new));
-        r[24..32].copy_from_slice(&self.0[0].to_be_bytes().map(MaybeUninit::new));
+        r[0..8].copy_from_slice(&self.0[3].to_be_bytes());
+        r[8..16].copy_from_slice(&self.0[2].to_be_bytes());
+        r[16..24].copy_from_slice(&self.0[1].to_be_bytes());
+        r[24..32].copy_from_slice(&self.0[0].to_be_bytes());
 
-        unsafe { core::mem::transmute(r) }
+        r
     }
 
     pub(crate) const fn is_zero(&self) -> bool {

@@ -73,29 +73,79 @@ mod test {
     use super::*;
     use num_bigint::BigUint;
 
+    fn invoke_precompile_with_advisor(
+        modulus: &[u8],
+        base: &[u8],
+        exp: &[u8],
+        advisor: &mut impl ModexpAdvisor,
+    ) -> Vec<u8> {
+        let mut logger = zk_ee::system::logger::NullLogger;
+        super::modexp_inner(base, exp, modulus, &mut logger, advisor, Global)
+    }
+
     fn invoke_precompile_no_prepadding(modulus: &[u8], base: &[u8], exp: &[u8]) -> Vec<u8> {
-        super::u256::init();
-
         let mut advisor = NaiveAdvisor;
-        let allocator = Global;
+        invoke_precompile_with_advisor(modulus, base, exp, &mut advisor)
+    }
 
-        let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator);
-        if m.digits == 0 {
-            Vec::new_in(allocator)
-        } else {
-            // another short circuit (as parsing below is infallible - we can even skip parsing the base and exponent)
-            if m.digits == 1 && m.backing[0].is_one() {
-                // it is base ^ exponent mod 1 == 0 in all the cases
-                return Vec::new_in(allocator);
+    #[derive(Clone)]
+    struct ReductionAdvice {
+        quotient_digits: std::vec::Vec<u64>,
+        remainder_digits: std::vec::Vec<u64>,
+    }
+
+    fn write_bigint_digits<A: core::alloc::Allocator + Clone>(
+        digits: &[u64],
+        dst: &mut BigintRepr<A>,
+    ) {
+        unsafe {
+            let dst_capacity = dst.clear_as_capacity_mut();
+            for (dst_digit, src_digit) in dst_capacity.iter_mut().zip(digits.iter()) {
+                let dst_ptr: *mut u64 = dst_digit.as_mut_ptr().cast::<[u64; 4]>().cast();
+                dst_ptr.add(0).write(*src_digit);
+                dst_ptr.add(1).write(0);
+                dst_ptr.add(2).write(0);
+                dst_ptr.add(3).write(0);
             }
-            let min_capacity = m.capacity();
-            let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
-                &base,
-                min_capacity,
-                allocator,
-            );
-            let x = x.modpow(&exp, m, &mut advisor, allocator);
-            x.to_big_endian(allocator)
+            dst.set_num_digits(digits.len());
+        }
+    }
+
+    struct MaliciousReductionAdvisor {
+        responses: std::vec::Vec<ReductionAdvice>,
+        next_response: usize,
+    }
+
+    impl MaliciousReductionAdvisor {
+        fn new(responses: std::vec::Vec<ReductionAdvice>) -> Self {
+            Self {
+                responses,
+                next_response: 0,
+            }
+        }
+
+        fn assert_consumed(&self) {
+            assert_eq!(self.next_response, self.responses.len());
+        }
+    }
+
+    impl ModexpAdvisor for MaliciousReductionAdvisor {
+        fn get_reduction_op_advice<A: core::alloc::Allocator + Clone>(
+            &mut self,
+            _a: &BigintRepr<A>,
+            _m: &BigintRepr<A>,
+            quotient_dst: &mut BigintRepr<A>,
+            remainder_dst: &mut BigintRepr<A>,
+        ) {
+            let advice = self
+                .responses
+                .get(self.next_response)
+                .cloned()
+                .expect("unexpected modexp advice query");
+            self.next_response += 1;
+
+            write_bigint_digits(&advice.quotient_digits, quotient_dst);
+            write_bigint_digits(&advice.remainder_digits, remainder_dst);
         }
     }
 
@@ -308,5 +358,35 @@ mod test {
         let expected = base_big.modpow(&exp_big, &modulus_big).to_bytes_be();
 
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_modexp_delegation_malicious_advisor_truncates_reconstruction_regression() {
+        let base = hex::decode("02").unwrap();
+        let exp = hex::decode("02").unwrap();
+        let modulus = vec![0xff; 32];
+
+        let honest_output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+        let expected =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000004")
+                .unwrap();
+        assert_eq!(honest_output, expected);
+
+        // First response performs the initial reduction honestly: 2 = 0 * m + 2.
+        // Second response forges the square-step reduction as
+        // 4 = low_512((2^256 + 1) * m + 5) while the dropped carry is 1 at the third limb.
+        let mut advisor = MaliciousReductionAdvisor::new(vec![
+            ReductionAdvice {
+                quotient_digits: vec![],
+                remainder_digits: vec![2],
+            },
+            ReductionAdvice {
+                quotient_digits: vec![1, 1],
+                remainder_digits: vec![5],
+            },
+        ]);
+        let _output = invoke_precompile_with_advisor(&modulus, &base, &exp, &mut advisor);
+        advisor.assert_consumed();
     }
 }

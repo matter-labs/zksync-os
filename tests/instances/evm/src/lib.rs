@@ -13,7 +13,10 @@ use rig::zksync_os_interface::types::ExecutionOutput;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::BlockContext;
-use rig::{alloy::primitives::address, ruint::aliases::U256, TestingFramework};
+use rig::{
+    alloy::primitives::address, evm_bytecode::BytecodeBuilder, ruint::aliases::U256,
+    TestingFramework,
+};
 
 mod test_support;
 
@@ -23,6 +26,112 @@ mod deployment_outcomes;
 mod execution_outcomes;
 // State rollback guarantees for reverted frames.
 mod rollback_semantics;
+
+fn constructor_selfdestruct_delegatecall_bytecode(
+    contract_b_addr: rig::alloy::primitives::Address,
+) -> Vec<u8> {
+    BytecodeBuilder::new()
+        .push0_n(4)
+        .push_address(contract_b_addr)
+        .gas()
+        .delegatecall()
+        .pop()
+        .push_u16(0xdead)
+        .push0()
+        .mstore()
+        .push_u8(0x02)
+        .push_u8(0x1e)
+        .return_()
+        .finish()
+}
+
+fn create_failure_probe_bytecode(value: u8) -> Vec<u8> {
+    let builder = BytecodeBuilder::new().push0().push0();
+    let builder = if value == 0 {
+        builder.push0()
+    } else {
+        builder.push_u8(value)
+    };
+
+    builder.create().pop().stop().finish()
+}
+
+fn account_warmth_probe_bytecode() -> Vec<u8> {
+    BytecodeBuilder::new()
+        .gas()
+        .push0()
+        .mstore()
+        .push0_n(5)
+        .push_u8(0x04)
+        .calldataload()
+        .gas()
+        .call()
+        .pop()
+        .gas()
+        .push0()
+        .mload()
+        .sub()
+        .push0()
+        .mstore()
+        .gas()
+        .push_u8(0x20)
+        .mstore()
+        .push0_n(5)
+        .push_u8(0x24)
+        .calldataload()
+        .gas()
+        .call()
+        .pop()
+        .gas()
+        .push_u8(0x20)
+        .mload()
+        .sub()
+        .push_u8(0x20)
+        .mstore()
+        .push_u8(0x40)
+        .push0()
+        .return_()
+        .finish()
+}
+
+fn call_warmth_probe_bytecode(first_call_value: u8) -> Vec<u8> {
+    BytecodeBuilder::new()
+        .gas()
+        .push0()
+        .mstore()
+        .push0_n(4)
+        .push_u8(first_call_value)
+        .push_u8(0x04)
+        .calldataload()
+        .gas()
+        .call()
+        .pop()
+        .gas()
+        .push0()
+        .mload()
+        .sub()
+        .push0()
+        .mstore()
+        .gas()
+        .push_u8(0x20)
+        .mstore()
+        .push0_n(5)
+        .push_u8(0x04)
+        .calldataload()
+        .gas()
+        .call()
+        .pop()
+        .gas()
+        .push_u8(0x20)
+        .mload()
+        .sub()
+        .push_u8(0x20)
+        .mstore()
+        .push_u8(0x40)
+        .push0()
+        .return_()
+        .finish()
+}
 
 #[test]
 fn test_blockhash() {
@@ -968,6 +1077,280 @@ fn test_eip4844_blobhash() {
     match &tx_result.execution_result {
         ExecutionResult::Success(ExecutionOutput::Call(out)) => {
             assert_eq!(out, &versioned_hash.0.to_vec(), "Output data doesn't match")
+        }
+        _ => panic!("Execution result must be a successful call"),
+    }
+}
+
+#[test]
+fn test_selfdestruct_delegatecall_in_constructor() {
+    use rig::alloy::signers::local::PrivateKeySigner;
+    use std::str::FromStr;
+
+    let mut tester =
+        TestingFramework::new().with_run_config(rig::chain::RunConfig::without_riscv_run());
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let contract_b_addr = address!("0x2000000000000000000000000000000000000000");
+    let contract_b_bytecode = BytecodeBuilder::new().push0().selfdestruct().finish();
+
+    // Set balances and bytecode for contract B
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_b_addr, &contract_b_bytecode);
+
+    let constructor_code = constructor_selfdestruct_delegatecall_bytecode(contract_b_addr);
+
+    let tx = ZKsyncTxEnvelope::from_eth_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 100_000,
+            to: rig::alloy::primitives::TxKind::Create,
+            value: Default::default(),
+            input: constructor_code.into(),
+        },
+        wallet.clone(),
+    );
+
+    let result = tester.execute_block(vec![tx]);
+    assert!(result.tx_results[0].is_ok());
+
+    let tx_result = result.tx_results[0].as_ref().unwrap();
+    assert!(tx_result.is_success(), "Transaction should be successful");
+    let deployed_account =
+        tester.get_account_properties(&address!("f5235535ca49a9da386bc532bf79f4f3fd812cd5"));
+    assert_eq!(deployed_account.observable_bytecode_len, 0);
+}
+
+#[test]
+fn test_max_nonce_account_warmth() {
+    use alloy_sol_types::SolValue;
+    use rig::alloy::signers::local::PrivateKeySigner;
+    use std::str::FromStr;
+    let mut tester =
+        TestingFramework::new().with_run_config(rig::chain::RunConfig::without_riscv_run());
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let contract_a_addr = address!("0x1000000000000000000000000000000000000000");
+    let contract_b_addr = address!("0x2000000000000000000000000000000000000000");
+    let contract_a_bytecode = account_warmth_probe_bytecode();
+    let contract_b_bytecode = create_failure_probe_bytecode(0);
+
+    // Set balances
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_b_addr, &contract_b_bytecode)
+        .with_nonce(contract_b_addr, u64::MAX);
+
+    tester = tester.with_evm_contract(contract_a_addr, &contract_a_bytecode);
+
+    // The deployed address that would be created by contract B with nonce u64::MAX
+    let deployed_addr = address!("47FDF6EEA003B0131DC8750E18CEF5B400BFDE69");
+
+    sol! {
+        function checkWarmth(address contractB, address deployedAddr) external returns (uint256 callBGas, uint256 deployedGas);
+    }
+
+    let calldata = checkWarmthCall {
+        contractB: contract_b_addr,
+        deployedAddr: deployed_addr,
+    }
+    .abi_encode();
+
+    let tx = ZKsyncTxEnvelope::from_eth_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 500_000,
+            to: rig::alloy::primitives::TxKind::Call(contract_a_addr),
+            value: Default::default(),
+            input: calldata.into(),
+        },
+        wallet.clone(),
+    );
+
+    let result = tester.execute_block(vec![tx]);
+    assert!(result.tx_results[0].is_ok());
+
+    let tx_result = result.tx_results[0].as_ref().unwrap();
+    assert!(tx_result.is_success(), "Transaction should be successful");
+
+    // Decode the return data to get gas costs
+    match &tx_result.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(out)) => {
+            let decoded = <(U256, U256)>::abi_decode(out.as_slice()).unwrap();
+            let (_call_b_gas, deployed_gas) = decoded;
+
+            // According to Ethereum rules, when a CREATE fails due to nonce = u64::MAX,
+            // the computed deployment address should NOT be warmed.
+            // The deployed address (47FDF6EEA003B0131DC8750E18CEF5B400BFDE69) should be cold.
+            // In Ethereum, cold access costs 2600, warm access costs 100
+            // The deployed address should be cold (cost 2600 for account access)
+            // If it's incorrectly warmed, it would only cost 100
+            assert!(
+                deployed_gas >= U256::from(2500u64),
+                "Deployed address should be cold (cost >= 2500), but got {deployed_gas}"
+            );
+        }
+        _ => panic!("Execution result must be a successful call"),
+    }
+}
+
+#[test]
+fn test_insufficient_balance_account_warmth() {
+    use alloy_sol_types::SolValue;
+    use rig::alloy::signers::local::PrivateKeySigner;
+    use std::str::FromStr;
+    let mut tester =
+        TestingFramework::new().with_run_config(rig::chain::RunConfig::without_riscv_run());
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let contract_a_addr = address!("0x1000000000000000000000000000000000000000");
+    let contract_b_addr = address!("0x2000000000000000000000000000000000000000");
+    let contract_a_bytecode = account_warmth_probe_bytecode();
+    let contract_b_bytecode = create_failure_probe_bytecode(100);
+
+    // Set balances
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_b_addr, &contract_b_bytecode);
+
+    tester = tester.with_evm_contract(contract_a_addr, &contract_a_bytecode);
+
+    let deployed_addr = address!("0x0BF4C804E0579073BAF54EC4EC37CD04F3455C65");
+
+    sol! {
+        function checkWarmth(address contractB, address deployedAddr) external returns (uint256 callBGas, uint256 deployedGas);
+    }
+
+    let calldata = checkWarmthCall {
+        contractB: contract_b_addr,
+        deployedAddr: deployed_addr,
+    }
+    .abi_encode();
+
+    let tx = ZKsyncTxEnvelope::from_eth_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 500_000,
+            to: rig::alloy::primitives::TxKind::Call(contract_a_addr),
+            value: Default::default(),
+            input: calldata.into(),
+        },
+        wallet.clone(),
+    );
+
+    let result = tester.execute_block(vec![tx]);
+    assert!(result.tx_results[0].is_ok());
+
+    let tx_result = result.tx_results[0].as_ref().unwrap();
+    assert!(tx_result.is_success(), "Transaction should be successful");
+
+    // Decode the return data to get gas costs
+    match &tx_result.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(out)) => {
+            let decoded = <(U256, U256)>::abi_decode(out.as_slice()).unwrap();
+            let (_call_b_gas, deployed_gas) = decoded;
+
+            // According to Ethereum rules, when a CREATE fails due to insufficient balance,
+            // the computed deployment address should NOT be warmed.
+            // The deployed address should be cold (cost 2600 for account access)
+            // If it's incorrectly warmed, it would only cost 100
+            assert!(
+                deployed_gas >= U256::from(2500u64),
+                "Deployed address should be cold (cost >= 2500), but got {deployed_gas}"
+            );
+        }
+        _ => panic!("Execution result must be a successful call"),
+    }
+}
+
+#[test]
+fn test_call_insufficient_balance_warmth() {
+    use alloy_sol_types::SolValue;
+    use rig::alloy::signers::local::PrivateKeySigner;
+    use std::str::FromStr;
+    let mut tester =
+        TestingFramework::new().with_run_config(rig::chain::RunConfig::without_riscv_run());
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let contract_a_addr = address!("0x1000000000000000000000000000000000000000");
+    let contract_b_addr = address!("0x2000000000000000000000000000000000000000");
+    let contract_a_bytecode = call_warmth_probe_bytecode(100);
+    let contract_b_bytecode = BytecodeBuilder::new().stop().finish();
+
+    // Set balances
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_b_addr, &contract_b_bytecode)
+        .with_balance(contract_b_addr, U256::ZERO);
+
+    tester = tester.with_evm_contract(contract_a_addr, &contract_a_bytecode);
+
+    sol! {
+        function checkWarmth(address target) external returns (uint256 firstGas, uint256 secondGas);
+    }
+
+    let calldata = checkWarmthCall {
+        target: contract_b_addr,
+    }
+    .abi_encode();
+
+    let tx = ZKsyncTxEnvelope::from_eth_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 500_000,
+            to: rig::alloy::primitives::TxKind::Call(contract_a_addr),
+            value: Default::default(),
+            input: calldata.into(),
+        },
+        wallet.clone(),
+    );
+
+    let result = tester.execute_block(vec![tx]);
+    assert!(result.tx_results[0].is_ok());
+
+    let tx_result = result.tx_results[0].as_ref().unwrap();
+    assert!(tx_result.is_success(), "Transaction should be successful");
+
+    // Decode the return data to get gas costs
+    match &tx_result.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(out)) => {
+            let decoded = <(U256, U256)>::abi_decode(out.as_slice()).unwrap();
+            let (first_gas, second_gas) = decoded;
+
+            // According to Ethereum rules, CALL warms the target address even when it fails
+            // due to insufficient balance. So the second call should be warm (cheaper).
+            // In Ethereum, cold access costs 2600, warm access costs 100
+            // The first call should be cold (>= 2500)
+            // The second call should be warm (<= 200)
+            assert!(
+                first_gas >= U256::from(2500u64),
+                "First call should be cold (cost >= 2500), but got {first_gas}"
+            );
+            assert!(
+                second_gas <= U256::from(200u64),
+                "Second call should be warm (cost <= 200), but got {second_gas}"
+            );
         }
         _ => panic!("Execution result must be a successful call"),
     }
