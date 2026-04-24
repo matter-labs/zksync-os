@@ -23,7 +23,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[1])?;
         let start = self.instruction_pointer;
 
-        let byte_val = self.bytecode.as_ref().get(start).copied().unwrap_or(0);
+        let byte_val = self.bytecode.get(start).copied().unwrap_or(0);
 
         self.instruction_pointer += 1;
         self.stack.push_u64(byte_val as u64)
