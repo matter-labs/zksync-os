@@ -312,7 +312,10 @@ function regression() {
 
     prepare
 
-    # -s none: regression replay does not need AddressSanitizer
+    # -s none disables AddressSanitizer and the implicit -Zbuild-std, cutting build time.
+    # This is fine for regression replay: the corpus inputs are fixed, so we're checking
+    # for logic regressions (panics, wrong outputs), not discovering memory-safety bugs.
+    # AddressSanitizer is still used in the daily fuzz.yml smoke run.
     RUST_MIN_STACK=33554432 cargo fuzz build -s none
     echo "Running regression tests on all fuzz targets..."
 

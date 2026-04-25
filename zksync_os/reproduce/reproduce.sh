@@ -6,10 +6,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ZKSYNC_OS_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(dirname "$ZKSYNC_OS_DIR")"
 
-# `cargo airbender build --reproducible` passes `--locked` to cargo, so
-# both the workspace root and the guest crate need a Cargo.lock regenerated
+# `cargo airbender build --reproducible` passes `--locked` to cargo, so both
+# the workspace root and the guest crate need a Cargo.lock present.
+#
+# The workspace root Cargo.lock is gitignored (library workspace), so we
+# generate it here. It doesn't affect the guest binary.
+#
+# The guest zksync_os/Cargo.lock IS committed — we intentionally do NOT
+# regenerate it so that builds are pinned to the committed dependency
+# versions. If Cargo.toml changed without updating the lockfile, the
+# --locked build will fail, which is the desired behavior.
+#
+# NOTE: the toolchain version must match rust-toolchain.toml.
 cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$REPO_ROOT/Cargo.toml"
-cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$ZKSYNC_OS_DIR/Cargo.toml"
 
 cd "$ZKSYNC_OS_DIR"
 
