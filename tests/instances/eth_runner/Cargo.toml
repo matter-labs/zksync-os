@@ -28,7 +28,7 @@ csv = "1.3"
 reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 zstd = "0.13"
 
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "7e559f95", default-features = false }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "097f1489", default-features = false }
 
 [features]
 proving = []

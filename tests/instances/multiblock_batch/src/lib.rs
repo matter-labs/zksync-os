@@ -86,7 +86,9 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         .join("dist")
         .join("multiblock_batch");
 
-    let proof_output = zksync_os_runner::run(multiblock_dist_dir, 1 << 36, &batch_input);
+    let proof_output = zksync_os_runner::Runner::new(multiblock_dist_dir)
+        .run(&batch_input)
+        .output;
 
     debug!("Proof running output = 0x",);
     for word in proof_output.into_iter() {

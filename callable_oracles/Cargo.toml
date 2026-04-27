@@ -17,13 +17,9 @@ oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 
-riscv_transpiler = { workspace = true, optional = true }
 c-kzg = "2.1.5"
-
-[dev-dependencies]
-hex = { workspace = true }
 
 [features]
 default = ["evaluate"]
-evaluate = ["riscv_transpiler"]
+evaluate = []
 testing = []

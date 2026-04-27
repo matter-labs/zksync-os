@@ -9,22 +9,21 @@
 
 #[test]
 pub fn run_naive_test() {
-    let results = zksync_os_runner::run(
-        "src/blake2s/test_program/dist/app_native_blake".into(),
-        1 << 25,
-        &[],
-    );
+    let result =
+        zksync_os_runner::Runner::new("src/blake2s/test_program/dist/app_native_blake".into())
+            .with_cycles(1 << 25)
+            .run(&[]);
     // Make sure it is successful;
-    assert_eq!(results[0], 1);
+    assert_eq!(result.output[0], 1);
 }
 
 #[test]
 pub fn run_extended_delegation_test() {
-    let results = zksync_os_runner::run(
+    let result = zksync_os_runner::Runner::new(
         "src/blake2s/test_program/dist/app_extended_delegation_blake".into(),
-        1 << 25,
-        &[],
-    );
+    )
+    .with_cycles(1 << 25)
+    .run(&[]);
     // Make sure it is successful;
-    assert_eq!(results[0], 1);
+    assert_eq!(result.output[0], 1);
 }

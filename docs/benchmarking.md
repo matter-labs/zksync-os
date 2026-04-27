@@ -11,7 +11,7 @@ effective_cycles = raw_risc_v_cycles
 ```
 
 The repository currently uses two closely related metrics:
-- `cycle_marker::print_cycle_markers()` and `zksync_os_runner::run_and_get_effective_cycles()` use the formula above.
+- `cycle_marker::print_cycle_markers()` and `zksync_os_runner::Runner::run()` (returning `block_effective`) use the formula above.
 - `bench_scripts/compare_bench.py` derives its `Eff` column from `.bench` files using the same Blake/BigInt weights, and also adds `+1` for every other delegation type recorded in the marker output.
 
 ## Quick Start
