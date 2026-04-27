@@ -190,11 +190,25 @@ jobs:
               working-directory: ./tests/fuzzer
               run: ./fuzz.sh regression
 
+    check_lockfile:
+        name: Check RISC-V binary lockfile freshness
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Verify zksync_os/Cargo.lock is up to date
+              run: cargo metadata --locked --manifest-path zksync_os/Cargo.toml --format-version 1 > /dev/null
+
     check_app_bin:
         name: Check that binaries can be built
+        needs: check_lockfile
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v4
+              # with:
+              #     ref: ${{ github.event.pull_request.head.sha || github.sha }}
             - uses: ./.github/actions/setup-toolchain
             - name: Build fresh app bin
               run: zksync_os/reproduce/reproduce.sh
