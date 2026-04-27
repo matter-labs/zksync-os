@@ -34,19 +34,22 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
-        let mut buf = [0u8; 32];
-        value.write_be_bytes_into(&mut buf);
+        let mut le_value = value.clone();
         let index = Self::cast_to_usize(index, EvmError::InvalidOperandOOG.into())?;
 
-        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
+        self.resize_heap(index, 32)?;
 
-        self.heap[index..index + 32].copy_from_slice(&buf);
+        unsafe {
+            le_value.bytereverse();
+            let src = le_value.as_le_bytes_ref().as_ptr();
+            let dst = self.heap().as_mut_ptr().add(index);
+            core::ptr::copy_nonoverlapping(src, dst, 32);
+        }
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             use zk_ee::system_log;
-            let value = U256::from_be_bytes(&buf);
-            system_log!(system, " offset: {index}, stored value: 0x{value:0x}");
+            system_log!(system, " offset: {index}, stored value: 0x{le_value:0x}");
         }
 
         Ok(())

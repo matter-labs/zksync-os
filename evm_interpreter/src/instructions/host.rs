@@ -47,8 +47,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             self.gas.resources_mut(),
             &address,
         )?;
-        U256::write_zero(stack_top);
-        stack_top.as_limbs_mut()[0] = value as u64;
+        *stack_top = U256::from(value as u64);
         Ok(())
     }
 
