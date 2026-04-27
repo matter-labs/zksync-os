@@ -69,8 +69,6 @@ zksync_os_interface = {  version = "0.1.1" }
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607", default-features = false }
 prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 
 airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "097f1489" }
 airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "097f1489" }
