@@ -47,7 +47,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             self.gas.resources_mut(),
             &address,
         )?;
-        *stack_top = U256::from(value as u64);
+        U256::write_zero(stack_top);
+        stack_top.as_limbs_mut()[0] = value as u64;
         Ok(())
     }
 
@@ -324,8 +325,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.clear_last_returndata();
 
         let (value, code_offset, len) = self.stack.pop_3()?;
-        // Convert u256::U256 call value to NominalTokenValue (ruint::aliases::U256)
-        let value: ruint::aliases::U256 = value.clone().into();
+        let value: ruint::aliases::U256 = ruint::aliases::U256::from_limbs(*value.as_limbs());
 
         let (code_offset, len) =
             Self::cast_offset_and_len(code_offset, len, EvmError::InvalidOperandOOG.into())?;
@@ -436,18 +436,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value: ruint::aliases::U256 = match scheme {
             CallScheme::CallCode => {
                 let value = self.stack.pop_1()?;
-                value.clone().into()
+                ruint::aliases::U256::from_limbs(*value.as_limbs())
             }
             CallScheme::Call => {
                 let value = self.stack.pop_1()?;
                 if self.is_static && !value.is_zero() {
                     return Err(EvmError::CallNotAllowedInsideStatic.into());
                 }
-                value.clone().into()
+                ruint::aliases::U256::from_limbs(*value.as_limbs())
             }
             CallScheme::DelegateCall => {
-                // call_value is u256::U256, need to convert to ruint
-                self.call_value.clone().into()
+                ruint::aliases::U256::from_limbs(*self.call_value.as_limbs())
             }
             CallScheme::StaticCall => ruint::aliases::U256::ZERO,
         };

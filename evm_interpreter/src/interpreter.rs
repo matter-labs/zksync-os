@@ -510,7 +510,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
         create2_buffer[1..(1 + 20)]
             .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
-        create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
+        salt.write_be_bytes_into(
+            (&mut create2_buffer[(1 + 20)..(1 + 20 + 32)])
+                .try_into()
+                .unwrap(),
+        );
         create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
             .copy_from_slice(initcode_hash.as_u8_array_ref());
 
