@@ -70,20 +70,21 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42", default-features = false }
 zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42" }
 
-# zksync-airbender deps tracked against the `dev` branch head. We
-# tried pinning to a specific commit; the resulting source-URL split
-# vs. airbender-platform's own `branch=dev` references duplicated the
-# whole airbender crate set in the build graph (~200 extra release
-# compilations) and broke `From<riscv_transpiler::cycle::CycleMarker>`
-# resolution in `zksync_os_runner`. The reproducibility floor is the
-# checked-in Cargo.lock — pinning here added no real protection.
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
-prover = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev" }
-full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender.git", branch = "dev", default-features = false }
+# zksync-airbender deps pinned to the same commit airbender-platform
+# resolves `branch = "dev"` to (HEAD of `dev` at the time of pinning).
+# URL is intentionally without the `.git` suffix to match
+# airbender-platform's internal references — keeping the source
+# identity the same lets cargo unify our pin with airbender-platform's
+# transitive zksync-airbender deps into a single source resolution.
+# Mismatched URL or ref spec causes ~200 duplicate airbender crate
+# compilations.
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a", default-features = false }
 cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607" }
 
