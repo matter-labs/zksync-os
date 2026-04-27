@@ -296,9 +296,18 @@ pub fn revert(snap: Snapshot) {
 #[cfg(target_arch = "riscv32")]
 pub fn revert(_: Snapshot) {}
 
-/// Re-export `airbender_host` cycle marker types for use by the runner.
+/// Re-export the cycle marker types the runner produces.
+///
+/// Sourced from `riscv_transpiler` (not `airbender_host`) so that
+/// `zksync_os_runner` can hand its VM output directly into
+/// `print_cycle_markers` without an `airbender_host::CycleMarker`
+/// conversion. The two types carry the same data; using the
+/// transpiler's directly avoids the cargo source-split between our
+/// pinned `zksync-airbender` and airbender-platform's transitive
+/// `branch=dev` reference, which previously broke the upstream
+/// `From<riscv_transpiler::cycle::CycleMarker>` impl.
 #[cfg(feature = "use_riscv_transpiler")]
-pub use airbender_host::{CycleMarker, Mark};
+pub use riscv_transpiler::cycle::{CycleMarker, Mark};
 
 /// Per-opcode aggregated cycle statistics.
 #[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
