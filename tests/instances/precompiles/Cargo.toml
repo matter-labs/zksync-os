@@ -17,4 +17,5 @@ cycle_marker = { path = "../../../cycle_marker" }
 
 [features]
 cycle_marker = ["rig/cycle_marker"]
+pectra = ["rig/pectra"]
 default = []

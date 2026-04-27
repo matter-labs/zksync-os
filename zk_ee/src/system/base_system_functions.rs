@@ -59,6 +59,25 @@ define_subsystem!(PointEvaluation,
                   }
 );
 
+define_subsystem!(Bls12Precompile,
+                  interface Bls12PrecompileInterfaceError
+                  {
+                      InvalidFieldElement,
+                      InvalidG1Point,
+                      InvalidG2Point,
+                      InvalidInputSize,
+                      PointNotInSubgroup,
+                  }
+);
+
+define_subsystem!(Blake2FPrecompile,
+                  interface Blake2FPrecompileInterfaceError
+                  {
+                      InvalidInputSize,
+                      InvalidBooleanFlag,
+                  }
+);
+
 define_subsystem!(MissingSystemFunction,
                     // Used only for tests
                   interface MockedSystemFunctionError
@@ -176,6 +195,14 @@ pub trait SystemFunctions<R: Resources> {
     type Bn254PairingCheck: SystemFunction<R, Bn254PairingCheckErrors>;
     type RipeMd160: SystemFunction<R, RipeMd160Errors>;
     type PointEvaluation: SystemFunction<R, PointEvaluationErrors>;
+    type Bls12G1Add: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12G2Add: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12G1Msm: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12G2Msm: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12PairingCheck: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12MapFpToG1: SystemFunction<R, Bls12PrecompileErrors>;
+    type Bls12MapFp2ToG2: SystemFunction<R, Bls12PrecompileErrors>;
+    type Blake2F: SystemFunction<R, Blake2FPrecompileErrors>;
 
     fn keccak256<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
@@ -283,6 +310,78 @@ pub trait SystemFunctions<R: Resources> {
         allocator: A,
     ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
         Self::PointEvaluation::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_g1_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G1Add::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_g2_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G2Add::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_g1_msm<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G1Msm::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_g2_msm<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G2Msm::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_pairing_check<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12PairingCheck::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_map_fp_to_g1<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12MapFpToG1::execute(input, output, resources, allocator)
+    }
+
+    fn bls12_map_fp2_to_g2<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12MapFp2ToG2::execute(input, output, resources, allocator)
+    }
+
+    fn blake2f<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Blake2FPrecompileErrors>> {
+        Self::Blake2F::execute(input, output, resources, allocator)
     }
 }
 

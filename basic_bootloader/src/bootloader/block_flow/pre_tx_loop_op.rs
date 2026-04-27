@@ -1,4 +1,5 @@
 use super::*;
+use crate::bootloader::errors::BootloaderSubsystemError;
 use zk_ee::system::IOResultKeeper;
 
 /// Trait for operations performed before the transaction processing loop begins.
@@ -13,5 +14,5 @@ where
     fn pre_op(
         system: &mut System<S>,
         result_keeper: &mut impl IOResultKeeper<S::IOTypes>,
-    ) -> Self::PreTxLoopResult;
+    ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError>;
 }
