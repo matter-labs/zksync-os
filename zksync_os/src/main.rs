@@ -38,7 +38,7 @@ pub mod quasi_uart;
 type LoggerTy = proof_running_system::zk_ee::system::NullLogger;
 
 #[cfg(feature = "print_debug_info")]
-type LoggerTy = crate::quasi_uart::QuasiUART;
+type LoggerTy = crate::quasi_uart::QuasiUartLogger;
 
 use proof_running_system::system::bootloader::OptionalGlobalAllocator;
 #[global_allocator]

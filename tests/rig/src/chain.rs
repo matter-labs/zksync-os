@@ -968,21 +968,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let dist_dir = get_zksync_os_dist_dir(&app);
 
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
-                zksync_os_runner::run_with_flamegraph(
-                    dist_dir.clone(),
-                    dist_dir.join("app.elf"),
-                    1 << 36,
-                    &prover_input_forward,
-                    fg_options,
-                )
-            } else {
-                zksync_os_runner::run_and_get_effective_cycles(
-                    dist_dir,
-                    1 << 36,
-                    &prover_input_forward,
-                )
-            };
+            let mut runner = zksync_os_runner::Runner::new(dist_dir);
+            if let Some(fg_options) = flamegraph {
+                runner = runner.with_flamegraph(fg_options);
+            }
+            let zksync_os_runner::RunResult {
+                output: proof_output,
+                block_effective,
+            } = runner.run(&prover_input_forward);
 
             info!(
                 "Simulator without witness tracing executed over {:?}",
@@ -1307,7 +1300,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
-            zksync_os_runner::run(dist_dir, 1 << 36, &prover_input_words);
+            zksync_os_runner::Runner::new(dist_dir).run(&prover_input_words);
             Some(prover_input_words)
         };
         (Some(result_keeper), proof_input)
