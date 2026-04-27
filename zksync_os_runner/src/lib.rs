@@ -178,10 +178,29 @@ fn run_inner(
 
     #[cfg(feature = "cycle_marker")]
     {
-        // `cycle_marker::print_cycle_markers` takes `airbender_host::CycleMarker`
-        // but our VM yields `riscv_transpiler::cycle::CycleMarker`. The two
-        // types carry the same data and `From` is implemented upstream.
-        let results = cycle_marker::print_cycle_markers(_cycle_markers.into());
+        // `cycle_marker::print_cycle_markers` takes
+        // `airbender_host::CycleMarker`, but our VM yields
+        // `riscv_transpiler::cycle::CycleMarker`. There IS a
+        // `From<riscv_transpiler::cycle::CycleMarker>` impl on
+        // `airbender_host::CycleMarker` upstream, but cargo treats our
+        // pinned `zksync-airbender.git?rev=...` source and
+        // airbender-platform's transitive `zksync-airbender?branch=dev`
+        // source as distinct packages, so the `From` impl resolves
+        // against airbender-platform's copy of the type — not ours.
+        // Convert by hand: both structs have all-public fields and the
+        // shape mirrors upstream's `From` impl.
+        let host_marker = airbender_host::CycleMarker {
+            markers: _cycle_markers
+                .markers
+                .into_iter()
+                .map(|m| airbender_host::Mark {
+                    cycles: m.cycles,
+                    delegations: m.delegations,
+                })
+                .collect(),
+            delegation_counter: _cycle_markers.delegation_counter,
+        };
+        let results = cycle_marker::print_cycle_markers(host_marker);
         block_effective = results.block_effective;
     }
 
