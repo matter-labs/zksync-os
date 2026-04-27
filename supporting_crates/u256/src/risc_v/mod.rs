@@ -246,6 +246,10 @@ impl U256 {
         self.0.to_be_bytes()
     }
 
+    pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
+        self.0.write_be_bytes_into(dst);
+    }
+
     pub fn bit_len(&self) -> usize {
         self.0.bit_len()
     }

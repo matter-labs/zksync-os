@@ -45,6 +45,17 @@ impl DelegatedU256 {
         unsafe { core::mem::transmute(res) }
     }
 
+    pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
+        let limbs = self.as_limbs();
+        let (chunk0, rest) = dst.split_at_mut(8);
+        let (chunk1, rest) = rest.split_at_mut(8);
+        let (chunk2, chunk3) = rest.split_at_mut(8);
+        chunk0.copy_from_slice(&limbs[3].to_be_bytes());
+        chunk1.copy_from_slice(&limbs[2].to_be_bytes());
+        chunk2.copy_from_slice(&limbs[1].to_be_bytes());
+        chunk3.copy_from_slice(&limbs[0].to_be_bytes());
+    }
+
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
         unsafe {
             #[allow(invalid_value)]

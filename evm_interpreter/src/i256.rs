@@ -60,16 +60,21 @@ pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
         (true, false) => Ordering::Less,    // negative < positive,
         (false, true) => Ordering::Greater, // positive > negative,
         _ => {
-            // same sign, trivial for both positives
-            // in two's complement min negative value is < -1 if viewed as unsigned bit patterns, so we can perform same ops
-            let mut tmp = first.clone();
-            let uf = tmp.overflowing_sub_assign(second);
-            if uf {
-                Ordering::Less
-            } else if tmp.is_zero() {
-                Ordering::Equal
-            } else {
-                Ordering::Greater
+            // Same sign: two's complement preserves unsigned ordering.
+            // Pure-software limb comparison avoids clone + delegation sub.
+            let a = first.as_limbs();
+            let b = second.as_limbs();
+            let mut i = 3;
+            loop {
+                match a[i].cmp(&b[i]) {
+                    Ordering::Equal => {
+                        if i == 0 {
+                            return Ordering::Equal;
+                        }
+                        i -= 1;
+                    }
+                    ord => return ord,
+                }
             }
         }
     }

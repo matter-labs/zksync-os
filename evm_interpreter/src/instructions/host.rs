@@ -111,7 +111,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
-        let key = Bytes32::from_array(stack_head.to_be_bytes());
+        let mut key_buf = [0u8; 32];
+        stack_head.write_be_bytes_into(&mut key_buf);
+        let key = Bytes32::from_array(key_buf);
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
@@ -133,7 +135,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
-        let key = Bytes32::from_array(stack_head.to_be_bytes());
+        let mut key_buf = [0u8; 32];
+        stack_head.write_be_bytes_into(&mut key_buf);
+        let key = Bytes32::from_array(key_buf);
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
@@ -161,8 +165,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return Err(EvmError::InvalidOperandOOG.into());
         }
         let (index, value) = self.stack.pop_2()?;
-        let index = Bytes32::from_array(index.to_be_bytes());
-        let value = Bytes32::from_array(value.to_be_bytes());
+        let mut index_buf = [0u8; 32];
+        index.write_be_bytes_into(&mut index_buf);
+        let index = Bytes32::from_array(index_buf);
+        let mut value_buf = [0u8; 32];
+        value.write_be_bytes_into(&mut value_buf);
+        let value = Bytes32::from_array(value_buf);
 
         system.io.storage_write::<false>(
             THIS_EE_TYPE,
@@ -200,8 +208,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         let (index, value) = self.stack.pop_2()?;
-        let index = Bytes32::from_array(index.to_be_bytes());
-        let value = Bytes32::from_array(value.to_be_bytes());
+        let mut index_buf = [0u8; 32];
+        index.write_be_bytes_into(&mut index_buf);
+        let index = Bytes32::from_array(index_buf);
+        let mut value_buf = [0u8; 32];
+        value.write_be_bytes_into(&mut value_buf);
+        let value = Bytes32::from_array(value_buf);
         system.io.storage_write::<true>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
@@ -233,7 +245,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             Self::cast_offset_and_len(&mem_offset, &len, EvmError::InvalidOperandOOG.into())?;
         let mut topics: arrayvec::ArrayVec<Bytes32, 4> = arrayvec::ArrayVec::new();
         for _ in 0..N {
-            topics.push(Bytes32::from_array(self.stack.pop_1()?.to_be_bytes()));
+            let topic_val = self.stack.pop_1()?;
+            let mut buf = [0u8; 32];
+            topic_val.write_be_bytes_into(&mut buf);
+            topics.push(Bytes32::from_array(buf));
         }
 
         // resize memory
