@@ -108,7 +108,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         } else {
             return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
-        let exp = U256::from_limbs(*op2.as_limbs());
+        let exp = op2.clone();
         U256::pow(op1, &exp, op2);
         Ok(())
     }
