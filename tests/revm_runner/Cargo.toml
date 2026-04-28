@@ -19,6 +19,7 @@ alloy = { workspace = true, default-features = false, features = [
     "serde",
     "serde-bincode-compat",
 ] }
+alloy-rpc-types-trace-v1 = { package = "alloy-rpc-types-trace", version = "1" }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
 revm = "=34.0.0"
 revm-inspectors = "0.34.0"

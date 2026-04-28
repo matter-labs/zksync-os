@@ -28,7 +28,7 @@ macro_rules! uint_impl {
                 if local_head.len() < 32 {
                     return Err(());
                 }
-                let source = local_head.as_chunks::<32>().0.iter().next().unwrap();
+                let source = local_head.chunks_exact(32).next().unwrap().try_into().unwrap();
                 let new = Self { source };
                 *head_offset += 32;
 
@@ -43,10 +43,10 @@ macro_rules! uint_impl {
                     return Err(());
                 }
                 let source = local_head
-                    .as_chunks_mut::<32>()
-                    .0
-                    .iter_mut()
+                    .chunks_exact_mut(32)
                     .next()
+                    .unwrap()
+                    .try_into()
                     .unwrap();
                 let new = Self { source };
                 *head_offset += 32;
@@ -142,7 +142,7 @@ impl<'a> SolidityCodableReflectionRef<'a> for AddressRef<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let source = local_head.as_chunks::<32>().0.iter().next().unwrap();
+        let source = local_head.chunks_exact(32).next().unwrap().try_into().unwrap();
         let new = Self { source };
         *head_offset += 32;
 
@@ -157,10 +157,10 @@ impl<'a> SolidityCodableReflectionRefMut<'a> for AddressRefMut<'a> {
             return Err(());
         }
         let source = local_head
-            .as_chunks_mut::<32>()
-            .0
-            .iter_mut()
+            .chunks_exact_mut(32)
             .next()
+            .unwrap()
+            .try_into()
             .unwrap();
         let new = Self { source };
         *head_offset += 32;

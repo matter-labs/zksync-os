@@ -15,10 +15,8 @@ mod tests {
         assert!(binary.len() % 4 == 0);
 
         binary
-            .as_chunks()
-            .0
-            .iter()
-            .map(|el| u32::from_le_bytes(*el))
+            .chunks_exact(4)
+            .map(|el| u32::from_le_bytes(el.try_into().unwrap()))
             .collect()
     }
 

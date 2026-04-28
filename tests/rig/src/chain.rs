@@ -56,6 +56,9 @@ use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::StorageWrite;
 
+type TestStateCommitment = FlatStorageCommitment<TREE_HEIGHT>;
+type TestProofData = ProofData<TestStateCommitment>;
+
 /// Trait for creating oracles with custom configuration
 pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     #[allow(clippy::too_many_arguments)]
@@ -65,7 +68,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        proof_data: Option<TestProofData>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
     ) -> ZkEENonDeterminismSource<DummyMemorySource>;
@@ -95,7 +98,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        proof_data: Option<TestProofData>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
     ) -> ZkEENonDeterminismSource<DummyMemorySource> {
@@ -621,7 +624,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
         };
-        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
+        let state_commitment = FlatStorageCommitment::<TREE_HEIGHT> {
             root: *self.state_tree.storage_tree.root(),
             next_free_slot: self.state_tree.storage_tree.next_free_slot,
         };
@@ -1296,8 +1299,8 @@ fn run_prover(csr_reads: &[u32]) {
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
     let mut binary = vec![];
-    for el in buffer.as_chunks::<4>().0.iter() {
-        binary.push(u32::from_le_bytes(*el));
+    for el in buffer.chunks_exact(4) {
+        binary.push(u32::from_le_bytes(el.try_into().unwrap()));
     }
 
     use prover_examples::prover::worker::Worker;

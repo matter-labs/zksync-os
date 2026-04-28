@@ -70,13 +70,13 @@ fn p256_verify_as_system_function_inner<
         *dst = *src;
     }
 
-    let mut it = buffer.as_chunks::<32>().0.iter();
+    let mut it = buffer.chunks_exact(32);
     let is_valid = unsafe {
-        let digest = it.next().unwrap_unchecked();
-        let r = it.next().unwrap_unchecked();
-        let s = it.next().unwrap_unchecked();
-        let x = it.next().unwrap_unchecked();
-        let y = it.next().unwrap_unchecked();
+        let digest = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let r = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let s = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let x = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let y = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
 
         let Ok(result) = secp256r1_verify_inner(digest, r, s, x, y) else {
             // Empty returndata indicates failure.

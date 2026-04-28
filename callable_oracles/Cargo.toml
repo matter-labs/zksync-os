@@ -18,6 +18,7 @@ basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 
 risc_v_simulator = { workspace = true, optional = true }
+alloy-consensus = "2"
 c-kzg = "2.1.5"
 
 [dev-dependencies]

@@ -86,11 +86,11 @@ num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-integer = { version = "0.1", default-features = false }
 proptest = "1.7.0"
-alloy = { version = "1", default-features = false }
+alloy = { version = "2", default-features = false }
 alloy-rlp = "0.3.13"
 alloy-sol-types = "1"
 alloy-primitives = "1"
-alloy-rpc-types-debug = { version = "1", default-features = false }
+alloy-rpc-types-debug = { version = "2", default-features = false }
 reqwest = "0.12"
 serde_json = "1"
 log = "0.4.22"

@@ -85,16 +85,22 @@ fn bn254_pairing_check_inner<A: Allocator>(
         for (dst, src) in buffer.iter_mut().zip(&mut src_iter) {
             *dst = *src;
         }
-        let mut it = buffer.as_chunks::<32>().0.iter();
+        let mut it = buffer.chunks_exact(32);
         unsafe {
-            let mut g1_x = *it.next().unwrap_unchecked();
-            let mut g1_y = *it.next().unwrap_unchecked();
+            let g1_x: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let g1_y: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let mut g1_x = *g1_x;
+            let mut g1_y = *g1_y;
 
             // NOTE: Ethereum serialization is strange
-            let mut g2_x_c1 = *it.next().unwrap_unchecked();
-            let mut g2_x_c0 = *it.next().unwrap_unchecked();
-            let mut g2_y_c1 = *it.next().unwrap_unchecked();
-            let mut g2_y_c0 = *it.next().unwrap_unchecked();
+            let g2_x_c1: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let g2_x_c0: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let g2_y_c1: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let g2_y_c0: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+            let mut g2_x_c1 = *g2_x_c1;
+            let mut g2_x_c0 = *g2_x_c0;
+            let mut g2_y_c1 = *g2_y_c1;
+            let mut g2_y_c0 = *g2_y_c0;
 
             bytereverse(&mut g1_x);
             bytereverse(&mut g1_y);

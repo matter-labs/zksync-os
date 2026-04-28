@@ -1,5 +1,6 @@
 use alloy::primitives::{Bytes, Log, U256};
-use alloy::rpc::types::trace::geth::CallFrame;
+use alloy::rpc::types::trace::geth::{CallFrame, CallLogFrame};
+use alloy_rpc_types_trace_v1::geth::{CallFrame as CallFrameV1, CallLogFrame as CallLogFrameV1};
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use forward_system::run::convert_alloy::IntoAlloy;
 use revm::{
@@ -49,6 +50,33 @@ pub enum TxMismatchKind {
 struct ReplayTx {
     tx: ZKsyncTx<TxEnv>,
     original_tx_index: usize,
+}
+
+fn upgrade_call_log_frame(log: CallLogFrameV1) -> CallLogFrame {
+    CallLogFrame {
+        address: log.address,
+        topics: log.topics,
+        data: log.data,
+        position: log.position,
+        index: log.index,
+    }
+}
+
+fn upgrade_call_frame(frame: CallFrameV1) -> CallFrame {
+    CallFrame {
+        from: frame.from,
+        gas: frame.gas,
+        gas_used: frame.gas_used,
+        to: frame.to,
+        input: frame.input,
+        output: frame.output,
+        error: frame.error,
+        revert_reason: frame.revert_reason,
+        calls: frame.calls.into_iter().map(upgrade_call_frame).collect(),
+        logs: frame.logs.into_iter().map(upgrade_call_log_frame).collect(),
+        value: frame.value,
+        typ: frame.typ,
+    }
 }
 
 pub struct RevmRunner<State>
@@ -210,11 +238,12 @@ where
                     }
                 },
             };
-            let trace = evm
-                .0
-                .inspector
-                .geth_builder()
-                .geth_call_traces(Default::default(), tx_execution.gas_used());
+            let trace = upgrade_call_frame(
+                evm.0
+                    .inspector
+                    .geth_builder()
+                    .geth_call_traces(Default::default(), tx_execution.gas_used()),
+            );
             call_traces.push(trace);
             revm_results.push((replay_tx.original_tx_index, tx_execution));
             evm.0.inspector.fuse();

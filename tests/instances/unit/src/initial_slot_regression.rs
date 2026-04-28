@@ -130,7 +130,7 @@ impl InvalidInitialValueOracleFactory {
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
     ) -> ZkEENonDeterminismSource<M> {
         // Create a malicious oracle manually instead of using the default factory
