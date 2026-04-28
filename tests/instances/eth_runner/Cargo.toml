@@ -10,10 +10,10 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
+alloy = { version = "2", features = ["full"]}
+alloy-rpc-types-eth = { version = "2", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 ruint = { version = "1.16", default-features = false }
-
-alloy = { version = "1", features = ["full", "ssz"]}
 serde_json = { version = "1.0", features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"]}
 zk_ee = { path = "../../../zk_ee" }
@@ -33,4 +33,3 @@ simulate_witness_gen = ["rig/simulate_witness_gen"]
 proving = ["rig/airbender_cli"]
 gpu = ["rig/gpu"]
 default = []
-

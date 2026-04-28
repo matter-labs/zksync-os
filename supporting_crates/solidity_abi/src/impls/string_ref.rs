@@ -37,14 +37,14 @@ impl<'a> SolidityCodableReflectionRef<'a> for SolidityStringRef<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let tail_offset = local_head.as_chunks::<32>().0.iter().next().unwrap();
+        let tail_offset: &[u8; 32] = local_head.chunks_exact(32).next().unwrap().try_into().unwrap();
         let tail_offset = U256::from_be_bytes(*tail_offset);
         let tail_offset = u256_to_usize_checked(&tail_offset)?;
         let (_, local_tail) = source.split_at_checked(tail_offset).ok_or(())?;
         if local_tail.len() < 32 {
             return Err(());
         }
-        let len = local_tail.as_chunks::<32>().0.iter().next().unwrap();
+        let len: &[u8; 32] = local_tail.chunks_exact(32).next().unwrap().try_into().unwrap();
         let len = U256::from_be_bytes(*len);
         let len = u256_to_usize_checked(&len)?;
         let (_, bytes_body) = local_tail.split_at_checked(32).ok_or(())?;
@@ -66,14 +66,24 @@ impl<'a> SolidityCodableReflectionRefMut<'a> for SolidityStringRefMut<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let tail_offset = local_head.as_chunks::<32>().0.iter().next().unwrap();
+        let tail_offset: &mut [u8; 32] = local_head
+            .chunks_exact_mut(32)
+            .next()
+            .unwrap()
+            .try_into()
+            .unwrap();
         let tail_offset = U256::from_be_bytes(*tail_offset);
         let tail_offset = u256_to_usize_checked(&tail_offset)?;
         let (_, local_tail) = source.split_at_mut_checked(tail_offset).ok_or(())?;
         if local_tail.len() < 32 {
             return Err(());
         }
-        let len = local_tail.as_chunks::<32>().0.iter().next().unwrap();
+        let len: &mut [u8; 32] = local_tail
+            .chunks_exact_mut(32)
+            .next()
+            .unwrap()
+            .try_into()
+            .unwrap();
         let len = U256::from_be_bytes(*len);
         let len = u256_to_usize_checked(&len)?;
         let (_, bytes_body) = local_tail.split_at_mut_checked(32).ok_or(())?;

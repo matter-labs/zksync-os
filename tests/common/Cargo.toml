@@ -10,7 +10,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-alloy = { workspace = true, features = [
+alloy = { version = "2", features = [
+    "full",
     "serde",
     "serde-bincode-compat",
 ] }

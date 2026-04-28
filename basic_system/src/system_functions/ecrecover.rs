@@ -52,12 +52,12 @@ fn ecrecover_as_system_function_inner<
 
     // follow https://github.com/ethereum/go-ethereum/blob/aadcb886753079d419f966a3bc990f708f8d1c3b/core/vm/contracts.go#L188
 
-    let mut it = buffer.as_chunks::<32>().0.iter();
+    let mut it = buffer.chunks_exact(32);
     let recovered_pubkey_bytes = unsafe {
-        let digest = it.next().unwrap_unchecked();
-        let v = it.next().unwrap_unchecked();
-        let r = it.next().unwrap_unchecked();
-        let s = it.next().unwrap_unchecked();
+        let digest: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let v: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let r: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
+        let s: &[u8; 32] = it.next().unwrap_unchecked().try_into().unwrap_unchecked();
 
         if v[..31].iter().all(|el| *el == 0) == false {
             return Ok(());

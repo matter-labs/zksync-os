@@ -22,8 +22,12 @@ impl UsizeSerializable for KZGCommitmentAndProof {
             } else {
                 #[allow(clippy::needless_return)]
                 return ExactSizeChain::new(
-                    self.commitment.as_chunks::<{ core::mem::size_of::<usize>() }>().0.iter().map(|chunk| usize::from_le_bytes(*chunk)),
-                    self.proof.as_chunks::<{ core::mem::size_of::<usize>() }>().0.iter().map(|chunk| usize::from_le_bytes(*chunk)),
+                    self.commitment
+                        .chunks_exact(core::mem::size_of::<usize>())
+                        .map(|chunk| usize::from_le_bytes(chunk.try_into().unwrap())),
+                    self.proof
+                        .chunks_exact(core::mem::size_of::<usize>())
+                        .map(|chunk| usize::from_le_bytes(chunk.try_into().unwrap())),
                 );
             }
         );

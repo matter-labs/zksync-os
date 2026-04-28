@@ -33,7 +33,7 @@ zksync_os_tests_common = { path = "../common" }
 ruint = { workspace = true, default-features = false }
 env_logger = { workspace = true }
 log = { workspace = true }
-alloy = { workspace = true, features = ["full", "eip712", "consensus"] }
+alloy = { version = "2", features = ["full", "eip712", "consensus"] }
 alloy-rlp = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-rpc-types-debug = { workspace = true }

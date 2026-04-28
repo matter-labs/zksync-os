@@ -20,6 +20,8 @@ use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::zk_metadata::ZkMetadata;
 use zk_ee::system::{IOTeardown, Resources};
 
+type ProvingStateCommitment = FlatStorageCommitment<TREE_HEIGHT>;
+
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -43,8 +45,7 @@ impl<
         const STATE_DIFFS_HASH: bool,
     > PostTxLoopOp<S> for ZKHeaderStructurePostTxOpProvingSingleblockBatch<STATE_DIFFS_HASH>
 where
-    S::IO: IOSubsystemExt
-        + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes, IOStateCommitment = ProvingStateCommitment>,
 {
     type PostTxLoopOpResult = (O, Bytes32);
     type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
@@ -127,7 +128,7 @@ where
         }
 
         let (mut state_commitment, last_block_timestamp) = {
-            let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
+            let proof_data: ProofData<ProvingStateCommitment> =
                 ZKProofDataQuery::get(&mut io.oracle, &())
                     .expect("must get proof data from oracle");
             (proof_data.state_root_view, proof_data.last_block_timestamp)

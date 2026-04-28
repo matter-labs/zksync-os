@@ -12,14 +12,21 @@ use crate::common_structs::{
 use crate::storage_types::MAX_EVENT_TOPICS;
 use crate::types_config::SystemIOTypesConfig;
 
+type MaxTopicsEventRef<'a, IOTypes> =
+    GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, IOTypes>;
+
 pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
-    fn events<'a>(
-        &mut self,
-        _iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, IOTypes>>,
-    ) {
+    fn events<'a, I>(&mut self, _iter: I)
+    where
+        I: Iterator<Item = MaxTopicsEventRef<'a, IOTypes>>,
+    {
     }
 
-    fn logs<'a>(&mut self, _iter: impl Iterator<Item = GenericLogContentWithTxRef<'a, IOTypes>>) {}
+    fn logs<'a, I>(&mut self, _iter: I)
+    where
+        I: Iterator<Item = GenericLogContentWithTxRef<'a, IOTypes>>,
+    {
+    }
 
     fn storage_diffs(
         &mut self,
@@ -38,10 +45,10 @@ pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
     ) {
     }
 
-    fn new_preimages<'a>(
-        &mut self,
-        _iter: impl Iterator<Item = (&'a IOTypes::BytecodeHashValue, &'a [u8], PreimageType)>,
-    ) {
+    fn new_preimages<'a, I>(&mut self, _iter: I)
+    where
+        I: Iterator<Item = (&'a IOTypes::BytecodeHashValue, &'a [u8], PreimageType)>,
+    {
     }
 
     ///

@@ -1,4 +1,3 @@
-use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
@@ -11,6 +10,9 @@ use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::IOResultKeeper;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
+
+type MaxTopicsEventRef<'a> =
+    GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>;
 
 // Use interface type as the direct place-in, can be changed in the future.
 pub use zksync_os_interface::types::TxProcessingOutputOwned;
@@ -47,12 +49,10 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
 impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesConfig>
     for ForwardRunningResultKeeper<TR, T>
 {
-    fn events<'a>(
-        &mut self,
-        iter: impl Iterator<
-            Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
-        >,
-    ) {
+    fn events<'a, I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = MaxTopicsEventRef<'a>>,
+    {
         self.events = iter
             .map(|e| GenericEventContent {
                 tx_number: e.tx_number,
@@ -63,10 +63,10 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
             .collect();
     }
 
-    fn logs<'a>(
-        &mut self,
-        iter: impl Iterator<Item = GenericLogContentWithTxRef<'a, EthereumIOTypesConfig>>,
-    ) {
+    fn logs<'a, I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = GenericLogContentWithTxRef<'a, EthereumIOTypesConfig>>,
+    {
         self.logs = iter
             .map(|m| GenericLogContent::from_ref(m, Global))
             .collect();
@@ -76,10 +76,10 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
         self.storage_writes = iter.collect();
     }
 
-    fn new_preimages<'a>(
-        &mut self,
-        iter: impl Iterator<Item = (&'a Bytes32, &'a [u8], PreimageType)>,
-    ) {
+    fn new_preimages<'a, I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = (&'a Bytes32, &'a [u8], PreimageType)>,
+    {
         self.new_preimages = iter
             .map(|(hash, preimage, preimage_type)| (*hash, preimage.to_vec(), preimage_type))
             .collect();
@@ -105,7 +105,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         let owned_result = tx_result.map(|output| TxProcessingOutputOwned {
             status: output.status,
             output: output.output.to_vec(),
-            contract_address: output.contract_address.map(IntoAlloy::into_alloy),
+            contract_address: output.contract_address.map(|address| address.to_be_bytes().into()),
             gas_used: output.gas_used,
             gas_refunded: output.gas_refunded,
             computational_native_used: output.computational_native_used,

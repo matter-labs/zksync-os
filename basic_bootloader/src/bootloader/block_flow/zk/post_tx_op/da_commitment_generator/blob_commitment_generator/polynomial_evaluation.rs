@@ -16,14 +16,15 @@ pub fn evaluate_blob_polynomial(data: &[u8], x: &crypto::bls12_381::Fr) -> crypt
         [MaybeUninit::uninit(); ELEMENTS_PER_4844_BLOB];
     let mut poly_iter = poly.iter_mut();
 
-    let chunks = data.as_chunks::<BLOB_CHUNK_SIZE>();
-    let remainder = chunks.1;
-    for chunk in chunks.0 {
+    let mut chunks = data.chunks_exact(BLOB_CHUNK_SIZE);
+    for chunk in &mut chunks {
+        let chunk: &[u8; BLOB_CHUNK_SIZE] = chunk.try_into().unwrap();
         poly_iter
             .next()
             .unwrap()
             .write(crypto::bls12_381::Fr::from_bigint(parse_u256_be(chunk)).unwrap());
     }
+    let remainder = chunks.remainder();
     if let Some(el) = poly_iter.next() {
         let mut last_chunk = [0u8; 31];
         last_chunk[..remainder.len()].copy_from_slice(remainder);
