@@ -1,4 +1,4 @@
-use crate::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID};
+use crate::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID;
 use crate::oracle::usize_serialization::UsizeDeserializable;
 use crate::oracle::IOOracle;
 use u256::U256;
@@ -11,49 +11,6 @@ fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>
         <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 2"),
         <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 3"),
     ]
-}
-
-/// Oracle-backed U256 division with remainder.
-///
-/// Delegation cost: 5 calls (2 MUL + 1 ADD + 1 SUB + 1 EQ).
-#[inline]
-pub fn u256_div_rem_with_advice<O: IOOracle>(
-    dividend_or_quotient: &mut U256,
-    divisor_or_remainder: &mut U256,
-    oracle: &mut O,
-) {
-    assert!(!divisor_or_remainder.is_zero());
-
-    let input: [u64; 8] = {
-        let d = dividend_or_quotient.as_limbs();
-        let v = divisor_or_remainder.as_limbs();
-        [d[0], d[1], d[2], d[3], v[0], v[1], v[2], v[3]]
-    };
-
-    let mut it = oracle
-        .raw_query(U256_DIV_REM_ADVICE_QUERY_ID, &input)
-        .expect("div_rem oracle query failed");
-
-    let q_limbs = read_limbs_from_oracle_response(&mut it);
-    let r_limbs = read_limbs_from_oracle_response(&mut it);
-
-    let mut check_lo = U256::from_limbs(q_limbs);
-    let mut check_hi = U256::from_limbs(q_limbs);
-    check_lo.widening_mul_assign_into(&mut check_hi, divisor_or_remainder);
-
-    let remainder = U256::from_limbs(r_limbs);
-    let carry = check_lo.overflowing_add_assign(&remainder);
-
-    core::ops::BitXorAssign::bitxor_assign(&mut check_lo, dividend_or_quotient);
-    core::ops::BitOrAssign::bitor_assign(&mut check_lo, &check_hi);
-    assert!(!carry && check_lo.is_zero());
-
-    let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(divisor_or_remainder);
-    assert!(borrow);
-
-    *dividend_or_quotient = U256::from_limbs(q_limbs);
-    *divisor_or_remainder = remainder;
 }
 
 /// Oracle-backed U256 mulmod: computes `(a * b) % m`.

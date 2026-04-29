@@ -29,19 +29,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    pub fn div(&mut self, system: &mut System<S>) -> InstructionResult
-    where
-        S::IO: IOSubsystemExt,
-    {
+    pub fn div(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            zk_ee::utils::u256_arithmetic_advice::u256_div_rem_with_advice(
-                op1,
-                op2,
-                system.io.oracle(),
-            );
+            U256::div_rem(op1, op2);
             Clone::clone_from(op2, &*op1);
         }
         Ok(())

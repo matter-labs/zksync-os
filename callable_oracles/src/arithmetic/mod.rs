@@ -3,7 +3,7 @@ use basic_system::system_functions::modexp::{
 };
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID};
+use zk_ee::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID;
 
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
@@ -11,7 +11,6 @@ use crate::utils::{
 };
 use crate::{read_host_struct, read_u64_words};
 
-const _: () = assert!(U256_DIV_REM_ADVICE_QUERY_ID == 0x4005_0030);
 const _: () = assert!(U256_MULMOD_ADVICE_QUERY_ID == 0x4005_0031);
 
 struct ArithmeticQueryOutput {
@@ -73,26 +72,6 @@ fn push_limbs(result: &mut Vec<usize>, limbs: &[u64]) {
     for limb in limbs {
         result.push(*limb as usize);
     }
-}
-
-/// Handle U256 div_rem oracle query.
-///
-/// Input: 8 usizes = dividend (4 limbs) + divisor (4 limbs).
-/// Output: 8 usizes = quotient (4 limbs) + remainder (4 limbs).
-fn process_u256_div_rem_query(
-    query: Vec<usize>,
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let mut it = query.into_iter();
-    let mut dividend = read_u256_limbs(&mut it);
-    let mut divisor = read_u256_limbs(&mut it);
-    assert!(it.next().is_none(), "expected exactly 8 usizes for div_rem");
-
-    ruint::algorithms::div(&mut dividend, &mut divisor);
-
-    let mut result = Vec::with_capacity(8);
-    push_limbs(&mut result, &dividend);
-    push_limbs(&mut result, &divisor);
-    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
 }
 
 /// Handle U256 mulmod oracle query.
@@ -196,11 +175,7 @@ pub struct ArithmeticQuery;
 
 impl OracleQueryProcessor for ArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
-        vec![
-            MODEXP_ADVICE_QUERY_ID,
-            U256_DIV_REM_ADVICE_QUERY_ID,
-            U256_MULMOD_ADVICE_QUERY_ID,
-        ]
+        vec![MODEXP_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID]
     }
 
     fn process_buffered_query(
@@ -210,10 +185,6 @@ impl OracleQueryProcessor for ArithmeticQuery {
         memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
-
-        if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            return process_u256_div_rem_query(query);
-        }
 
         if query_id == U256_MULMOD_ADVICE_QUERY_ID {
             return process_u256_mulmod_query(query);
@@ -225,19 +196,15 @@ impl OracleQueryProcessor for ArithmeticQuery {
 
 /// Query processor to be used for prover input native run.
 /// Works in a similar way as the ArithmeticQuery, but with
-/// 64-bit pointers for modexp. For U256 div_rem and mulmod,
-/// the input format is value-based (limbs in the query Vec),
-/// so the same handlers work for both RISC-V and native.
+/// 64-bit pointers for modexp. For U256 mulmod, the input
+/// format is value-based (limbs in the query Vec), so the
+/// same handler works for both RISC-V and native.
 #[derive(Default)]
 pub struct NativeArithmeticQuery;
 
 impl OracleQueryProcessor for NativeArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
-        vec![
-            MODEXP_ADVICE_QUERY_ID,
-            U256_DIV_REM_ADVICE_QUERY_ID,
-            U256_MULMOD_ADVICE_QUERY_ID,
-        ]
+        vec![MODEXP_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID]
     }
 
     fn process_buffered_query(
@@ -247,10 +214,6 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
-
-        if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            return process_u256_div_rem_query(query);
-        }
 
         if query_id == U256_MULMOD_ADVICE_QUERY_ID {
             return process_u256_mulmod_query(query);
@@ -429,32 +392,6 @@ mod tests {
         assert_eq!((packed_lens >> 32) as u32, 2);
         assert_eq!(output[1], 3);
         assert_eq!(output[2], 1);
-    }
-
-    #[test]
-    fn u256_div_rem_query_basic() {
-        // 10 / 3 = q=3, r=1. Input as value-based limbs.
-        let query: Vec<usize> = vec![10, 0, 0, 0, 3, 0, 0, 0];
-        let output: Vec<usize> = process_u256_div_rem_query(query).collect();
-        assert_eq!(output, vec![3, 0, 0, 0, 1, 0, 0, 0]);
-    }
-
-    #[test]
-    fn u256_div_rem_via_arithmetic_query() {
-        let query: Vec<usize> = vec![10, 0, 0, 0, 3, 0, 0, 0];
-        let output: Vec<usize> = ArithmeticQuery
-            .process_buffered_query(U256_DIV_REM_ADVICE_QUERY_ID, query, &DummyMemorySource)
-            .collect();
-        assert_eq!(output, vec![3, 0, 0, 0, 1, 0, 0, 0]);
-    }
-
-    #[test]
-    fn u256_div_rem_via_native_query() {
-        let query: Vec<usize> = vec![10, 0, 0, 0, 3, 0, 0, 0];
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(U256_DIV_REM_ADVICE_QUERY_ID, query, &DummyMemorySource)
-            .collect();
-        assert_eq!(output, vec![3, 0, 0, 0, 1, 0, 0, 0]);
     }
 
     #[test]
