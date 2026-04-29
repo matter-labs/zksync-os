@@ -17,6 +17,7 @@ path = "../../../../../evm_interpreter/src/lib.rs"
 
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving" }
 crypto = { package = "crypto_proving", path = "../crypto_proving", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
@@ -36,3 +37,4 @@ default = []
 testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
+delegation = ["u256/delegation", "zk_ee/delegation"]

@@ -14,3 +14,4 @@ zk_ee = { path = "../zk_ee", default-features = false }
 
 [features]
 testing = ["zk_ee/testing"]
+delegation = ["zk_ee/delegation"]

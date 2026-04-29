@@ -3,12 +3,15 @@ use basic_system::system_functions::modexp::{
 };
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
+use zk_ee::oracle::query_ids::U256_MULMOD_ADVICE_QUERY_ID;
 
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
     usize_slice_iterator::UsizeSliceIteratorOwned,
 };
 use crate::{read_host_struct, read_u64_words};
+
+const _: () = assert!(U256_MULMOD_ADVICE_QUERY_ID == 0x4005_0031);
 
 struct ArithmeticQueryOutput {
     quotient: Vec<u64>,
@@ -54,12 +57,125 @@ impl ArithmeticQueryOutput {
     }
 }
 
+/// Extract 4 u64 limbs from a usize iterator (one U256 value).
+fn read_u256_limbs(it: &mut impl Iterator<Item = usize>) -> [u64; 4] {
+    [
+        it.next().expect("expected u256 limb 0") as u64,
+        it.next().expect("expected u256 limb 1") as u64,
+        it.next().expect("expected u256 limb 2") as u64,
+        it.next().expect("expected u256 limb 3") as u64,
+    ]
+}
+
+/// Emit u64 limbs as usizes into a result Vec.
+fn push_limbs(result: &mut Vec<usize>, limbs: &[u64]) {
+    for limb in limbs {
+        result.push(*limb as usize);
+    }
+}
+
+/// Handle U256 mulmod oracle query.
+///
+/// Input: 12 usizes = a (4 limbs) + b (4 limbs) + m (4 limbs).
+/// Output: 12 usizes = quotient (8 limbs) + remainder (4 limbs).
+fn process_u256_mulmod_query(
+    query: Vec<usize>,
+) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    let mut it = query.into_iter();
+    let a = read_u256_limbs(&mut it);
+    let b = read_u256_limbs(&mut it);
+    let mut m = read_u256_limbs(&mut it);
+    assert!(it.next().is_none(), "expected exactly 12 usizes for mulmod");
+
+    let mut product = [0u64; 8];
+    let overflow = ruint::algorithms::addmul(&mut product, &a, &b);
+    debug_assert!(!overflow);
+
+    ruint::algorithms::div(&mut product, &mut m);
+
+    let mut result = Vec::with_capacity(12);
+    push_limbs(&mut result, &product);
+    push_limbs(&mut result, &m);
+    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
+}
+
+fn process_modexp_riscv_query(
+    query: Vec<usize>,
+    memory: &dyn RamPeek,
+) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    let mut it = query.into_iter();
+
+    let arg_ptr = it.next().expect("A u32 should've been passed in.");
+
+    assert!(
+        it.next().is_none(),
+        "A single RISC-V ptr should've been passed."
+    );
+
+    assert!(arg_ptr.is_multiple_of(4));
+    const { assert!(core::mem::align_of::<ModExpAdviceParams>() == 4) }
+    const { assert!(core::mem::size_of::<ModExpAdviceParams>().is_multiple_of(4)) }
+
+    let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr as u32) }.unwrap();
+
+    const { assert!(8 == core::mem::size_of::<usize>()) };
+    assert!(arg.a_ptr > 0);
+    assert!(arg.a_len > 0);
+    let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
+    assert_eq!(arg.b_ptr, 0);
+    assert_eq!(arg.b_len, 0);
+    assert!(arg.modulus_ptr > 0);
+    assert!(arg.modulus_len > 0);
+    let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
+
+    ruint::algorithms::div(&mut n, &mut d);
+
+    ArithmeticQueryOutput {
+        quotient: n,
+        remainder: d,
+    }
+    .into_usize_iterator()
+}
+
+fn process_modexp_native_query(
+    query: Vec<usize>,
+) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    let mut it = query.into_iter();
+    let arg_ptr = it.next().expect("A u64 should've been passed in.");
+    assert!(it.next().is_none(), "A single ptr should've been passed.");
+    let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr as u64);
+
+    assert!(arg.a_ptr > 0);
+    assert!(arg.a_len > 0);
+    assert_eq!(arg.b_ptr, 0);
+    assert_eq!(arg.b_len, 0);
+    assert!(arg.modulus_ptr > 0);
+    assert!(arg.modulus_len > 0);
+
+    let a_len_u64_words = arg.a_len.checked_mul(4).expect("a_len overflow");
+    let modulus_len_u64_words = arg
+        .modulus_len
+        .checked_mul(4)
+        .expect("modulus_len overflow");
+
+    let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
+    let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
+
+    ruint::algorithms::div(&mut n, &mut d);
+
+    ArithmeticQueryOutput {
+        quotient: n,
+        remainder: d,
+    }
+    .into_usize_iterator()
+}
+
 #[derive(Default)]
 pub struct ArithmeticQuery;
 
 impl OracleQueryProcessor for ArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
-        vec![MODEXP_ADVICE_QUERY_ID]
+        vec![MODEXP_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID]
     }
 
     fn process_buffered_query(
@@ -70,54 +186,25 @@ impl OracleQueryProcessor for ArithmeticQuery {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
-        let mut it = query.into_iter();
-
-        let arg_ptr = it.next().expect("A u32 should've been passed in.");
-
-        assert!(
-            it.next().is_none(),
-            "A single RISC-V ptr should've been passed."
-        );
-
-        assert!(arg_ptr.is_multiple_of(4));
-        const { assert!(core::mem::align_of::<ModExpAdviceParams>() == 4) }
-        const { assert!(core::mem::size_of::<ModExpAdviceParams>().is_multiple_of(4)) }
-
-        let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr as u32) }.unwrap();
-
-        const { assert!(8 == core::mem::size_of::<usize>()) };
-        assert!(arg.a_ptr > 0);
-        assert!(arg.a_len > 0);
-        let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
-        assert_eq!(arg.b_ptr, 0);
-        assert_eq!(arg.b_len, 0);
-        assert!(arg.modulus_ptr > 0);
-        assert!(arg.modulus_len > 0);
-        let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
-
-        ruint::algorithms::div(&mut n, &mut d);
-
-        ArithmeticQueryOutput {
-            quotient: n,
-            remainder: d,
+        if query_id == U256_MULMOD_ADVICE_QUERY_ID {
+            return process_u256_mulmod_query(query);
         }
-        .into_usize_iterator()
+
+        process_modexp_riscv_query(query, memory)
     }
 }
 
-/// Query processor to be used for prover input native run
+/// Query processor to be used for prover input native run.
 /// Works in a similar way as the ArithmeticQuery, but with
-/// 64 bit pointers. Importantly, the query response is the
-/// same.
-///
-/// This processor explicitly reads the process memory
-/// using a raw pointer to get the input.
+/// 64-bit pointers for modexp. For U256 mulmod, the input
+/// format is value-based (limbs in the query Vec), so the
+/// same handler works for both RISC-V and native.
 #[derive(Default)]
 pub struct NativeArithmeticQuery;
 
 impl OracleQueryProcessor for NativeArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
-        vec![MODEXP_ADVICE_QUERY_ID]
+        vec![MODEXP_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID]
     }
 
     fn process_buffered_query(
@@ -128,34 +215,11 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
-        let mut it = query.into_iter();
-        let arg_ptr = it.next().expect("A u64 should've been passed in.");
-        assert!(it.next().is_none(), "A single ptr should've been passed.");
-        let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr as u64);
-
-        assert!(arg.a_ptr > 0);
-        assert!(arg.a_len > 0);
-        assert_eq!(arg.b_ptr, 0);
-        assert_eq!(arg.b_len, 0);
-        assert!(arg.modulus_ptr > 0);
-        assert!(arg.modulus_len > 0);
-
-        let a_len_u64_words = arg.a_len.checked_mul(4).expect("a_len overflow");
-        let modulus_len_u64_words = arg
-            .modulus_len
-            .checked_mul(4)
-            .expect("modulus_len overflow");
-
-        let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
-        let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
-
-        ruint::algorithms::div(&mut n, &mut d);
-
-        ArithmeticQueryOutput {
-            quotient: n,
-            remainder: d,
+        if query_id == U256_MULMOD_ADVICE_QUERY_ID {
+            return process_u256_mulmod_query(query);
         }
-        .into_usize_iterator()
+
+        process_modexp_native_query(query)
     }
 }
 
@@ -261,7 +325,6 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_basic_division() {
-        // 10 / 3 = q=3, r=1
         let (q, r) = run_division_query(&[10, 0, 0, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert_eq!(r, vec![1]);
@@ -269,7 +332,6 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_exact_division() {
-        // 15 / 5 = q=3, r=0
         let (q, r) = run_division_query(&[15, 0, 0, 0], &[5, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert!(r.is_empty(), "remainder should be zero (stripped)");
@@ -277,7 +339,6 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_dividend_smaller_than_modulus() {
-        // 2 / 7 = q=0, r=2
         let (q, r) = run_division_query(&[2, 0, 0, 0], &[7, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![2]);
@@ -285,8 +346,6 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_dividend_fewer_digits_than_modulus() {
-        // a=5 (1 DelegatedU256 digit), m=2^64+3 (2 DelegatedU256 digits)
-        // 5 < 2^64+3, so q=0, r=5
         let (q, r) = run_division_query(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![5]);
@@ -294,7 +353,6 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_multi_digit_quotient() {
-        // 2^128 / 3 = 0x55555555555555555555555555555555 remainder 1
         let (q, r) = run_division_query(&[0, 0, 1, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![0x5555555555555555, 0x5555555555555555]);
         assert_eq!(r, vec![1]);
@@ -334,6 +392,43 @@ mod tests {
         assert_eq!((packed_lens >> 32) as u32, 2);
         assert_eq!(output[1], 3);
         assert_eq!(output[2], 1);
+    }
+
+    #[test]
+    fn u256_mulmod_query_basic() {
+        // a=7, b=5, m=6 → a*b=35, q=5, r=5
+        let query: Vec<usize> = vec![7, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0];
+        let output: Vec<usize> = process_u256_mulmod_query(query).collect();
+        assert_eq!(output.len(), 12);
+        assert_eq!(output[0], 5); // q limb 0
+        assert_eq!(&output[1..8], &[0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(output[8], 5); // r limb 0
+        assert_eq!(&output[9..12], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn u256_mulmod_query_large_values() {
+        // a = 2^128, b = 2^128, m = 2^128 + 1
+        // a*b = 2^256, q = 2^128 - 1, r = 1
+        let query: Vec<usize> = vec![0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0];
+        let output: Vec<usize> = process_u256_mulmod_query(query).collect();
+        assert_eq!(output.len(), 12);
+        assert_eq!(output[0], u64::MAX as usize);
+        assert_eq!(output[1], u64::MAX as usize);
+        assert_eq!(&output[2..8], &[0, 0, 0, 0, 0, 0]);
+        assert_eq!(output[8], 1);
+        assert_eq!(&output[9..12], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn u256_mulmod_via_native_query() {
+        let query: Vec<usize> = vec![7, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0];
+        let output: Vec<usize> = NativeArithmeticQuery
+            .process_buffered_query(U256_MULMOD_ADVICE_QUERY_ID, query, &DummyMemorySource)
+            .collect();
+        assert_eq!(output.len(), 12);
+        assert_eq!(output[0], 5);
+        assert_eq!(output[8], 5);
     }
 
     #[test]

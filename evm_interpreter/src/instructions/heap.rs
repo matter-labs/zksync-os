@@ -12,12 +12,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let stack_top = self.stack.top_mut()?;
         let index = Self::cast_to_usize(stack_top, EvmError::InvalidOperandOOG.into())?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
-        let mut value: ruint::Uint<256, 4> = U256::ZERO;
+        let mut value = U256::zero();
         unsafe {
             let src = self.heap.deref_mut().as_ptr().add(index);
-            let dst = value.as_le_slice_mut().as_mut_ptr();
+            let dst = value.as_limbs_mut().as_mut_ptr().cast::<u8>();
             core::ptr::copy_nonoverlapping(src, dst, 32);
-            crate::utils::bytereverse_u256(&mut value);
+            value.bytereverse();
         }
 
         if Self::PRINT_OPCODES {
@@ -34,14 +34,14 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
-        let mut le_value = *value;
+        let mut le_value = value.clone();
         let index = Self::cast_to_usize(index, EvmError::InvalidOperandOOG.into())?;
 
         self.resize_heap(index, 32)?;
 
         unsafe {
-            crate::utils::bytereverse_u256(&mut le_value);
-            let src = le_value.as_le_slice().as_ptr();
+            le_value.bytereverse();
+            let src = le_value.as_le_bytes_ref().as_ptr();
             let dst = self.heap().as_mut_ptr().add(index);
             core::ptr::copy_nonoverlapping(src, dst, 32);
         }
@@ -79,7 +79,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack.push(&U256::from(len))
+        self.stack.push_u64(len as u64)
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {

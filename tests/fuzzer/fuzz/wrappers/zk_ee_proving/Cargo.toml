@@ -17,6 +17,7 @@ path = "../../../../../zk_ee/src/lib.rs"
 
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 cfg-if = "*"
 crypto = { package = "crypto_proving", path = "../crypto_proving", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
@@ -39,5 +40,6 @@ error_origins = []
 detailed_errors = []
 prevrandao = []
 evm_refunds = []
+delegation = ["u256/delegation"]
 
 [dev-dependencies]

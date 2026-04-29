@@ -16,12 +16,25 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack.push_zero()
     }
 
+    /// Specialized PUSH1 that avoids the bytereverse+shift overhead of the generic path.
+    /// For a single byte, bytereverse+shift is a no-op round-trip.
+    pub fn push1(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[1])?;
+        let start = self.instruction_pointer;
+
+        let byte_val = self.bytecode.get(start).copied().unwrap_or(0);
+
+        self.instruction_pointer += 1;
+        self.stack.push_u64(byte_val as u64)
+    }
+
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
-        let mut value = U256::ZERO;
+        let mut value = U256::zero();
 
         match self.bytecode.get(start) {
             Some(src) => {
@@ -35,7 +48,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                     );
                 }
                 crate::utils::bytereverse_u256(&mut value);
-                value >>= (32 - N) * 8;
+                value >>= ((32 - N) * 8) as u32;
             }
             None => {
                 // start is out of bounds of the bytecode buffer,

@@ -151,6 +151,8 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
 
     logger_log!(L::default(), "Allocator init is complete");
 
+    u256::init();
+
     // oracle is just a thin proxy
     let oracle = CsrBasedIOOracle::<I>::init();
 
