@@ -108,7 +108,7 @@ where
 
         // Pre-op
         let mut block_data_keeper =
-            <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(&mut system, result_keeper);
+            <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(&mut system, result_keeper)?;
 
         // TX loop
         <S::TxLoopOp as TxLoopOp<S>>::loop_op::<Config>(

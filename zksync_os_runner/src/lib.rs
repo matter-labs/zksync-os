@@ -31,6 +31,10 @@ impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
 /// Total RAM size (1 GiB address space).
 const RAM_SIZE: usize = 1 << 30;
 
+/// Default upper bound on RISC-V cycles used when the caller doesn't override it.
+/// This is large enough for any real block; individual tests can lower it.
+pub const DEFAULT_CYCLE_LIMIT: usize = 1 << 36;
+
 /// Flamegraph profiling options passed through to the transpiler VM.
 #[derive(Clone)]
 pub struct FlamegraphOptions {
@@ -51,115 +55,127 @@ impl FlamegraphOptions {
     }
 }
 
-/// Run a ZKsync OS RISC-V program and return the 256-bit output.
-///
-/// `dist_dir` - path to the program distribution directory (containing manifest.toml and artifacts).
-/// `cycles` - limit for number of cycles.
-/// `input_words` - pre-recorded non-determinism input words.
-///
-/// Returns 256 bit program output as `[u32; 8]`.
-pub fn run(dist_dir: PathBuf, cycles: usize, input_words: &[u32]) -> [u32; 8] {
-    run_and_get_effective_cycles(dist_dir, cycles, input_words).0
+/// Result of running a ZKsync OS RISC-V program.
+#[derive(Clone, Debug)]
+pub struct RunResult {
+    /// 256-bit program output (registers x10-x17 at exit).
+    pub output: [u32; 8],
+    /// Effective cycle count for the `process_block` marker when the
+    /// `cycle_marker` feature is enabled and the program wrote markers;
+    /// `None` otherwise.
+    pub block_effective: Option<u64>,
 }
 
-/// Run a ZKsync OS RISC-V program and return both the output and optional effective cycle count.
-pub fn run_and_get_effective_cycles(
+/// Builder for running a ZKsync OS RISC-V program against an airbender-host
+/// `TranspilerRunner`.
+pub struct Runner {
     dist_dir: PathBuf,
     cycles: usize,
-    input_words: &[u32],
-) -> ([u32; 8], Option<u64>) {
-    run_inner(dist_dir, cycles, input_words, None, None)
-}
-
-pub fn run_with_flamegraph(
-    dist_dir: PathBuf,
-    sym_path: PathBuf,
-    cycles: usize,
-    input_words: &[u32],
-    options: FlamegraphOptions,
-) -> ([u32; 8], Option<u64>) {
-    run_inner(dist_dir, cycles, input_words, Some(sym_path), Some(options))
-}
-
-fn run_inner(
-    dist_dir: PathBuf,
-    cycles: usize,
-    input_words: &[u32],
-    sym_path: Option<PathBuf>,
     flamegraph: Option<FlamegraphOptions>,
-) -> ([u32; 8], Option<u64>) {
-    log::info!("ZK RISC-V transpiler runner is starting");
+}
 
-    // Use airbender-host to parse the manifest and verify sha256 of the
-    // distributed artifacts, then run the VM ourselves with a MOP-aware
-    // decoder (airbender-host's TranspilerRunner does not support MOP).
-    let program = Program::load(&dist_dir)
-        .unwrap_or_else(|err| panic!("failed to load program from {}: {err}", dist_dir.display()));
-
-    let bin_words = read_u32_words(program.app_bin());
-    let text_words = read_u32_words(program.app_text());
-
-    let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
-    let tape = SimpleTape::new(&instructions);
-    let mut ram =
-        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
-    let mut state = State::initial_with_counters(DelegationsCounters::default());
-    let mut non_determinism_source = QuasiUARTSource::new_with_reads(input_words.to_vec());
-
-    let _cycle_markers = if let Some(fg_options) = flamegraph {
-        use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
-
-        let symbols_path = sym_path.expect("flamegraph requires a symbols (ELF) path");
-        let fg_config = FlamegraphConfig {
-            symbols_path,
-            output_path: fg_options.output_path,
-            reverse_graph: false,
-            frequency_recip: fg_options.frequency_recip,
-        };
-        let mut profiler =
-            VmFlamegraphProfiler::new(fg_config).expect("failed to initialize flamegraph profiler");
-        let (result, cm) = CycleMarkerHooks::with(|| {
-            VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<_, _, _>(
-                &mut state,
-                &mut ram,
-                &mut (),
-                &tape,
-                cycles,
-                &mut non_determinism_source,
-                &mut profiler,
-            )
-        });
-        result.expect("flamegraph execution failed");
-        cm
-    } else {
-        let (_reached_end, cm) = CycleMarkerHooks::with(|| {
-            VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled::<_, _, _>(
-                &mut state,
-                &mut ram,
-                &mut (),
-                &tape,
-                cycles,
-                &mut non_determinism_source,
-            )
-        });
-        cm
-    };
-
-    #[allow(unused_mut, unused_assignments)]
-    let mut block_effective = None;
-
-    #[cfg(feature = "cycle_marker")]
-    {
-        let results = cycle_marker::print_cycle_markers(_cycle_markers);
-        block_effective = results.block_effective;
+impl Runner {
+    pub fn new(dist_dir: PathBuf) -> Self {
+        Self {
+            dist_dir,
+            cycles: DEFAULT_CYCLE_LIMIT,
+            flamegraph: None,
+        }
     }
 
-    let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
+    pub fn with_cycles(mut self, cycles: usize) -> Self {
+        self.cycles = cycles;
+        self
+    }
 
-    // Our convention is to return 32 bytes placed into registers x10-x17.
-    let output: [u32; 8] = core::array::from_fn(|i| state.registers[10 + i].value);
+    /// Enable flamegraph profiling. Stack frames are resolved against
+    /// `<dist_dir>/app.elf` (always produced by `cargo airbender build`).
+    pub fn with_flamegraph(mut self, options: FlamegraphOptions) -> Self {
+        self.flamegraph = Some(options);
+        self
+    }
 
-    (output, block_effective.or(Some(cycles_executed)))
+    /// Execute the program with the configured options.
+    pub fn run(self, input_words: &[u32]) -> RunResult {
+        log::info!("ZK RISC-V transpiler runner is starting");
+
+        // Use airbender-host to parse the manifest and verify sha256 of the
+        // distributed artifacts, then run the VM ourselves with a MOP-aware
+        // decoder (airbender-host's TranspilerRunner does not support MOP).
+        let program = Program::load(&self.dist_dir).unwrap_or_else(|err| {
+            panic!(
+                "failed to load program from {}: {err}",
+                self.dist_dir.display()
+            )
+        });
+
+        let bin_words = read_u32_words(program.app_bin());
+        let text_words = read_u32_words(program.app_text());
+
+        let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
+        let tape = SimpleTape::new(&instructions);
+        let mut ram =
+            RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
+        let mut state = State::initial_with_counters(DelegationsCounters::default());
+        let mut non_determinism_source = QuasiUARTSource::new_with_reads(input_words.to_vec());
+
+        let cycle_markers = if let Some(fg_options) = self.flamegraph {
+            use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
+
+            let fg_config = FlamegraphConfig {
+                symbols_path: self.dist_dir.join("app.elf"),
+                output_path: fg_options.output_path,
+                reverse_graph: false,
+                frequency_recip: fg_options.frequency_recip,
+            };
+            let mut profiler =
+                VmFlamegraphProfiler::new(fg_config).expect("failed to initialize flamegraph profiler");
+            let (result, cm) = CycleMarkerHooks::with(|| {
+                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<_, _, _>(
+                    &mut state,
+                    &mut ram,
+                    &mut (),
+                    &tape,
+                    self.cycles,
+                    &mut non_determinism_source,
+                    &mut profiler,
+                )
+            });
+            result.expect("flamegraph execution failed");
+            cm
+        } else {
+            let (_reached_end, cm) = CycleMarkerHooks::with(|| {
+                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled::<_, _, _>(
+                    &mut state,
+                    &mut ram,
+                    &mut (),
+                    &tape,
+                    self.cycles,
+                    &mut non_determinism_source,
+                )
+            });
+            cm
+        };
+
+        #[allow(unused_mut, unused_assignments)]
+        let mut block_effective = None;
+
+        #[cfg(feature = "cycle_marker")]
+        {
+            let results = cycle_marker::print_cycle_markers(cycle_markers);
+            block_effective = results.block_effective;
+        }
+
+        let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
+
+        // Our convention is to return 32 bytes placed into registers x10-x17.
+        let output: [u32; 8] = core::array::from_fn(|i| state.registers[10 + i].value);
+
+        RunResult {
+            output,
+            block_effective: block_effective.or(Some(cycles_executed)),
+        }
+    }
 }
 
 fn read_u32_words(path: &std::path::Path) -> Vec<u32> {

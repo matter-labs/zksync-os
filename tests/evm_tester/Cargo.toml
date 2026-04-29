@@ -44,3 +44,7 @@ zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["evm_test
 version = "=0.19.0"
 default-features = false
 features = ["http-rustls-tls", "test", "signing"]
+
+[features]
+pectra = ["zksync_os_forward_system/pectra"]
+evm_tester_pectra = ["zksync_os_forward_system/evm_tester_pectra"]

@@ -33,5 +33,6 @@ global-alloc = []
 error_origins = []
 detailed_errors = []
 prevrandao = []
+pectra-blobs = []
 
 [dev-dependencies]

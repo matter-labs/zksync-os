@@ -8,6 +8,7 @@ mod post_tx_loop_op;
 mod pre_tx_loop_op;
 mod tx_loop;
 
+pub mod eip_2935_historical_block_hash;
 pub mod ethereum;
 pub mod zk;
 

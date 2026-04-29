@@ -23,4 +23,6 @@ paste = { workspace = true }
 point_eval_precompile = ["evm_interpreter/point_eval_precompile"]
 mock-unsupported-precompiles = ["evm_interpreter/mock-unsupported-precompiles"]
 p256_precompile = ["evm_interpreter/p256_precompile"]
+bls12_381 = ["evm_interpreter/bls12_381"]
+blake2f = ["evm_interpreter/blake2f"]
 cycle_marker = ["cycle_marker/log_to_file"]

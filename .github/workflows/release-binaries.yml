@@ -22,6 +22,8 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      - uses: ./.github/actions/setup-toolchain
+
       - name: Build binaries using reproducible script
         run: zksync_os/reproduce/reproduce.sh
 

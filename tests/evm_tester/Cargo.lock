@@ -6960,6 +6960,7 @@ name = "system_hooks"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "crypto",
  "cycle_marker",
  "evm_interpreter",
  "paste",

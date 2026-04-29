@@ -32,6 +32,10 @@ pub trait ResultKeeperExt<IOTypes: SystemIOTypesConfig>: IOResultKeeper<IOTypes>
 
     fn record_sealed_block(&mut self, _header: Self::BlockHeader) {}
 
+    fn record_block_native_used(&mut self, _native_used: u64) {}
+
+    fn record_block_pubdata_used(&mut self, _pubdata_used: u64) {}
+
     fn get_gas_used(&self) -> u64 {
         0u64
     }

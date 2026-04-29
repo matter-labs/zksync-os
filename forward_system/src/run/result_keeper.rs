@@ -25,6 +25,8 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
     >,
     pub new_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
     pub tx_result_callback: TR,
+    pub block_computational_native_used: u64,
+    pub block_pubdata_used: u64,
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
@@ -37,6 +39,8 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             tx_results: vec![],
             new_preimages: vec![],
             tx_result_callback,
+            block_computational_native_used: 0,
+            block_pubdata_used: 0,
         }
     }
 }
@@ -111,6 +115,14 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
 
     fn block_sealed(&mut self, block_header: Self::BlockHeader) {
         self.block_header = Some(block_header);
+    }
+
+    fn record_block_native_used(&mut self, native_used: u64) {
+        self.block_computational_native_used = native_used;
+    }
+
+    fn record_block_pubdata_used(&mut self, pubdata_used: u64) {
+        self.block_pubdata_used = pubdata_used;
     }
 
     fn get_gas_used(&self) -> u64 {
@@ -201,6 +213,16 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
 
     fn block_sealed(&mut self, block_header: Self::BlockHeader) {
         self.forward_running_rk.block_sealed(block_header)
+    }
+
+    fn record_block_native_used(&mut self, native_used: u64) {
+        self.forward_running_rk
+            .record_block_native_used(native_used)
+    }
+
+    fn record_block_pubdata_used(&mut self, pubdata_used: u64) {
+        self.forward_running_rk
+            .record_block_pubdata_used(pubdata_used)
     }
 
     fn get_gas_used(&self) -> u64 {
