@@ -325,6 +325,7 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_basic_division() {
+        // 10 / 3 = q=3, r=1
         let (q, r) = run_division_query(&[10, 0, 0, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert_eq!(r, vec![1]);
@@ -332,6 +333,7 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_exact_division() {
+        // 15 / 5 = q=3, r=0
         let (q, r) = run_division_query(&[15, 0, 0, 0], &[5, 0, 0, 0]);
         assert_eq!(q, vec![3]);
         assert!(r.is_empty(), "remainder should be zero (stripped)");
@@ -339,6 +341,7 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_dividend_smaller_than_modulus() {
+        // 2 / 7 = q=0, r=2
         let (q, r) = run_division_query(&[2, 0, 0, 0], &[7, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![2]);
@@ -346,6 +349,8 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_dividend_fewer_digits_than_modulus() {
+        // a=5 (1 DelegatedU256 digit), m=2^64+3 (2 DelegatedU256 digits)
+        // 5 < 2^64+3, so q=0, r=5
         let (q, r) = run_division_query(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
         assert!(q.is_empty(), "quotient should be zero (stripped)");
         assert_eq!(r, vec![5]);
@@ -353,6 +358,7 @@ mod tests {
 
     #[test]
     fn riscv_arithmetic_query_multi_digit_quotient() {
+        // 2^128 / 3 = 0x55555555555555555555555555555555 remainder 1
         let (q, r) = run_division_query(&[0, 0, 1, 0], &[3, 0, 0, 0]);
         assert_eq!(q, vec![0x5555555555555555, 0x5555555555555555]);
         assert_eq!(r, vec![1]);
