@@ -157,7 +157,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::ADD => self.wrapped_add(),
                     opcodes::MUL => self.wrapping_mul(),
                     opcodes::SUB => self.wrapping_sub(),
-                    opcodes::DIV => self.div(),
+                    opcodes::DIV => self.div(system),
                     opcodes::SDIV => self.sdiv(),
                     opcodes::MOD => self.rem(),
                     opcodes::SMOD => self.smod(),
