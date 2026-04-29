@@ -112,14 +112,18 @@ impl Runner {
         let bin_words = read_u32_words(program.app_bin());
         let text_words = read_u32_words(program.app_text());
 
-        let instructions = preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
+        let instructions =
+            preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
         let tape = SimpleTape::new(&instructions);
         let mut ram =
             RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
         let mut state = State::initial_with_counters(DelegationsCounters::default());
         let mut non_determinism_source = QuasiUARTSource::new_with_reads(input_words.to_vec());
 
-        let cycle_markers = if let Some(fg_options) = self.flamegraph {
+        // `cycle_markers` is only consumed under `feature = "cycle_marker"`;
+        // use the leading-underscore name so the unused-variable lint passes
+        // when the feature is off.
+        let _cycle_markers = if let Some(fg_options) = self.flamegraph {
             use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
 
             let fg_config = FlamegraphConfig {
@@ -128,10 +132,14 @@ impl Runner {
                 reverse_graph: false,
                 frequency_recip: fg_options.frequency_recip,
             };
-            let mut profiler =
-                VmFlamegraphProfiler::new(fg_config).expect("failed to initialize flamegraph profiler");
+            let mut profiler = VmFlamegraphProfiler::new(fg_config)
+                .expect("failed to initialize flamegraph profiler");
             let (result, cm) = CycleMarkerHooks::with(|| {
-                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<_, _, _>(
+                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<
+                    _,
+                    _,
+                    _,
+                >(
                     &mut state,
                     &mut ram,
                     &mut (),
@@ -162,7 +170,7 @@ impl Runner {
 
         #[cfg(feature = "cycle_marker")]
         {
-            let results = cycle_marker::print_cycle_markers(cycle_markers);
+            let results = cycle_marker::print_cycle_markers(_cycle_markers);
             block_effective = results.block_effective;
         }
 

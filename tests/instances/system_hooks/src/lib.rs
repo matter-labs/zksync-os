@@ -1421,7 +1421,7 @@ mod fri_precompile_e2e {
     const FRI_STATEMENT_HASH_VERSION: u8 = 1;
     // Address 0x0101 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
-    const FRI_PRIMARY_PROOF_FIXTURE: &str = "tests/fixtures/fri/gateway_primary_unified_proof.bin";
+    const FRI_PRIMARY_PROOF_FIXTURE: &str = "tests/fixtures/fri/airbender_test_proof.bin";
     const FRI_SECONDARY_PROOF_FIXTURE: &str =
         "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin";
 
