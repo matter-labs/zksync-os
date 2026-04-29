@@ -8,16 +8,6 @@ mod tests {
 
     /// Decoder config used to preprocess ZKsync OS binaries when
     /// checking them for unsupported opcodes.
-    ///
-    /// Extends upstream's canonical `FullUnsignedMachineDecoderConfig`
-    /// with MOP support. The newer airbender prover drives its own
-    /// bytecode preprocessing through this transpiler decoder (no
-    /// separate prover-side decode stage), so "decodes here" ==
-    /// "decodes in the prover". MOPs are enabled because
-    /// `full_statement_verifier` (linked for Gateway FRI verification)
-    /// emits `mop.rr.*` via the Zimop extension, and from the prover's
-    /// perspective MOPs are always supported when the transpiler
-    /// emits them.
     struct BinaryCheckerDecoderConfig;
 
     impl DecodingOptions for BinaryCheckerDecoderConfig {

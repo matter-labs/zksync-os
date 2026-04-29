@@ -1391,7 +1391,7 @@ mod fri_precompile {
 // hands the raw (decompressed) bincode bytes to the Gateway-side FRI sidecar,
 // and configures `FriVerifierArtifacts` on the oracle side so the bootloader's
 // `FRI_PROOF_QUERY_ID` responder decodes and flattens the proof for the
-// in-circuit verifier.
+// airbender unified verifier.
 //
 // When the proof fixture is missing the test is a silent no-op: the path is
 // set via FRI_ORACLE_PATH (default points at a committed fixture in the repo
@@ -1421,6 +1421,9 @@ mod fri_precompile_e2e {
     const FRI_STATEMENT_HASH_VERSION: u8 = 1;
     // Address 0x0101 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+    const FRI_PRIMARY_PROOF_FIXTURE: &str = "tests/fixtures/fri/gateway_primary_unified_proof.bin";
+    const FRI_SECONDARY_PROOF_FIXTURE: &str =
+        "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin";
 
     fn repo_root() -> PathBuf {
         // CARGO_MANIFEST_DIR = tests/instances/system_hooks
@@ -1637,10 +1640,7 @@ mod fri_precompile_e2e {
     /// Acts as a silent no-op when the proof fixture is not present on disk.
     #[test]
     fn fri_precompile_returns_true_for_verified_proof() {
-        let proof_path = resolve_path(
-            "FRI_ORACLE_PATH",
-            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
-        );
+        let proof_path = resolve_path("FRI_ORACLE_PATH", FRI_PRIMARY_PROOF_FIXTURE);
         let setup_path = resolve_path(
             "FRI_SETUP_PATH",
             "tests/fixtures/fri/recursion_unified_setup.bin",
@@ -1756,18 +1756,14 @@ mod fri_precompile_e2e {
     fn fri_precompile_finds_any_of_multiple_verified_proofs() {
         let (setup_path, layout_path) = default_setup_and_layout_paths();
 
-        let Some((proof_bytes_1, stmt_hash_1)) = load_proof_fixture(
-            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
-            &setup_path,
-            &layout_path,
-        ) else {
+        let Some((proof_bytes_1, stmt_hash_1)) =
+            load_proof_fixture(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
             return;
         };
-        let Some((proof_bytes_2, stmt_hash_2)) = load_proof_fixture(
-            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin",
-            &setup_path,
-            &layout_path,
-        ) else {
+        let Some((proof_bytes_2, stmt_hash_2)) =
+            load_proof_fixture(FRI_SECONDARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
             return;
         };
         assert_ne!(
@@ -1837,15 +1833,15 @@ mod fri_precompile_e2e {
     // are no longer the sequencer's job: under the current design
     // (`VERIFY_FRI_PROOFS = false` on forward-mode configs) the
     // sequencer trusts the admission layer and doesn't run the
-    // verifier on its own. The in-circuit verifier (prover) is the
-    // final authority. Moving those negative cases to rig-level
+    // verifier on its own. The airbender unified verifier (prover)
+    // is the final authority. Moving those negative cases to rig-level
     // coverage requires wiring proving-mode execution into the rig,
     // which is out of scope for this PR.
 
     /// Pins the validation order: cheap structural checks (here:
     /// nonce) run BEFORE FRI-specific validation. On proving-config
     /// runs, FRI verification is still the most expensive validation
-    /// step (up to 8 in-circuit verifier runs); on forward-config
+    /// step (up to 8 airbender unified verifier runs); on forward-config
     /// runs it's trivial, but the ordering still matters because
     /// `build_verified_fri_statements_list` installs state on
     /// `TxLevelMetadata` and we do not want that to happen for a tx
@@ -1918,11 +1914,9 @@ mod fri_precompile_e2e {
     #[test]
     fn fri_proof_tx_dedups_duplicate_statement_hashes() {
         let (setup_path, layout_path) = default_setup_and_layout_paths();
-        let Some((proof_bytes, stmt_hash)) = load_proof_fixture(
-            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
-            &setup_path,
-            &layout_path,
-        ) else {
+        let Some((proof_bytes, stmt_hash)) =
+            load_proof_fixture(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
             return;
         };
         let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
@@ -1997,11 +1991,9 @@ mod fri_precompile_e2e {
         use rig::zksync_os_interface::error::InvalidTransaction;
 
         let (setup_path, layout_path) = default_setup_and_layout_paths();
-        let Some((proof_bytes, stmt_hash)) = load_proof_fixture(
-            "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11024243.bin",
-            &setup_path,
-            &layout_path,
-        ) else {
+        let Some((proof_bytes, stmt_hash)) =
+            load_proof_fixture(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
             return;
         };
         let artifacts = load_verifier_artifacts(&setup_path, &layout_path)

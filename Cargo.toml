@@ -65,29 +65,12 @@ categories = ["cryptography"]
 [workspace.dependencies]
 # BLOCKS MERGE: cut a new zksync-os-interface release containing
 # `BlockContext.is_gateway` (currently only on `ra/add-gw-to-blockcontext`)
-# before merging this PR, then switch these deps back to the tagged
-# crates.io release and remove this note.
+# before merging this PR.
 zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42", default-features = false }
 zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "a8785751b44a356bb6a70e147bec62b9ec2c8e42" }
 
 # zksync-airbender deps pinned to the same commit airbender-platform
 # resolves `branch = "dev"` to at the time of pinning.
-#
-# Note: cargo's source identity is `(URL, ref-spec)` as a textual
-# string — `?branch=dev` and `?rev=591efe90...` are distinct sources
-# even when they resolve to the same SHA. Since airbender-platform
-# uses `?branch=dev` internally, our `?rev=...` pin doesn't unify
-# with its transitives, so every airbender crate appears twice in the
-# build graph (~200 extra release compilations).
-#
-# Type-level coupling (the `From<riscv_transpiler::cycle::CycleMarker>`
-# impl on `airbender_host::CycleMarker`) is dodged by having
-# `cycle_marker` re-export `riscv_transpiler::cycle::CycleMarker`
-# directly so the runner never crosses the source boundary.
-#
-# The right structural fix to eliminate the build-graph duplication
-# is a `[patch]` block, deferred. Until then we accept the compile-time
-# cost in exchange for manifest-level visibility of the pinned commit.
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a", default-features = false }
 common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a" }
@@ -133,11 +116,6 @@ zerocopy = { version = "=0.8.28" }
 [profile.dev]
 # The Airbender dependency graph currently triggers an LLVM/DWARF SIGBUS
 # on this toolchain when compiling debug-info-heavy host builds.
-# Disabling debuginfo for workspace dev/test builds avoids that path
-# without changing executable behavior.
-# TODO: scope to the specific triggering crates once the LLVM bug is
-# root-caused (the graph has many tiny circuit_defs crates that are
-# hard to enumerate).
 debug = false
 
 [profile.test]

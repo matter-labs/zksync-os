@@ -6,10 +6,6 @@ use alloy::{
 };
 
 /// Signed Gateway FRI proof tx helper for tests.
-///
-/// The proof bytes themselves are not encoded here. The signed body only
-/// carries statement commitments; tests inject matching proof word streams via
-/// the mock FRI sidecar oracle.
 #[derive(Debug, Clone)]
 pub struct ZKsyncFriProofTx {
     pub chain_id: u64,

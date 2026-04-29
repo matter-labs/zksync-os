@@ -60,9 +60,7 @@ pub const DISCONNECT_ORACLE_QUERY_ID: u32 = SYSTEM_SUBSPACE_MASK | 0; // 0x40000
 pub const GENERIC_PREIMAGE_QUERY_ID: u32 = PREIMAGE_SUBSPACE_MASK | 0; // 0x40020000
 
 /// Query to retrieve FRI proof bytes (sidecar) for a given
-/// `statement_versioned_hash`. The responder returns a flattened
-/// `u32` oracle stream ready to be consumed by the Airbender unified
-/// circuit recursion-layer verifier.
+/// `statement_versioned_hash`.
 pub const FRI_PROOF_QUERY_ID: u32 = PREIMAGE_SUBSPACE_MASK | 1; // 0x40020001
 
 // ========== Account and Storage Subspace Queries ==========

@@ -38,10 +38,11 @@
 //!
 //! The proving-mode CSR bridge transports each host `usize` as two
 //! 32-bit reads (low half then high half). By packing two verifier
-//! words into each payload `usize` on the host side, the in-circuit
-//! verifier on RISC-V sees the low/high halves as *consecutive*
-//! verifier `u32` words without any extra repacking. That coupling is
-//! the whole reason we don't just emit one verifier word per `usize`.
+//! words into each payload `usize` on the host side, the airbender
+//! unified verifier on RISC-V sees the low/high halves as
+//! *consecutive* verifier `u32` words without any extra repacking.
+//! That coupling is the whole reason we don't just emit one verifier
+//! word per `usize`.
 //!
 //! # Participating sites
 //!

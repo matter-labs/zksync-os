@@ -147,15 +147,6 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::NativeResourcesAreTooExpensive => {InvalidTransaction::NativeResourcesAreTooExpensive}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7623IntrinsicGasIsTooLow => {InvalidTransaction::EIP7623IntrinsicGasIsTooLow}
             basic_bootloader::bootloader::errors::InvalidTransaction::CallerGasLimitMoreThanTxLimit => {InvalidTransaction::CallerGasLimitMoreThanTxLimit}
-            // FRI errors: most are admission-layer / operational
-            // conditions (not permanent structural bugs in the RLP
-            // body), so they map to `FilteredByValidator` — the same
-            // variant `TxValidator::validate` returns to drop a tx
-            // from a block for policy reasons. That signals to RPC
-            // callers that the tx may be retriable. `TooManyFriStatements`
-            // is the one exception: a tx with >MAX_FRI_STATEMENTS_PER_TX
-            // hashes is permanently unacceptable regardless of retry,
-            // so it keeps `InvalidStructure`.
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofTxNotSupported => {InvalidTransaction::FilteredByValidator}
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofSidecarMissing => {InvalidTransaction::FilteredByValidator}
             basic_bootloader::bootloader::errors::InvalidTransaction::FriProofVerificationFailed => {InvalidTransaction::FilteredByValidator}

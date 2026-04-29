@@ -25,11 +25,6 @@ paste = { workspace = true }
 cfg-if = { workspace = true }
 serde-big-array = "0.5"
 
-# `full_statement_verifier` is only invoked from the RISC-V guest arm
-# of `transaction_flow::zk::fri::verify_fri_statement`. The host path
-# does not verify (admission-layer trust; see module docs), so the
-# dependency is scoped to the RISC-V target to avoid linking the
-# verifier into host builds.
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "modular_ops", "blake2_with_compression"] }
 

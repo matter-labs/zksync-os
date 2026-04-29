@@ -136,10 +136,6 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// the worst-case formula budgets).
     pub authorization_list_num: u64,
     /// Number of FRI statement hashes referenced by the transaction.
-    /// Used by `verify_intrinsic_native` to skip the overcharging check when
-    /// FRI proofs are present: the budget covers the RISC-V in-circuit
-    /// verification cost, which is much higher than the forward-mode host
-    /// verification that runs during the check.
     pub statement_versioned_hashes_num: u64,
 }
 
@@ -301,11 +297,6 @@ where
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
-        // FRI proof verification for `FriProofTx` runs as the first
-        // step of `validate_and_prepare_context`, so by the time we
-        // reach here the `verified_fri_statements` list on the tx-level
-        // metadata is already populated.
-
         // we are saving amount of pubdata spent during validation,
         // it's already covered by intrinsic cost, so it will be excluded
         // from pubdata payment after execution.
@@ -960,8 +951,9 @@ where
         // formula budgets worst-case success cost per entry.
         //
         // Also skip when FRI statement hashes are present: the budget
-        // covers in-circuit RISC-V verification, which is much more
-        // expensive than the host-mode verifier this check runs under.
+        // covers the airbender unified verifier on RISC-V, which is
+        // much more expensive than the host-mode verifier this check
+        // runs under.
         if context.authorization_list_num == 0 && context.statement_versioned_hashes_num == 0 {
             assert!(
                 formula <= actual_used * 2,

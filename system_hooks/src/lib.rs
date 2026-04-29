@@ -208,14 +208,6 @@ where
 
 /// Register the FRI proof verification hook at
 /// `FRI_PRECOMPILE_ADDRESS`.
-///
-/// This is a ZKsync-only system hook, not an EVM precompile — it
-/// answers membership queries against the per-tx list of FRI
-/// statements verified during validation. Callers decide whether to
-/// install it based on chain configuration (Gateway chains yes,
-/// others no); this function doesn't gate itself so the decision is
-/// visible at the post-init-op site alongside the other system
-/// hook registrations.
 pub fn add_fri_proof_verification_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError>

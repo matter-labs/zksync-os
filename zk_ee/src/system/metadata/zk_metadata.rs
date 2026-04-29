@@ -341,11 +341,7 @@ mod tests {
 
     /// Pins the `is_fri_statement_verified` membership contract:
     /// finds hashes at any position in the per-tx list, and returns
-    /// `false` for hashes not present. The validator in
-    /// `fri::verify_all_fri_statements` is the only production
-    /// caller that populates `verified_fri_statements`; this test
-    /// uses direct struct-field access to pin the predicate's
-    /// behavior independently.
+    /// `false` for hashes not present.
     #[test]
     fn tx_metadata_accumulates_multiple_fri_statements() {
         let mut meta = TxLevelMetadata::<EthereumIOTypesConfig>::default();

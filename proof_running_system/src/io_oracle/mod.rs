@@ -17,10 +17,6 @@ pub struct CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation> {
 
 pub struct CsrBasedIOOracleIterator<I: NonDeterminismCSRSourceImplementation> {
     remaining: usize,
-    /// Pre-read value yielded before any CSR read. Used by the FRI
-    /// query to expose `oracle_stream_len` as the first `next()`
-    /// result so callers can distinguish present-sidecar (some) from
-    /// missing-sidecar (none) without consuming an extra CSR word.
     prefetched: Option<usize>,
     _marker: core::marker::PhantomData<I>,
 }
@@ -91,12 +87,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         if query_type == FRI_PROOF_QUERY_ID {
             // FRI oracle responses use the custom packing defined in
             // `zk_ee::oracle::fri_proof_packing` (count-prefix plus
-            // two verifier u32 words per payload usize). We can't use
-            // the helpers there: this code runs in the guest
-            // (`no_std`, no `alloc`) and consumes CSR reads
-            // word-by-word rather than operating on a `Vec<usize>`.
-            // The framing invariants below must stay in sync with
-            // that module's doc — see it for the format spec.
+            // two verifier u32 words per payload usize).
             //
             // The host-side CSR bridge transports each host `usize` as two
             // 32-bit reads. Consume the outer response length and, when
@@ -105,10 +96,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             // low/high CSR halves, not through this iterator.
             //
             // `response_len == 0` means the sidecar has no entry for
-            // this statement hash. Return an iterator with nothing
-            // prefetched so the caller's `.next()` yields `None` and
-            // the bootloader maps it to `FriProofSidecarMissing`,
-            // mirroring forward-mode behavior.
+            // this statement hash.
             let response_len = NDS::csr_read_impl();
             if response_len == 0 {
                 return Ok(CsrBasedIOOracleIterator::<NDS> {
@@ -119,22 +107,8 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             }
             let oracle_stream_len = NDS::csr_read_impl();
             let oracle_stream_len_high = NDS::csr_read_impl();
-            // These asserts guard invariants established by the
-            // forward-mode `FriProofResponder` that produced the
-            // recorded non-determinism stream this guest replays.
-            // They are NOT validating user input: the user-controlled
-            // part (the statement hash) is a separate CSR round-trip
-            // that has already completed. The bytes read here come
-            // from a stream our own sequencer code generated. A
-            // violation would mean forward/proving encode disagreement
-            // — an unrecoverable prover-side corruption with no guest
-            // path to reject, so we panic.
             assert!(oracle_stream_len_high == 0);
             assert!(2 * (1 + oracle_stream_len.div_ceil(2)) == response_len);
-            // Prefetch the stream length so the caller's `.next()`
-            // yields `Some(oracle_stream_len)` on a present sidecar,
-            // distinguishing it from the missing case above. No extra
-            // CSR read is consumed.
             return Ok(CsrBasedIOOracleIterator::<NDS> {
                 remaining: 0,
                 prefetched: Some(oracle_stream_len),

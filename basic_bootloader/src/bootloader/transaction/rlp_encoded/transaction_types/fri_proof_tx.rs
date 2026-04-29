@@ -7,10 +7,8 @@ use crate::bootloader::transaction::rlp_encoded::transaction_types::EthereumTxTy
 use ruint::aliases::U256;
 
 /// List of 32-byte `statement_versioned_hash` entries carried by a
-/// `FriProofTx` in its signed body. Each entry commits to one proved
-/// statement (not to a specific proof artifact). The raw proof bytes
-/// travel out-of-band via the FRI proof sidecar and are resolved at
-/// execution time through `FRI_PROOF_QUERY_ID`.
+/// `FriProofTx` in its signed body. The raw proof bytes
+/// are transported via the FRI proof sidecar.
 pub type StatementVersionedHashesList<'a> = FixedList<'a, &'a [u8; 32]>;
 
 /// FRI proof transaction (type `FRI_PROOF_TX_TYPE`) — Gateway-only.

@@ -32,9 +32,7 @@ pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u
 
 // FRI proof verification hook (Gateway only, runtime-gated by `metadata.is_gateway`).
 // Looks up a `statement_versioned_hash` in tx-scoped state and returns a boolean
-// indicating whether it was verified earlier in the current tx. Not an EVM
-// precompile: it's a ZKsync-only hook with no EVM spec, so it must not affect
-// EVM gas semantics (e.g. `is_precompile` cold-access discount).
+// indicating whether it was verified earlier in the current tx.
 pub const FRI_PRECOMPILE_ADDRESS_LOW: u16 = 0x0101;
 pub const FRI_PRECOMPILE_ADDRESS: B160 =
     B160::from_limbs([FRI_PRECOMPILE_ADDRESS_LOW as u64, 0, 0]);

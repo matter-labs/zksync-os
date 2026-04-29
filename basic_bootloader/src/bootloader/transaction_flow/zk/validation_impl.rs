@@ -451,19 +451,10 @@ where
     //
     // 1. Structural admission (is_gateway, cap, dedup) always runs
     //    and produces the hash list to install on tx-level metadata.
-    //    No oracle query, no verifier work — cheap.
     // 2. Oracle-driven verification runs only when
     //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under
     //    `BasicBootloaderProvingExecutionConfig` (the RISC-V guest
     //    and the host prover-input recording pass that feeds it).
-    //    The sequencer's forward run, `eth_call`, and ETH-replay all
-    //    set this flag false and trust the admission layer's FRI
-    //    check — same trust model as `VALIDATE_EOA_SIGNATURE = false`
-    //    for signatures.
-    //
-    // The verified hashes are installed on tx-level metadata below
-    // via `set_tx_context`, so the FRI precompile can answer
-    // membership queries during the tx body.
     let verified_fri_statements = if transaction.is_fri_proof() {
         super::fri::build_verified_fri_statements_list(system, transaction)?
     } else {

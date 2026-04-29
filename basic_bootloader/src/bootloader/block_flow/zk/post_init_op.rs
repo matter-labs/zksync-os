@@ -13,13 +13,7 @@ where
     ) -> Result<(), InternalError> {
         system_hooks::add_precompiles(system_functions)?;
 
-        // Gateway-only system hook: answers `is this FRI statement
-        // hash verified in the current tx?` via the per-tx metadata
-        // populated during validation.
-        if system.metadata.is_gateway() {
-            system_hooks::add_fri_proof_verification_hook(system_functions)?;
-        }
-
+        // TODO: maybe rename
         #[cfg(not(feature = "disable_system_contracts"))]
         {
             system_hooks::add_l1_messenger(system_functions)?;
@@ -30,6 +24,11 @@ where
 
             // TODO(EVM-1191): temporary solution, should be removed before the release
             system_hooks::add_base_token_mint(system_functions)?;
+
+            // Gateway-only system hook
+            if system.metadata.is_gateway() {
+                system_hooks::add_fri_proof_verification_hook(system_functions)?;
+            }
         }
 
         Ok(())

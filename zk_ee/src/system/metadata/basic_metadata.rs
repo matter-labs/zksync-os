@@ -57,8 +57,7 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Returns whether a given FRI statement hash was verified during
     /// this transaction's validation phase. A `FriProofTx` may verify
-    /// more than one statement; this predicate lets callers check
-    /// membership without iterating the full list.
+    /// more than one statement.
     fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool;
 }
 

@@ -44,10 +44,9 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
-/// Fixed verification budget charged for each referenced FRI statement hash in
-/// a `FRI_PROOF_TX_TYPE` transaction.
+/// FRI proof verfification cost.
 pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 10_000_000;
-/// Current statement-hash version implicitly committed by FRI proof transactions.
+/// Current statement-hash version of FRI proof transactions.
 pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;
 
 /// Cost to convert zero byte of calldata into "token"
