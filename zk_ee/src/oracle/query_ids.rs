@@ -39,6 +39,15 @@ pub const ACCOUNT_AND_STORAGE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_03
 pub const STATE_AND_MERKLE_PATHS_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_04_00_00; // 0x40040000
 /// Computational advice queries (e.g. division/modexp advice)
 pub const ADVICE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_05_00_00; // 0x40050000
+
+// ========== Advice Subspace Queries ==========
+
+/// Query to get mulmod hint (quotient, remainder) for U256 values.
+/// Guest sends pointers to a, b, and modulus; host returns q and r
+/// such that a*b == q*m + r and r < m.
+/// Guest verifies the relation using delegated widening arithmetic.
+pub const U256_MULMOD_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x31; // 0x40050031
+
 /// Transaction-related queries
 pub const TRANSACTION_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_06_00_00; // 0x40060000
 /// Block- (and batch-) related queries

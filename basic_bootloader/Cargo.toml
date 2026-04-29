@@ -46,6 +46,7 @@ resources_for_tester = []
 unlimited_native = []
 disable_system_contracts = []
 error_origins = ["zk_ee/error_origins"]
+delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "system_hooks/delegation", "basic_system/delegation"]
 # Enables runtime verification that the intrinsic computational native formula
 # (`calculate_l2_tx_intrinsic_computational_native_resources`) is an upper bound
 # on the native resources actually consumed by validation and post-execution

@@ -157,6 +157,75 @@ pub fn u256_try_to_b160(src: U256) -> Option<B160> {
     Some(result)
 }
 
+// Functions that work with u256::U256 (custom non-Copy U256)
+pub mod custom_u256_utils {
+    use u256::U256 as CustomU256;
+
+    #[inline(always)]
+    pub fn custom_u256_to_b160(src: &CustomU256) -> ruint::aliases::B160 {
+        let mut result = ruint::aliases::B160::ZERO;
+        unsafe {
+            result.as_limbs_mut()[0] = src.as_limbs()[0];
+            result.as_limbs_mut()[1] = src.as_limbs()[1];
+            result.as_limbs_mut()[2] = src.as_limbs()[2] & 0x00000000ffffffff;
+        }
+        result
+    }
+
+    #[inline(always)]
+    pub fn custom_b160_to_u256(src: ruint::aliases::B160) -> CustomU256 {
+        let mut result = CustomU256::zero();
+        result.as_limbs_mut()[0] = src.as_limbs()[0];
+        result.as_limbs_mut()[1] = src.as_limbs()[1];
+        result.as_limbs_mut()[2] = src.as_limbs()[2];
+        result
+    }
+
+    #[inline(always)]
+    pub fn custom_u256_to_u64_saturated(src: &CustomU256) -> u64 {
+        let limbs = src.as_limbs();
+        if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
+            u64::MAX
+        } else {
+            limbs[0]
+        }
+    }
+
+    #[inline(always)]
+    pub fn custom_u256_try_to_usize(src: &CustomU256) -> Option<usize> {
+        let limbs = src.as_limbs();
+        if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
+            None
+        } else {
+            limbs[0].try_into().ok()
+        }
+    }
+
+    #[inline(always)]
+    pub fn custom_u256_try_to_usize_capped<const CAP: usize>(src: &CustomU256) -> Option<usize> {
+        let limbs = src.as_limbs();
+        if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 || limbs[0] >= CAP as u64 {
+            None
+        } else {
+            Some(limbs[0] as usize)
+        }
+    }
+
+    #[inline(always)]
+    pub fn custom_u256_to_usize_saturated(src: &CustomU256) -> usize {
+        let value = custom_u256_to_u64_saturated(src);
+        if cfg!(target_pointer_width = "32") {
+            if value > u32::MAX as u64 {
+                u32::MAX as usize
+            } else {
+                value as usize
+            }
+        } else {
+            value as usize
+        }
+    }
+}
+
 pub fn u256_mul_by_word(input: &U256, word: u64) -> (U256, u64) {
     let mut result = *input;
     let of = unsafe { ruint::algorithms::mul_nx1(result.as_limbs_mut(), word) };
