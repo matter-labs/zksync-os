@@ -3,6 +3,29 @@ use crate::oracle::usize_serialization::UsizeDeserializable;
 use crate::oracle::IOOracle;
 use u256::U256;
 
+/// Params for U256 div_rem oracle query (pointer-based, like modexp).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct U256DivRemAdviceParamsGeneric<W> {
+    pub dividend_ptr: W,
+    pub divisor_ptr: W,
+}
+
+pub type U256DivRemAdviceParams = U256DivRemAdviceParamsGeneric<u32>;
+pub type U256DivRemAdviceParams64 = U256DivRemAdviceParamsGeneric<u64>;
+
+/// Params for U256 mulmod oracle query (pointer-based, like modexp).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct U256MulmodAdviceParamsGeneric<W> {
+    pub a_ptr: W,
+    pub b_ptr: W,
+    pub modulus_ptr: W,
+}
+
+pub type U256MulmodAdviceParams = U256MulmodAdviceParamsGeneric<u32>;
+pub type U256MulmodAdviceParams64 = U256MulmodAdviceParamsGeneric<u64>;
+
 #[inline(always)]
 fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> [u64; 4] {
     [
@@ -24,15 +47,33 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor_or_remainder.is_zero());
 
-    let input: [u64; 8] = {
-        let d = dividend_or_quotient.as_limbs();
-        let v = divisor_or_remainder.as_limbs();
-        [d[0], d[1], d[2], d[3], v[0], v[1], v[2], v[3]]
+    #[cfg(target_pointer_width = "32")]
+    let mut it = {
+        let params = U256DivRemAdviceParams {
+            dividend_ptr: (dividend_or_quotient as *const U256).addr() as u32,
+            divisor_ptr: (divisor_or_remainder as *const U256).addr() as u32,
+        };
+        oracle
+            .raw_query(
+                U256_DIV_REM_ADVICE_QUERY_ID,
+                &((&params as *const U256DivRemAdviceParams).addr() as u32),
+            )
+            .expect("div_rem oracle query failed")
     };
 
-    let mut it = oracle
-        .raw_query(U256_DIV_REM_ADVICE_QUERY_ID, &input)
-        .expect("div_rem oracle query failed");
+    #[cfg(target_pointer_width = "64")]
+    let mut it = {
+        let params = U256DivRemAdviceParams64 {
+            dividend_ptr: (dividend_or_quotient as *const U256).addr() as u64,
+            divisor_ptr: (divisor_or_remainder as *const U256).addr() as u64,
+        };
+        oracle
+            .raw_query(
+                U256_DIV_REM_ADVICE_QUERY_ID,
+                &((&params as *const U256DivRemAdviceParams64).addr() as u64),
+            )
+            .expect("div_rem oracle query failed")
+    };
 
     let q_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
@@ -71,18 +112,35 @@ pub fn u256_mulmod_with_advice<O: IOOracle>(
         return;
     }
 
-    let input: [u64; 12] = {
-        let al = a.as_limbs();
-        let bl = b.as_limbs();
-        let ml = modulus_or_result.as_limbs();
-        [
-            al[0], al[1], al[2], al[3], bl[0], bl[1], bl[2], bl[3], ml[0], ml[1], ml[2], ml[3],
-        ]
+    #[cfg(target_pointer_width = "32")]
+    let mut it = {
+        let params = U256MulmodAdviceParams {
+            a_ptr: (a as *const U256).addr() as u32,
+            b_ptr: (b as *const U256).addr() as u32,
+            modulus_ptr: (modulus_or_result as *const U256).addr() as u32,
+        };
+        oracle
+            .raw_query(
+                U256_MULMOD_ADVICE_QUERY_ID,
+                &((&params as *const U256MulmodAdviceParams).addr() as u32),
+            )
+            .expect("mulmod oracle query failed")
     };
 
-    let mut it = oracle
-        .raw_query(U256_MULMOD_ADVICE_QUERY_ID, &input)
-        .expect("mulmod oracle query failed");
+    #[cfg(target_pointer_width = "64")]
+    let mut it = {
+        let params = U256MulmodAdviceParams64 {
+            a_ptr: (a as *const U256).addr() as u64,
+            b_ptr: (b as *const U256).addr() as u64,
+            modulus_ptr: (modulus_or_result as *const U256).addr() as u64,
+        };
+        oracle
+            .raw_query(
+                U256_MULMOD_ADVICE_QUERY_ID,
+                &((&params as *const U256MulmodAdviceParams64).addr() as u64),
+            )
+            .expect("mulmod oracle query failed")
+    };
 
     let q_lo_limbs = read_limbs_from_oracle_response(&mut it);
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
