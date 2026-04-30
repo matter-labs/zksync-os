@@ -81,7 +81,11 @@ pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
 }
 
 #[inline(always)]
-pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
+pub fn i256_div<O: zk_ee::oracle::IOOracle>(
+    dividend: &mut U256,
+    divisor_or_quotient: &mut U256,
+    oracle: &mut O,
+) {
     let divisor_sign = i256_sign::<true>(divisor_or_quotient);
     if divisor_sign == Sign::Zero {
         U256::write_zero(divisor_or_quotient);
@@ -103,7 +107,11 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
     // this is unsigned division of moduli
     // After div_rem: dividend becomes quotient, divisor_or_quotient becomes remainder
     // But we want the unsigned quotient of |dividend| / |divisor|
-    U256::div_rem(dividend, divisor_or_quotient);
+    zk_ee::utils::u256_arithmetic_advice::u256_div_rem_with_advice(
+        dividend,
+        divisor_or_quotient,
+        oracle,
+    );
     // Now dividend = quotient, divisor_or_quotient = remainder
     let quotient_is_zero = dividend.is_zero();
 
@@ -132,7 +140,11 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
 }
 
 #[inline(always)]
-pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
+pub fn i256_mod<O: zk_ee::oracle::IOOracle>(
+    dividend: &mut U256,
+    divisor_or_remainder: &mut U256,
+    oracle: &mut O,
+) {
     let dividend_sign = i256_sign::<true>(dividend);
     if dividend_sign == Sign::Zero {
         U256::write_zero(divisor_or_remainder);
@@ -143,7 +155,11 @@ pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
 
     // this is unsigned division of moduli
     // After div_rem: dividend becomes quotient, divisor_or_remainder becomes remainder
-    U256::div_rem(dividend, divisor_or_remainder);
+    zk_ee::utils::u256_arithmetic_advice::u256_div_rem_with_advice(
+        dividend,
+        divisor_or_remainder,
+        oracle,
+    );
 
     if divisor_or_remainder.is_zero() {
         return;

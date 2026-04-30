@@ -47,32 +47,45 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    pub fn sdiv(&mut self) -> InstructionResult {
+    pub fn sdiv(&mut self, system: &mut System<S>) -> InstructionResult
+    where
+        S::IO: IOSubsystemExt,
+    {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, SDIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        i256_div(op1, op2);
+        i256_div(op1, op2, system.io.oracle());
         Ok(())
     }
 
-    pub fn rem(&mut self) -> InstructionResult {
+    pub fn rem(&mut self, system: &mut System<S>) -> InstructionResult
+    where
+        S::IO: IOSubsystemExt,
+    {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            U256::div_rem(op1, op2);
+            zk_ee::utils::u256_arithmetic_advice::u256_div_rem_with_advice(
+                op1,
+                op2,
+                system.io.oracle(),
+            );
         } else {
             U256::write_zero(op2);
         }
         Ok(())
     }
 
-    pub fn smod(&mut self) -> InstructionResult {
+    pub fn smod(&mut self, system: &mut System<S>) -> InstructionResult
+    where
+        S::IO: IOSubsystemExt,
+    {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            i256_mod(op1, op2)
+            i256_mod(op1, op2, system.io.oracle())
         };
         Ok(())
     }
