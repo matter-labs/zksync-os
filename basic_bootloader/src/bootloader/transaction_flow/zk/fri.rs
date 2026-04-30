@@ -29,9 +29,9 @@ use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::Transaction;
 #[cfg(any(target_arch = "riscv32", test))]
-use crypto::{sha3::Keccak256, MiniDigest};
-use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
+use crypto::{MiniDigest, sha3::Keccak256};
 use zk_ee::oracle::IOOracle;
+use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
 use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
@@ -132,19 +132,83 @@ where
     }
     #[cfg(target_arch = "riscv32")]
     {
-        // On RISC-V the iterator only carries the sidecar-present
-        // signal: `Some(length_prefix)` when the sidecar has an entry
-        // for this hash, `None` when it doesn't. Proof bytes are
-        // consumed by the airbender unified verifier through a
-        // separate CSR channel. Calling the verifier with no proof
-        // data would otherwise abort the binary.
-        response.next().ok_or(TxError::Validation(
-            InvalidTransaction::FriProofSidecarMissing,
-        ))?;
-        drop(response);
-        let output = run_fri_verifier()?;
-        check_statement_hash_matches(&output, statement_versioned_hash)
+        verify_fri_statement_riscv(response, statement_versioned_hash)
     }
+}
+
+#[cfg(target_arch = "riscv32")]
+fn verify_fri_statement_riscv<R>(
+    mut response: R,
+    statement_versioned_hash: Bytes32,
+) -> Result<(), TxError>
+where
+    R: Iterator<Item = usize>,
+{
+    // The witness recorder stores the FRI response using the normal
+    // host-u64-to-guest-u32 split:
+    // - the first guest word is the verifier word count;
+    // - the second is the always-zero high half of that count prefix;
+    // - the verifier payload follows as raw u32 CSR words;
+    // - when the verifier word count is odd, the final host u64 carries
+    //   one trailing zero padding word that must be drained afterwards.
+    let verifier_word_count = begin_fri_verifier_stream(&mut response)?;
+    drop(response);
+    let output = run_fri_verifier()?;
+    finish_fri_verifier_stream_after_verifier(verifier_word_count)?;
+    check_statement_hash_matches(&output, statement_versioned_hash)
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn begin_fri_verifier_stream(response: &mut impl Iterator<Item = usize>) -> Result<usize, TxError> {
+    let verifier_word_count = response.next().ok_or(TxError::Validation(
+        InvalidTransaction::FriProofSidecarMissing,
+    ))?;
+    let count_prefix_high = response.next().ok_or(TxError::Validation(
+        InvalidTransaction::FriProofVerificationFailed,
+    ))?;
+    if count_prefix_high != 0 {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofVerificationFailed,
+        ));
+    }
+
+    Ok(verifier_word_count)
+}
+
+#[cfg(test)]
+fn finish_fri_verifier_stream(
+    response: &mut impl Iterator<Item = usize>,
+    verifier_word_count: usize,
+) -> Result<(), TxError> {
+    if verifier_word_count % 2 == 1 {
+        let trailing_padding = response.next().ok_or(TxError::Validation(
+            InvalidTransaction::FriProofVerificationFailed,
+        ))?;
+        if trailing_padding != 0 {
+            return Err(TxError::Validation(
+                InvalidTransaction::FriProofVerificationFailed,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_arch = "riscv32")]
+fn finish_fri_verifier_stream_after_verifier(verifier_word_count: usize) -> Result<(), TxError> {
+    use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
+    use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
+
+    if verifier_word_count % 2 == 1 {
+        let trailing_padding = DefaultNonDeterminismSource::read_word() as usize;
+        if trailing_padding != 0 {
+            return Err(TxError::Validation(
+                InvalidTransaction::FriProofVerificationFailed,
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -189,5 +253,42 @@ mod tests {
         }
         let without_version = Bytes32::from_array(hasher.finalize());
         assert_ne!(changed_recursion_hash, without_version);
+    }
+
+    #[test]
+    fn fri_verifier_stream_consumes_prefix_and_trailing_padding() {
+        let mut response = vec![3usize, 0, 11, 22, 33, 0].into_iter();
+
+        let verifier_word_count = begin_fri_verifier_stream(&mut response).unwrap();
+        assert_eq!(verifier_word_count, 3);
+        assert_eq!(response.next(), Some(11));
+        assert_eq!(response.next(), Some(22));
+        assert_eq!(response.next(), Some(33));
+        finish_fri_verifier_stream(&mut response, verifier_word_count).unwrap();
+        assert_eq!(response.next(), None);
+    }
+
+    #[test]
+    fn fri_verifier_stream_rejects_nonzero_count_prefix_high() {
+        let mut response = vec![2usize, 7].into_iter();
+
+        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
+        assert!(matches!(
+            err,
+            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
+        ));
+    }
+
+    #[test]
+    fn fri_verifier_stream_even_count_has_no_trailing_padding() {
+        let mut response = vec![4usize, 0, 11, 22, 33, 44].into_iter();
+
+        let verifier_word_count = begin_fri_verifier_stream(&mut response).unwrap();
+        assert_eq!(verifier_word_count, 4);
+        for expected in [11usize, 22, 33, 44] {
+            assert_eq!(response.next(), Some(expected));
+        }
+        finish_fri_verifier_stream(&mut response, verifier_word_count).unwrap();
+        assert_eq!(response.next(), None);
     }
 }

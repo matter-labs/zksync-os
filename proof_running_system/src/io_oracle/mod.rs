@@ -1,5 +1,4 @@
 use zk_ee::{
-    oracle::query_ids::FRI_PROOF_QUERY_ID,
     oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
     oracle::IOOracle,
     system::errors::internal::InternalError,
@@ -17,16 +16,12 @@ pub struct CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation> {
 
 pub struct CsrBasedIOOracleIterator<I: NonDeterminismCSRSourceImplementation> {
     remaining: usize,
-    prefetched: Option<usize>,
     _marker: core::marker::PhantomData<I>,
 }
 
 impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIterator<I> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(v) = self.prefetched.take() {
-            return Some(v);
-        }
         if self.remaining == 0 {
             None
         } else {
@@ -38,7 +33,7 @@ impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIter
 
 impl<I: NonDeterminismCSRSourceImplementation> ExactSizeIterator for CsrBasedIOOracleIterator<I> {
     fn len(&self) -> usize {
-        self.remaining + usize::from(self.prefetched.is_some())
+        self.remaining
     }
 }
 
@@ -84,43 +79,10 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             remaining_len -= 1;
         }
         assert!(remaining_len == 0);
-        if query_type == FRI_PROOF_QUERY_ID {
-            // FRI oracle responses use the custom packing defined in
-            // `zk_ee::oracle::fri_proof_packing` (count-prefix plus
-            // two verifier u32 words per payload usize).
-            //
-            // The host-side CSR bridge transports each host `usize` as two
-            // 32-bit reads. Consume the outer response length and, when
-            // present, the count-prefix pair. The remaining packed proof
-            // words are read directly by the Airbender verifier as
-            // low/high CSR halves, not through this iterator.
-            //
-            // `response_len == 0` means the sidecar has no entry for
-            // this statement hash.
-            let response_len = NDS::csr_read_impl();
-            if response_len == 0 {
-                return Ok(CsrBasedIOOracleIterator::<NDS> {
-                    remaining: 0,
-                    prefetched: None,
-                    _marker: core::marker::PhantomData,
-                });
-            }
-            let oracle_stream_len = NDS::csr_read_impl();
-            let oracle_stream_len_high = NDS::csr_read_impl();
-            assert!(oracle_stream_len_high == 0);
-            assert!(2 * (1 + oracle_stream_len.div_ceil(2)) == response_len);
-            return Ok(CsrBasedIOOracleIterator::<NDS> {
-                remaining: 0,
-                prefetched: Some(oracle_stream_len),
-                _marker: core::marker::PhantomData,
-            });
-        }
-
         // We can expect that length of the result is returned via read.
         let remaining_len = NDS::csr_read_impl();
         let it = CsrBasedIOOracleIterator::<NDS> {
             remaining: remaining_len,
-            prefetched: None,
             _marker: core::marker::PhantomData,
         };
 
