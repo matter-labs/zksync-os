@@ -11,6 +11,7 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
+u256 = { path = "../supporting_crates/u256", default-features = false }
 evm_interpreter = { path = "../evm_interpreter"  }
 ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
@@ -33,11 +34,11 @@ testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 proving = ["crypto/proving"]
+delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/delegation"]
 # The finish method will just return inputs, so outputs can be processed outside bootloader
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
 state-diffs-pi = []
-delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/delegation"]
 
 [dev-dependencies]
 hex = { workspace = true }
