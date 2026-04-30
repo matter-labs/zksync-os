@@ -13,5 +13,5 @@ categories.workspace = true
 zk_ee = { path = "../zk_ee", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d" }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d" }

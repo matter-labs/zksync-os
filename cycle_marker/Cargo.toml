@@ -9,7 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["delegation", "cycle_marker"], optional = true }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", features = ["delegation", "cycle_marker"], optional = true }
 
 [features]
 use_risc_v_simulator = ["risc_v_simulator"]

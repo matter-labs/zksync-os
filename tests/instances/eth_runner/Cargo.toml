@@ -39,13 +39,13 @@ base64 = "0.21.7"
 crossbeam = "0.8"
 flate2 = "1"
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["delegation"], optional = true }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false, optional = true }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", features = ["delegation"], optional = true }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", default-features = false, optional = true }
 
 [dev-dependencies]
-# execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false, features = ["prover", "security_80"] }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false, features = ["prover", "security_80"] }
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["delegation"] }
+# execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", default-features = false, features = ["prover", "security_80"] }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", default-features = false, features = ["prover", "security_80"] }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", rev = "cef19b322a08ad0fc09c24cd0171eea4c9918a5d", features = ["delegation"] }
 
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]
