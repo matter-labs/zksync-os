@@ -263,6 +263,7 @@ dependencies = [
  "ruint",
  "storage_models",
  "strum_macros",
+ "u256",
  "zk_ee",
 ]
 
@@ -322,7 +323,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "common_constants"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a"
+source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#24a74aceac0805253537c2d749b018c55cff5777"
 
 [[package]]
 name = "common_constants"
@@ -865,7 +866,7 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#591efe90f1a5f0e0cfe23ac366bf0fc221fbfe0a"
+source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#24a74aceac0805253537c2d749b018c55cff5777"
 dependencies = [
  "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?branch=dev)",
  "seq-macro",

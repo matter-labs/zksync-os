@@ -15,6 +15,7 @@ pub mod p256_verify;
 pub mod point_evaluation;
 pub mod ripemd160;
 pub mod sha256;
+pub mod u256_advice;
 
 ///
 /// Internal utility function to reverse byte array
@@ -64,4 +65,33 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>
 {
     type Secp256k1ECRecover = ecrecover::EcRecoverImpl<USE_ADVICE>;
     type ModExp = modexp::ModExpImpl<USE_ADVICE>;
+
+    fn u256_div_rem<O: zk_ee::oracle::IOOracle>(
+        dividend_or_quotient: &mut u256::U256,
+        divisor_or_remainder: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        if USE_ADVICE {
+            u256_advice::u256_div_rem_with_advice(
+                dividend_or_quotient,
+                divisor_or_remainder,
+                oracle,
+            )
+        } else {
+            u256::U256::div_rem(dividend_or_quotient, divisor_or_remainder)
+        }
+    }
+
+    fn u256_mulmod<O: zk_ee::oracle::IOOracle>(
+        a: &mut u256::U256,
+        b: &mut u256::U256,
+        modulus_or_result: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        if USE_ADVICE {
+            u256_advice::u256_mulmod_with_advice(a, b, modulus_or_result, oracle)
+        } else {
+            u256::U256::mul_mod(a, b, modulus_or_result)
+        }
+    }
 }
