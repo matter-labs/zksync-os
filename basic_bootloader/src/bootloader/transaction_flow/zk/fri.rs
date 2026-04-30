@@ -142,7 +142,7 @@ fn verify_fri_statement_riscv<R>(
     statement_versioned_hash: Bytes32,
 ) -> Result<(), TxError>
 where
-    R: Iterator<Item = usize>,
+    R: ExactSizeIterator<Item = usize>,
 {
     // The witness recorder stores the FRI response using the normal
     // host-u64-to-guest-u32 split:
@@ -159,7 +159,9 @@ where
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-fn begin_fri_verifier_stream(response: &mut impl Iterator<Item = usize>) -> Result<usize, TxError> {
+fn begin_fri_verifier_stream(
+    response: &mut impl ExactSizeIterator<Item = usize>,
+) -> Result<usize, TxError> {
     let verifier_word_count = response.next().ok_or(TxError::Validation(
         InvalidTransaction::FriProofSidecarMissing,
     ))?;
@@ -167,6 +169,15 @@ fn begin_fri_verifier_stream(response: &mut impl Iterator<Item = usize>) -> Resu
         InvalidTransaction::FriProofVerificationFailed,
     ))?;
     if count_prefix_high != 0 {
+        return Err(TxError::Validation(
+            InvalidTransaction::FriProofVerificationFailed,
+        ));
+    }
+
+    // On RISC-V this is the host-declared remaining CSR word count
+    // surfaced through the generic oracle iterator.
+    let expected_remaining = verifier_word_count + usize::from(verifier_word_count % 2 == 1);
+    if response.len() != expected_remaining {
         return Err(TxError::Validation(
             InvalidTransaction::FriProofVerificationFailed,
         ));
@@ -200,6 +211,8 @@ fn finish_fri_verifier_stream_after_verifier(verifier_word_count: usize) -> Resu
     use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
 
     if verifier_word_count % 2 == 1 {
+        // The iterator is dropped before verifier execution; the verifier
+        // has consumed the payload from the same CSR stream by now.
         let trailing_padding = DefaultNonDeterminismSource::read_word() as usize;
         if trailing_padding != 0 {
             return Err(TxError::Validation(
@@ -290,5 +303,27 @@ mod tests {
         }
         finish_fri_verifier_stream(&mut response, verifier_word_count).unwrap();
         assert_eq!(response.next(), None);
+    }
+
+    #[test]
+    fn fri_verifier_stream_rejects_mismatched_remaining_words() {
+        let mut response = vec![3usize, 0, 11, 22].into_iter();
+
+        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
+        assert!(matches!(
+            err,
+            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
+        ));
+    }
+
+    #[test]
+    fn fri_verifier_stream_rejects_extra_remaining_words() {
+        let mut response = vec![3usize, 0, 11, 22, 33, 0, 0].into_iter();
+
+        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
+        assert!(matches!(
+            err,
+            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
+        ));
     }
 }
