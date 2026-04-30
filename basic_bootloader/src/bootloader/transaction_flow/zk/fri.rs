@@ -29,9 +29,9 @@ use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::Transaction;
 #[cfg(any(target_arch = "riscv32", test))]
-use crypto::{MiniDigest, sha3::Keccak256};
-use zk_ee::oracle::IOOracle;
+use crypto::{sha3::Keccak256, MiniDigest};
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
 use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
@@ -207,8 +207,8 @@ fn finish_fri_verifier_stream(
 
 #[cfg(target_arch = "riscv32")]
 fn finish_fri_verifier_stream_after_verifier(verifier_word_count: usize) -> Result<(), TxError> {
-    use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
     use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
+    use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
 
     if verifier_word_count % 2 == 1 {
         // The iterator is dropped before verifier execution; the verifier
