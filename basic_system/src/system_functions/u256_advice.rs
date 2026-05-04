@@ -2,10 +2,43 @@ use u256::U256;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID};
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::base_system_functions::{DivRemExt, MulmodExt};
 #[cfg(target_pointer_width = "32")]
 use zk_ee::utils::u256_arithmetic_advice::{U256DivRemAdviceParams, U256MulmodAdviceParams};
 #[cfg(target_pointer_width = "64")]
 use zk_ee::utils::u256_arithmetic_advice::{U256DivRemAdviceParams64, U256MulmodAdviceParams64};
+
+pub struct DivRemImpl<const USE_ADVICE: bool>;
+pub struct MulmodImpl<const USE_ADVICE: bool>;
+
+impl<const USE_ADVICE: bool> DivRemExt for DivRemImpl<USE_ADVICE> {
+    fn execute<O: IOOracle>(
+        dividend_or_quotient: &mut U256,
+        divisor_or_remainder: &mut U256,
+        oracle: &mut O,
+    ) {
+        if USE_ADVICE {
+            u256_div_rem_with_advice(dividend_or_quotient, divisor_or_remainder, oracle)
+        } else {
+            U256::div_rem(dividend_or_quotient, divisor_or_remainder)
+        }
+    }
+}
+
+impl<const USE_ADVICE: bool> MulmodExt for MulmodImpl<USE_ADVICE> {
+    fn execute<O: IOOracle>(
+        a: &mut U256,
+        b: &mut U256,
+        modulus_or_result: &mut U256,
+        oracle: &mut O,
+    ) {
+        if USE_ADVICE {
+            u256_mulmod_with_advice(a, b, modulus_or_result, oracle)
+        } else {
+            U256::mul_mod(a, b, modulus_or_result)
+        }
+    }
+}
 
 #[inline(always)]
 fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> [u64; 4] {
