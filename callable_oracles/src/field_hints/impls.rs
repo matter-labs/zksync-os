@@ -1,5 +1,5 @@
 use crypto::k256::{Scalar, U256};
-use crypto::secp256k1::FieldElement;
+use crypto::secp256k1::field::FieldElement;
 use zk_ee::utils::Bytes32;
 
 /// Computes the square root candidate for a secp256k1 base field element.
