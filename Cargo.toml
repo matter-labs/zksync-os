@@ -73,7 +73,7 @@ prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "24a74
 airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
 airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
 airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "a7f485ed", package = "airbender-crypto", default-features = false }
+crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "ee6f1cb8", package = "airbender-crypto", default-features = false }
 
 common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "24a74ace", default-features = false }
 seq-macro = { version = "0.3.6", default-features = false }

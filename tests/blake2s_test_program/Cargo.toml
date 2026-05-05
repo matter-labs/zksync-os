@@ -11,7 +11,7 @@ categories = ["cryptography"]
 
 [dependencies]
 airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "a7f485ed", package = "airbender-crypto", default-features = false, features = ["blake2s_tests"]}
+crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "ee6f1cb8", package = "airbender-crypto", default-features = false, features = ["blake2s_tests"]}
 
 [workspace]
 
