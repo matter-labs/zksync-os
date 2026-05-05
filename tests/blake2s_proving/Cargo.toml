@@ -1,0 +1,9 @@
+[package]
+name = "blake2s_proving"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zksync_os_runner = { path = "../../zksync_os_runner" }
+riscv_transpiler = { workspace = true }

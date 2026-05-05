@@ -30,7 +30,7 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
+              working-directory: ./tests/blake2s_test_program
               run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
@@ -48,7 +48,7 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
+              working-directory: ./tests/blake2s_test_program
               run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
@@ -61,10 +61,10 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
             - name: Compile blake test programs for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
+              working-directory: ./tests/blake2s_test_program
               run: ./dump_bin.sh
-            - name: Run crypto tests with overflow checks
-              run: RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto
+            - name: Run crypto-related tests with overflow checks
+              run: RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p basic_system system_functions
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -135,13 +135,12 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
+              working-directory: ./tests/blake2s_test_program
               run: ./dump_bin.sh
             - name: Run proving test
-              working-directory: ./crypto/src/blake2s
               run: |
-                  cargo test --release run_naive_test
-                  cargo test --release run_extended_delegation_test
+                  cargo test --release -p blake2s_proving run_naive_test
+                  cargo test --release -p blake2s_proving run_extended_delegation_test
 
     formatting:
         name: cargo fmt
