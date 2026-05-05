@@ -6,4 +6,3 @@ publish = false
 
 [dependencies]
 zksync_os_runner = { path = "../../zksync_os_runner" }
-riscv_transpiler = { workspace = true }
