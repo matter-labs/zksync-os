@@ -10,5 +10,5 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "097f1489" }
+airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
 crypto = { path = "../crypto", features = ["proving"]}
