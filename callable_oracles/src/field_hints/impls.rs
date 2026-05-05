@@ -16,7 +16,7 @@ pub(crate) fn secp256k1_base_field_sqrt(input: Bytes32) -> (Bytes32, bool) {
     assert!(el.normalizes_to_zero() == false);
     let mut candidate = el;
     // sqrt_in_place_inner returns true if the input is a quadratic residue (has a square root)
-    let is_quadratic_residue = candidate.sqrt_in_place_inner();
+    let is_quadratic_residue = candidate.sqrt_in_place();
     (
         Bytes32::from_array(candidate.to_bytes().into()),
         !is_quadratic_residue,
@@ -27,7 +27,7 @@ pub(crate) fn secp256k1_base_field_inverse(input: Bytes32) -> Bytes32 {
     // NOTE: input is in normal form
     let mut el = FieldElement::from_bytes(input.as_u8_array_ref()).expect("must be normalized");
     assert!(el.normalizes_to_zero() == false);
-    el.invert_in_place_inner();
+    el.invert_in_place();
     Bytes32::from_array(el.to_bytes().into())
 }
 
