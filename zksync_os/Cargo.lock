@@ -295,9 +295,9 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?rev=73f46c2bc86cdcefb878d6675abfcfc0eaf04607#73f46c2bc86cdcefb878d6675abfcfc0eaf04607"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 dependencies = [
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=73f46c2bc86cdcefb878d6675abfcfc0eaf04607)",
+ "common_constants",
  "unroll",
 ]
 
@@ -324,11 +324,6 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 name = "common_constants"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
-
-[[package]]
-name = "common_constants"
-version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?rev=73f46c2bc86cdcefb878d6675abfcfc0eaf04607#73f46c2bc86cdcefb878d6675abfcfc0eaf04607"
 
 [[package]]
 name = "const-hex"
@@ -868,7 +863,7 @@ name = "riscv_common"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 dependencies = [
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace)",
+ "common_constants",
  "seq-macro",
 ]
 
