@@ -1,6 +1,5 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
-use crypto::secp256k1::hooks::DefaultSecp256k1Hooks;
 use field_ops::Secp256k1HooksWithOracle;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
@@ -126,18 +125,13 @@ pub fn ecrecover_inner<O: IOOracle>(
     );
 
     let res = match oracle {
-        Some(oracle) => crypto::secp256k1::recover(
+        Some(oracle) => crypto::secp256k1::recover_with_hooks(
             &message,
             &signature,
             &recovery_id,
             &mut Secp256k1HooksWithOracle::new(oracle),
         ),
-        None => crypto::secp256k1::recover(
-            &message,
-            &signature,
-            &recovery_id,
-            &mut DefaultSecp256k1Hooks,
-        ),
+        None => crypto::secp256k1::recover(&message, &signature, &recovery_id),
     };
 
     let Ok(pk) = res else {
