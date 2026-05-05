@@ -29,6 +29,36 @@ version = "0.1.0"
 source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 
 [[package]]
+name = "airbender-crypto"
+version = "0.1.0"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=a21fa886#a21fa8862ab5c2d7103e332b710e37ad2e5e0237"
+dependencies = [
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "blake2",
+ "blake2s_u32",
+ "cfg-if",
+ "common_constants",
+ "const_for",
+ "educe",
+ "itertools 0.14.0",
+ "k256",
+ "num-bigint",
+ "num-traits",
+ "p256",
+ "ripemd",
+ "ruint",
+ "seq-macro",
+ "sha2",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "airbender-guest"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
@@ -233,10 +263,10 @@ checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 name = "basic_bootloader"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "basic_system",
  "cfg-if",
- "crypto",
  "cycle_marker",
  "evm_interpreter",
  "paste",
@@ -251,10 +281,10 @@ dependencies = [
 name = "basic_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "cc-traits",
  "const-hex",
- "crypto",
  "cycle_marker",
  "either",
  "evm_interpreter",
@@ -353,33 +383,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-serialize",
- "ark-std",
- "blake2",
- "blake2s_u32",
- "cfg-if",
- "const_for",
- "educe",
- "itertools 0.14.0",
- "k256",
- "num-bigint",
- "num-traits",
- "p256",
- "ripemd",
- "ruint",
- "sha2",
- "sha3",
- "zeroize",
 ]
 
 [[package]]
@@ -503,8 +506,8 @@ dependencies = [
 name = "evm_interpreter"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
- "crypto",
  "cycle_marker",
  "either",
  "paste",
@@ -734,10 +737,10 @@ dependencies = [
 name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "basic_bootloader",
  "basic_system",
  "cfg-if",
- "crypto",
  "evm_interpreter",
  "ruint",
  "system_hooks",
@@ -1137,9 +1140,9 @@ dependencies = [
 name = "zk_ee"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "cfg-if",
- "crypto",
  "cycle_marker",
  "paste",
  "ruint",
@@ -1150,7 +1153,7 @@ dependencies = [
 name = "zksync_os"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "airbender-sdk",
- "crypto",
  "proof_running_system",
 ]
