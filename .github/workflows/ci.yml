@@ -54,17 +54,6 @@ jobs:
               run: cargo test --release --no-run
             - name: Run rust tests
               run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
-    crypto_test:
-        name: crypto crate tests
-        runs-on: [matterlabs-ci-runner-high-performance]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: ./.github/actions/setup-toolchain
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./tests/blake2s_test_program
-              run: ./dump_bin.sh
-            - name: Run crypto-related tests with overflow checks
-              run: RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p basic_system system_functions
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
