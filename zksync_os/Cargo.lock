@@ -31,7 +31,7 @@ source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff6
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=2107afab#2107afab945ee27bf9f444e5c4bc16eb284b5f76"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=a7f485ed#a7f485edb8e3e58c48105ea240e1636865b6bba0"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
