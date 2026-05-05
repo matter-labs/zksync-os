@@ -15,7 +15,7 @@ basic_system = { package = "basic_system_forward", path = "../basic_system_forwa
 basic_bootloader = { package = "basic_bootloader_forward", path = "../basic_bootloader_forward", default-features = false }
 
 
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73f46c2bc86cdcefb878d6675abfcfc0eaf04607", optional = true }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "24a74ace", optional = true }
 num-bigint = { version = "*", optional = true }
 num-traits = { version = "*", optional = true }
 
