@@ -13,7 +13,7 @@ categories.workspace = true
 
 forward_system = { path = "../forward_system", default-features = false}
 zk_ee = { path = "../zk_ee", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }

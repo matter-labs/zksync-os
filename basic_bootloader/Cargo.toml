@@ -18,7 +18,7 @@ basic_system = { path = "../basic_system", default-features = false }
 ruint = { workspace = true, default-features = false }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 hex = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 paste = { workspace = true }

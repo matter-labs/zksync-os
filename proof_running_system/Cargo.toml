@@ -18,7 +18,7 @@ basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 ruint = { workspace = true, default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 cfg-if = { workspace = true }
 talc = { version = "4.4.3", default-features = false, features = ["allocator", "nightly_api"]}
 # talc = { path = "../../talc", default-features = false, features = ["allocator", "nightly_api"]}
