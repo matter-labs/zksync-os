@@ -17,7 +17,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 dependencies = [
  "bincode",
  "serde",
@@ -26,12 +26,12 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 
 [[package]]
 name = "airbender-guest"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -42,7 +42,7 @@ dependencies = [
 [[package]]
 name = "airbender-macros"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -52,7 +52,7 @@ dependencies = [
 [[package]]
 name = "airbender-rt"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 dependencies = [
  "getrandom",
  "riscv_common",
@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "airbender-sdk"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=097f1489#097f14891ae663fc51a2312da964780c3bdafbc7"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
 dependencies = [
  "airbender-codec",
  "airbender-guest",
@@ -323,7 +323,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "common_constants"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#24a74aceac0805253537c2d749b018c55cff5777"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 
 [[package]]
 name = "common_constants"
@@ -332,9 +332,9 @@ source = "git+https://github.com/matter-labs/zksync-airbender?rev=73f46c2bc86cdc
 
 [[package]]
 name = "const-hex"
-version = "1.18.1"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "531185e432bb31db1ecda541e9e7ab21468d4d844ad7505e0546a49b4945d49b"
+checksum = "20d9a563d167a9cce0f94153382b33cb6eded6dfabff03c69ad65a28ea1514e0"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -866,9 +866,9 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=dev#24a74aceac0805253537c2d749b018c55cff5777"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 dependencies = [
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?branch=dev)",
+ "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace)",
  "seq-macro",
 ]
 

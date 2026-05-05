@@ -18,6 +18,14 @@ use crate::{read_host_struct, read_u64_words};
 const _: () = assert!(U256_DIV_REM_ADVICE_QUERY_ID == 0x4005_0030);
 const _: () = assert!(U256_MULMOD_ADVICE_QUERY_ID == 0x4005_0031);
 
+#[inline]
+fn extract_single_ptr(query: Vec<usize>) -> usize {
+    let mut it = query.into_iter();
+    let ptr = it.next().expect("expected params pointer");
+    assert!(it.next().is_none(), "expected exactly one pointer");
+    ptr
+}
+
 struct ArithmeticQueryOutput {
     quotient: Vec<u64>,
     remainder: Vec<u64>,
@@ -114,19 +122,10 @@ fn process_modexp_riscv_query(
     query: Vec<usize>,
     memory: &dyn RamPeek,
 ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let mut it = query.into_iter();
-
-    let arg_ptr = it.next().expect("A u32 should've been passed in.");
-
-    assert!(
-        it.next().is_none(),
-        "A single RISC-V ptr should've been passed."
-    );
-
+    let arg_ptr = extract_single_ptr(query);
     assert!(arg_ptr.is_multiple_of(4));
-    const { assert!(core::mem::align_of::<ModExpAdviceParams>() == 4) }
+    const { assert!(core::mem::align_of::<ModExpAdviceParams>() <= 4) }
     const { assert!(core::mem::size_of::<ModExpAdviceParams>().is_multiple_of(4)) }
-
     let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr as u32) }.unwrap();
 
     const { assert!(8 == core::mem::size_of::<usize>()) };
@@ -151,9 +150,7 @@ fn process_modexp_riscv_query(
 fn process_modexp_native_query(
     query: Vec<usize>,
 ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let mut it = query.into_iter();
-    let arg_ptr = it.next().expect("A u64 should've been passed in.");
-    assert!(it.next().is_none(), "A single ptr should've been passed.");
+    let arg_ptr = extract_single_ptr(query);
     let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr as u64);
 
     assert!(arg.a_ptr > 0);
@@ -202,9 +199,10 @@ impl OracleQueryProcessor for ArithmeticQuery {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let mut it = query.into_iter();
-            let arg_ptr = it.next().expect("expected params pointer");
-            assert!(it.next().is_none(), "expected exactly 1 pointer");
+            let arg_ptr = extract_single_ptr(query);
+            assert!(arg_ptr.is_multiple_of(4));
+            const { assert!(core::mem::align_of::<U256DivRemAdviceParams>() <= 4) }
+            const { assert!(core::mem::size_of::<U256DivRemAdviceParams>().is_multiple_of(4)) }
             let params: U256DivRemAdviceParams =
                 unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
             let dividend = read_u256_from_guest(memory, params.dividend_ptr);
@@ -213,9 +211,10 @@ impl OracleQueryProcessor for ArithmeticQuery {
         }
 
         if query_id == U256_MULMOD_ADVICE_QUERY_ID {
-            let mut it = query.into_iter();
-            let arg_ptr = it.next().expect("expected params pointer");
-            assert!(it.next().is_none(), "expected exactly 1 pointer");
+            let arg_ptr = extract_single_ptr(query);
+            assert!(arg_ptr.is_multiple_of(4));
+            const { assert!(core::mem::align_of::<U256MulmodAdviceParams>() <= 4) }
+            const { assert!(core::mem::size_of::<U256MulmodAdviceParams>().is_multiple_of(4)) }
             let params: U256MulmodAdviceParams =
                 unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
             let a = read_u256_from_guest(memory, params.a_ptr);
@@ -253,9 +252,7 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let mut it = query.into_iter();
-            let arg_ptr = it.next().expect("expected params pointer");
-            assert!(it.next().is_none(), "expected exactly 1 pointer");
+            let arg_ptr = extract_single_ptr(query);
             let params: U256DivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
             let dividend = read_u256_from_host(params.dividend_ptr);
             let divisor = read_u256_from_host(params.divisor_ptr);
@@ -263,9 +260,7 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         }
 
         if query_id == U256_MULMOD_ADVICE_QUERY_ID {
-            let mut it = query.into_iter();
-            let arg_ptr = it.next().expect("expected params pointer");
-            assert!(it.next().is_none(), "expected exactly 1 pointer");
+            let arg_ptr = extract_single_ptr(query);
             let params: U256MulmodAdviceParams64 = read_host_struct(arg_ptr as u64);
             let a = read_u256_from_host(params.a_ptr);
             let b = read_u256_from_host(params.b_ptr);
@@ -586,14 +581,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "A u32 should've been passed in")]
+    #[should_panic(expected = "expected params pointer")]
     fn arithmetic_query_panics_on_empty_query() {
         let memory = TestMemorySource::default();
         let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![], &memory);
     }
 
     #[test]
-    #[should_panic(expected = "A single RISC-V ptr should've been passed")]
+    #[should_panic(expected = "expected exactly one pointer")]
     fn arithmetic_query_panics_on_extra_args() {
         let memory = TestMemorySource::default();
         let _ = ArithmeticQuery.process_buffered_query(

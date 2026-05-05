@@ -388,7 +388,7 @@ impl<T: UsizeSerializable, const N: usize> UsizeSerializable for [T; N] {
     }
 }
 
-impl<T: UsizeDeserializable, const N: usize> UsizeDeserializable for [T; N] {
+impl<T: UsizeDeserializable + Copy, const N: usize> UsizeDeserializable for [T; N] {
     const USIZE_LEN: usize = <T as UsizeDeserializable>::USIZE_LEN * N;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {

@@ -89,16 +89,14 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     let q_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let mut check_lo = U256::from_limbs(q_limbs);
-    let mut check_hi = U256::from_limbs(q_limbs);
-    check_lo.widening_mul_assign_into(&mut check_hi, divisor_or_remainder);
-
     let remainder = U256::from_limbs(r_limbs);
-    let carry = check_lo.overflowing_add_assign(&remainder);
 
-    core::ops::BitXorAssign::bitxor_assign(&mut check_lo, dividend_or_quotient);
-    core::ops::BitOrAssign::bitor_assign(&mut check_lo, &check_hi);
-    assert!(!carry && check_lo.is_zero());
+    // Verify: q * d + r == dividend (no overflow) and r < d
+    let mut prod_lo = U256::from_limbs(q_limbs);
+    let mut prod_hi = U256::from_limbs(q_limbs);
+    prod_lo.widening_mul_assign_into(&mut prod_hi, divisor_or_remainder);
+    let carry = prod_lo.overflowing_add_assign(&remainder);
+    assert!(!carry && prod_hi.is_zero() && prod_lo == *dividend_or_quotient);
 
     let mut r_check = U256::from_limbs(r_limbs);
     let borrow = r_check.overflowing_sub_assign(divisor_or_remainder);
@@ -153,35 +151,34 @@ pub fn u256_mulmod_with_advice<O: IOOracle>(
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let mut p0_lo = U256::from_limbs(q_lo_limbs);
-    let mut p0_hi = U256::from_limbs(q_lo_limbs);
-    p0_lo.widening_mul_assign_into(&mut p0_hi, modulus_or_result);
-
-    let mut p1_lo = U256::from_limbs(q_hi_limbs);
-    let mut p1_hi = U256::from_limbs(q_hi_limbs);
-    p1_lo.widening_mul_assign_into(&mut p1_hi, modulus_or_result);
-
     let remainder = U256::from_limbs(r_limbs);
-    let c1 = p0_lo.overflowing_add_assign(&remainder);
 
-    let c2a = p0_hi.overflowing_add_assign(&p1_lo);
+    // Compute q * m as 512-bit: (q_hi << 256 | q_lo) * m
+    let mut qm_lo = U256::from_limbs(q_lo_limbs);
+    let mut qm_mid = U256::from_limbs(q_lo_limbs);
+    qm_lo.widening_mul_assign_into(&mut qm_mid, modulus_or_result);
+
+    let mut qm_hi_lo = U256::from_limbs(q_hi_limbs);
+    let mut qm_hi_hi = U256::from_limbs(q_hi_limbs);
+    qm_hi_lo.widening_mul_assign_into(&mut qm_hi_hi, modulus_or_result);
+
+    // q * m + r (512-bit)
+    let c1 = qm_lo.overflowing_add_assign(&remainder);
+    let c2a = qm_mid.overflowing_add_assign(&qm_hi_lo);
     let c2b = if c1 {
-        p0_hi.overflowing_add_assign(&U256::one())
+        qm_mid.overflowing_add_assign(&U256::one())
     } else {
         false
     };
     assert!(!(c2a | c2b));
 
-    let a_limbs = *a.as_limbs();
-    let mut ab_lo = U256::from_limbs(a_limbs);
-    let mut ab_hi = U256::from_limbs(a_limbs);
+    // Compute a * b (512-bit)
+    let mut ab_lo = U256::from_limbs(*a.as_limbs());
+    let mut ab_hi = U256::from_limbs(*a.as_limbs());
     ab_lo.widening_mul_assign_into(&mut ab_hi, b);
 
-    core::ops::BitXorAssign::bitxor_assign(&mut p0_lo, &ab_lo);
-    core::ops::BitXorAssign::bitxor_assign(&mut p0_hi, &ab_hi);
-    core::ops::BitOrAssign::bitor_assign(&mut p0_lo, &p0_hi);
-    core::ops::BitOrAssign::bitor_assign(&mut p0_lo, &p1_hi);
-    assert!(p0_lo.is_zero());
+    // Verify: q * m + r == a * b and r < m
+    assert!(qm_lo == ab_lo && qm_mid == ab_hi && qm_hi_hi.is_zero());
 
     let mut r_check = U256::from_limbs(r_limbs);
     let borrow = r_check.overflowing_sub_assign(modulus_or_result);
