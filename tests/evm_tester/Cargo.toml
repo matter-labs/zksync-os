@@ -32,7 +32,7 @@ rayon = "=1.11.0"
 lazy_static = "=1.5.0"
 
 ruint = {version = "=1.16", features = ["primitive-types"]}
-alloy = { version = "=1.7.3", features = ["full", "eip712", "consensus"]}
+alloy = { version = "2", features = ["full", "eip712", "consensus"]}
 
 zksync_os_forward_system = {package = "forward_system", path = "../../forward_system" }
 zk_ee = { package = "zk_ee", path = "../../zk_ee" }
