@@ -4,6 +4,7 @@ import ast
 
 U256BIGINTOPS_RATIO = 4
 BLAKE2ROUNDEXTENDED_RATIO = 16
+KECCAK_RATIO = 16  # TODO: calibrate with actual proving benchmarks
 
 def parse_cycle_markers(text):
     results = {}
@@ -21,8 +22,9 @@ def parse_cycle_markers(text):
 
                 blake = delegs.get(1991, 0)
                 bigint = delegs.get(1994, 0)
-                weighted = blake * BLAKE2ROUNDEXTENDED_RATIO + bigint * U256BIGINTOPS_RATIO
-                weighted += sum(v for k, v in delegs.items() if k not in (1991, 1994))
+                keccak = delegs.get(1995, 0)
+                weighted = blake * BLAKE2ROUNDEXTENDED_RATIO + bigint * U256BIGINTOPS_RATIO + keccak * KECCAK_RATIO
+                weighted += sum(v for k, v in delegs.items() if k not in (1991, 1994, 1995))
 
                 eff = raw + weighted
                 prev = results.get(name)
@@ -31,6 +33,7 @@ def parse_cycle_markers(text):
                         'raw': raw,
                         'blake': blake,
                         'bigint': bigint,
+                        'keccak': keccak,
                         'effective': eff
                     }
     return results
@@ -87,6 +90,8 @@ def main():
             h_blake = h.get('blake', 0)
             b_bigint = b.get('bigint', 0)
             h_bigint = h.get('bigint', 0)
+            b_keccak = b.get('keccak', 0)
+            h_keccak = h.get('keccak', 0)
             b_eff = b.get('effective', 0)
             h_eff = h.get('effective', 0)
 
@@ -95,20 +100,22 @@ def main():
                 b_raw, h_raw, pct_change(b_raw, h_raw),
                 b_blake, h_blake, pct_change(b_blake, h_blake),
                 b_bigint, h_bigint, pct_change(b_bigint, h_bigint),
+                b_keccak, h_keccak, pct_change(b_keccak, h_keccak),
                 b_eff, h_eff, pct_change(b_eff, h_eff)
             ))
 
     # Markdown table
     print("### Benchmark report\n")
-    print("| Benchmark | Symbol | Base Eff | Head Eff (%) | Base Raw | Head Raw (%) | Base Blake | Head Blake (%) | Base Bigint | Head Bigint (%) |")
-    print("|-----------|--------|-----------|----------------|-----------|----------------|-------------|------------------|---------------|--------------------|")
+    print("| Benchmark | Symbol | Base Eff | Head Eff (%) | Base Raw | Head Raw (%) | Base Blake | Head Blake (%) | Base Bigint | Head Bigint (%) | Base Keccak | Head Keccak (%) |")
+    print("|-----------|--------|-----------|----------------|-----------|----------------|-------------|------------------|---------------|--------------------|--------------|--------------------|")
 
     for r in rows:
         print(f"| `{r[0]}` | `{r[1]}` "
-              f"| {r[11]:,} | {r[12]:,} ({r[13]:+.2f}%) "
+              f"| {r[14]:,} | {r[15]:,} ({r[16]:+.2f}%) "
               f"| {r[2]:,} | {r[3]:,} ({r[4]:+.2f}%) "
               f"| {r[5]:,} | {r[6]:,} ({r[7]:+.2f}%) "
-              f"| {r[8]:,} | {r[9]:,} ({r[10]:+.2f}%)")
+              f"| {r[8]:,} | {r[9]:,} ({r[10]:+.2f}%) "
+              f"| {r[11]:,} | {r[12]:,} ({r[13]:+.2f}%)")
 
 if __name__ == "__main__":
     main()
