@@ -13,16 +13,7 @@ pub fn read_memory_as_u8(memory: &dyn RamPeek, offset: u32, len: u32) -> Result<
 
     let mut result = Vec::with_capacity(len as usize);
 
-    if !offset.is_multiple_of(4) {
-        let max_take_bytes = 4 - offset;
-        let take_bytes = std::cmp::min(max_take_bytes, len);
-        let aligned = (offset >> 2) << 2;
-        let value = memory.peek_word(aligned);
-        let value = value.to_le_bytes();
-        result.extend_from_slice(&value[offset as usize % 4..][..take_bytes as usize]);
-        offset += max_take_bytes;
-        len -= take_bytes;
-    }
+    assert!(offset.is_multiple_of(4));
     // then aligned w
     while len >= 4 {
         let value = memory.peek_word(offset);
