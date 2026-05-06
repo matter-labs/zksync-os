@@ -22,7 +22,7 @@ modexp = { path = "../../../supporting_crates/modexp" }
 basic_bootloader = { path = "../../../basic_bootloader" }
 system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
-alloy = { version = "=1.7.3", features = ["full", "eip712"]}
+alloy = { version = "2", features = ["full", "eip712"]}
 alloy-rlp = "0.3.13"
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig" }
