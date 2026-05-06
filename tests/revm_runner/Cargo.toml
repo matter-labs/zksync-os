@@ -20,11 +20,11 @@ alloy = { workspace = true, default-features = false, features = [
     "serde-bincode-compat",
 ] }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
-revm = "=34.0.0"
-revm-inspectors = "0.34.0"
+revm = "=38.0.0"
+revm-inspectors = "0.39.0"
 log = { workspace = true }
 
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev="e664bfc9b6dbfe8cff1f7a069437f3116fefadc7" }
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "6777d01e63aa7bbe4b0478e496f0be04488ffc52" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }

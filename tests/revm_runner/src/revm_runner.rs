@@ -208,13 +208,16 @@ where
                     revm::context_interface::result::EVMError::Custom(e) => {
                         return Err(anyhow!("Other error: {}", e));
                     }
+                    revm::context_interface::result::EVMError::CustomAny(e) => {
+                        return Err(anyhow!("Other error: {}", e));
+                    }
                 },
             };
             let trace = evm
                 .0
                 .inspector
                 .geth_builder()
-                .geth_call_traces(Default::default(), tx_execution.gas_used());
+                .geth_call_traces(Default::default(), tx_execution.tx_gas_used());
             call_traces.push(trace);
             revm_results.push((replay_tx.original_tx_index, tx_execution));
             evm.0.inspector.fuse();
