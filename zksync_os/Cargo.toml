@@ -14,7 +14,7 @@ categories = ["cryptography"]
 [dependencies]
 airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8", default-features = false, features = ["allocator-custom"] }
 proof_running_system = { path = "../proof_running_system", default-features = false }
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "9d9c26f3", package = "airbender-crypto", default-features = false, optional = true }
+crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "25591cb2", package = "airbender-crypto", default-features = false, optional = true }
 
 [profile.dev]
 opt-level = 0

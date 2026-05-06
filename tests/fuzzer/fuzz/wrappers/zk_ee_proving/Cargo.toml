@@ -18,7 +18,7 @@ path = "../../../../../zk_ee/src/lib.rs"
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 cfg-if = "*"
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "9d9c26f3", package = "airbender-crypto", default-features = false, features = ["proving"] }
+crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "25591cb2", package = "airbender-crypto", default-features = false, features = ["proving"] }
 arrayvec = { version = "0.7.4", default-features = false }
 bitflags = { version = "2.6.0", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
