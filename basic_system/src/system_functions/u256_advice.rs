@@ -8,6 +8,71 @@ use zk_ee::utils::u256_arithmetic_advice::{U256DivRemAdviceParams, U256MulmodAdv
 #[cfg(target_pointer_width = "64")]
 use zk_ee::utils::u256_arithmetic_advice::{U256DivRemAdviceParams64, U256MulmodAdviceParams64};
 
+#[must_use]
+pub fn verify_div_rem_hint(
+    dividend: &U256,
+    divisor: &U256,
+    q_limbs: [u64; 4],
+    r_limbs: [u64; 4],
+) -> bool {
+    let remainder = U256::from_limbs(r_limbs);
+
+    let mut prod_lo = U256::from_limbs(q_limbs);
+    let mut prod_hi = U256::from_limbs(q_limbs);
+    prod_lo.widening_mul_assign_into(&mut prod_hi, divisor);
+    let carry = prod_lo.overflowing_add_assign(&remainder);
+    if carry || !prod_hi.is_zero() || prod_lo != *dividend {
+        return false;
+    }
+
+    let mut r_check = U256::from_limbs(r_limbs);
+    let borrow = r_check.overflowing_sub_assign(divisor);
+    borrow
+}
+
+#[must_use]
+pub fn verify_mulmod_hint(
+    a: &U256,
+    b: &U256,
+    modulus: &U256,
+    q_lo_limbs: [u64; 4],
+    q_hi_limbs: [u64; 4],
+    r_limbs: [u64; 4],
+) -> bool {
+    let remainder = U256::from_limbs(r_limbs);
+
+    let mut qm_lo = U256::from_limbs(q_lo_limbs);
+    let mut qm_mid = U256::from_limbs(q_lo_limbs);
+    qm_lo.widening_mul_assign_into(&mut qm_mid, modulus);
+
+    let mut qm_hi_lo = U256::from_limbs(q_hi_limbs);
+    let mut qm_hi_hi = U256::from_limbs(q_hi_limbs);
+    qm_hi_lo.widening_mul_assign_into(&mut qm_hi_hi, modulus);
+
+    let c1 = qm_lo.overflowing_add_assign(&remainder);
+    let c2a = qm_mid.overflowing_add_assign(&qm_hi_lo);
+    let c2b = if c1 {
+        qm_mid.overflowing_add_assign(&U256::one())
+    } else {
+        false
+    };
+    if c2a | c2b {
+        return false;
+    }
+
+    let mut ab_lo = U256::from_limbs(*a.as_limbs());
+    let mut ab_hi = U256::from_limbs(*a.as_limbs());
+    ab_lo.widening_mul_assign_into(&mut ab_hi, b);
+
+    if qm_lo != ab_lo || qm_mid != ab_hi || !qm_hi_hi.is_zero() {
+        return false;
+    }
+
+    let mut r_check = U256::from_limbs(r_limbs);
+    let borrow = r_check.overflowing_sub_assign(modulus);
+    borrow
+}
+
 pub struct DivRemImpl<const USE_ADVICE: bool>;
 pub struct MulmodImpl<const USE_ADVICE: bool>;
 
@@ -89,21 +154,10 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     let q_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let remainder = U256::from_limbs(r_limbs);
-
-    // Verify: q * d + r == dividend (no overflow) and r < d
-    let mut prod_lo = U256::from_limbs(q_limbs);
-    let mut prod_hi = U256::from_limbs(q_limbs);
-    prod_lo.widening_mul_assign_into(&mut prod_hi, divisor_or_remainder);
-    let carry = prod_lo.overflowing_add_assign(&remainder);
-    assert!(!carry && prod_hi.is_zero() && prod_lo == *dividend_or_quotient);
-
-    let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(divisor_or_remainder);
-    assert!(borrow);
+    assert!(verify_div_rem_hint(dividend_or_quotient, divisor_or_remainder, q_limbs, r_limbs));
 
     *dividend_or_quotient = U256::from_limbs(q_limbs);
-    *divisor_or_remainder = remainder;
+    *divisor_or_remainder = U256::from_limbs(r_limbs);
 }
 
 #[inline]
@@ -151,38 +205,7 @@ pub fn u256_mulmod_with_advice<O: IOOracle>(
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let remainder = U256::from_limbs(r_limbs);
+    assert!(verify_mulmod_hint(a, b, modulus_or_result, q_lo_limbs, q_hi_limbs, r_limbs));
 
-    // Compute q * m as 512-bit: (q_hi << 256 | q_lo) * m
-    let mut qm_lo = U256::from_limbs(q_lo_limbs);
-    let mut qm_mid = U256::from_limbs(q_lo_limbs);
-    qm_lo.widening_mul_assign_into(&mut qm_mid, modulus_or_result);
-
-    let mut qm_hi_lo = U256::from_limbs(q_hi_limbs);
-    let mut qm_hi_hi = U256::from_limbs(q_hi_limbs);
-    qm_hi_lo.widening_mul_assign_into(&mut qm_hi_hi, modulus_or_result);
-
-    // q * m + r (512-bit)
-    let c1 = qm_lo.overflowing_add_assign(&remainder);
-    let c2a = qm_mid.overflowing_add_assign(&qm_hi_lo);
-    let c2b = if c1 {
-        qm_mid.overflowing_add_assign(&U256::one())
-    } else {
-        false
-    };
-    assert!(!(c2a | c2b));
-
-    // Compute a * b (512-bit)
-    let mut ab_lo = U256::from_limbs(*a.as_limbs());
-    let mut ab_hi = U256::from_limbs(*a.as_limbs());
-    ab_lo.widening_mul_assign_into(&mut ab_hi, b);
-
-    // Verify: q * m + r == a * b and r < m
-    assert!(qm_lo == ab_lo && qm_mid == ab_hi && qm_hi_hi.is_zero());
-
-    let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(modulus_or_result);
-    assert!(borrow);
-
-    *modulus_or_result = remainder;
+    *modulus_or_result = U256::from_limbs(r_limbs);
 }
