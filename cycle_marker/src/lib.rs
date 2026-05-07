@@ -332,7 +332,7 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     const KECCAK_DELEGATION_ID: u32 = 1995;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;
-    const KECCAK_DELEGATION_COEFF: u64 = 16;
+    const KECCAK_DELEGATION_COEFF: u64 = 4;
     const BLOCK_WIDE_LABEL: &str = "process_block";
 
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));

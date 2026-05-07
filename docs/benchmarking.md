@@ -8,7 +8,7 @@ ZKsync OS performance is measured in **effective RISC-V cycles**, not wall-clock
 effective_cycles = raw_risc_v_cycles
                  + 16 × blake_delegations
                  + 4  × bigint_delegations
-                 + 16 × keccak_delegations
+                 + 4  × keccak_delegations
 ```
 
 The repository currently uses two closely related metrics:

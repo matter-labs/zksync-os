@@ -31,7 +31,7 @@ source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff6
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=25591cb2#25591cb233d76703596343fb1e1acc3de0e6f31e"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=71ebcec#71ebcec782d4b79a240ac1c296c9928ff48498c5"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -42,7 +42,7 @@ dependencies = [
  "blake2",
  "blake2s_u32",
  "cfg-if",
- "common_constants",
+ "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5)",
  "const_for",
  "educe",
  "itertools 0.14.0",
@@ -324,9 +324,9 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5#73d69b5346b3c2350fa104a56ec4df78840cea99"
 dependencies = [
- "common_constants",
+ "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5)",
  "unroll",
 ]
 
@@ -353,6 +353,14 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 name = "common_constants"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
+
+[[package]]
+name = "common_constants"
+version = "0.1.0"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5#73d69b5346b3c2350fa104a56ec4df78840cea99"
+dependencies = [
+ "seq-macro",
+]
 
 [[package]]
 name = "const-hex"
@@ -855,7 +863,7 @@ name = "riscv_common"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 dependencies = [
- "common_constants",
+ "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace)",
  "seq-macro",
 ]
 

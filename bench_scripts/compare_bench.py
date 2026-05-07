@@ -4,7 +4,7 @@ import ast
 
 U256BIGINTOPS_RATIO = 4
 BLAKE2ROUNDEXTENDED_RATIO = 16
-KECCAK_RATIO = 16  # TODO: calibrate with actual proving benchmarks
+KECCAK_RATIO = 4  # TODO: calibrate with actual proving benchmarks
 
 def parse_cycle_markers(text):
     results = {}

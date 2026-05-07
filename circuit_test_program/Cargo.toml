@@ -11,4 +11,4 @@ categories = ["cryptography"]
 
 [dependencies]
 airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "25591cb2", package = "airbender-crypto", default-features = false, features = ["proving"] }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "71ebcec", package = "airbender-crypto", default-features = false, features = ["proving"] }
