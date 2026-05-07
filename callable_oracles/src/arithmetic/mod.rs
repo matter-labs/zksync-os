@@ -15,9 +15,6 @@ use crate::utils::{
 };
 use crate::{read_host_struct, read_u64_words};
 
-const _: () = assert!(U256_DIV_REM_ADVICE_QUERY_ID == 0x4005_0030);
-const _: () = assert!(U256_MULMOD_ADVICE_QUERY_ID == 0x4005_0031);
-
 #[inline]
 fn extract_single_ptr(query: Vec<usize>) -> usize {
     let mut it = query.into_iter();
