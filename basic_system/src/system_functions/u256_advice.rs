@@ -26,8 +26,7 @@ pub fn verify_div_rem_hint(
     }
 
     let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(divisor);
-    borrow
+    r_check.overflowing_sub_assign(divisor)
 }
 
 #[must_use]
@@ -60,8 +59,8 @@ pub fn verify_mulmod_hint(
         return false;
     }
 
-    let mut ab_lo = U256::from_limbs(*a.as_limbs());
-    let mut ab_hi = U256::from_limbs(*a.as_limbs());
+    let mut ab_lo = a.clone();
+    let mut ab_hi = a.clone();
     ab_lo.widening_mul_assign_into(&mut ab_hi, b);
 
     if qm_lo != ab_lo || qm_mid != ab_hi || !qm_hi_hi.is_zero() {
@@ -69,8 +68,7 @@ pub fn verify_mulmod_hint(
     }
 
     let mut r_check = U256::from_limbs(r_limbs);
-    let borrow = r_check.overflowing_sub_assign(modulus);
-    borrow
+    r_check.overflowing_sub_assign(modulus)
 }
 
 pub struct DivRemImpl<const USE_ADVICE: bool>;
