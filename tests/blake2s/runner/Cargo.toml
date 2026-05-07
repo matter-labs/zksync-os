@@ -1,5 +1,5 @@
 [package]
-name = "blake2s_proving"
+name = "blake2s_runner"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

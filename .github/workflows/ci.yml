@@ -128,8 +128,8 @@ jobs:
               run: ./dump_bin.sh
             - name: Run proving test
               run: |
-                  cargo test --release -p blake2s_proving run_naive_test
-                  cargo test --release -p blake2s_proving run_extended_delegation_test
+                  cargo test --release -p blake2s_runner run_naive_test
+                  cargo test --release -p blake2s_runner run_extended_delegation_test
 
     formatting:
         name: cargo fmt
