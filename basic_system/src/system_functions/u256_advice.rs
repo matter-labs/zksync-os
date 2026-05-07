@@ -154,7 +154,12 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     let q_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    assert!(verify_div_rem_hint(dividend_or_quotient, divisor_or_remainder, q_limbs, r_limbs));
+    assert!(verify_div_rem_hint(
+        dividend_or_quotient,
+        divisor_or_remainder,
+        q_limbs,
+        r_limbs
+    ));
 
     *dividend_or_quotient = U256::from_limbs(q_limbs);
     *divisor_or_remainder = U256::from_limbs(r_limbs);
@@ -205,7 +210,14 @@ pub fn u256_mulmod_with_advice<O: IOOracle>(
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
     let r_limbs = read_limbs_from_oracle_response(&mut it);
 
-    assert!(verify_mulmod_hint(a, b, modulus_or_result, q_lo_limbs, q_hi_limbs, r_limbs));
+    assert!(verify_mulmod_hint(
+        a,
+        b,
+        modulus_or_result,
+        q_lo_limbs,
+        q_hi_limbs,
+        r_limbs
+    ));
 
     *modulus_or_result = U256::from_limbs(r_limbs);
 }
