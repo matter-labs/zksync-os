@@ -5,7 +5,7 @@ mod tests {
 
     fn blake2s_dist_dir(app_name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_WORKSPACE_DIR"))
-            .join("tests/blake2s_test_program/dist")
+            .join("tests/blake2s/test_program/dist")
             .join(app_name)
     }
 

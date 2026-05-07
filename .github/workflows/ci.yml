@@ -30,7 +30,7 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile blake test programs for RISC-V
-              working-directory: ./tests/blake2s_test_program
+              working-directory: ./tests/blake2s/test_program
               run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
@@ -48,7 +48,7 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile blake test programs for RISC-V
-              working-directory: ./tests/blake2s_test_program
+              working-directory: ./tests/blake2s/test_program
               run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
@@ -124,7 +124,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
-              working-directory: ./tests/blake2s_test_program
+              working-directory: ./tests/blake2s/test_program
               run: ./dump_bin.sh
             - name: Run proving test
               run: |

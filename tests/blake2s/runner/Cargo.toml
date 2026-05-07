@@ -9,4 +9,4 @@ license.workspace = true
 publish = false
 
 [dependencies]
-zksync_os_runner = { path = "../../zksync_os_runner" }
+zksync_os_runner = { path = "../../../zksync_os_runner" }
