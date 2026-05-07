@@ -392,7 +392,7 @@ impl<T: UsizeDeserializable + Copy, const N: usize> UsizeDeserializable for [T; 
     const USIZE_LEN: usize = <T as UsizeDeserializable>::USIZE_LEN * N;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let mut result: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut result: [MaybeUninit<T>; N] = [const { MaybeUninit::uninit() }; N];
         for slot in result.iter_mut() {
             slot.write(<T as UsizeDeserializable>::from_iter(src)?);
         }
