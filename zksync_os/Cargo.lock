@@ -17,7 +17,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "bincode",
  "serde",
@@ -26,12 +26,12 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=71ebcec#71ebcec782d4b79a240ac1c296c9928ff48498c5"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -42,7 +42,7 @@ dependencies = [
  "blake2",
  "blake2s_u32",
  "cfg-if",
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5)",
+ "common_constants",
  "const_for",
  "educe",
  "itertools 0.14.0",
@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "airbender-guest"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -72,7 +72,7 @@ dependencies = [
 [[package]]
 name = "airbender-macros"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -82,7 +82,7 @@ dependencies = [
 [[package]]
 name = "airbender-rt"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "getrandom",
  "riscv_common",
@@ -91,7 +91,7 @@ dependencies = [
 [[package]]
 name = "airbender-sdk"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=ff643be8#ff643be8058b0033c67945665791a1af52286092"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "airbender-codec",
  "airbender-guest",
@@ -326,7 +326,7 @@ name = "blake2s_u32"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5#73d69b5346b3c2350fa104a56ec4df78840cea99"
 dependencies = [
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5)",
+ "common_constants",
  "unroll",
 ]
 
@@ -348,11 +348,6 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "common_constants"
-version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
 
 [[package]]
 name = "common_constants"
@@ -861,9 +856,9 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace#24a74aceac0805253537c2d749b018c55cff5777"
+source = "git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5#73d69b5346b3c2350fa104a56ec4df78840cea99"
 dependencies = [
- "common_constants 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?rev=24a74ace)",
+ "common_constants",
  "seq-macro",
 ]
 

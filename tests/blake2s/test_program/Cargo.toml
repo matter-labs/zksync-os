@@ -10,8 +10,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "ff643be8" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "71ebcec", package = "airbender-crypto", default-features = false, features = ["blake2s_tests"]}
+airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false, features = ["blake2s_tests"]}
 
 [workspace]
 

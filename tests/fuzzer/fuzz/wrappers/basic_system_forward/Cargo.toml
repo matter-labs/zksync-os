@@ -17,7 +17,7 @@ path = "../../../../../basic_system/src/lib.rs"
 zk_ee = { package = "zk_ee_forward", path = "../zk_ee_forward", default-features = false }
 evm_interpreter = { package = "evm_interpreter_forward", path = "../evm_interpreter_forward"  }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "71ebcec", package = "airbender-crypto", default-features = false, features = ["secp256k1-static-context"] }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false, features = ["secp256k1-static-context"] }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
 storage_models = { package = "storage_models_forward", path = "../storage_models_forward", default-features = false }
@@ -49,7 +49,7 @@ state-diffs-pi = []
 [dev-dependencies]
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "71ebcec", package = "airbender-crypto", default-features = false, features = ["secp256k1-static-context", "testing"] }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false, features = ["secp256k1-static-context", "testing"] }
 num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
