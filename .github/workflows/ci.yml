@@ -29,9 +29,6 @@ jobs:
               run: |
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./tests/blake2s/test_program
-              run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
@@ -47,9 +44,6 @@ jobs:
               run: |
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
-            - name: Compile blake test programs for RISC-V
-              working-directory: ./tests/blake2s/test_program
-              run: ./dump_bin.sh
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
@@ -116,20 +110,6 @@ jobs:
             - name: Run ethereum block
               working-directory: ./tests/instances/eth_runner
               run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054
-
-    blake_tests:
-        name: blake_tests
-        runs-on: [matterlabs-ci-runner-highmem]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: ./.github/actions/setup-toolchain
-            - name: Compile for RISC-V
-              working-directory: ./tests/blake2s/test_program
-              run: ./dump_bin.sh
-            - name: Run proving test
-              run: |
-                  cargo test --release -p blake2s_runner run_naive_test
-                  cargo test --release -p blake2s_runner run_extended_delegation_test
 
     formatting:
         name: cargo fmt
