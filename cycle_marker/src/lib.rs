@@ -328,7 +328,7 @@ pub struct CycleMarkerResults {
 pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;
-    // TODO: calibrate keccak coefficient with actual proving benchmarks
+    // TODO(EVM-1242): calibrate keccak coefficient with actual proving benchmarks
     const KECCAK_DELEGATION_ID: u32 = 1995;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;

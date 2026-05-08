@@ -15,7 +15,7 @@ pub(crate) fn secp256k1_base_field_sqrt(input: Bytes32) -> (Bytes32, bool) {
     let el = FieldElement::from_bytes(input.as_u8_array_ref()).expect("must be normalized");
     assert!(el.normalizes_to_zero() == false);
     let mut candidate = el;
-    // sqrt_in_place_inner returns true if the input is a quadratic residue (has a square root)
+    // sqrt_in_place returns true if the input is a quadratic residue (has a square root)
     let is_quadratic_residue = candidate.sqrt_in_place();
     (
         Bytes32::from_array(candidate.to_bytes().into()),
