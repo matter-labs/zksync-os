@@ -21,7 +21,9 @@ pub(crate) mod mock_precompiles {
             _allocator: A,
         ) -> Result<(), SubsystemError<MissingSystemFunctionErrors>> {
             if input.len() != 213 {
-                return Err(interface_error!(MockedSystemFunctionError::InvalidInputLength).into());
+                return Err(interface_error!(
+                    MockedSystemFunctionError::InvalidInputLength
+                ));
             }
             Ok(())
         }
@@ -38,7 +40,9 @@ pub(crate) mod mock_precompiles {
             _allocator: A,
         ) -> Result<(), SubsystemError<MissingSystemFunctionErrors>> {
             if input.len() != 192 {
-                return Err(interface_error!(MockedSystemFunctionError::InvalidInputLength).into());
+                return Err(interface_error!(
+                    MockedSystemFunctionError::InvalidInputLength
+                ));
             }
             Ok(())
         }
