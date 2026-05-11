@@ -143,7 +143,7 @@ jobs:
             - name: Run Clippy
               working-directory: ./zksync_os
               run: |
-                  cargo clippy -- -D warnings
+                  cargo clippy --features proving -- -D warnings
 
     typos:
         name: typos check

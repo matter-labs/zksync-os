@@ -23,6 +23,7 @@ mod csr {
             read_word() as usize
         }
         #[inline(always)]
+        #[allow(clippy::unit_arg)]
         fn csr_write_impl(value: usize) {
             core::hint::black_box(write_word(value as u32))
         }
