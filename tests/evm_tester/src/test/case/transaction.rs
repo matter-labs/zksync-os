@@ -262,7 +262,9 @@ pub fn encode_transaction(
                 tx.secret_key.as_slice(),
             )
             .unwrap();
-            Ok(helpers::sign_and_encode_transaction_request(request, &wallet))
+            Ok(helpers::sign_and_encode_transaction_request(
+                request, &wallet,
+            ))
         }
         Transaction::Signed(tx) => {
             let env = to_alloy_envelope(tx, system_context.chain_id)?;

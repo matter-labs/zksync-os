@@ -30,9 +30,9 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
-              run: cargo test --release --no-run
+              run: cargo test --workspace --release --no-run
             - name: Run rust tests
-              run: cargo test --release
+              run: cargo test --workspace --release
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -45,9 +45,9 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
-              run: cargo test --release --no-run
+              run: cargo test --workspace --release --no-run
             - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
+              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --workspace --release
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -132,7 +132,7 @@ jobs:
                   components: clippy
             - name: Run Clippy
               run: |
-                  cargo clippy --all -- -D warnings
+                  cargo clippy --workspace -- -D warnings
 
     typos:
         name: typos check

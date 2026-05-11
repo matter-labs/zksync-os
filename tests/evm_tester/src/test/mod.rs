@@ -231,7 +231,12 @@ impl Test {
                 }
             }
 
-            let cases = Case::from_ethereum_spec_test(&test_definition, filters, &hardfork, hardfork_was_overridden);
+            let cases = Case::from_ethereum_spec_test(
+                &test_definition,
+                filters,
+                &hardfork,
+                hardfork_was_overridden,
+            );
 
             // read mutants
             // filter all files in directory by regexp and run

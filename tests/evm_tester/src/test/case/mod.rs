@@ -36,8 +36,7 @@ const BEACON_ROOTS: Address = address!("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac
 /// Deposit contract
 const DEPOSIT_CONTRACT: Address = address!("0x00000000219ab540356cBB839Cbe05303d7705Fa");
 /// EIP-7002 withdrawal request system contract
-const WITHDRAWAL_REQUEST_CONTRACT: Address =
-    address!("0x00000961Ef480Eb55e80D19Ad83579a64c007002");
+const WITHDRAWAL_REQUEST_CONTRACT: Address = address!("0x00000961Ef480Eb55e80D19Ad83579a64c007002");
 /// EIP-7251 consolidation request system contract
 const CONSOLIDATION_REQUEST_CONTRACT: Address =
     address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
@@ -540,12 +539,18 @@ impl Case {
         hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         match test_definition {
-            TestStructure::State(test) => {
-                Self::from_ethereum_spec_state_test(test, filters, hardfork_version, hardfork_was_overridden)
-            }
-            TestStructure::Blockchain(test) => {
-                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version, hardfork_was_overridden)
-            }
+            TestStructure::State(test) => Self::from_ethereum_spec_state_test(
+                test,
+                filters,
+                hardfork_version,
+                hardfork_was_overridden,
+            ),
+            TestStructure::Blockchain(test) => Self::from_ethereum_spec_blockchain_test(
+                test,
+                filters,
+                hardfork_version,
+                hardfork_was_overridden,
+            ),
         }
     }
 
