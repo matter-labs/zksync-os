@@ -134,6 +134,17 @@ jobs:
               run: |
                   cargo clippy --workspace -- -D warnings
 
+    clippy_zksync_os:
+        name: Clippy Lint Check (zksync_os)
+        runs-on: [matterlabs-ci-runner]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: ./.github/actions/setup-toolchain
+            - name: Run Clippy
+              working-directory: ./zksync_os
+              run: |
+                  cargo clippy -- -D warnings
+
     typos:
         name: typos check
         runs-on: ubuntu-latest
