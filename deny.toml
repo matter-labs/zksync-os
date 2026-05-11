@@ -1,6 +1,10 @@
 [advisories]
 ignore = [
-    { id = "RUSTSEC-2026-0097", reason = "Unsoundness in rand <0.9.3 only triggers with a custom logger calling rand::rng() during reseeding — not applicable. Transitive dep via ark-std 0.5 and alloy-signer-local; no 0.8.x patch exists, waiting for upstream (https://github.com/arkworks-rs/std/pull/60)" }
+    { id = "RUSTSEC-2026-0097", reason = "Unsoundness in rand <0.9.3 only triggers with a custom logger calling rand::rng() during reseeding — not applicable. Transitive dep via ark-std 0.5 and alloy-signer-local; no 0.8.x patch exists, waiting for upstream (https://github.com/arkworks-rs/std/pull/60)" },
+    { id = "RUSTSEC-2024-0421", reason = "idna 0.4.0 via web3 0.19 (unmaintained) — only used in evm-tester test tooling, not production code" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7 via web3 0.19 (unmaintained) — only used in evm-tester test tooling, not production code" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7 via web3 0.19 (unmaintained) — only used in evm-tester test tooling, not production code" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101.7 via web3 0.19 (unmaintained) — only used in evm-tester test tooling, not production code" },
 ]
 
 [bans]
