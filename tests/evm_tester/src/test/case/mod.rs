@@ -8,17 +8,14 @@ pub mod post_state_for_case;
 pub mod pre_block;
 pub mod transaction;
 
-use alloy::{primitives::*, serde::quantity::vec};
+use alloy::primitives::*;
 use itertools::Itertools;
 use map::hash_set::HashSet;
 use pre_block::PreBlock;
-use transaction::{transaction_from_tx_section, Transaction};
+use transaction::transaction_from_tx_section;
 
 use crate::{
-    test::{
-        filler_structure::{AccountFillerStruct, Labels},
-        test_structure::pre_state::AccountState,
-    },
+    test::filler_structure::{AccountFillerStruct, Labels},
     vm::zk_ee::{ZKsyncOS, ZKsyncOSEVMContext, ZKsyncOSTxExecutionResult},
     Filters, Summary,
 };
@@ -26,9 +23,8 @@ use crate::{
 use super::{
     filler_structure::{ExpectStructure, FillerStructure, LabelValue, U256Parsed},
     test_structure::{
-        env_section::EnvSection,
-        pre_state::{self, PreState},
-        BlockchainTestStructure, StateTestStructure, TestStructure,
+        env_section::EnvSection, pre_state::PreState, BlockchainTestStructure, StateTestStructure,
+        TestStructure,
     },
 };
 
@@ -84,6 +80,7 @@ pub struct Case {
     pub skip_balance_check_for_sender_and_coinbase: bool,
 }
 
+#[allow(dead_code)]
 fn parse_label(val: &LabelValue) -> Vec<String> {
     match val {
         LabelValue::Number(index) => {
@@ -111,11 +108,13 @@ fn parse_label(val: &LabelValue) -> Vec<String> {
     }
 }
 
+#[allow(dead_code)]
 fn fill_from_label_value(label_value: &LabelValue, indexes: &mut Vec<String>) {
     let labels = parse_label(label_value);
     indexes.extend(labels);
 }
 
+#[allow(dead_code)]
 fn fill_indexes_for_expected_states(labels: &Labels, indexes: &mut Vec<String>) {
     match labels {
         Labels::Single(label_value) => {
@@ -130,6 +129,7 @@ fn fill_indexes_for_expected_states(labels: &Labels, indexes: &mut Vec<String>) 
 }
 
 impl Case {
+    #[allow(dead_code)]
     pub fn from_ethereum_test(
         test_definition: &TestStructure,
         test_filler: &FillerStructure,
@@ -179,7 +179,7 @@ impl Case {
             indexes_for_expected_results.push(indexes_for_struct);
         }
 
-        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &Vec<String>) -> bool {
+        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &[String]) -> bool {
             ruleset.contains(&"-1".to_string())
                 || ruleset.contains(&index.to_string())
                 || (label.is_some() && ruleset.contains(label.as_ref().unwrap()))
@@ -212,14 +212,8 @@ impl Case {
                 for (value_index, value) in test_definition.transaction.value.iter().enumerate() {
                     let case_idx = case_counter;
 
-                    let label = if test_definition._info.labels.is_some() {
-                        test_definition
-                            ._info
-                            .labels
-                            .as_ref()
-                            .unwrap()
-                            .get(&data_index)
-                            .cloned()
+                    let label = if let Some(labels) = test_definition._info.labels.as_ref() {
+                        labels.get(&data_index).cloned()
                     } else {
                         None
                     };
@@ -337,7 +331,7 @@ impl Case {
             indexes_for_expected_results.push(indexes_for_struct);
         }
 
-        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &Vec<String>) -> bool {
+        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &[String]) -> bool {
             ruleset.contains(&"-1".to_string())
                 || ruleset.contains(&index.to_string())
                 || (label.is_some() && ruleset.contains(label.as_ref().unwrap()))
@@ -368,14 +362,8 @@ impl Case {
                 for (value_index, value) in test_definition.transaction.value.iter().enumerate() {
                     let case_idx = case_counter;
 
-                    let label = if test_definition._info.labels.is_some() {
-                        test_definition
-                            ._info
-                            .labels
-                            .as_ref()
-                            .unwrap()
-                            .get(&data_index)
-                            .cloned()
+                    let label = if let Some(labels) = test_definition._info.labels.as_ref() {
+                        labels.get(&data_index).cloned()
                     } else {
                         None
                     };
@@ -588,7 +576,7 @@ impl Case {
 
             vm.set_nonce(address, state.nonce);
 
-            if state.code.0.len() > 0 {
+            if !state.code.0.is_empty() {
                 vm.set_predeployed_evm_contract(address, state.code, state.nonce);
             }
 
@@ -633,13 +621,12 @@ impl Case {
 
         // TODO merge with prestate!
         for (address, filler_struct) in self.expected_state {
-            if filler_struct.balance.is_some() {
+            if let Some(expected_balance) = filler_struct.balance.as_ref() {
                 // We skip balance check when [skip_balance_check_for_sender_and_coinbase] is set
                 // and the address is a coinbase or sender.
                 let skip_bal_check = self.skip_balance_check_for_sender_and_coinbase
                     && coinbase_and_sender_addresses.contains(&address);
                 if !skip_bal_check {
-                    let expected_balance = filler_struct.balance.as_ref().unwrap();
                     if let Some(expected_balance_value) = expected_balance.as_value() {
                         if vm.get_balance(address) != expected_balance_value {
                             expected = Some(format!(
@@ -653,8 +640,7 @@ impl Case {
                     }
                 }
             }
-            if filler_struct.nonce.is_some() {
-                let expected_nonce = filler_struct.nonce.as_ref().unwrap();
+            if let Some(expected_nonce) = filler_struct.nonce.as_ref() {
                 if let Some(expected_nonce_value) = expected_nonce.as_value() {
                     if vm.get_nonce(address) != expected_nonce_value {
                         expected =
@@ -666,10 +652,10 @@ impl Case {
                 }
             }
 
-            if filler_struct.code.is_some() {
+            if let Some(code) = filler_struct.code.as_ref() {
                 let actual_code = vm.get_code(address).unwrap_or_default();
 
-                if actual_code != filler_struct.code.as_ref().unwrap().0 .0 {
+                if actual_code != code.0 .0 {
                     expected = Some(format!("Code of {address:?} is invalid"));
                     actual = None;
 
@@ -678,11 +664,10 @@ impl Case {
                 }
             }
 
-            if filler_struct.storage.is_some() {
+            if let Some(storage_map) = filler_struct.storage.as_ref() {
                 let mut has_storage_divergence = false;
-                let storage =
-                    AccountFillerStruct::parse_storage(filler_struct.storage.as_ref().unwrap());
-                for (key, _) in &storage {
+                let storage = AccountFillerStruct::parse_storage(storage_map);
+                for key in storage.keys() {
                     let key_u256 =
                         U256::from_str_radix(&key.as_value().unwrap().to_string(), 10).unwrap();
 
@@ -783,13 +768,14 @@ impl Case {
         proof_run: bool,
         block_hashes: &mut [ruint::aliases::U256; 256],
     ) -> Result<Vec<ZKsyncOSTxExecutionResult>, String> {
-        let mut system_context = ZKsyncOSEVMContext::default();
-
-        system_context.chain_id = 1;
-        system_context.block_number = pre_block.env.current_number.try_into().unwrap();
-        system_context.block_timestamp = pre_block.env.current_timestamp.try_into().unwrap();
-        system_context.coinbase = pre_block.env.current_coinbase;
-        system_context.block_gas_limit = pre_block.env.current_gas_limit;
+        let mut system_context = ZKsyncOSEVMContext {
+            chain_id: 1,
+            block_number: pre_block.env.current_number.try_into().unwrap(),
+            block_timestamp: pre_block.env.current_timestamp.try_into().unwrap(),
+            coinbase: pre_block.env.current_coinbase,
+            block_gas_limit: pre_block.env.current_gas_limit,
+            ..Default::default()
+        };
         let blob_fee = pre_block
             .env
             .current_excess_blob_gas
@@ -812,7 +798,7 @@ impl Case {
             block_hashes[i] = block_hashes[i + 1];
         }
         block_hashes[255] = parent_hash;
-        vm.chain.set_block_hashes(block_hashes.clone());
+        vm.chain.set_block_hashes(*block_hashes);
 
         if let Some(base_fee) = pre_block.env.current_base_fee {
             system_context.base_fee = base_fee;

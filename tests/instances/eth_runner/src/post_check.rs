@@ -333,7 +333,7 @@ fn zksync_os_output_into_account_state(
     Ok(updates)
 }
 
-fn compute_tx_rolling_hash_for_receipts(receipts: &Vec<TransactionReceipt>) -> [u8; 32] {
+fn compute_tx_rolling_hash_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
     let mut hasher = rig::crypto::sha3::Keccak256::new();
     let mut tx_rolling_hash = [
         0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03,
@@ -379,7 +379,7 @@ pub fn post_check(
                 );
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Hash(receipt.transaction_hash.to_string()),
-                    msg: format!(":e#?"),
+                    msg: ":e#?".to_string(),
                 });
             }
         };

@@ -12,6 +12,7 @@ use statistics::RunStatistics;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 pub fn live_run(
     start_block: u64,
     end_block: u64,

@@ -126,6 +126,7 @@ pub fn run_block(
     let execution_start = Instant::now();
 
     // Wrap execution in panic handler to catch panics
+    #[allow(clippy::result_large_err)]
     let execution_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
         chain.run_block_with_extra_stats(
             transactions,
@@ -133,7 +134,7 @@ pub fn run_block(
             None,
             Some(run_config),
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
     }));
 

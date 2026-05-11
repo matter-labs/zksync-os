@@ -22,7 +22,7 @@ fn run<const RANDOMIZED: bool>(
     mut chain: Chain<RANDOMIZED>,
     block_context: BlockContext,
     block_number: u64,
-    miner: alloy::primitives::Address,
+    _miner: alloy::primitives::Address,
     ps_trace: PrestateTrace,
     transactions: Vec<EncodedTx>,
     receipts: Vec<TransactionReceipt>,
@@ -114,7 +114,7 @@ fn run_with_tracer<const RANDOMIZED: bool>(
             None,
             Some(run_config),
             tracer,
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
         .unwrap();
 

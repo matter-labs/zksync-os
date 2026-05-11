@@ -2,8 +2,6 @@
 //! The evm tester summary element passed outcome variant.
 //!
 
-use alloy::primitives::*;
-
 ///
 /// The evm tester summary element passed outcome variant.
 ///
