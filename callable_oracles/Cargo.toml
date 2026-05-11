@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
 ruint = { workspace = true, default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }

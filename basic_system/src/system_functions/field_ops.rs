@@ -1,6 +1,7 @@
 //! Query for field operations hints, such as square root and inverse in secp256k1 fields together with their use for implementing secp256k1 hooks.
 
-use crypto::secp256k1::{FieldElement, Scalar};
+use crypto::secp256k1::field::FieldElement;
+use crypto::secp256k1::scalars::Scalar;
 use zk_ee::{
     oracle::{query_ids::ADVICE_SUBSPACE_MASK, usize_serialization::UsizeDeserializable, IOOracle},
     utils::Bytes32,
@@ -86,7 +87,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         !is_quadratic_non_residue
     }
 
-    fn fe_invert_and_assign(&mut self, x: &mut crypto::secp256k1::FieldElement) {
+    fn fe_invert_and_assign(&mut self, x: &mut FieldElement) {
         // Match default hook semantics: invert(0) == 0.
         if x.normalizes_to_zero() {
             return;
@@ -107,7 +108,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         *x = inv;
     }
 
-    fn scalar_invert_and_assign(&mut self, x: &mut crypto::secp256k1::Scalar) {
+    fn scalar_invert_and_assign(&mut self, x: &mut Scalar) {
         // Match default hook semantics: invert(0) == 0.
         if x.is_zero() {
             return;

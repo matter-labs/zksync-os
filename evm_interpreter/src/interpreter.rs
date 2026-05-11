@@ -463,7 +463,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployer_nonce: u64,
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
-        use crypto::sha3::{Digest, Keccak256};
+        use crypto::sha3::Keccak256;
+        use crypto::MiniDigest;
         let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
         let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
         let encoding_len = ExactSizeIterator::len(&encoding_it);
@@ -471,7 +472,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             *dst = src;
         }
         let new_address = Keccak256::digest(&buffer[..encoding_len]);
-        #[allow(deprecated)]
         let new_address =
             B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
 
@@ -485,7 +485,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployment_code: &[u8],
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
-        use crypto::sha3::{Digest, Keccak256};
+        use crypto::sha3::Keccak256;
+        use crypto::MiniDigest;
         // we need to compute address based on the hash of the code and salt
         let mut initcode_hash = ArrayBuilder::default();
         resources
@@ -515,7 +516,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             .copy_from_slice(initcode_hash.as_u8_array_ref());
 
         let new_address = Keccak256::digest(&create2_buffer);
-        #[allow(deprecated)]
         let new_address =
             B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
 
