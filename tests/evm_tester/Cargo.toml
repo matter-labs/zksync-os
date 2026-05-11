@@ -39,8 +39,6 @@ zk_ee = { path = "../../zk_ee" }
 zksync_os_basic_bootloader = { package = "basic_bootloader", path = "../../basic_bootloader" }
 zksync_os_rig = { package = "rig", path = "../../tests/rig", features = ["evm_tester"] }
 
-web3 = { version = "0.19", default-features = false, features = ["http-rustls-tls", "test", "signing"] }
-
 [features]
 pectra = ["zksync_os_forward_system/pectra"]
 evm_tester_pectra = ["zksync_os_forward_system/evm_tester_pectra"]
