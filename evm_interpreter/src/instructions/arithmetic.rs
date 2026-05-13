@@ -96,17 +96,17 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if op3.is_zero() {
             return Ok(());
         }
-        // Reduce both operands mod m. After this a < m and b < m,
-        // so a + b < 2m — overflow needs at most one subtraction.
-        let mut m = op3.clone();
-        S::SystemFunctionsExt::u256_div_rem(op1, &mut m, system.io.oracle());
-        // op1 = q (discard), m = a % m
-        *op1 = m;
-        // op1 = a % m
-        let mut m = op3.clone();
-        S::SystemFunctionsExt::u256_div_rem(op2, &mut m, system.io.oracle());
-        // op2 = q (discard), m = b % m
-        let carry = op1.overflowing_add_assign(&m);
+        if *op1 >= *op3 {
+            let mut m = op3.clone();
+            S::SystemFunctionsExt::u256_div_rem(op1, &mut m, system.io.oracle());
+            *op1 = m;
+        }
+        if *op2 >= *op3 {
+            let mut m = op3.clone();
+            S::SystemFunctionsExt::u256_div_rem(op2, &mut m, system.io.oracle());
+            *op2 = m;
+        }
+        let carry = op1.overflowing_add_assign(op2);
         if carry || *op1 >= *op3 {
             op1.overflowing_sub_assign(op3);
         }

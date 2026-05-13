@@ -8,38 +8,37 @@ use zk_ee::utils::u256_arithmetic_advice::U256DivRemAdviceParams;
 #[cfg(target_pointer_width = "64")]
 use zk_ee::utils::u256_arithmetic_advice::U256DivRemAdviceParams64;
 
+/// Verifies a div_rem hint. On success, `dividend` is modified in-place to
+/// hold the remainder. Caller must save q_limbs before calling.
 #[must_use]
-pub fn verify_div_rem_hint(dividend: &U256, divisor: &U256, q_limbs: [u64; 4]) -> Option<U256> {
+pub fn verify_div_rem_hint(dividend: &mut U256, divisor: &U256, q_limbs: [u64; 4]) -> bool {
     let mut prod_lo = U256::from_limbs(q_limbs);
     let mut prod_hi = U256::from_limbs(q_limbs);
     prod_lo.widening_mul_assign_into(&mut prod_hi, divisor);
 
     if !prod_hi.is_zero() {
-        return None;
+        return false;
     }
 
-    // r = dividend - q * divisor
-    let mut remainder = dividend.clone();
-    let borrow = remainder.overflowing_sub_assign(&prod_lo);
+    // r = dividend - q * divisor (in-place, avoids clone)
+    let borrow = dividend.overflowing_sub_assign(&prod_lo);
     if borrow {
-        return None;
+        return false;
     }
 
-    if remainder >= *divisor {
-        return None;
-    }
-
-    Some(remainder)
+    *dividend < *divisor
 }
 
+/// Verifies a wide div_rem hint. On success, `dividend_lo` is modified in-place
+/// to hold the remainder. `dividend_hi` is also modified.
 #[must_use]
 pub fn verify_wide_div_rem_hint(
-    dividend_lo: &U256,
-    dividend_hi: &U256,
+    dividend_lo: &mut U256,
+    dividend_hi: &mut U256,
     divisor: &U256,
     q_lo_limbs: [u64; 4],
     q_hi_limbs: [u64; 4],
-) -> Option<U256> {
+) -> bool {
     // Compute q * divisor as 512-bit
     let mut qd_lo = U256::from_limbs(q_lo_limbs);
     let mut qd_mid = U256::from_limbs(q_lo_limbs);
@@ -52,30 +51,24 @@ pub fn verify_wide_div_rem_hint(
     // Accumulate into (qd_lo, qd_mid) — the 512-bit product q*d
     let c1 = qd_mid.overflowing_add_assign(&qd_hi_lo);
     if c1 || !qd_hi_hi.is_zero() {
-        return None;
+        return false;
     }
 
-    // Compute r = dividend - q*d (512-bit subtraction)
-    let mut r_lo = dividend_lo.clone();
-    let borrow_lo = r_lo.overflowing_sub_assign(&qd_lo);
-    let mut r_hi = dividend_hi.clone();
-    let borrow_mid = r_hi.overflowing_sub_assign(&qd_mid);
+    // Compute r = dividend - q*d in-place (512-bit subtraction)
+    let borrow_lo = dividend_lo.overflowing_sub_assign(&qd_lo);
+    let borrow_mid = dividend_hi.overflowing_sub_assign(&qd_mid);
     let borrow_final = if borrow_lo {
-        r_hi.overflowing_sub_assign(&U256::one())
+        dividend_hi.overflowing_sub_assign(&U256::one())
     } else {
         false
     };
 
     // r must be non-negative (no borrow) and fit in 256 bits (r_hi == 0)
-    if (borrow_mid | borrow_final) || !r_hi.is_zero() {
-        return None;
+    if (borrow_mid | borrow_final) || !dividend_hi.is_zero() {
+        return false;
     }
 
-    if r_lo >= *divisor {
-        return None;
-    }
-
-    Some(r_lo)
+    *dividend_lo < *divisor
 }
 
 pub struct DivRemImpl<const USE_ADVICE: bool>;
@@ -128,12 +121,6 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor_or_remainder.is_zero());
 
-    if *dividend_or_quotient < *divisor_or_remainder {
-        let remainder = core::mem::replace(dividend_or_quotient, U256::zero());
-        *divisor_or_remainder = remainder;
-        return;
-    }
-
     #[cfg(target_pointer_width = "32")]
     let mut it = {
         let params = U256DivRemAdviceParams {
@@ -164,11 +151,12 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 
     let q_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let remainder = verify_div_rem_hint(dividend_or_quotient, divisor_or_remainder, q_limbs)
-        .expect("div_rem hint verification failed");
+    // verify modifies dividend_or_quotient in-place to hold the remainder
+    assert!(verify_div_rem_hint(dividend_or_quotient, divisor_or_remainder, q_limbs));
 
+    // dividend_or_quotient is now the remainder; swap then write quotient
+    core::mem::swap(dividend_or_quotient, divisor_or_remainder);
     *dividend_or_quotient = U256::from_limbs(q_limbs);
-    *divisor_or_remainder = remainder;
 }
 
 fn u256_wide_div_rem_software(dividend_lo: &mut U256, dividend_hi: &mut U256, divisor: &mut U256) {
@@ -226,9 +214,14 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
     let q_lo_limbs = read_limbs_from_oracle_response(&mut it);
     let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
 
-    let remainder =
-        verify_wide_div_rem_hint(dividend_lo, dividend_hi, divisor, q_lo_limbs, q_hi_limbs)
-            .expect("wide_div_rem hint verification failed");
+    // verify modifies dividend_lo in-place to hold the remainder
+    assert!(verify_wide_div_rem_hint(
+        dividend_lo,
+        dividend_hi,
+        divisor,
+        q_lo_limbs,
+        q_hi_limbs
+    ));
 
-    *divisor = remainder;
+    core::mem::swap(dividend_lo, divisor);
 }

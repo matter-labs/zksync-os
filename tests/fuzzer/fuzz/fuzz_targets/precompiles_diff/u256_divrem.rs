@@ -90,8 +90,11 @@ fn fuzz(input: Input) {
     let divisor = U256::from_limbs(divisor_raw);
 
     // Positive: correct hint must pass
-    let remainder = verify_div_rem_hint(&dividend, &divisor, q_limbs).expect("valid hint rejected");
-    assert_eq!(*remainder.as_limbs(), r_limbs, "remainder mismatch vs ruint");
+    let mut dividend = U256::from_limbs(dividend_raw);
+    let divisor = U256::from_limbs(divisor_raw);
+    assert!(verify_div_rem_hint(&mut dividend, &divisor, q_limbs));
+    // dividend is now the remainder
+    assert_eq!(*dividend.as_limbs(), r_limbs, "remainder mismatch vs ruint");
 
     // Compare against software path
     let mut sw_dividend = U256::from_limbs(dividend_raw);
@@ -108,8 +111,9 @@ fn fuzz(input: Input) {
     };
 
     if bad_q != q_limbs {
+        let mut dividend = U256::from_limbs(dividend_raw);
         assert!(
-            verify_div_rem_hint(&dividend, &divisor, bad_q).is_none(),
+            !verify_div_rem_hint(&mut dividend, &divisor, bad_q),
             "verification accepted bad quotient"
         );
     }
