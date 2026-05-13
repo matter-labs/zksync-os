@@ -38,16 +38,18 @@ use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
 #[cfg(target_arch = "riscv32")]
 use crypto::{sha3::Keccak256, MiniDigest};
 
-/// Derive the versioned statement hash from the 16 `u32` words the
-/// FRI unified verifier returns.
+/// Derive `statement_versioned_hash` from the 16 `u32` output
+/// registers returned by the FRI unified verifier. The hash format is
+/// `version || keccak256(output_words_le)[1..]`.
 #[cfg(target_arch = "riscv32")]
 fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
     let mut hasher = Keccak256::new();
-    hasher.update([FRI_STATEMENT_HASH_VERSION]);
     for word in output.iter() {
         hasher.update(word.to_le_bytes());
     }
-    Bytes32::from_array(hasher.finalize())
+    let mut hash = hasher.finalize();
+    hash[0] = FRI_STATEMENT_HASH_VERSION;
+    Bytes32::from_array(hash)
 }
 
 /// Structural admission checks for a `FriProofTx`'s statement-hash

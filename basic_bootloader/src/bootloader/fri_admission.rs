@@ -28,15 +28,17 @@ pub enum FriHostVerifyError {
     UnsupportedOpType,
 }
 
-/// Derive the versioned statement hash from the 16 `u32` words the
-/// FRI unified verifier returns.
+/// Derive `statement_versioned_hash` from the 16 `u32` output
+/// registers returned by the FRI unified verifier. The hash format is
+/// `version || keccak256(output_words_le)[1..]`.
 pub fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
     let mut hasher = Keccak256::new();
-    hasher.update([FRI_STATEMENT_HASH_VERSION]);
     for word in output.iter() {
         hasher.update(word.to_le_bytes());
     }
-    Bytes32::from_array(hasher.finalize())
+    let mut hash = hasher.finalize();
+    hash[0] = FRI_STATEMENT_HASH_VERSION;
+    Bytes32::from_array(hash)
 }
 
 /// Run the host airbender unified verifier on a pre-flattened
@@ -97,13 +99,19 @@ mod tests {
         let changed = statement_versioned_hash_from_verifier_output(&output);
         assert_ne!(baseline, changed);
 
-        // Same registers without the version byte must differ.
+        assert_eq!(changed.as_u8_array_ref()[0], FRI_STATEMENT_HASH_VERSION);
+
+        // Same registers without the version byte marker must differ.
         let mut hasher = Keccak256::new();
         for word in output.iter() {
             hasher.update(word.to_le_bytes());
         }
         let without_version = Bytes32::from_array(hasher.finalize());
         assert_ne!(changed, without_version);
+        assert_eq!(
+            &changed.as_u8_array_ref()[1..],
+            &without_version.as_u8_array_ref()[1..]
+        );
     }
 
     #[test]

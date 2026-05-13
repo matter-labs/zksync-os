@@ -1564,12 +1564,13 @@ mod fri_precompile_e2e {
 
     fn statement_versioned_hash(output: &[u32; 16]) -> B256 {
         use rig::alloy::primitives::keccak256;
-        let mut buf = Vec::with_capacity(1 + 16 * 4);
-        buf.push(FRI_STATEMENT_HASH_VERSION);
+        let mut buf = Vec::with_capacity(16 * 4);
         for word in output.iter() {
             buf.extend_from_slice(&word.to_le_bytes());
         }
-        B256::from(keccak256(&buf).0)
+        let mut hash = keccak256(&buf).0;
+        hash[0] = FRI_STATEMENT_HASH_VERSION;
+        B256::from(hash)
     }
 
     /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
