@@ -22,7 +22,7 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(not(target_arch = "riscv32"), feature = "host_admission"))]
 pub mod fri_admission;
 pub mod result_keeper;
 mod rlp;

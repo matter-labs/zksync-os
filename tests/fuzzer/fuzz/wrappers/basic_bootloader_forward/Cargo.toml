@@ -24,7 +24,8 @@ serde-big-array = "0.5"
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
+host_admission = []
 default = ["testing"]
 eip-7702 = []
 eip-7623 = []

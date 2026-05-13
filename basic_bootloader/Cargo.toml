@@ -36,7 +36,7 @@ full_statement_verifier = { workspace = true, default-features = false, features
 # the two `target.'cfg(...)`-gated entries as separate dependency
 # instances per target graph.
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
-full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"] }
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"], optional = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }
@@ -45,8 +45,9 @@ alloy-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
-default = ["testing"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
+host_admission = ["dep:full_statement_verifier"]
+default = ["testing", "host_admission"]
 eip-2935 = []
 eip-7702 = []
 eip-7623 = []
