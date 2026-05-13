@@ -161,7 +161,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::SDIV => self.sdiv(system),
                     opcodes::MOD => self.rem(system),
                     opcodes::SMOD => self.smod(system),
-                    opcodes::ADDMOD => self.addmod(),
+                    opcodes::ADDMOD => self.addmod(system),
                     opcodes::MULMOD => self.mulmod(system),
                     opcodes::EXP => self.eval_exp(),
                     opcodes::SIGNEXTEND => self.sign_extend(),

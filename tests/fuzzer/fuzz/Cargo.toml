@@ -322,8 +322,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "precompiles_diff_u256_mulmod"
-path = "fuzz_targets/precompiles_diff/u256_mulmod.rs"
+name = "precompiles_diff_u256_wide_divrem"
+path = "fuzz_targets/precompiles_diff/u256_wide_divrem.rs"
 test = false
 doc = false
 bench = false

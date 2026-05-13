@@ -86,11 +86,31 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    pub fn addmod(&mut self) -> InstructionResult {
+    pub fn addmod(&mut self, system: &mut System<S>) -> InstructionResult
+    where
+        S::IO: IOSubsystemExt,
+    {
         self.gas
             .spend_gas_and_native(gas_constants::MID, ADDMOD_NATIVE_COST)?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
-        U256::add_mod(op1, op2, op3);
+        if op3.is_zero() {
+            return Ok(());
+        }
+        // Reduce both operands mod m. After this a < m and b < m,
+        // so a + b < 2m — overflow needs at most one subtraction.
+        let mut m = op3.clone();
+        S::SystemFunctionsExt::u256_div_rem(op1, &mut m, system.io.oracle());
+        // op1 = q (discard), m = a % m
+        *op1 = m;
+        // op1 = a % m
+        let mut m = op3.clone();
+        S::SystemFunctionsExt::u256_div_rem(op2, &mut m, system.io.oracle());
+        // op2 = q (discard), m = b % m
+        let carry = op1.overflowing_add_assign(&m);
+        if carry || *op1 >= *op3 {
+            op1.overflowing_sub_assign(op3);
+        }
+        core::mem::swap(op1, op3);
         Ok(())
     }
 
@@ -101,7 +121,21 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::MID, MULMOD_NATIVE_COST)?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
-        S::SystemFunctionsExt::u256_mulmod(op1, op2, op3, system.io.oracle());
+        if op3.is_zero() {
+            return Ok(());
+        }
+        // Compute a * b -> (product_lo, product_hi)
+        let mut product_lo = U256::from_limbs(*op1.as_limbs());
+        let mut product_hi = U256::from_limbs(*op1.as_limbs());
+        product_lo.widening_mul_assign_into(&mut product_hi, op2);
+        // Wide div_rem: divisor (op3) receives remainder
+        S::SystemFunctionsExt::u256_wide_div_rem(
+            &mut product_lo,
+            &mut product_hi,
+            op3,
+            system.io.oracle(),
+        );
+        // op3 now holds the remainder = mulmod result
         Ok(())
     }
 

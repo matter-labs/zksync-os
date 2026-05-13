@@ -3,10 +3,10 @@ use basic_system::system_functions::modexp::{
 };
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_MULMOD_ADVICE_QUERY_ID};
+use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
 use zk_ee::utils::u256_arithmetic_advice::{
-    U256DivRemAdviceParams, U256DivRemAdviceParams64, U256MulmodAdviceParams,
-    U256MulmodAdviceParams64,
+    U256DivRemAdviceParams, U256DivRemAdviceParams64, U256WideDivRemAdviceParams,
+    U256WideDivRemAdviceParams64,
 };
 
 use crate::utils::{
@@ -80,26 +80,26 @@ fn u256_div_rem_output(
 ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
     ruint::algorithms::div(&mut dividend, &mut divisor);
 
-    let mut result = Vec::with_capacity(8);
+    // Return quotient only (4 limbs), guest derives remainder
+    let mut result = Vec::with_capacity(4);
     push_limbs(&mut result, &dividend);
-    push_limbs(&mut result, &divisor);
     Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
 }
 
-fn u256_mulmod_output(
-    a: [u64; 4],
-    b: [u64; 4],
-    mut m: [u64; 4],
+fn u256_wide_div_rem_output(
+    dividend_lo: [u64; 4],
+    dividend_hi: [u64; 4],
+    mut divisor: [u64; 4],
 ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let mut product = [0u64; 8];
-    let overflow = ruint::algorithms::addmul(&mut product, &a, &b);
-    debug_assert!(!overflow);
+    let mut dividend = [0u64; 8];
+    dividend[..4].copy_from_slice(&dividend_lo);
+    dividend[4..].copy_from_slice(&dividend_hi);
 
-    ruint::algorithms::div(&mut product, &mut m);
+    ruint::algorithms::div(&mut dividend, &mut divisor);
 
-    let mut result = Vec::with_capacity(12);
-    push_limbs(&mut result, &product);
-    push_limbs(&mut result, &m);
+    // Return quotient only (8 limbs), no remainder
+    let mut result = Vec::with_capacity(8);
+    push_limbs(&mut result, &dividend);
     Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
 }
 
@@ -183,7 +183,7 @@ impl OracleQueryProcessor for ArithmeticQuery {
         vec![
             MODEXP_ADVICE_QUERY_ID,
             U256_DIV_REM_ADVICE_QUERY_ID,
-            U256_MULMOD_ADVICE_QUERY_ID,
+            U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
         ]
     }
 
@@ -207,17 +207,17 @@ impl OracleQueryProcessor for ArithmeticQuery {
             return u256_div_rem_output(dividend, divisor);
         }
 
-        if query_id == U256_MULMOD_ADVICE_QUERY_ID {
+        if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
             let arg_ptr = extract_single_ptr(query);
             assert!(arg_ptr.is_multiple_of(4));
-            const { assert!(core::mem::align_of::<U256MulmodAdviceParams>() <= 4) }
-            const { assert!(core::mem::size_of::<U256MulmodAdviceParams>().is_multiple_of(4)) }
-            let params: U256MulmodAdviceParams =
+            const { assert!(core::mem::align_of::<U256WideDivRemAdviceParams>() <= 4) }
+            const { assert!(core::mem::size_of::<U256WideDivRemAdviceParams>().is_multiple_of(4)) }
+            let params: U256WideDivRemAdviceParams =
                 unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
-            let a = read_u256_from_guest(memory, params.a_ptr);
-            let b = read_u256_from_guest(memory, params.b_ptr);
-            let m = read_u256_from_guest(memory, params.modulus_ptr);
-            return u256_mulmod_output(a, b, m);
+            let dividend_lo = read_u256_from_guest(memory, params.dividend_lo_ptr);
+            let dividend_hi = read_u256_from_guest(memory, params.dividend_hi_ptr);
+            let divisor = read_u256_from_guest(memory, params.divisor_ptr);
+            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
         }
 
         process_modexp_riscv_query(query, memory)
@@ -236,7 +236,7 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         vec![
             MODEXP_ADVICE_QUERY_ID,
             U256_DIV_REM_ADVICE_QUERY_ID,
-            U256_MULMOD_ADVICE_QUERY_ID,
+            U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
         ]
     }
 
@@ -256,13 +256,13 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
             return u256_div_rem_output(dividend, divisor);
         }
 
-        if query_id == U256_MULMOD_ADVICE_QUERY_ID {
+        if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
             let arg_ptr = extract_single_ptr(query);
-            let params: U256MulmodAdviceParams64 = read_host_struct(arg_ptr as u64);
-            let a = read_u256_from_host(params.a_ptr);
-            let b = read_u256_from_host(params.b_ptr);
-            let m = read_u256_from_host(params.modulus_ptr);
-            return u256_mulmod_output(a, b, m);
+            let params: U256WideDivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
+            let dividend_lo = read_u256_from_host(params.dividend_lo_ptr);
+            let dividend_hi = read_u256_from_host(params.dividend_hi_ptr);
+            let divisor = read_u256_from_host(params.divisor_ptr);
+            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
         }
 
         process_modexp_native_query(query)
@@ -275,6 +275,8 @@ mod tests {
 
     use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
+    use zk_ee::oracle::query_ids::U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
+    use zk_ee::utils::u256_arithmetic_advice::U256WideDivRemAdviceParams64;
 
     impl TestMemorySource {
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
@@ -461,57 +463,56 @@ mod tests {
                 &DummyMemorySource,
             )
             .collect();
-        assert_eq!(output, vec![3, 0, 0, 0, 1, 0, 0, 0]);
+        // Quotient only: 4 limbs
+        assert_eq!(output, vec![3, 0, 0, 0]);
     }
 
     #[test]
-    fn u256_mulmod_via_native_query() {
-        // a=7, b=5, m=6 → a*b=35, q=5, r=5
-        let a = [7u64, 0, 0, 0];
-        let b = [5u64, 0, 0, 0];
-        let m = [6u64, 0, 0, 0];
-        let params = U256MulmodAdviceParams64 {
-            a_ptr: a.as_ptr().addr() as u64,
-            b_ptr: b.as_ptr().addr() as u64,
-            modulus_ptr: m.as_ptr().addr() as u64,
+    fn u256_wide_div_rem_via_native_query() {
+        // 35 / 6: q=5
+        let dividend_lo = [35u64, 0, 0, 0];
+        let dividend_hi = [0u64, 0, 0, 0];
+        let divisor = [6u64, 0, 0, 0];
+        let params = U256WideDivRemAdviceParams64 {
+            dividend_lo_ptr: dividend_lo.as_ptr().addr() as u64,
+            dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
+            divisor_ptr: divisor.as_ptr().addr() as u64,
         };
         let output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
-                U256_MULMOD_ADVICE_QUERY_ID,
-                vec![(&params as *const U256MulmodAdviceParams64).addr()],
+                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
+                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
                 &DummyMemorySource,
             )
             .collect();
-        assert_eq!(output.len(), 12);
-        assert_eq!(output[0], 5); // q limb 0
-        assert_eq!(output[8], 5); // r limb 0
+        // Quotient only: 8 limbs
+        assert_eq!(output.len(), 8);
+        assert_eq!(output[0], 5); // q_lo limb 0
+        assert_eq!(&output[1..], &[0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
-    fn u256_mulmod_large_values() {
-        // a = 2^128, b = 2^128, m = 2^128 + 1
-        // a*b = 2^256, q = 2^128 - 1, r = 1
-        let a = [0u64, 0, 1, 0];
-        let b = [0u64, 0, 1, 0];
-        let m = [1u64, 0, 1, 0];
-        let params = U256MulmodAdviceParams64 {
-            a_ptr: a.as_ptr().addr() as u64,
-            b_ptr: b.as_ptr().addr() as u64,
-            modulus_ptr: m.as_ptr().addr() as u64,
+    fn u256_wide_div_rem_large_dividend() {
+        // 2^256 / (2^128 + 1): q = 2^128 - 1
+        let dividend_lo = [0u64, 0, 0, 0];
+        let dividend_hi = [1u64, 0, 0, 0];
+        let divisor = [1u64, 0, 1, 0];
+        let params = U256WideDivRemAdviceParams64 {
+            dividend_lo_ptr: dividend_lo.as_ptr().addr() as u64,
+            dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
+            divisor_ptr: divisor.as_ptr().addr() as u64,
         };
         let output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
-                U256_MULMOD_ADVICE_QUERY_ID,
-                vec![(&params as *const U256MulmodAdviceParams64).addr()],
+                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
+                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
                 &DummyMemorySource,
             )
             .collect();
-        assert_eq!(output.len(), 12);
+        assert_eq!(output.len(), 8);
         assert_eq!(output[0], u64::MAX as usize);
         assert_eq!(output[1], u64::MAX as usize);
         assert_eq!(&output[2..8], &[0, 0, 0, 0, 0, 0]);
-        assert_eq!(output[8], 1);
-        assert_eq!(&output[9..12], &[0, 0, 0]);
     }
 
     #[test]

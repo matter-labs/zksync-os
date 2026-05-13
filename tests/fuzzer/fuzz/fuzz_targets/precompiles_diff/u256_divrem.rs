@@ -20,7 +20,6 @@ enum BadHintKind {
     Random,
     OffByOnePlus,
     OffByOneMinus,
-    Swapped,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -55,34 +54,24 @@ fn shape_value(seed: [u64; 4], kind: ValueKind, power_shift: u8) -> [u64; 4] {
     }
 }
 
-fn shape_bad_hint(
-    correct_q: [u64; 4],
-    correct_r: [u64; 4],
-    bad_seed: [u64; 4],
-    kind: BadHintKind,
-) -> ([u64; 4], [u64; 4]) {
-    match kind {
-        BadHintKind::Random => (bad_seed, bad_seed),
-        BadHintKind::OffByOnePlus => {
-            let mut q = correct_q;
-            let (v, overflow) = q[0].overflowing_add(1);
-            q[0] = v;
-            if overflow {
-                q[1] = q[1].wrapping_add(1);
-            }
-            (q, correct_r)
-        }
-        BadHintKind::OffByOneMinus => {
-            let mut r = correct_r;
-            let (v, overflow) = r[0].overflowing_add(1);
-            r[0] = v;
-            if overflow {
-                r[1] = r[1].wrapping_add(1);
-            }
-            (correct_q, r)
-        }
-        BadHintKind::Swapped => (correct_r, correct_q),
+fn wrapping_inc(limbs: [u64; 4]) -> [u64; 4] {
+    let mut v = limbs;
+    let (val, overflow) = v[0].overflowing_add(1);
+    v[0] = val;
+    if overflow {
+        v[1] = v[1].wrapping_add(1);
     }
+    v
+}
+
+fn wrapping_dec(limbs: [u64; 4]) -> [u64; 4] {
+    let mut v = limbs;
+    let (val, overflow) = v[0].overflowing_sub(1);
+    v[0] = val;
+    if overflow {
+        v[1] = v[1].wrapping_sub(1);
+    }
+    v
 }
 
 fn fuzz(input: Input) {
@@ -101,7 +90,8 @@ fn fuzz(input: Input) {
     let divisor = U256::from_limbs(divisor_raw);
 
     // Positive: correct hint must pass
-    assert!(verify_div_rem_hint(&dividend, &divisor, q_limbs, r_limbs));
+    let remainder = verify_div_rem_hint(&dividend, &divisor, q_limbs).expect("valid hint rejected");
+    assert_eq!(*remainder.as_limbs(), r_limbs, "remainder mismatch vs ruint");
 
     // Compare against software path
     let mut sw_dividend = U256::from_limbs(dividend_raw);
@@ -110,27 +100,17 @@ fn fuzz(input: Input) {
     assert_eq!(*sw_dividend.as_limbs(), q_limbs, "quotient mismatch");
     assert_eq!(*sw_divisor.as_limbs(), r_limbs, "remainder mismatch");
 
-    // Negative tests
-    let (bad_q, bad_r) = shape_bad_hint(q_limbs, r_limbs, input.bad_seed, input.bad_hint_kind);
+    // Negative: bad quotient must be rejected
+    let bad_q = match input.bad_hint_kind {
+        BadHintKind::Random => input.bad_seed,
+        BadHintKind::OffByOnePlus => wrapping_inc(q_limbs),
+        BadHintKind::OffByOneMinus => wrapping_dec(q_limbs),
+    };
 
     if bad_q != q_limbs {
         assert!(
-            !verify_div_rem_hint(&dividend, &divisor, bad_q, r_limbs),
+            verify_div_rem_hint(&dividend, &divisor, bad_q).is_none(),
             "verification accepted bad quotient"
-        );
-    }
-
-    if bad_r != r_limbs {
-        assert!(
-            !verify_div_rem_hint(&dividend, &divisor, q_limbs, bad_r),
-            "verification accepted bad remainder"
-        );
-    }
-
-    if bad_q != q_limbs || bad_r != r_limbs {
-        assert!(
-            !verify_div_rem_hint(&dividend, &divisor, bad_q, bad_r),
-            "verification accepted bad hint"
         );
     }
 }
