@@ -29,6 +29,22 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack.push_u64(byte_val as u64)
     }
 
+    /// Specialized PUSH2: assemble a u64 from up to 2 big-endian bytes and push directly,
+    /// skipping the generic path's U256 copy + bytereverse + shift. Missing bytes at the
+    /// end of the bytecode are treated as zero (matching the generic path's right-padding).
+    pub fn push2(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
+        let start = self.instruction_pointer;
+
+        let b0 = self.bytecode.get(start).copied().unwrap_or(0);
+        let b1 = self.bytecode.get(start + 1).copied().unwrap_or(0);
+        let val = ((b0 as u64) << 8) | (b1 as u64);
+
+        self.instruction_pointer += 2;
+        self.stack.push_u64(val)
+    }
+
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
