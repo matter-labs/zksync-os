@@ -21,7 +21,7 @@ basic_bootloader = { path = "../basic_bootloader", default-features = false }
 zksync_os_evm_errors = { workspace = true, default-features = false }
 zksync_os_interface = { workspace = true }
 system_hooks = { path = "../system_hooks", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 
 
 ruint = { workspace = true, default-features = false }

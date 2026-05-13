@@ -17,7 +17,7 @@ arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true  }
 
 cfg-if = { workspace = true }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = { workspace = true }
 paste = { workspace = true }

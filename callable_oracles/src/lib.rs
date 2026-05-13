@@ -34,8 +34,6 @@ use zk_ee::{
     utils::exact_size_chain::ExactSizeChain,
 };
 
-pub mod hash_to_prime;
-
 /// Shared test utilities for callable oracle unit tests.
 #[cfg(any(test, feature = "testing"))]
 pub mod test_utils {

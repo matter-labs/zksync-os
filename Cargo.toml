@@ -6,7 +6,6 @@ members = [
     "basic_bootloader",
     "basic_system",
     "callable_oracles",
-    "crypto",
     "evm_interpreter",
     "forward_system",
     "oracle_provider",
@@ -45,7 +44,6 @@ members = [
 exclude = [
     "zksync_os",
     "supporting_crates/nostd_compression",
-    "crypto/src/blake2s/test_program",
     "circuit_test_program",
     "tests/evm_tester",
     "tests/evm_divergence_validator",
@@ -73,7 +71,7 @@ zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interfac
 # resolves `branch = "dev"` to at the time of pinning.
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
 prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
@@ -81,9 +79,12 @@ full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbend
 cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "d2092848a3c1276c8be1529539bd46b9f12218f2" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "d2092848a3c1276c8be1529539bd46b9f12218f2", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "d2092848a3c1276c8be1529539bd46b9f12218f2" }
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false }
+
+seq-macro = { version = "0.3.6", default-features = false }
 
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }

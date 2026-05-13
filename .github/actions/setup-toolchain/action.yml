@@ -6,7 +6,7 @@ description: |
 inputs:
   rev:
     description: Git revision of airbender-platform to install cargo-airbender from
-    default: "097f1489"
+    default: "72cce091"
 runs:
   using: composite
   steps:
