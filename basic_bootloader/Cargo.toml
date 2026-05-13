@@ -28,6 +28,16 @@ serde-big-array = "0.5"
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "modular_ops", "blake2_with_compression"] }
 
+# Host-side admission verifier. Same crate and feature flavor as the
+# riscv32 dep above, but with `replace_csr` swapping the CSR-backed
+# non-determinism source for `nd_source_std::set_iterator`, and without
+# `modular_ops` (which is riscv32-only and emits `compile_error!` on
+# host targets). Feature unification is not a concern: cargo treats
+# the two `target.'cfg(...)`-gated entries as separate dependency
+# instances per target graph.
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_80", "blake2_with_compression", "replace_csr"] }
+
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }
 alloy-rlp = { workspace = true }

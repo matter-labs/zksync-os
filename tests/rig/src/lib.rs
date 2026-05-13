@@ -8,7 +8,7 @@
 //! while `Chain` is intended to remain a neutral in-memory state abstraction.
 //!
 use std::str::FromStr;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 pub mod assertions;
 pub mod chain;
 pub mod constants;
@@ -35,7 +35,7 @@ pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::system_types::ForwardRunningSystem;
-pub use fri::{FriProofOracleFactory, InMemoryFriProofSidecarSource};
+pub use fri::InMemoryFriProofSidecarSource;
 pub use log;
 pub use oracle_provider;
 pub use ruint;
@@ -55,8 +55,8 @@ pub use zksync_os_tests_common;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
+use crate::chain::{DefaultOracleFactory, TestingOracleFactory};
 use crate::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
@@ -368,7 +368,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .is_gateway = true;
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
-        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(sidecar_source)));
+        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
+            fri_sidecar: Some(sidecar_source),
+            fri_artifacts: None,
+        }));
         self
     }
 
@@ -389,9 +392,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .is_gateway = true;
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
-        self.oracle_factory = Some(Box::new(
-            FriProofOracleFactory::new(sidecar_source).with_verifier_artifacts(artifacts),
-        ));
+        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
+            fri_sidecar: Some(sidecar_source),
+            fri_artifacts: Some(Arc::new(artifacts)),
+        }));
         self
     }
 
@@ -414,9 +418,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
         let counter = sidecar_source.lookup_counter();
-        self.oracle_factory = Some(Box::new(
-            FriProofOracleFactory::new(sidecar_source).with_verifier_artifacts(artifacts),
-        ));
+        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
+            fri_sidecar: Some(sidecar_source),
+            fri_artifacts: Some(Arc::new(artifacts)),
+        }));
         (self, counter)
     }
 
@@ -529,9 +534,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
-        self.oracle_factory = Some(Box::new(FriProofOracleFactory::new(
-            sidecars.into_iter().collect(),
-        )));
+        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
+            fri_sidecar: Some(sidecars.into_iter().collect()),
+            fri_artifacts: None,
+        }));
         self
     }
 

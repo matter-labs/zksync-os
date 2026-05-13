@@ -16,10 +16,8 @@ alloy = { workspace = true, features = [
     "eips",
     "network",
     "rlp",
-    "rpc",
     "rpc-types",
     "signers",
-    "serde-bincode-compat",
 ] }
 
 zksync_os_interface = { workspace = true }

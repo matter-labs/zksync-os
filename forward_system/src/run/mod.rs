@@ -1,4 +1,6 @@
 pub mod errors;
+pub mod fri_admission;
+mod fri_proof_decode;
 mod fri_proof_sidecar;
 pub mod output;
 mod preimage_source;
@@ -37,6 +39,7 @@ use errors::ForwardSubsystemError;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
+use std::sync::Arc;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -49,6 +52,7 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
+pub use crate::run::fri_admission::{validate_fri_statement, FriAdmissionError};
 pub use crate::run::query_processors::FriVerifierArtifacts;
 pub use fri_proof_sidecar::{FriProofSidecarSource, NoFriProofSidecar};
 pub use preimage_source::PreimageSource;
@@ -83,7 +87,7 @@ pub fn run_block<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
@@ -137,7 +141,7 @@ pub fn generate_proof_input<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
     tx_result_callback: TR,
 ) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
@@ -307,31 +311,7 @@ mod tests {
     }
 }
 
-pub fn make_oracle_for_proofs_and_dumps<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
-    block_context: BlockContext,
-    tree: T,
-    preimage_source: PS,
-    tx_source: TS,
-    proof_data: Option<ProofData<StorageCommitment>>,
-    da_commitment_scheme: Option<DACommitmentScheme>,
-    add_uart: bool,
-    use_native_callable_oracles: bool,
-) -> ZkEENonDeterminismSource {
-    make_oracle_for_proofs_and_dumps_with_fri_sidecar(
-        block_context,
-        tree,
-        preimage_source,
-        tx_source,
-        NoFriProofSidecar,
-        None,
-        proof_data,
-        da_commitment_scheme,
-        add_uart,
-        use_native_callable_oracles,
-    )
-}
-
-pub fn make_oracle_for_proofs_and_dumps_with_fri_sidecar<
+pub fn make_oracle_for_proofs_and_dumps<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
@@ -342,7 +322,7 @@ pub fn make_oracle_for_proofs_and_dumps_with_fri_sidecar<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
@@ -373,7 +353,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<FriVerifierArtifacts>,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,

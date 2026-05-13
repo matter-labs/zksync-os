@@ -1355,7 +1355,7 @@ mod fri_precompile {
         let wallet = tester.prefunded_random_signer();
 
         // Construct a minimal FRI proof tx with one dummy statement hash.
-        // The sidecar oracle is empty (NoFriProofSidecar), but the tx should be
+        // The FRI sidecar is empty by default, but the tx should be
         // rejected before sidecar resolution because is_gateway = false.
         let statement_hash = B256::from([0x42u8; 32]);
         let unsigned = UnsignedZKsyncFriProofTx {
@@ -1413,15 +1413,17 @@ mod fri_precompile_e2e {
     };
     use execution_utils::unrolled::{UnrolledProgramProof, UnrolledProgramSetup};
     use flate2::read::GzDecoder;
+    use full_statement_verifier::verifier_common::SecurityModel;
     use rig::forward_system::run::FriVerifierArtifacts;
     use riscv_transpiler::cycle::IWithoutByteAccessIsaConfigWithDelegation;
     use std::io::Read;
     use std::path::PathBuf;
 
-    const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+    pub(super) const FRI_STATEMENT_HASH_VERSION: u8 = 1;
     // Address 0x0101 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
-    const FRI_PRIMARY_PROOF_FIXTURE: &str = "tests/fixtures/fri/airbender_test_proof.bin";
+    pub(super) const FRI_PRIMARY_PROOF_FIXTURE: &str =
+        "tests/fixtures/fri/airbender_test_proof.bin";
     const FRI_SECONDARY_PROOF_FIXTURE: &str =
         "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin";
 
@@ -1434,7 +1436,7 @@ mod fri_precompile_e2e {
             .to_path_buf()
     }
 
-    fn resolve_path(env_var: &str, default_relative: &str) -> PathBuf {
+    pub(super) fn resolve_path(env_var: &str, default_relative: &str) -> PathBuf {
         if let Ok(v) = std::env::var(env_var) {
             PathBuf::from(v)
         } else {
@@ -1442,7 +1444,7 @@ mod fri_precompile_e2e {
         }
     }
 
-    fn maybe_decompress(bytes: &[u8]) -> Vec<u8> {
+    pub(super) fn maybe_decompress(bytes: &[u8]) -> Vec<u8> {
         if bytes.starts_with(&[0x1f, 0x8b]) {
             let mut out = Vec::new();
             GzDecoder::new(bytes)
@@ -1575,7 +1577,7 @@ mod fri_precompile_e2e {
     /// Simulates the submitter side: decompress the on-disk fixture, decode
     /// it, run the host-side verifier to derive `statement_versioned_hash`.
     /// Returns `None` when the fixture is absent so callers can silent-skip.
-    fn load_proof_fixture(
+    pub(super) fn load_proof_fixture(
         fixture_relative: &str,
         setup_path: &PathBuf,
         layout_path: &PathBuf,
@@ -1594,14 +1596,19 @@ mod fri_precompile_e2e {
         let proof: UnrolledProgramProof = decode_bincode(&proof_bytes, "UnrolledProgramProof");
         let (setup, compiled_layouts) =
             ensure_recursion_unified_artifacts(&proof, setup_path, layout_path);
-        let verifier_output =
-            verify_proof_in_unified_layer(&proof, &setup, &compiled_layouts, false)
-                .expect("proof must verify");
+        let verifier_output = verify_proof_in_unified_layer(
+            &proof,
+            &setup,
+            &compiled_layouts,
+            false,
+            SecurityModel::Security80,
+        )
+        .expect("proof must verify");
         let stmt_hash = statement_versioned_hash(&verifier_output);
         Some((proof_bytes, stmt_hash))
     }
 
-    fn default_setup_and_layout_paths() -> (PathBuf, PathBuf) {
+    pub(super) fn default_setup_and_layout_paths() -> (PathBuf, PathBuf) {
         let setup_path = resolve_path(
             "FRI_SETUP_PATH",
             "tests/fixtures/fri/recursion_unified_setup.bin",
@@ -1613,7 +1620,7 @@ mod fri_precompile_e2e {
         (setup_path, layout_path)
     }
 
-    fn load_verifier_artifacts(
+    pub(super) fn load_verifier_artifacts(
         setup_path: &PathBuf,
         layout_path: &PathBuf,
     ) -> Option<FriVerifierArtifacts> {
@@ -1681,6 +1688,7 @@ mod fri_precompile_e2e {
             &setup,
             &compiled_layouts,
             false, // input_is_unrolled = false → unified-over-unified path
+            SecurityModel::Security80,
         )
         .expect("proof must verify");
 
@@ -2086,6 +2094,157 @@ mod fri_precompile_e2e {
             "tx with 9 statement hashes (cap=8) must be rejected; \
              got: {:?}",
             output.tx_results[0]
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `forward_system::run::validate_fri_statement` integration tests.
+//
+// These cover the public admission API the sequencer calls before
+// admitting a `FriProofTx` to the mempool. Each test uses the same
+// gzipped fixture proof + setup/layout fixtures as `fri_precompile_e2e`
+// (so we don't regenerate proofs) but bypasses the bootloader entirely:
+// the admission entry point composes decode-and-flatten + host
+// verifier directly, and we assert it returns the right
+// `FriAdmissionError` for both valid input and several adversarial
+// shapes.
+//
+// All tests silently no-op when the fixture is absent so CI without
+// large-binary access still passes — same pattern as the existing
+// e2e test.
+// ---------------------------------------------------------------------------
+mod fri_admission_api {
+    use super::fri_precompile_e2e::{
+        default_setup_and_layout_paths, load_proof_fixture, load_verifier_artifacts,
+        maybe_decompress, resolve_path, FRI_PRIMARY_PROOF_FIXTURE,
+    };
+    use rig::alloy::primitives::B256;
+    use rig::forward_system::run::{validate_fri_statement, FriAdmissionError};
+    use rig::zk_ee::utils::Bytes32;
+
+    fn b256_to_bytes32(hash: B256) -> Bytes32 {
+        Bytes32::from_array(hash.0)
+    }
+
+    /// Real fixture proof + correct statement hash → admitted.
+    #[test]
+    fn admits_valid_proof_with_correct_hash() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some((proof_bytes, stmt_hash)) =
+            load_proof_fixture(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
+            return;
+        };
+        let Some(artifacts) = load_verifier_artifacts(&setup_path, &layout_path) else {
+            // Fixture present but artifacts absent — that's a misconfigured
+            // checkout, not a missing-fixture skip. Don't silently pass.
+            panic!("proof fixture loaded but verifier artifacts missing");
+        };
+
+        validate_fri_statement(b256_to_bytes32(stmt_hash), &proof_bytes, &artifacts)
+            .expect("real fixture proof must admit against its derived statement hash");
+    }
+
+    /// Real fixture proof + wrong hash → `StatementHashMismatch`.
+    ///
+    /// This is the load-bearing rejection: a proof can verify
+    /// internally but prove a different statement than the gateway
+    /// signed. Admission must catch that.
+    #[test]
+    fn rejects_mismatched_statement_hash() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some((proof_bytes, _correct_hash)) =
+            load_proof_fixture(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
+            return;
+        };
+        let Some(artifacts) = load_verifier_artifacts(&setup_path, &layout_path) else {
+            panic!("proof fixture loaded but verifier artifacts missing");
+        };
+
+        // All-zero hash is not the derived hash; the verifier will
+        // succeed but its output won't keccak to zero.
+        let bogus = Bytes32::ZERO;
+        let err = validate_fri_statement(bogus, &proof_bytes, &artifacts)
+            .expect_err("mismatched hash must be rejected");
+        assert_eq!(
+            err,
+            FriAdmissionError::StatementHashMismatch,
+            "wrong hash must surface as StatementHashMismatch, got {err:?}"
+        );
+    }
+
+    /// Random bytes that aren't a bincode-encoded proof → decoder
+    /// rejects before the verifier is touched.
+    #[test]
+    fn rejects_garbage_bytes() {
+        // We don't need fixtures for this — the decode step gates
+        // bytes regardless of artifacts shape. But we still need an
+        // artifacts value to call the API, so skip when absent.
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some(artifacts) = load_verifier_artifacts(&setup_path, &layout_path) else {
+            return;
+        };
+
+        let garbage: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+        let err = validate_fri_statement(Bytes32::ZERO, &garbage, &artifacts)
+            .expect_err("garbage bytes must be rejected");
+        assert_eq!(
+            err,
+            FriAdmissionError::BincodeDecode,
+            "garbage must surface as BincodeDecode, got {err:?}"
+        );
+    }
+
+    /// Empty byte slice → `BincodeDecode`.
+    #[test]
+    fn rejects_empty_bytes() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some(artifacts) = load_verifier_artifacts(&setup_path, &layout_path) else {
+            return;
+        };
+
+        let err = validate_fri_statement(Bytes32::ZERO, &[], &artifacts)
+            .expect_err("empty bytes must be rejected");
+        assert_eq!(
+            err,
+            FriAdmissionError::BincodeDecode,
+            "empty input must surface as BincodeDecode, got {err:?}"
+        );
+    }
+
+    /// Truncated valid proof — bincode-decodes part of the structure
+    /// then runs out of bytes. Acceptable outcomes: `BincodeDecode`
+    /// (truncation caught by the decoder) or `VerifierRejected`
+    /// (partial structure decoded but the verifier rejects the
+    /// flattened stream). Both are valid rejection paths; just not
+    /// `Ok` and not `StatementHashMismatch`.
+    #[test]
+    fn rejects_truncated_proof() {
+        let proof_path = resolve_path("FRI_ORACLE_PATH", FRI_PRIMARY_PROOF_FIXTURE);
+        if !proof_path.exists() {
+            return;
+        }
+        let fixture_bytes = std::fs::read(&proof_path).expect("read proof");
+        let proof_bytes = maybe_decompress(&fixture_bytes);
+
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let Some(artifacts) = load_verifier_artifacts(&setup_path, &layout_path) else {
+            return;
+        };
+
+        // Halve the bytes — almost certainly leaves the bincode
+        // structure incomplete.
+        let half = &proof_bytes[..proof_bytes.len() / 2];
+        let err = validate_fri_statement(Bytes32::ZERO, half, &artifacts)
+            .expect_err("truncated proof must be rejected");
+        assert!(
+            matches!(
+                err,
+                FriAdmissionError::BincodeDecode | FriAdmissionError::VerifierRejected
+            ),
+            "truncated proof must reject as BincodeDecode or VerifierRejected, got {err:?}"
         );
     }
 }

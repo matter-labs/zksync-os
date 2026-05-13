@@ -118,7 +118,8 @@ impl Runner {
         let mut ram =
             RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
         let mut state = State::initial_with_counters(DelegationsCounters::default());
-        let mut non_determinism_source = QuasiUARTSource::new_with_reads(input_words.to_vec());
+        let mut non_determinism_source: QuasiUARTSource =
+            QuasiUARTSource::new_with_reads(input_words.to_vec());
 
         // `cycle_markers` is only consumed under `feature = "cycle_marker"`;
         // use the leading-underscore name so the unused-variable lint passes
@@ -170,7 +171,7 @@ impl Runner {
 
         #[cfg(feature = "cycle_marker")]
         {
-            let results = cycle_marker::print_cycle_markers(_cycle_markers);
+            let results = cycle_marker::print_cycle_markers(_cycle_markers.into());
             block_effective = results.block_effective;
         }
 

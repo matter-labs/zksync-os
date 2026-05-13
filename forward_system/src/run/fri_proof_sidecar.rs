@@ -20,3 +20,14 @@ impl FriProofSidecarSource for NoFriProofSidecar {
         None
     }
 }
+
+pub struct FromInterfaceSidecar<S>(pub S);
+
+impl<S: zksync_os_interface::traits::FriProofSidecarSource> FriProofSidecarSource
+    for FromInterfaceSidecar<S>
+{
+    fn get_proof_bytes(&mut self, statement_versioned_hash: Bytes32) -> Option<Vec<u8>> {
+        let bytes = *statement_versioned_hash.as_u8_array_ref();
+        self.0.get_proof_bytes(alloy::primitives::B256::from(bytes))
+    }
+}

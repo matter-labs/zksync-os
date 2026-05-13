@@ -29,6 +29,7 @@ use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::FriVerifierArtifacts;
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
 use forward_system::system::system_types::ethereum::{
@@ -44,6 +45,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
@@ -88,8 +90,12 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     ) -> ZkEENonDeterminismSource;
 }
 
-/// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
-pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
+/// Default oracle factory used by normal rig runs.
+#[derive(Clone, Default)]
+pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool> {
+    pub fri_sidecar: Option<crate::fri::InMemoryFriProofSidecarSource>,
+    pub fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+}
 
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     for DefaultOracleFactory<RANDOMIZED_TREE>
@@ -110,6 +116,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
+            self.fri_sidecar.clone().unwrap_or_default(),
+            self.fri_artifacts.clone(),
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -133,6 +141,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
+            self.fri_sidecar.clone().unwrap_or_default(),
+            self.fri_artifacts.clone(),
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -715,7 +725,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
         self.run_inner(
             transactions,
             block_context,
@@ -738,7 +748,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
         self.run_inner(
             transactions,
             block_context,
