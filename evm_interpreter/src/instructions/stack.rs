@@ -45,6 +45,36 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack.push_u64(val)
     }
 
+    /// Specialized PUSH<N> for `N` in `3..=8`: assemble a u64 from up to N big-endian
+    /// bytes and push it directly, skipping the generic path's U256 copy +
+    /// bytereverse + shift. Missing bytes at the end of the bytecode are treated as
+    /// zero (matching the generic path's right-padding).
+    pub fn push_small<const N: usize>(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
+        let start = self.instruction_pointer;
+
+        let val: u64 = if let Some(chunk) = self.bytecode.get(start..start + N) {
+            // Common case: all N bytes are in bounds. Place them in the high end of
+            // an 8-byte buffer so that from_be_bytes reads them as a big-endian
+            // integer with zero padding in the unused low slots.
+            let mut bytes = [0u8; 8];
+            bytes[8 - N..].copy_from_slice(chunk);
+            u64::from_be_bytes(bytes)
+        } else {
+            // Truncated bytecode: pad missing trailing bytes with zero.
+            let mut acc: u64 = 0;
+            for i in 0..N {
+                let b = self.bytecode.get(start + i).copied().unwrap_or(0);
+                acc = (acc << 8) | (b as u64);
+            }
+            acc
+        };
+
+        self.instruction_pointer += N;
+        self.stack.push_u64(val)
+    }
+
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
