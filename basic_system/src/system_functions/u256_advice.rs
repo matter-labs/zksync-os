@@ -152,7 +152,11 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     let q_limbs = read_limbs_from_oracle_response(&mut it);
 
     // verify modifies dividend_or_quotient in-place to hold the remainder
-    assert!(verify_div_rem_hint(dividend_or_quotient, divisor_or_remainder, q_limbs));
+    assert!(verify_div_rem_hint(
+        dividend_or_quotient,
+        divisor_or_remainder,
+        q_limbs
+    ));
 
     // dividend_or_quotient is now the remainder; swap then write quotient
     core::mem::swap(dividend_or_quotient, divisor_or_remainder);
