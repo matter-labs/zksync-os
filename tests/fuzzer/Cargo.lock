@@ -71,7 +71,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=d2092848a3c1276c8be1529539bd46b9f12218f2#d2092848a3c1276c8be1529539bd46b9f12218f2"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -80,7 +80,7 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=d2092848a3c1276c8be1529539bd46b9f12218f2#d2092848a3c1276c8be1529539bd46b9f12218f2"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -88,9 +88,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "airbender-crypto"
+version = "0.1.0"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+dependencies = [
+ "ark-bls12-381",
+ "ark-bn254 0.5.0",
+ "ark-ec 0.5.0",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "blake2",
+ "blake2s_u32",
+ "cfg-if",
+ "common_constants",
+ "const_for",
+ "educe",
+ "itertools 0.14.0",
+ "k256",
+ "num-bigint",
+ "num-traits",
+ "p256",
+ "ripemd",
+ "ruint",
+ "seq-macro",
+ "sha2 0.10.9",
+ "sha3 0.10.9",
+ "zeroize",
+]
+
+[[package]]
 name = "airbender-host"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=d2092848a3c1276c8be1529539bd46b9f12218f2#d2092848a3c1276c8be1529539bd46b9f12218f2"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -113,9 +143,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alloy"
-version = "1.7.3"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4973038846323e4e69a433916522195dce2947770076c03078fc21c80ea0f1c4"
+checksum = "50ab0cd8afe573d1f7dc2353698a51b1f93aec362c8211e28cfd3948c6adba39"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -195,9 +225,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-contract"
-version = "1.7.3"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca63b7125a981415898ffe2a2a696c83696c9c6bdb1671c8a912946bbd8e49e7"
+checksum = "7ac9e0c34dc6bce643b182049cdfcca1b8ce7d9c260cbdd561f511873b7e26cd"
 dependencies = [
  "alloy-consensus",
  "alloy-dyn-abi",
@@ -214,6 +244,7 @@ dependencies = [
  "futures-util",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -472,9 +503,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-provider"
-version = "1.7.3"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d181c8cc7cf4805d7e589bf4074d56d55064fa1a979f005a45a62b047616d870"
+checksum = "bf6b18b929ef1d078b834c3631e9c925177f3b23ddc6fa08a722d13047205876"
 dependencies = [
  "alloy-chains",
  "alloy-consensus",
@@ -506,7 +537,7 @@ dependencies = [
  "lru",
  "parking_lot",
  "pin-project",
- "reqwest 0.12.28",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -588,9 +619,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types"
-version = "1.7.3"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bdcbf9dfd5eea8bfeb078b1d906da8cd3a39c4d4dbe7a628025648e323611f6"
+checksum = "4faad925d3a669ffc15f43b3deec7fbdf2adeb28a4d6f9cf4bc661698c0f8f4b"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-anvil",
@@ -628,9 +659,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-debug"
-version = "1.7.3"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1b21e1ad18ff1b31ff1030e046462ab8168cf8894e6778cd805c8bdfe2bd649"
+checksum = "2145138f3214928f08cd13da3cb51ef7482b5920d8ac5a02ecd4e38d1a8f6d1e"
 dependencies = [
  "alloy-primitives",
  "derive_more 2.1.1",
@@ -1418,17 +1449,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ark-test-curves"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc137bb3271671a597ae79157030f88affe9fa7975207c3b781a01cb9ed0372"
-dependencies = [
- "ark-ec 0.5.0",
- "ark-ff 0.5.0",
- "ark-std 0.5.0",
-]
-
-[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1568,9 +1588,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.16.3"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ec6fb3fe69024a75fa7e1bfb48aa6cf59706a101658ea01bfd33b2b248a038f"
+checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -1578,9 +1598,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.40.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f50037ee5e1e41e7b8f9d161680a725bd1626cb6f8c7e901f91f942850852fe7"
+checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
 dependencies = [
  "cc",
  "cmake",
@@ -1933,10 +1953,10 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 name = "basic_bootloader"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "basic_system",
  "cfg-if",
- "crypto",
  "cycle_marker",
  "evm_interpreter",
  "full_statement_verifier",
@@ -1954,10 +1974,10 @@ dependencies = [
 name = "basic_bootloader_forward"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "basic_system_forward",
  "cfg-if",
- "crypto_forward",
  "cycle_marker",
  "evm_interpreter_forward",
  "hex",
@@ -1974,10 +1994,10 @@ dependencies = [
 name = "basic_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "cc-traits",
  "const-hex",
- "crypto",
  "cycle_marker",
  "either",
  "evm_interpreter",
@@ -1997,6 +2017,7 @@ dependencies = [
 name = "basic_system_forward"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "alloy-primitives",
  "alloy-rlp",
@@ -2005,7 +2026,6 @@ dependencies = [
  "arrayvec",
  "cc-traits",
  "const-hex",
- "crypto_forward",
  "cycle_marker",
  "either",
  "evm_interpreter_forward",
@@ -2031,6 +2051,7 @@ dependencies = [
 name = "basic_system_proving"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "alloy-primitives",
  "alloy-rlp",
@@ -2039,7 +2060,6 @@ dependencies = [
  "arrayvec",
  "cc-traits",
  "const-hex",
- "crypto_proving",
  "cycle_marker",
  "either",
  "evm_interpreter_proving",
@@ -2351,10 +2371,10 @@ dependencies = [
 name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "basic_bootloader",
  "basic_system",
  "c-kzg",
- "crypto",
  "oracle_provider",
  "ruint",
  "zk_ee",
@@ -2364,11 +2384,11 @@ dependencies = [
 name = "callable_oracles_forward"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy-consensus",
  "basic_bootloader_forward",
  "basic_system_forward",
  "c-kzg",
- "crypto_forward",
  "hex",
  "num-bigint",
  "num-traits",
@@ -2734,32 +2754,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254 0.5.0",
- "ark-ec 0.5.0",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0",
- "blake2",
- "cfg-if",
- "const_for",
- "educe",
- "itertools 0.14.0",
- "k256",
- "num-bigint",
- "num-traits",
- "p256",
- "ripemd",
- "ruint",
- "sha2 0.10.9",
- "sha3 0.10.9",
- "zeroize",
-]
-
-[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2788,74 +2782,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77727bb15fa921304124b128af125e7e3b968275d1b108b379190264f4423710"
 dependencies = [
  "hybrid-array",
-]
-
-[[package]]
-name = "crypto_forward"
-version = "0.1.0"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254 0.5.0",
- "ark-ec 0.5.0",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0",
- "ark-test-curves",
- "blake2",
- "blake2s_u32",
- "cfg-if",
- "const_for",
- "educe",
- "hex-literal",
- "itertools 0.14.0",
- "k256",
- "num-bigint",
- "num-integer",
- "num-traits",
- "p256",
- "proptest",
- "rand_core 0.6.4",
- "ripemd",
- "riscv_transpiler",
- "ruint",
- "sha2 0.10.9",
- "sha3 0.10.9",
- "zeroize",
- "zksync_os_runner",
-]
-
-[[package]]
-name = "crypto_proving"
-version = "0.1.0"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254 0.5.0",
- "ark-ec 0.5.0",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0",
- "ark-test-curves",
- "blake2",
- "blake2s_u32",
- "cfg-if",
- "const_for",
- "educe",
- "hex-literal",
- "itertools 0.14.0",
- "k256",
- "num-bigint",
- "num-integer",
- "num-traits",
- "p256",
- "proptest",
- "rand_core 0.6.4",
- "ripemd",
- "riscv_transpiler",
- "ruint",
- "sha2 0.10.9",
- "sha3 0.10.9",
- "zeroize",
- "zksync_os_runner",
 ]
 
 [[package]]
@@ -3364,8 +3290,8 @@ dependencies = [
 name = "evm_interpreter"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
- "crypto",
  "cycle_marker",
  "either",
  "paste",
@@ -3378,8 +3304,8 @@ dependencies = [
 name = "evm_interpreter_forward"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
- "crypto_forward",
  "cycle_marker",
  "either",
  "paste",
@@ -3393,8 +3319,8 @@ dependencies = [
 name = "evm_interpreter_proving"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
- "crypto_proving",
  "cycle_marker",
  "either",
  "paste",
@@ -3564,13 +3490,13 @@ dependencies = [
 name = "forward_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "basic_bootloader",
  "basic_system",
  "bincode 1.3.3",
  "bincode 2.0.1",
  "callable_oracles",
- "crypto",
  "evm_interpreter",
  "execution_utils",
  "hex",
@@ -3745,6 +3671,7 @@ version = "0.1.0"
 name = "fuzzer-fuzz"
 version = "0.0.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "alloy-rlp",
  "arbitrary",
@@ -3757,7 +3684,6 @@ dependencies = [
  "bytes",
  "c-kzg",
  "callable_oracles",
- "crypto",
  "evm_interpreter",
  "forward_system",
  "fuzz_precompiles_forward",
@@ -4035,12 +3961,6 @@ checksum = "fda06d18ac606267c40c04e41b9947729bf8b9efe74bd4e82b61a5f26a510b9f"
 dependencies = [
  "arrayvec",
 ]
-
-[[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hidapi-rusb"
@@ -7085,6 +7005,7 @@ dependencies = [
 name = "rig"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "alloy-rlp",
  "alloy-rpc-types-debug",
@@ -7092,7 +7013,6 @@ dependencies = [
  "basic_bootloader",
  "basic_system",
  "callable_oracles",
- "crypto",
  "env_logger",
  "evm_interpreter",
  "forward_system",
@@ -9887,9 +9807,9 @@ dependencies = [
 name = "zk_ee"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "cfg-if",
- "crypto",
  "cycle_marker",
  "paste",
  "ruint",
@@ -9901,10 +9821,10 @@ dependencies = [
 name = "zk_ee_forward"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "bitflags 2.11.1",
  "cfg-if",
- "crypto_forward",
  "cycle_marker",
  "paste",
  "ruint",
@@ -9917,10 +9837,10 @@ dependencies = [
 name = "zk_ee_proving"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "arrayvec",
  "bitflags 2.11.1",
  "cfg-if",
- "crypto_proving",
  "cycle_marker",
  "paste",
  "ruint",
@@ -9943,11 +9863,11 @@ dependencies = [
 name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
+ "airbender-crypto",
  "alloy",
  "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
- "crypto",
  "evm_interpreter",
  "forward_system",
  "ruint",
@@ -9964,12 +9884,12 @@ checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=a8785751b44a356bb6a70e147bec62b9ec2c8e42#a8785751b44a356bb6a70e147bec62b9ec2c8e42"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=26b9c1a95fede005480cdde51e2c249a7e083e36#26b9c1a95fede005480cdde51e2c249a7e083e36"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=a8785751b44a356bb6a70e147bec62b9ec2c8e42#a8785751b44a356bb6a70e147bec62b9ec2c8e42"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=26b9c1a95fede005480cdde51e2c249a7e083e36#26b9c1a95fede005480cdde51e2c249a7e083e36"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

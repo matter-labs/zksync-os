@@ -15,14 +15,14 @@ features = ["http-rustls-tls", "test", "signing"]
 [dependencies]
 evm_interpreter = { path = "../../../evm_interpreter" }
 oracle_provider = { path = "../../../oracle_provider" }
-forward_system = { path = "../../../forward_system", features = ["no_print", "for_tests"] }
+forward_system = { path = "../../../forward_system", default-features = false, features = ["testing", "no_print", "for_tests"] }
 basic_system = { path = "../../../basic_system" }
 callable_oracles = { path = "../../../callable_oracles" }
 modexp = { path = "../../../supporting_crates/modexp" }
-basic_bootloader = { path = "../../../basic_bootloader" }
+basic_bootloader = { path = "../../../basic_bootloader", default-features = false, features = ["testing"] }
 system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
-alloy = { version = "=1.7.3", features = ["full", "eip712"]}
+alloy = { version = "=1.8.3", features = ["full", "eip712"]}
 alloy-rlp = "0.3.13"
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig" }
@@ -347,4 +347,3 @@ path = "fuzz_targets/kzg_blobs/kzg_blobs.rs"
 test = false
 doc = false
 bench = false
-
