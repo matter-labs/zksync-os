@@ -10,14 +10,6 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-alloy = { workspace = true, features = [
-    "consensus",
-    "dyn-abi",
-    "eips",
-    "network",
-    "rlp",
-    "rpc-types",
-    "signers",
-] }
+alloy = { workspace = true }
 
 zksync_os_interface = { workspace = true }
