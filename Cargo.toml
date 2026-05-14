@@ -67,6 +67,23 @@ default-members = [
     "supporting_crates/nostd_compression",
     "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
     "cycle_marker",
+    "tests/common",
+    "tests/rig",
+    "tests/instances/transactions",
+    "tests/instances/erc20",
+    "tests/instances/forge_tests",
+    "tests/instances/precompiles",
+    "tests/instances/bench",
+    "tests/instances/unit",
+    "tests/instances/system_hooks",
+    "tests/instances/multiblock_batch",
+    "tests/instances/header",
+    "tests/instances/interop",
+    "tests/instances/evm",
+    "tests/block_reexecutor",
+    "tests/revm_runner",
+    "tests/binary_checker",
+    "scripts",
 ]
 
 exclude = [

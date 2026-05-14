@@ -29,15 +29,10 @@ jobs:
               run: |
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
-            # evm-tester, evm_divergence_validator, and eth_runner are excluded
-            # because they enable conflicting features on forward_system via rig
-            # (evm_tester, eth_runner, unlimited_native, no_print), which change
-            # execution behavior and break other tests. These crates have their
-            # own dedicated CI jobs.
             - name: Compile
-              run: cargo test --workspace --exclude evm-tester --exclude evm_divergence_validator --exclude eth_runner --release --no-run
+              run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --workspace --exclude evm-tester --exclude evm_divergence_validator --exclude eth_runner --release
+              run: cargo test --release
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -50,9 +45,9 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
-              run: cargo test --workspace --exclude evm-tester --exclude evm_divergence_validator --exclude eth_runner --release --no-run
+              run: cargo test --release --no-run
             - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --workspace --exclude evm-tester --exclude evm_divergence_validator --exclude eth_runner --release
+              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
