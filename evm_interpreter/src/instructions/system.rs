@@ -92,7 +92,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
 
         // now follow logic of calldatacopy
-        let source = custom_u256_try_to_usize(source_offset)
+        let source = source_offset
+            .try_to_usize()
             .and_then(|offset| self.bytecode.get(offset..))
             .unwrap_or(&[]);
 
@@ -114,7 +115,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
-        let value = match custom_u256_try_to_usize(stack_top) {
+        let value = match stack_top.try_to_usize() {
             Some(index) => {
                 if index < self.calldata.len() {
                     let have_bytes = 32.min(self.calldata.len() - index);
@@ -180,7 +181,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             Self::cast_to_usize(&memory_offset, EvmError::InvalidOperandOOG.into())?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
 
-        let source = custom_u256_try_to_usize(&source_offset)
+        let source = &source_offset
+            .try_to_usize()
             .and_then(|offset| self.calldata.get(offset..))
             .unwrap_or(&[]);
 

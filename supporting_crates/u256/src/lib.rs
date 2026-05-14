@@ -2,6 +2,8 @@
 
 // Custom types below are NOT Copy in Rust's sense, even though Clone internally would use copy
 
+mod conversions;
+
 #[cfg(any(not(feature = "delegation"), not(target_arch = "riscv32"), test))]
 mod naive;
 

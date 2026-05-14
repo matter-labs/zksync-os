@@ -328,6 +328,8 @@ impl U256 {
     }
 }
 
+crate::conversions::impl_conversions!(U256);
+
 impl From<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn from(value: ruint::aliases::U256) -> Self {

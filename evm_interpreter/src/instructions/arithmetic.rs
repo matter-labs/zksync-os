@@ -155,7 +155,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, SIGNEXTEND_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        if let Some(shift) = custom_u256_try_to_usize_capped::<32>(op1) {
+        if let Some(shift) = op1.try_to_usize_capped::<32>() {
             let bit_index = 8 * shift + 7;
             let bit = op2.bit(bit_index);
             let mut mask = U256::one();

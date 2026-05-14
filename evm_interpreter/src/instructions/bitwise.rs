@@ -137,7 +137,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::VERYLOW, BYTE_NATIVE_COST)?;
         let (offset, src) = self.stack.pop_1_and_peek_mut()?;
 
-        if let Some(offset) = custom_u256_try_to_usize_capped::<32>(offset) {
+        if let Some(offset) = offset.try_to_usize_capped::<32>() {
             let ret = src.byte(31 - offset);
             U256::write_zero(src);
             src.as_limbs_mut()[0] = ret as u64;
@@ -152,7 +152,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        match custom_u256_try_to_usize(op1) {
+        match op1.try_to_usize() {
             None => U256::write_zero(op2),
             Some(shift) => {
                 if shift >= 256 {
@@ -169,7 +169,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        match custom_u256_try_to_usize(op1) {
+        match op1.try_to_usize() {
             None => U256::write_zero(op2),
             Some(shift) => {
                 if shift >= 256 {
@@ -186,7 +186,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        let shift = custom_u256_to_usize_saturated(op1);
+        let shift = op1.to_usize_saturated();
         arithmetic_shr_in_place(op2, shift);
         Ok(())
     }

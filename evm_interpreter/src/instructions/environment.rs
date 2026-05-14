@@ -85,7 +85,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
         let block_number = self.stack.pop_1()?;
-        let block_number = custom_u256_to_u64_saturated(block_number);
+        let block_number = block_number.to_u64_saturated();
         let block_hash = U256::from_be_bytes(system.get_blockhash(block_number)?.as_u8_array_ref());
         self.stack.push(&block_hash)?;
         Ok(())
@@ -95,7 +95,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BLOBHASH, 100)?;
         let stack_top = self.stack.top_mut()?;
-        if let Some(index) = custom_u256_try_to_usize(&*stack_top) {
+        if let Some(index) = (*stack_top).try_to_usize() {
             if let Some(blob_hash) = system.get_blob_hash(index) {
                 *stack_top = U256::from_be_bytes(blob_hash.as_u8_array_ref());
             } else {

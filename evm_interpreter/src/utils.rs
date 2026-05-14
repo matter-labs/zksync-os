@@ -2,7 +2,6 @@ use core::ops::DerefMut;
 
 use crate::*;
 use ruint::aliases::B160;
-use zk_ee::utils::custom_u256_utils::*;
 use zk_ee::{system::EthereumLikeTypes, utils::exact_size_chain::ExactSizeChain};
 
 pub fn bytereverse_u256(value: &mut U256) {
@@ -22,7 +21,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
-        custom_u256_try_to_usize(src).ok_or(error_to_set)
+        src.try_to_usize().ok_or(error_to_set)
     }
 
     /// Helper for casting memory offset and length.
