@@ -64,8 +64,8 @@ categories = ["cryptography"]
 # BLOCKS MERGE: cut a new zksync-os-interface release containing
 # `BlockContext.is_gateway` (currently only on `ra/add-gw-to-blockcontext`)
 # before merging this PR.
-zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "26b9c1a95fede005480cdde51e2c249a7e083e36", default-features = false }
-zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "26b9c1a95fede005480cdde51e2c249a7e083e36" }
+zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "71f9d8edac658e8384c245cf63c3f03d6c5b2454", default-features = false }
+zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "71f9d8edac658e8384c245cf63c3f03d6c5b2454" }
 
 # zksync-airbender deps pinned to the same commit airbender-platform
 # resolves `branch = "dev"` to at the time of pinning.
