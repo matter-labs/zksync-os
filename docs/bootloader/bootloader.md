@@ -50,7 +50,7 @@ Currently it misses `gas_per_pubdata` and `native_price`, but we already working
 | gas_used            | block gas used                                                                   | block gas used                                                     | TBD with or without pubdata             |
 | timestamp           | block timestamp                                                                  | block timestamp                                                    |                                         |
 | extra_data          | any extra data included by proposer                                              | TBD, possibly gas_per_pubdata and native price                     |                                         |
-| mix_hash            | beacon chain provided random, prevrandao (post merge)                            | 0                                                                  | after consensus will be provided random |
+| mix_hash            | beacon chain provided random, prevrandao (post merge)                            | 1                                                                  | mocked                                  |
 | nonce               | 0 (post merge)                                                                   | 0                                                                  |                                         |
 | base_fee_per_gas    | base_fee_per_gas                                                                 | base_fee_per_gas                                                   |                                         |
 
