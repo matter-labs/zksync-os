@@ -33,3 +33,9 @@ Opcode `0x44` is `PREVRANDAO` under Cancun semantics, historically named `DIFFIC
 This does not contradict the block header `difficulty` field being `0` after the Merge.
 
 See [Bootloader block header](./bootloader/bootloader.md#block-header).
+
+### `SUB` operand order
+
+ZKsync OS follows the standard EVM operand order for `SUB`. The top stack item is the first operand, and the item below it is the second operand. For example, `PUSH1 0x03 PUSH1 0x05 SUB` leaves `0x02` on the stack.
+
+This is not a reversed subtraction bug.
