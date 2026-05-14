@@ -3,10 +3,29 @@ use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_A
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{DivRemExt, WideDivRemExt};
-#[cfg(target_pointer_width = "32")]
-use zk_ee::utils::u256_arithmetic_advice::U256DivRemAdviceParams;
-#[cfg(target_pointer_width = "64")]
-use zk_ee::utils::u256_arithmetic_advice::U256DivRemAdviceParams64;
+
+/// Params for U256 div_rem oracle query (pointer-based, like modexp).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct U256DivRemAdviceParamsGeneric<W> {
+    pub dividend_ptr: W,
+    pub divisor_ptr: W,
+}
+
+pub type U256DivRemAdviceParams = U256DivRemAdviceParamsGeneric<u32>;
+pub type U256DivRemAdviceParams64 = U256DivRemAdviceParamsGeneric<u64>;
+
+/// Params for U256 wide div_rem oracle query (512-bit dividend, 256-bit divisor).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct U256WideDivRemAdviceParamsGeneric<W> {
+    pub dividend_lo_ptr: W,
+    pub dividend_hi_ptr: W,
+    pub divisor_ptr: W,
+}
+
+pub type U256WideDivRemAdviceParams = U256WideDivRemAdviceParamsGeneric<u32>;
+pub type U256WideDivRemAdviceParams64 = U256WideDivRemAdviceParamsGeneric<u64>;
 
 /// Verifies a div_rem hint. On success, `dividend` is modified in-place to
 /// hold the remainder. Caller must save q_limbs before calling.
@@ -98,7 +117,7 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
         if USE_ADVICE {
             u256_wide_div_rem_with_advice(dividend_lo, dividend_hi, divisor, oracle)
         } else {
-            u256_wide_div_rem_software(dividend_lo, dividend_hi, divisor)
+            u256_wide_div_rem_naive(dividend_lo, dividend_hi, divisor)
         }
     }
 }
@@ -163,14 +182,13 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     *dividend_or_quotient = U256::from_limbs(q_limbs);
 }
 
-fn u256_wide_div_rem_software(dividend_lo: &mut U256, dividend_hi: &mut U256, divisor: &mut U256) {
+fn u256_wide_div_rem_naive(dividend_lo: &mut U256, dividend_hi: &mut U256, divisor: &mut U256) {
     assert!(!divisor.is_zero());
-    let mut product = [0u64; 8];
-    product[..4].copy_from_slice(dividend_lo.as_limbs());
-    product[4..].copy_from_slice(dividend_hi.as_limbs());
+    let mut dividend = [0u64; 8];
+    dividend[..4].copy_from_slice(dividend_lo.as_limbs());
+    dividend[4..].copy_from_slice(dividend_hi.as_limbs());
     let mut d = *divisor.as_limbs();
-    ruint::algorithms::div(&mut product, &mut d);
-    // Remainder is in d, store it in divisor
+    ruint::algorithms::div(&mut dividend, &mut d);
     *divisor = U256::from_limbs(d);
 }
 
@@ -185,7 +203,6 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
 
     #[cfg(target_pointer_width = "32")]
     let mut it = {
-        use zk_ee::utils::u256_arithmetic_advice::U256WideDivRemAdviceParams;
         let params = U256WideDivRemAdviceParams {
             dividend_lo_ptr: (dividend_lo as *const U256).addr() as u32,
             dividend_hi_ptr: (dividend_hi as *const U256).addr() as u32,
@@ -201,7 +218,6 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
 
     #[cfg(target_pointer_width = "64")]
     let mut it = {
-        use zk_ee::utils::u256_arithmetic_advice::U256WideDivRemAdviceParams64;
         let params = U256WideDivRemAdviceParams64 {
             dividend_lo_ptr: (dividend_lo as *const U256).addr() as u64,
             dividend_hi_ptr: (dividend_hi as *const U256).addr() as u64,

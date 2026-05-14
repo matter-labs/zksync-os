@@ -6,7 +6,6 @@ pub mod exact_size_chain;
 pub mod integer_utils;
 pub mod stack_linked_list;
 pub mod type_assert;
-pub mod u256_arithmetic_advice;
 pub mod usize_rw;
 pub mod write_bytes;
 

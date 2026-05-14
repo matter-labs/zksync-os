@@ -1,13 +1,13 @@
 use basic_system::system_functions::modexp::{
     ModExpAdviceParams, ModExpAdviceParams64, MODEXP_ADVICE_QUERY_ID,
 };
-use oracle_provider::OracleQueryProcessor;
-use oracle_provider::RamPeek;
-use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
-use zk_ee::utils::u256_arithmetic_advice::{
+use basic_system::system_functions::u256_advice::{
     U256DivRemAdviceParams, U256DivRemAdviceParams64, U256WideDivRemAdviceParams,
     U256WideDivRemAdviceParams64,
 };
+use oracle_provider::OracleQueryProcessor;
+use oracle_provider::RamPeek;
+use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
 
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
@@ -274,9 +274,9 @@ mod tests {
     use super::*;
 
     use crate::test_utils::TestMemorySource;
+    use basic_system::system_functions::u256_advice::U256WideDivRemAdviceParams64;
     use oracle_provider::DummyMemorySource;
     use zk_ee::oracle::query_ids::U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
-    use zk_ee::utils::u256_arithmetic_advice::U256WideDivRemAdviceParams64;
 
     impl TestMemorySource {
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
