@@ -17,7 +17,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "bincode",
  "serde",
@@ -26,12 +26,12 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "airbender-guest"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -72,7 +72,7 @@ dependencies = [
 [[package]]
 name = "airbender-macros"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -82,7 +82,7 @@ dependencies = [
 [[package]]
 name = "airbender-rt"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "getrandom",
  "riscv_common",
@@ -91,7 +91,7 @@ dependencies = [
 [[package]]
 name = "airbender-sdk"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "airbender-codec",
  "airbender-guest",
