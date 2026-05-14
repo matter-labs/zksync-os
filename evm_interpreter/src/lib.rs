@@ -32,7 +32,7 @@ use errors::EvmSubsystemError;
 use evm_stack::EvmStack;
 use gas::Gas;
 use gas_constants::{SHA3, SHA3WORD};
-use ruint::aliases::U256;
+use u256::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
@@ -58,7 +58,7 @@ pub mod interpreter;
 pub mod native_resource_constants;
 pub mod opcodes;
 pub mod precompile_addresses;
-pub mod u256;
+pub mod u256_helpers;
 pub mod utils;
 
 pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentType::EVM;
@@ -187,7 +187,8 @@ pub const STACK_SIZE: usize = 1024;
 pub const MAX_CODE_SIZE: usize = 0x6000;
 pub const MAX_INITCODE_SIZE: usize = MAX_CODE_SIZE * 2;
 pub const ERGS_PER_GAS: u64 = 256;
-pub const ERGS_PER_GAS_U256: U256 = U256::from_limbs([ERGS_PER_GAS, 0, 0, 0]);
+pub const ERGS_PER_GAS_U256: ruint::aliases::U256 =
+    ruint::aliases::U256::from_limbs([ERGS_PER_GAS, 0, 0, 0]);
 pub const BYTECODE_ALIGNMENT: usize = core::mem::size_of::<u64>();
 
 #[derive(Debug)]

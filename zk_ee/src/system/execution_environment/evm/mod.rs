@@ -1,5 +1,5 @@
 use crate::{system::SystemTypes, types_config::SystemIOTypesConfig};
-use ruint::aliases::U256;
+use u256::U256;
 
 pub mod errors;
 pub use errors::EvmError;
