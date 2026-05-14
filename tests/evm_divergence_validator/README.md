@@ -10,6 +10,7 @@ CLI tool that checks whether a given scenario produces different results on ZKsy
 ## Prerequisites
 
 - [Foundry](https://getfoundry.sh/) (`forge`) must be on PATH for Solidity compilation (not needed for `send_raw` steps with pre-compiled bytecode).
+- The validator must run with the P-256 precompile enabled. This crate enables `forward_system/production` in `Cargo.toml`, so the standard commands below include it. Do not disable this feature when preparing a bug bounty PoC.
 
 ## Usage
 
