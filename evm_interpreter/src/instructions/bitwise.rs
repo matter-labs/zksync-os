@@ -1,35 +1,6 @@
 use super::*;
 use native_resource_constants::*;
 
-#[inline(always)]
-fn arithmetic_shr_in_place(value: &mut U256, shift: usize) {
-    let shift = shift.min(256);
-    let is_negative = value.bit(255);
-
-    if shift == 256 {
-        if is_negative {
-            let mut all_ones = U256::zero();
-            all_ones.not_mut();
-            *value = all_ones;
-        } else {
-            U256::write_zero(value);
-        }
-        return;
-    }
-
-    if shift == 0 {
-        return;
-    }
-
-    *value >>= shift as u32;
-    if is_negative {
-        let mut mask = U256::zero();
-        mask.not_mut();
-        mask <<= (256 - shift) as u32;
-        core::ops::BitOrAssign::bitor_assign(value, &mask);
-    }
-}
-
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn lt(&mut self) -> InstructionResult {
         self.gas
@@ -187,20 +158,19 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         let shift = op1.to_usize_saturated();
-        arithmetic_shr_in_place(op2, shift);
+        op2.arithmetic_shr_assign(shift);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::arithmetic_shr_in_place;
     use ruint::aliases::U256 as HostU256;
     use u256::U256;
 
     fn assert_sar_matches_host(input: HostU256, shift: usize) {
         let mut actual: U256 = input.into();
-        arithmetic_shr_in_place(&mut actual, shift);
+        actual.arithmetic_shr_assign(shift);
         let actual_host: HostU256 = actual.into();
         assert_eq!(actual_host, input.arithmetic_shr(shift));
     }

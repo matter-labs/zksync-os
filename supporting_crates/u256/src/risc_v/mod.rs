@@ -356,6 +356,31 @@ impl U256 {
             Some(result)
         }
     }
+
+    #[inline(always)]
+    pub fn arithmetic_shr_assign(&mut self, shift: usize) {
+        let is_negative = self.bit(255);
+
+        if shift >= 256 {
+            if is_negative {
+                *self = Self::from_limbs([u64::MAX; 4]);
+            } else {
+                Self::write_zero(self);
+            }
+            return;
+        }
+
+        if shift == 0 {
+            return;
+        }
+
+        *self >>= shift as u32;
+        if is_negative {
+            let mut mask = Self::from_limbs([u64::MAX; 4]);
+            mask <<= (256 - shift) as u32;
+            core::ops::BitOrAssign::bitor_assign(self, &mask);
+        }
+    }
 }
 
 crate::conversions::impl_conversions!(U256);

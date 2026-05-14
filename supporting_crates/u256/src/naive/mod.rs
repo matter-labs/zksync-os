@@ -326,6 +326,11 @@ impl U256 {
     pub fn checked_mul(&self, rhs: &Self) -> Option<Self> {
         self.0.checked_mul(rhs.0).map(Self)
     }
+
+    #[inline(always)]
+    pub fn arithmetic_shr_assign(&mut self, shift: usize) {
+        self.0 = self.0.arithmetic_shr(shift);
+    }
 }
 
 crate::conversions::impl_conversions!(U256);
