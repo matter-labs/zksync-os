@@ -1,6 +1,5 @@
 use super::{delegation::*, DelegatedU256};
 use core::mem::MaybeUninit;
-use core::ptr::addr_of_mut;
 
 static mut SCRATCH_FOR_MUT: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 #[cfg(target_arch = "riscv32")]
@@ -92,22 +91,26 @@ pub(super) unsafe fn with_ram_operand<T, F: FnMut(*const DelegatedU256) -> T>(
 /// `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
 pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut DelegatedU256 {
     #[cfg(target_arch = "riscv32")]
+    #[allow(static_mut_refs)]
     {
-        let scratch = addr_of_mut!(SCRATCH_FOR_MUT).cast::<DelegatedU256>();
         if operand.addr() < ROM_BOUND {
-            scratch.write(operand.read());
-            scratch
+            SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
+            SCRATCH_FOR_MUT.as_mut_ptr()
         } else {
-            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(scratch, operand.cast());
-            scratch
+            // otherwise we can just use precompile
+            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
+                SCRATCH_FOR_MUT.as_mut_ptr().cast(),
+                operand.cast(),
+            );
+            SCRATCH_FOR_MUT.as_mut_ptr()
         }
     }
 
     #[cfg(not(target_arch = "riscv32"))]
+    #[allow(static_mut_refs)]
     {
-        let scratch = addr_of_mut!(SCRATCH_FOR_MUT).cast::<DelegatedU256>();
-        scratch.write(operand.read());
-        scratch
+        SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
+        SCRATCH_FOR_MUT.as_mut_ptr()
     }
 }
 
@@ -116,11 +119,11 @@ pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut Dele
 /// `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
 pub unsafe fn copy_if_needed(operand: *const DelegatedU256) -> *const DelegatedU256 {
     #[cfg(target_arch = "riscv32")]
+    #[allow(static_mut_refs)]
     unsafe {
         if operand.addr() < ROM_BOUND {
-            let scratch = addr_of_mut!(SCRATCH_FOR_REF).cast::<DelegatedU256>();
-            scratch.write(operand.read());
-            scratch as *const DelegatedU256
+            SCRATCH_FOR_REF.write(operand.read());
+            SCRATCH_FOR_REF.as_ptr()
         } else {
             operand
         }
