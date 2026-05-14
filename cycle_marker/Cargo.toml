@@ -14,5 +14,4 @@ airbender-host = { workspace = true, optional = true, default-features = false }
 
 [features]
 use_airbender_host = ["dep:airbender-host"]
-use_riscv_transpiler = ["use_airbender_host"]
 log_to_file = []

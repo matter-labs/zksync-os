@@ -1,18 +1,10 @@
 //! ZKsync OS RISC-V runner.
 //!
-//! TODO(airbender): once `TranspilerRunner` accepts a generic decoder
-//! config (or exposes a MOP-aware variant), collapse this file to a
-//! thin wrapper that just picks the right decoder and delegates.
-use airbender_host::Program;
-use common_constants::rom::ROM_SECOND_WORD_BITS;
-use common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
-use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-use riscv_transpiler::cycle::CycleMarkerHooks;
-use riscv_transpiler::ir::{
-    preprocess_bytecode, DecodingOptions, FullUnsignedMachineDecoderConfig,
-};
-use riscv_transpiler::vm::{DelegationsCounters, RamWithRomRegion, SimpleTape, State, VM};
-use std::fs;
+//! Wrapper around airbender-host's `TranspilerRunner` that plugs
+//! in our MOP-aware decoder.
+
+use airbender_host::{ExecutionResult, FlamegraphConfig, Program, Runner as _};
+use riscv_transpiler::ir::{DecodingOptions, FullUnsignedMachineDecoderConfig};
 use std::path::PathBuf;
 
 /// Decoder config used by the FRI-aware RISC-V runner.
@@ -28,11 +20,7 @@ impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
         <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
 }
 
-/// Total RAM size (1 GiB address space).
-const RAM_SIZE: usize = 1 << 30;
-
 /// Default upper bound on RISC-V cycles used when the caller doesn't override it.
-/// This is large enough for any real block; individual tests can lower it.
 pub const DEFAULT_CYCLE_LIMIT: usize = 1 << 36;
 
 /// Flamegraph profiling options passed through to the transpiler VM.
@@ -99,9 +87,6 @@ impl Runner {
     pub fn run(self, input_words: &[u32]) -> RunResult {
         log::info!("ZK RISC-V transpiler runner is starting");
 
-        // Use airbender-host to parse the manifest and verify sha256 of the
-        // distributed artifacts, then run the VM ourselves with a MOP-aware
-        // decoder (airbender-host's TranspilerRunner does not support MOP).
         let program = Program::load(&self.dist_dir).unwrap_or_else(|err| {
             panic!(
                 "failed to load program from {}: {err}",
@@ -109,95 +94,47 @@ impl Runner {
             )
         });
 
-        let bin_words = read_u32_words(program.app_bin());
-        let text_words = read_u32_words(program.app_text());
+        let mut builder = program
+            .transpiler_runner()
+            .with_unstable_raw_decoder::<FullUnsignedMachineWithMopDecoderConfig>(
+                "zksync-os mop decoder",
+            )
+            .with_cycles(self.cycles);
 
-        let instructions =
-            preprocess_bytecode::<FullUnsignedMachineWithMopDecoderConfig>(&text_words);
-        let tape = SimpleTape::new(&instructions);
-        let mut ram =
-            RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
-        let mut state = State::initial_with_counters(DelegationsCounters::default());
-        let mut non_determinism_source: QuasiUARTSource =
-            QuasiUARTSource::new_with_reads(input_words.to_vec());
-
-        // `cycle_markers` is only consumed under `feature = "cycle_marker"`;
-        // use the leading-underscore name so the unused-variable lint passes
-        // when the feature is off.
-        let _cycle_markers = if let Some(fg_options) = self.flamegraph {
-            use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
-
-            let fg_config = FlamegraphConfig {
-                symbols_path: self.dist_dir.join("app.elf"),
-                output_path: fg_options.output_path,
-                reverse_graph: false,
-                frequency_recip: fg_options.frequency_recip,
-            };
-            let mut profiler = VmFlamegraphProfiler::new(fg_config)
-                .expect("failed to initialize flamegraph profiler");
-            let (result, cm) = CycleMarkerHooks::with(|| {
-                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled_with_flamegraph::<
-                    _,
-                    _,
-                    _,
-                >(
-                    &mut state,
-                    &mut ram,
-                    &mut (),
-                    &tape,
-                    self.cycles,
-                    &mut non_determinism_source,
-                    &mut profiler,
-                )
+        if let Some(fg) = self.flamegraph {
+            builder = builder.with_flamegraph(FlamegraphConfig {
+                output: fg.output_path,
+                sampling_rate: fg.frequency_recip,
+                inverse: false,
+                elf_path: Some(self.dist_dir.join("app.elf")),
             });
-            result.expect("flamegraph execution failed");
-            cm
-        } else {
-            let (_reached_end, cm) = CycleMarkerHooks::with(|| {
-                VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled::<_, _, _>(
-                    &mut state,
-                    &mut ram,
-                    &mut (),
-                    &tape,
-                    self.cycles,
-                    &mut non_determinism_source,
-                )
-            });
-            cm
-        };
+        }
+
+        let runner = builder.build().expect("failed to build transpiler runner");
+        let ExecutionResult {
+            receipt,
+            cycles_executed,
+            cycle_markers,
+            ..
+        } = runner
+            .run(input_words)
+            .expect("transpiler runner execution failed");
 
         #[allow(unused_mut, unused_assignments)]
         let mut block_effective = None;
 
         #[cfg(feature = "cycle_marker")]
-        {
-            let results = cycle_marker::print_cycle_markers(_cycle_markers.into());
+        if let Some(cm) = cycle_markers {
+            let results = cycle_marker::print_cycle_markers(cm);
             block_effective = results.block_effective;
         }
 
-        let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
-
-        // Our convention is to return 32 bytes placed into registers x10-x17.
-        let output: [u32; 8] = core::array::from_fn(|i| state.registers[10 + i].value);
+        #[cfg(not(feature = "cycle_marker"))]
+        let _ = cycle_markers;
 
         RunResult {
-            output,
-            block_effective: block_effective.or(Some(cycles_executed)),
+            output: receipt.output,
+            block_effective: block_effective.or(Some(cycles_executed as u64)),
         }
     }
-}
-
-fn read_u32_words(path: &std::path::Path) -> Vec<u32> {
-    let bytes =
-        fs::read(path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
-    assert!(
-        bytes.len().is_multiple_of(4),
-        "{} is not word-aligned: {} bytes",
-        path.display(),
-        bytes.len()
-    );
-    bytes
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
 }
