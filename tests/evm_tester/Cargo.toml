@@ -18,7 +18,7 @@ doctest = false
 
 [dependencies]
 structopt = { version = "0.3", default-features = false }
-anyhow = "1"
+anyhow = { workspace = true }
 colored = "2"
 
 serde = { workspace = true, features = ["derive", "std"] }

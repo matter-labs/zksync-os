@@ -117,6 +117,7 @@ crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72c
 common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
 seq-macro = { version = "0.3.6", default-features = false }
 
+anyhow = "1"
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }

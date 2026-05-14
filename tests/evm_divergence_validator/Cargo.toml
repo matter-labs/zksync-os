@@ -14,7 +14,7 @@ name = "evm-divergence-validator"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
+anyhow = { workspace = true }
 serde = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
