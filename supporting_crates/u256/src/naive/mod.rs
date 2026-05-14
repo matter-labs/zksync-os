@@ -58,6 +58,14 @@ impl U256 {
         }
     }
 
+    /// # Safety
+    /// `a` and `b` must be valid, properly aligned pointers to initialized `Self` values.
+    pub unsafe fn swap_in_place(a: *mut Self, b: *mut Self) {
+        unsafe {
+            core::ptr::swap(a, b);
+        }
+    }
+
     #[inline(always)]
     pub fn zero() -> Self {
         Self::ZERO
@@ -157,6 +165,34 @@ impl U256 {
     }
 
     #[inline(always)]
+    pub fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
+        let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
+        self.as_limbs_mut().copy_from_slice(&t.as_limbs()[0..4]);
+        high.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
+    }
+
+    #[inline(always)]
+    pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
+        let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
+        self.as_limbs_mut().copy_from_slice(&t.as_limbs()[0..4]);
+        let mut high = Self::ZERO;
+        high.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
+        high
+    }
+
+    #[inline(always)]
+    pub fn overflowing_add_assign_with_carry_propagation(
+        &mut self,
+        rhs: &Self,
+        carry: bool,
+    ) -> bool {
+        let (t, of1) = self.0.overflowing_add(rhs.0);
+        let (t, of2) = t.overflowing_add(ruint::aliases::U256::from(carry as u64));
+        self.0 = t;
+        of1 | of2
+    }
+
+    #[inline(always)]
     /// Panics if divisor is 0
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         let (q, r) = dividend_or_quotient.0.div_rem(divisor_or_remainder.0);
@@ -199,6 +235,17 @@ impl U256 {
         self.0.to_be_bytes()
     }
 
+    pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
+        let limbs = self.0.as_limbs();
+        let (chunk0, rest) = dst.split_at_mut(8);
+        let (chunk1, rest) = rest.split_at_mut(8);
+        let (chunk2, chunk3) = rest.split_at_mut(8);
+        chunk0.copy_from_slice(&limbs[3].to_be_bytes());
+        chunk1.copy_from_slice(&limbs[2].to_be_bytes());
+        chunk2.copy_from_slice(&limbs[1].to_be_bytes());
+        chunk3.copy_from_slice(&limbs[0].to_be_bytes());
+    }
+
     pub fn bit_len(&self) -> usize {
         self.0.bit_len()
     }
@@ -218,6 +265,15 @@ impl U256 {
     pub unsafe fn write_one_into_ptr(into: *mut Self) {
         unsafe {
             into.write(Self::ONE);
+        }
+    }
+
+    #[inline(always)]
+    /// # Safety
+    /// `into` must be 32 byte aligned and point to 32 bytes of accessible memory
+    pub unsafe fn write_u64_into_ptr(into: *mut Self, value: u64) {
+        unsafe {
+            into.write(Self(ruint::aliases::U256::from(value)));
         }
     }
 
@@ -245,6 +301,9 @@ impl U256 {
         let mut product = [0u64; 8];
         let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
 
+        // `ruint::algorithms::div` divides `product` by the divisor in-place:
+        // it writes the quotient into `product` and the remainder into the
+        // divisor (`modulus_or_result`). The remainder is the MULMOD result.
         ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
     }
 
@@ -267,7 +326,14 @@ impl U256 {
     pub fn checked_mul(&self, rhs: &Self) -> Option<Self> {
         self.0.checked_mul(rhs.0).map(Self)
     }
+
+    #[inline(always)]
+    pub fn arithmetic_shr_assign(&mut self, shift: usize) {
+        self.0 = self.0.arithmetic_shr(shift);
+    }
 }
+
+crate::conversions::impl_conversions!(U256);
 
 impl From<ruint::aliases::U256> for U256 {
     #[inline(always)]

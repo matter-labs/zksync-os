@@ -463,3 +463,18 @@ pub unsafe fn write_one_into_ptr(operand: *mut DelegatedU256) {
         bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ONE.as_ptr());
     }
 }
+
+/// Write a u64 value as a U256 directly into the target pointer.
+/// Zeros the slot first via delegation, then sets limb[0].
+///
+/// # Safety
+/// `operand` must be 32-byte aligned and point to 32 bytes of accessible memory.
+pub unsafe fn write_u64_into_ptr(operand: *mut DelegatedU256, value: u64) {
+    #[allow(static_mut_refs)]
+    unsafe {
+        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ZERO.as_ptr());
+    }
+    unsafe {
+        (*operand).as_limbs_mut()[0] = value;
+    }
+}

@@ -2,6 +2,8 @@
 
 // Custom types below are NOT Copy in Rust's sense, even though Clone internally would use copy
 
+mod conversions;
+
 #[cfg(any(not(feature = "delegation"), not(target_arch = "riscv32"), test))]
 mod naive;
 
@@ -13,6 +15,12 @@ mod risc_v;
 
 #[cfg(all(feature = "delegation", target_arch = "riscv32"))]
 pub use self::risc_v::U256;
+
+#[inline(always)]
+pub fn init() {
+    #[cfg(all(feature = "delegation", target_arch = "riscv32"))]
+    delegated_u256::init();
+}
 
 #[derive(Debug)]
 pub struct BitIteratorBE<Slice: AsRef<[u64]>> {
