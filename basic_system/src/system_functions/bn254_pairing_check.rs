@@ -145,8 +145,20 @@ fn bn254_pairing_check_inner<A: Allocator>(
                 g2_point
             };
 
+            // e(O, Q) = e(P, O) = 1 in the target field, so degenerate pairs do
+            // not affect the multi-pairing product. Skip them after subgroup
+            // validation to avoid the per-pair Miller-loop precomputation that
+            // dominates the cost on degenerate inputs.
+            if g1_point.is_zero() || g2_point.is_zero() {
+                continue;
+            }
             pairs.push((g1_point, g2_point));
         }
+    }
+
+    if pairs.is_empty() {
+        // Empty product equals the identity in the target field.
+        return Ok(true);
     }
 
     let g1_iter = pairs.iter().map(|(g1, _)| g1);
@@ -159,9 +171,137 @@ fn bn254_pairing_check_inner<A: Allocator>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::ops::Neg;
+    use crypto::ark_ec::AffineRepr;
+    use crypto::ark_serialize::CanonicalSerialize;
+    use crypto::bn254::curves::{G1Affine, G2Affine};
+    use crypto::bn254::fields::{Fq, Fq2};
     use zk_ee::reference_implementations::BaseResources;
     use zk_ee::reference_implementations::DecreasingNative;
     use zk_ee::system::Resource;
+
+    const PAIR_LEN: usize = 192;
+
+    fn encode_fq_be(f: Fq) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        f.serialize_uncompressed(&mut bytes[..])
+            .expect("Fq serializes into 32 bytes");
+        // Arkworks serializes little-endian; the precompile reads big-endian.
+        bytereverse(&mut bytes);
+        bytes
+    }
+
+    fn encode_pair(g1: G1Affine, g2: G2Affine) -> [u8; PAIR_LEN] {
+        let mut buf = [0u8; PAIR_LEN];
+        let (g1_x, g1_y) = if g1.infinity {
+            (Fq::zero(), Fq::zero())
+        } else {
+            (g1.x, g1.y)
+        };
+        let (g2_x, g2_y) = if g2.infinity {
+            (Fq2::zero(), Fq2::zero())
+        } else {
+            (g2.x, g2.y)
+        };
+
+        buf[0..32].copy_from_slice(&encode_fq_be(g1_x));
+        buf[32..64].copy_from_slice(&encode_fq_be(g1_y));
+        // Ethereum's BN254 pairing serialization is x.c1, x.c0, y.c1, y.c0.
+        buf[64..96].copy_from_slice(&encode_fq_be(g2_x.c1));
+        buf[96..128].copy_from_slice(&encode_fq_be(g2_x.c0));
+        buf[128..160].copy_from_slice(&encode_fq_be(g2_y.c1));
+        buf[160..192].copy_from_slice(&encode_fq_be(g2_y.c0));
+        buf
+    }
+
+    fn expect_check(input: &[u8], expected_true: bool) {
+        let allocator = std::alloc::Global;
+        let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+        let mut dst: Vec<u8> = Vec::new();
+        Bn254PairingCheckImpl::execute(input, &mut dst, &mut resource, allocator)
+            .expect("precompile should succeed on well-formed input");
+        let mut expected = [0u8; 32];
+        expected[31] = expected_true as u8;
+        assert_eq!(dst.as_slice(), &expected[..]);
+    }
+
+    #[test]
+    fn single_pair_both_infinity_returns_true() {
+        let input = [0u8; PAIR_LEN];
+        expect_check(&input, true);
+    }
+
+    #[test]
+    fn single_pair_g1_infinity_returns_true() {
+        let input = encode_pair(G1Affine::zero(), G2Affine::generator());
+        expect_check(&input, true);
+    }
+
+    #[test]
+    fn single_pair_g2_infinity_returns_true() {
+        let input = encode_pair(G1Affine::generator(), G2Affine::zero());
+        expect_check(&input, true);
+    }
+
+    #[test]
+    fn many_infinity_pairs_return_true() {
+        let input = vec![0u8; 7 * PAIR_LEN];
+        expect_check(&input, true);
+    }
+
+    #[test]
+    fn nontrivial_pair_returns_false_and_infinity_does_not_mask_it() {
+        // e(G1, G2) is the BN254 generator pairing, which is not 1.
+        let nontrivial = encode_pair(G1Affine::generator(), G2Affine::generator());
+        expect_check(&nontrivial, false);
+
+        // Appending degenerate pairs must not flip the result to true.
+        let mut with_inf = nontrivial.to_vec();
+        with_inf.extend_from_slice(&[0u8; PAIR_LEN]);
+        expect_check(&with_inf, false);
+
+        let mut prefixed = vec![0u8; PAIR_LEN];
+        prefixed.extend_from_slice(&nontrivial);
+        expect_check(&prefixed, false);
+    }
+
+    #[test]
+    fn balanced_pair_returns_true_with_or_without_infinity_padding() {
+        // e(G1, G2) * e(-G1, G2) = e(G1, G2) * e(G1, G2)^{-1} = 1
+        let g1 = G1Affine::generator();
+        let g2 = G2Affine::generator();
+        let balanced_a = encode_pair(g1, g2);
+        let balanced_b = encode_pair(g1.neg(), g2);
+
+        let mut balanced = balanced_a.to_vec();
+        balanced.extend_from_slice(&balanced_b);
+        expect_check(&balanced, true);
+
+        // Interleaving degenerate pairs must keep the result true.
+        let mut interleaved = vec![0u8; PAIR_LEN];
+        interleaved.extend_from_slice(&balanced_a);
+        interleaved.extend_from_slice(&[0u8; PAIR_LEN]);
+        interleaved.extend_from_slice(&balanced_b);
+        interleaved.extend_from_slice(&[0u8; PAIR_LEN]);
+        expect_check(&interleaved, true);
+    }
+
+    #[test]
+    fn malformed_nonzero_g1_encoding_is_still_rejected() {
+        // A G1 input where the y-coordinate is forced to zero with a non-zero x
+        // is not on the curve y^2 = x^3 + 3 and must not be accepted as the
+        // point at infinity. This guards against any future refactor that
+        // filters before parsing/validation.
+        let mut input = [0u8; PAIR_LEN];
+        // x = 1 in big-endian; y stays zero. G2 stays at infinity.
+        input[31] = 1;
+        let allocator = std::alloc::Global;
+        let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+        let mut dst: Vec<u8> = Vec::new();
+        let err = Bn254PairingCheckImpl::execute(&input, &mut dst, &mut resource, allocator)
+            .expect_err("invalid G1 encoding must be rejected");
+        let _ = err;
+    }
 
     #[test]
     fn test_pairing_inner() {
