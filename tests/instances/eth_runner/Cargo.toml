@@ -35,3 +35,18 @@ proving = []
 gpu = ["airbender-host/gpu-prover"]
 default = []
 
+# Fast-compile variant used by the bench CI for the host-side eth_runner
+# binary. Its runtime perf doesn't affect cycle measurements (cycles come
+# from the RISC-V simulator), so disable LTO and parallelize codegen for
+# much faster CI builds.
+#
+# Mirrors `[profile.bench-fast]` in the root workspace's `Cargo.toml`
+# (`eth_runner` is excluded from that workspace; the root profile only
+# covers the in-workspace `-p precompiles` build path). Keep the two in sync.
+[profile.bench-fast]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 16
+debug = false
+
