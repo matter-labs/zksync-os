@@ -131,6 +131,22 @@ python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${precompiles_p
 emit_details_section "$precompiles_body" "Precompiles test-crate bench (synthetic workload, all labels)"
 rm -f "$precompiles_body"
 
+# Section 3a: pubdata bytes per block (keccak-DA bench files; pubdata is
+# invariant to the DA scheme — the keccak file just happens to be where
+# `single_run.rs` appends `pubdata_bytes: N`). `compare_pubdata.py`
+# self-suppresses when no block's value changed between base and head,
+# so no emit_section wrapper is needed.
+pubdata_pairs=""
+for dir in tests/instances/eth_runner/blocks/*; do
+  blk=$(basename "$dir")
+  if [ -z "$pubdata_pairs" ]; then
+    pubdata_pairs="(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\")"
+  else
+    pubdata_pairs="${pubdata_pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\")"
+  fi
+done
+python3 "$REPO_ROOT/bench_scripts/compare_pubdata.py" "[${pubdata_pairs}]" >> "$OUT"
+
 # Section 4: per-opcode. Two sub-scripts each emit nothing when nothing
 # moved; we suppress the "## Per-opcode" header when both are silent.
 stats_args=""
