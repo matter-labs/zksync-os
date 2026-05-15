@@ -353,14 +353,46 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     let mut marker_map: HashMap<(&'static str, u64), (Mark, Mark)> = HashMap::new();
     let mut start_counts: HashMap<(&'static str, u64), Mark> = HashMap::new();
 
+    // Effective-cycle weighting for a single marker delta. Used both for
+    // per-execution opcode samples and per-execution label samples so that
+    // cycles/gas analysis reflects true prover cost rather than raw RISC-V
+    // cycles only.
+    let effective_of = |diff: &Mark| -> u64 {
+        diff.cycles
+            + BLAKE_DELEGATION_COEFF
+                * diff
+                    .delegations
+                    .get(&BLAKE_DELEGATION_ID)
+                    .cloned()
+                    .unwrap_or_default()
+            + BIGINT_DELEGATION_COEFF
+                * diff
+                    .delegations
+                    .get(&BIGINT_DELEGATION_ID)
+                    .cloned()
+                    .unwrap_or_default()
+            + KECCAK_DELEGATION_COEFF
+                * diff
+                    .delegations
+                    .get(&KECCAK_DELEGATION_ID)
+                    .cloned()
+                    .unwrap_or_default()
+    };
+
     // Opcode-level markers: aggregate by label name.
     // OpcodeStart/OpcodeEnd pairs are always adjacent (leaf-level, no nesting).
+    // `samples` stores raw RISC-V cycles per execution; `samples_effective`
+    // stores raw + delegation cost. Aggregate counters (total/min/max/median)
+    // run over raw to preserve the long-standing `.bench` table semantics —
+    // the effective values are only consumed via the per-execution dump in
+    // `OPCODE_CYCLE_SAMPLES_DIR`.
     struct OpcodeAcc {
         total: u64,
         count: u64,
         min: u64,
         max: u64,
         samples: Vec<u64>,
+        samples_effective: Vec<u64>,
     }
     impl OpcodeAcc {
         fn new() -> Self {
@@ -370,14 +402,16 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
                 min: u64::MAX,
                 max: 0,
                 samples: Vec::new(),
+                samples_effective: Vec::new(),
             }
         }
-        fn record(&mut self, cycles: u64) {
+        fn record(&mut self, cycles: u64, effective: u64) {
             self.total += cycles;
             self.count += 1;
             self.min = self.min.min(cycles);
             self.max = self.max.max(cycles);
             self.samples.push(cycles);
+            self.samples_effective.push(effective);
         }
         fn median(&mut self) -> u64 {
             if self.samples.is_empty() {
@@ -408,10 +442,11 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
             Label::OpcodeEnd(name) => {
                 if let Some(start_mark) = pending_opcode_start.take() {
                     let diff = mark.diff(&start_mark);
+                    let effective = effective_of(&diff);
                     opcode_aggregated
                         .entry(name)
                         .or_insert_with(OpcodeAcc::new)
-                        .record(diff.cycles);
+                        .record(diff.cycles, effective);
                 }
             }
             Label::Start(name) => {
@@ -440,6 +475,25 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
         .map(|((label, _), value)| (label, value))
         .collect();
     markers.sort_by_key(|(_, (start, _))| start.cycles);
+
+    // Collect per-label samples for the LABEL_CYCLE_SAMPLES_DIR dump.
+    // Each (label, (start, end)) in `markers` corresponds to one execution
+    // of a Start/End label pair; cycles = end - start. Effective-cycle
+    // value is computed via `effective_of` defined above.
+    let mut label_cycle_samples: HashMap<&'static str, Vec<u64>> = HashMap::new();
+    let mut label_effective_samples: HashMap<&'static str, Vec<u64>> = HashMap::new();
+    for (label, (start, end)) in &markers {
+        let diff = end.diff(start);
+        let effective = effective_of(&diff);
+        label_cycle_samples
+            .entry(*label)
+            .or_default()
+            .push(diff.cycles);
+        label_effective_samples
+            .entry(*label)
+            .or_default()
+            .push(effective);
+    }
 
     let mut block_effective: Option<u64> = None;
 
@@ -478,19 +532,75 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
         cm.delegation_counter
     ));
 
-    // Dump per-execution cycle samples if requested via env var
+    // Dump per-execution cycle samples if requested via env var. Writes
+    // two files per opcode (same layout as the label dump below):
+    //   `<dir>/<OPCODE>.cycles`           — raw RISC-V cycles per execution
+    //   `<dir>/<OPCODE>.effective.cycles` — raw + delegation weights
+    // Caller contract: clean the dir before the first invocation (e.g. with
+    // `rm -rf`) so that stale files from a previous run are not mixed in.
+    // This block APPENDS to existing files so that multi-block test runs
+    // accumulate all samples rather than keeping only the last block's data.
     if let Ok(dir) = std::env::var("OPCODE_CYCLE_SAMPLES_DIR") {
         let dir = std::path::Path::new(&dir);
         std::fs::create_dir_all(dir).expect("Failed to create cycle samples dir");
+        let append = |path: std::path::PathBuf, samples: &[u64]| {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("Failed to open cycle samples file for append");
+            use std::io::Write;
+            for &c in samples {
+                writeln!(f, "{}", c).expect("Failed to write cycle sample");
+            }
+        };
         for (name, acc) in &opcode_aggregated {
             if acc.samples.is_empty() {
                 continue;
             }
-            let path = dir.join(format!("{}.cycles", name));
-            let mut f = std::fs::File::create(path).expect("Failed to create cycle samples file");
+            append(dir.join(format!("{}.cycles", name)), &acc.samples);
+            append(
+                dir.join(format!("{}.effective.cycles", name)),
+                &acc.samples_effective,
+            );
+        }
+    }
+
+    // Dump per-execution non-opcode label samples if requested via env var.
+    // Writes two files per label:
+    //   `<dir>/<label>.cycles`           — raw RISC-V cycles per execution
+    //   `<dir>/<label>.effective.cycles` — effective cycles per execution
+    //                                       (raw + Blake/BigInt/Keccak weights,
+    //                                       same formula as block_effective)
+    // One value per line, execution (start-cycle) order. Mirrors
+    // OPCODE_CYCLE_SAMPLES_DIR's format so the same join scripts can consume
+    // it. Effective values let cycles/gas analysis reflect prover cost
+    // including delegation work (which raw RISC-V cycles do not capture).
+    // Caller contract: clean the dir before the first invocation so that stale
+    // files from a previous run are not mixed in. This block APPENDS so that
+    // multi-block test runs accumulate all samples rather than keeping only the
+    // last block's data.
+    if let Ok(dir) = std::env::var("LABEL_CYCLE_SAMPLES_DIR") {
+        let dir = std::path::Path::new(&dir);
+        std::fs::create_dir_all(dir).expect("Failed to create label cycle samples dir");
+        let append = |path: std::path::PathBuf, samples: &[u64]| {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("Failed to open label cycle samples file for append");
             use std::io::Write;
-            for &c in &acc.samples {
-                writeln!(f, "{}", c).expect("Failed to write cycle sample");
+            for &c in samples {
+                writeln!(f, "{}", c).expect("Failed to write label cycle sample");
+            }
+        };
+        for (name, samples) in &label_cycle_samples {
+            if samples.is_empty() {
+                continue;
+            }
+            append(dir.join(format!("{}.cycles", name)), samples);
+            if let Some(eff) = label_effective_samples.get(name) {
+                append(dir.join(format!("{}.effective.cycles", name)), eff);
             }
         }
     }
