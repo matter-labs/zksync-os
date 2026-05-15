@@ -96,17 +96,20 @@ where
                 da_commitment_scheme
             );
         }
-        write_pubdata(
-            batch_data
-                .da_commitment_generator
-                .as_mut()
-                .unwrap()
-                .as_mut(),
-            result_keeper,
-            block_hash,
-            metadata.block_timestamp(),
-            &mut io,
-        );
+        // See `post_tx_op_proving_singleblock_batch.rs` for the rationale.
+        cycle_marker::wrap!("da_commitment", {
+            write_pubdata(
+                batch_data
+                    .da_commitment_generator
+                    .as_mut()
+                    .unwrap()
+                    .as_mut(),
+                result_keeper,
+                block_hash,
+                metadata.block_timestamp(),
+                &mut io,
+            );
+        });
 
         io.logs_storage
             .apply_to_array_vec(&mut batch_data.logs_storage);
@@ -142,8 +145,8 @@ where
             last_block_timestamp,
         };
 
-        // 3. Verify/apply reads and writes
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        // 3. Verify/apply reads and writes — state-tree merkle commit.
+        cycle_marker::wrap!("state_commitment_update", {
             IOTeardown::<_>::update_commitment(
                 &mut io,
                 Some(&mut state_commitment),
