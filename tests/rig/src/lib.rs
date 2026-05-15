@@ -229,7 +229,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     self.fri_artifacts.clone(),
                 )?
             } else {
-                let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
+                let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
                 self.chain.run_block_with_extra_stats_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),

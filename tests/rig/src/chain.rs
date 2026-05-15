@@ -732,7 +732,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
             transactions,
             block_context,
@@ -757,7 +757,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
             transactions,
             block_context,
