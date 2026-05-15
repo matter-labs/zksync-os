@@ -1,6 +1,6 @@
 //! Standalone FRI proof admission API.
 
-use crate::run::fri_proof_decode::{decode_and_flatten_proof, DecodeAndFlattenError};
+use crate::run::fri_proof_decode::decode_and_flatten_proof;
 use crate::run::query_processors::FriVerifierArtifacts;
 use basic_bootloader::bootloader::fri_admission::{
     run_host_verifier, statement_versioned_hash_from_verifier_output, FriHostVerifyError,
@@ -29,14 +29,6 @@ pub enum FriAdmissionError {
     VerifierThreadSpawn,
 }
 
-impl From<DecodeAndFlattenError> for FriAdmissionError {
-    fn from(err: DecodeAndFlattenError) -> Self {
-        match err {
-            DecodeAndFlattenError::BincodeDecode => Self::BincodeDecode,
-        }
-    }
-}
-
 impl From<FriHostVerifyError> for FriAdmissionError {
     fn from(err: FriHostVerifyError) -> Self {
         match err {
@@ -57,7 +49,8 @@ pub fn validate_fri_statement(
     proof_bytes: &[u8],
     artifacts: &FriVerifierArtifacts,
 ) -> Result<(), FriAdmissionError> {
-    let verifier_words = decode_and_flatten_proof(proof_bytes, artifacts)?;
+    let verifier_words = decode_and_flatten_proof(proof_bytes, artifacts)
+        .ok_or(FriAdmissionError::BincodeDecode)?;
     let output = run_host_verifier(&verifier_words)?;
     let computed = statement_versioned_hash_from_verifier_output(&output);
     if computed != statement_versioned_hash {
