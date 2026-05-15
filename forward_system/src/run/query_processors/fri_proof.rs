@@ -1,5 +1,5 @@
 use super::*;
-use crate::run::fri_proof_decode::{decode_and_flatten_proof, DecodeAndFlattenError};
+use crate::run::fri_proof_decode::decode_and_flatten_proof;
 use crate::run::FriProofSidecarSource;
 use execution_utils::setups::CompiledCircuitsSet;
 use execution_utils::unrolled::UnrolledProgramSetup;
@@ -85,19 +85,16 @@ impl<S: FriProofSidecarSource> OracleQueryProcessor for FriProofResponder<S> {
             return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
 
-        let oracle_stream = match decode_and_flatten_proof(&proof_bytes, artifacts) {
-            Ok(stream) => stream,
-            Err(DecodeAndFlattenError::BincodeDecode) => {
-                log::error!(
-                    "FRI sidecar bytes failed bincode decode — likely corrupted \
-                     sidecar state or encoding mismatch; tx will be rejected as if \
-                     the sidecar were missing (statement_versioned_hash={:?}, \
-                     proof_bytes_len={})",
-                    statement_versioned_hash,
-                    proof_bytes.len()
-                );
-                return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
-            }
+        let Some(oracle_stream) = decode_and_flatten_proof(&proof_bytes, artifacts) else {
+            log::error!(
+                "FRI sidecar bytes failed bincode decode — likely corrupted \
+                 sidecar state or encoding mismatch; tx will be rejected as if \
+                 the sidecar were missing (statement_versioned_hash={:?}, \
+                 proof_bytes_len={})",
+                statement_versioned_hash,
+                proof_bytes.len()
+            );
+            return DynUsizeIterator::from_constructor(Vec::new(), |r| r.iter().copied());
         };
 
         let oracle_stream_len =

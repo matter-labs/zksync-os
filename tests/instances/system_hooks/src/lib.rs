@@ -1698,12 +1698,12 @@ mod fri_precompile_e2e {
 
         // ----- 5. Set up gateway-mode block with raw proof bytes + artifacts --
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
-        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
+        let (mut tester, _counter) = TestingFramework::new().with_mock_fri_sidecars(
             [(stmt_bytes32, proof_bytes)],
-            FriVerifierArtifacts {
+            Some(FriVerifierArtifacts {
                 setup,
                 compiled_layouts,
-            },
+            }),
         );
         let wallet = tester.prefunded_random_signer();
 
@@ -1786,10 +1786,8 @@ mod fri_precompile_e2e {
         let h1 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash_1.0);
         let h2 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash_2.0);
 
-        let mut tester = TestingFramework::new().with_mock_fri_sidecars_and_artifacts(
-            [(h1, proof_bytes_1), (h2, proof_bytes_2)],
-            artifacts,
-        );
+        let (mut tester, _counter) = TestingFramework::new()
+            .with_mock_fri_sidecars([(h1, proof_bytes_1), (h2, proof_bytes_2)], Some(artifacts));
         let wallet = tester.prefunded_random_signer();
 
         // `input: stmt_hash_2.0` asks the precompile about the second
@@ -1867,8 +1865,10 @@ mod fri_precompile_e2e {
 
         let missing_stmt_hash = B256::from([0xffu8; 32]);
 
-        let mut tester = TestingFramework::new()
-            .with_mock_fri_sidecars(std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>());
+        let (mut tester, _counter) = TestingFramework::new().with_mock_fri_sidecars(
+            std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>(),
+            None,
+        );
         let wallet = tester.prefunded_random_signer();
 
         // Account nonce at tx start is 0; we submit nonce=7 so the
@@ -1932,12 +1932,8 @@ mod fri_precompile_e2e {
             .expect("artifacts must be present if fixture is");
 
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
-        let (tester, sidecar_lookups) = TestingFramework::new()
-            .with_mock_fri_sidecars_and_artifacts_with_counter(
-                [(stmt_bytes32, proof_bytes)],
-                artifacts,
-            );
-        let mut tester = tester;
+        let (mut tester, sidecar_lookups) = TestingFramework::new()
+            .with_mock_fri_sidecars([(stmt_bytes32, proof_bytes)], Some(artifacts));
         let wallet = tester.prefunded_random_signer();
 
         // Same hash listed twice: the submitter pays for 2 slots, the
@@ -2009,8 +2005,8 @@ mod fri_precompile_e2e {
             .expect("artifacts must be present if fixture is");
 
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
-        let mut tester = TestingFramework::new()
-            .with_mock_fri_sidecars_and_artifacts([(stmt_bytes32, proof_bytes)], artifacts);
+        let (mut tester, _counter) = TestingFramework::new()
+            .with_mock_fri_sidecars([(stmt_bytes32, proof_bytes)], Some(artifacts));
         let wallet = tester.prefunded_random_signer();
 
         let unsigned = UnsignedZKsyncFriProofTx {
@@ -2062,8 +2058,10 @@ mod fri_precompile_e2e {
 
         // Empty sidecar — the cap check runs before the verifier, so
         // we don't need proof bytes for the first eight entries.
-        let mut tester = TestingFramework::new()
-            .with_mock_fri_sidecars(std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>());
+        let (mut tester, _counter) = TestingFramework::new().with_mock_fri_sidecars(
+            std::iter::empty::<(rig::zk_ee::utils::Bytes32, Vec<u8>)>(),
+            None,
+        );
         let wallet = tester.prefunded_random_signer();
 
         // Gas budget must cover `9 × FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF`
