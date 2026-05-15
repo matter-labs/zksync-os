@@ -185,6 +185,7 @@ where
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
     );
     let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
         calldata.len() as u64,

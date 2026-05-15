@@ -1977,20 +1977,12 @@ mod fri_precompile_e2e {
         );
     }
 
-    /// Pins that the FRI intrinsic native cost is enforced during
-    /// validation: a `FriProofTx` whose gas limit is too low to cover
-    /// `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF * num_statements` must
-    /// be rejected with `OutOfNativeResourcesDuringValidation` — the
-    /// verifier never runs.
+    /// Pins that the FRI statement intrinsic gas surcharge is enforced during
+    /// validation: a `FriProofTx` whose gas limit is too low to cover the
+    /// per-statement FRI gas surcharge must be rejected before the verifier runs.
     ///
     /// Numeric setup (rig defaults):
     ///   `native_price = 10`, `base_fee = 1000`.
-    /// With `max_fee_per_gas = 2_000, max_priority_fee = 1`, the
-    /// effective `gas_price ≈ 1_001`, so `native_per_gas ≈ 101`.
-    /// `gas_limit = 30_000` gives a native budget of ~3.03M, well
-    /// under the 10M charged for a single FRI statement, and well
-    /// above the tx's intrinsic gas (21_000) so the gas check itself
-    /// passes and we land on the native check.
     #[test]
     fn fri_proof_tx_insufficient_gas_for_verifier_is_rejected() {
         use rig::zksync_os_interface::error::InvalidTransaction;
@@ -2012,8 +2004,8 @@ mod fri_precompile_e2e {
         let unsigned = UnsignedZKsyncFriProofTx {
             chain_id: 37,
             nonce: 0,
-            max_priority_fee_per_gas: 1,
-            max_fee_per_gas: 2_000,
+            max_priority_fee_per_gas: 9_000,
+            max_fee_per_gas: 10_000,
             gas_limit: 30_000,
             to: FRI_PRECOMPILE,
             value: Default::default(),
@@ -2029,9 +2021,9 @@ mod fri_precompile_e2e {
         assert!(
             matches!(
                 output.tx_results[0],
-                Err(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+                Err(InvalidTransaction::OutOfGasDuringValidation)
             ),
-            "tx whose gas budget cannot cover the FRI intrinsic native \
+            "tx whose gas budget cannot cover the FRI intrinsic gas \
              charge must be rejected during validation; got: {:?}",
             output.tx_results[0]
         );
@@ -2064,10 +2056,10 @@ mod fri_precompile_e2e {
         );
         let wallet = tester.prefunded_random_signer();
 
-        // Gas budget must cover `9 × FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF`
-        // (90M native) so we actually land on the cap check inside
-        // `build_verified_fri_statements_list` rather than being
-        // bounced earlier by `OutOfNativeResourcesDuringValidation`.
+        // Gas budget must cover the per-statement FRI intrinsic gas surcharge and enough
+        // native for the signed hashes, so we actually land on the cap check
+        // inside `build_verified_fri_statements_list` rather than being bounced
+        // earlier by gas/native resource validation.
         let unsigned = UnsignedZKsyncFriProofTx {
             chain_id: 37,
             nonce: 0,

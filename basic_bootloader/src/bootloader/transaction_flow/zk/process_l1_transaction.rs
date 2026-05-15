@@ -502,7 +502,8 @@ where
     let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, transaction.calldata());
 
-    // L1 transactions never carry an access list or authorization list, so
+    // L1 transactions never carry an access list, authorization list or FRI
+    // statement hashes, so
     // the corresponding counts are 0 and the intrinsic-gas helper collapses
     // to TX_INTRINSIC_GAS + calldata-token cost (deployment is also false).
     let intrinsic_gas = calculate_tx_intrinsic_gas(
@@ -512,6 +513,7 @@ where
         0,     // access_list_accounts
         0,     // access_list_storage_keys
         0,     // authorization_list_num
+        0,     // statement_versioned_hashes_num
     );
     let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
         transaction.calldata().len() as u64,

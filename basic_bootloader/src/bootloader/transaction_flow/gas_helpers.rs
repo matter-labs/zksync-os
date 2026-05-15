@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::bootloader::constants::{
-    L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST,
-    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
+    FRI_PROOF_TX_INTRINSIC_GAS, L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE,
+    L1_TX_INTRINSIC_NATIVE_COST, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION,
@@ -267,6 +267,7 @@ pub fn calculate_tx_intrinsic_gas(
     access_list_accounts: u64,
     access_list_storage_keys: u64,
     authorization_list_num: u64,
+    statement_versioned_hashes_num: u64,
 ) -> u64 {
     let mut intrinsic_gas = TX_INTRINSIC_GAS;
 
@@ -295,6 +296,11 @@ pub fn calculate_tx_intrinsic_gas(
     intrinsic_gas = intrinsic_gas.saturating_add(
         authorization_list_num.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT),
     );
+
+    // FRI statements reserve a user-visible gas surcharge. The verifier cost
+    // is also charged via intrinsic native resources.
+    intrinsic_gas = intrinsic_gas
+        .saturating_add(statement_versioned_hashes_num.saturating_mul(FRI_PROOF_TX_INTRINSIC_GAS));
 
     intrinsic_gas
 }
