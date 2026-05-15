@@ -352,62 +352,22 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// `statement_versioned_hash`. Each entry is a pair of the statement
     /// hash and the raw (bincode-serialized) `UnrolledProgramProof`
     /// bytes, exactly as the sequencer would receive them from the
-    /// operator.
+    /// Builder: installs a mock FRI sidecar source on the framework
+    /// and (optionally) the verifier artifacts needed for the
+    /// oracle-side `FriProofResponder` to decode and flatten raw
+    /// proof bytes.
     ///
-    /// No verifier artifacts are configured: when the bootloader issues
-    /// a `FRI_PROOF_QUERY_ID` query the oracle-side `FriProofResponder`
-    /// will see the bytes but skip decoding, returning an empty
-    /// response. Use [`Self::with_mock_fri_sidecars_and_artifacts`] for
-    /// end-to-end flows that need actual flattening.
-    pub fn with_mock_fri_sidecars<I>(mut self, sidecars: I) -> Self
-    where
-        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
-    {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
-        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
-            sidecars.into_iter().collect();
-        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
-            fri_sidecar: Some(sidecar_source),
-            fri_artifacts: None,
-        }));
-        self
-    }
-
-    /// Builder: installs a mock FRI sidecar source together with the
-    /// verifier artifacts (setup + compiled circuit layouts) needed for
-    /// the oracle-side `FriProofResponder` to decode and flatten the
-    /// raw proof bytes into the verifier's oracle word stream.
-    pub fn with_mock_fri_sidecars_and_artifacts<I>(
+    /// When `artifacts` is `None` the responder sees the bytes but
+    /// skips decoding, returning an empty response — useful for
+    /// negative-path tests that don't need a real verifier.
+    ///
+    /// Returns the framework alongside a shared counter that reports
+    /// how many times the bootloader queried the sidecar source
+    /// during this block's execution.
+    pub fn with_mock_fri_sidecars<I>(
         mut self,
         sidecars: I,
-        artifacts: forward_system::run::FriVerifierArtifacts,
-    ) -> Self
-    where
-        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
-    {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
-        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
-            sidecars.into_iter().collect();
-        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
-            fri_sidecar: Some(sidecar_source),
-            fri_artifacts: Some(Arc::new(artifacts)),
-        }));
-        self
-    }
-
-    /// Same as [`Self::with_mock_fri_sidecars_and_artifacts`] but also
-    /// returns a shared counter that reports how many times the
-    /// bootloader queried the sidecar source for proof bytes during
-    /// this block's execution. Intended for tests that need to pin
-    /// validator-level dedup behavior.
-    pub fn with_mock_fri_sidecars_and_artifacts_with_counter<I>(
-        mut self,
-        sidecars: I,
-        artifacts: forward_system::run::FriVerifierArtifacts,
+        artifacts: Option<forward_system::run::FriVerifierArtifacts>,
     ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicUsize>)
     where
         I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
@@ -420,7 +380,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         let counter = sidecar_source.lookup_counter();
         self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
             fri_sidecar: Some(sidecar_source),
-            fri_artifacts: Some(Arc::new(artifacts)),
+            fri_artifacts: artifacts.map(Arc::new),
         }));
         (self, counter)
     }

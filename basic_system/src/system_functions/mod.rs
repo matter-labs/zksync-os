@@ -15,6 +15,7 @@ pub mod p256_verify;
 pub mod point_evaluation;
 pub mod ripemd160;
 pub mod sha256;
+pub mod u256_advice;
 
 ///
 /// Internal utility function to reverse byte array
@@ -64,4 +65,6 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>
 {
     type Secp256k1ECRecover = ecrecover::EcRecoverImpl<USE_ADVICE>;
     type ModExp = modexp::ModExpImpl<USE_ADVICE>;
+    type DivRem = u256_advice::DivRemImpl<USE_ADVICE>;
+    type WideDivRem = u256_advice::WideDivRemImpl<USE_ADVICE>;
 }

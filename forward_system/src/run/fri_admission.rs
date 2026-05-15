@@ -1,6 +1,6 @@
 //! Standalone FRI proof admission API.
 
-use crate::run::fri_proof_decode::{decode_and_flatten_proof, DecodeAndFlattenError};
+use crate::run::fri_proof_decode::decode_and_flatten_proof;
 use crate::run::query_processors::FriVerifierArtifacts;
 use basic_bootloader::bootloader::fri_host_verifier::{
     verify_host_fri_statement, FriHostVerifyError,
@@ -22,14 +22,6 @@ pub enum FriAdmissionError {
     BincodeDecode,
     /// Host verification failed; see inner variant for the verdict.
     Verify(FriHostVerifyError),
-}
-
-impl From<DecodeAndFlattenError> for FriAdmissionError {
-    fn from(err: DecodeAndFlattenError) -> Self {
-        match err {
-            DecodeAndFlattenError::BincodeDecode => Self::BincodeDecode,
-        }
-    }
 }
 
 impl From<FriHostVerifyError> for FriAdmissionError {

@@ -117,7 +117,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         hooks: &mut HooksStorage<S, S::Allocator>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExitCode, EvmSubsystemError> {
+    ) -> Result<ExitCode, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut cycles = 0;
         let result = loop {
             let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
@@ -154,12 +157,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::ADD => self.wrapped_add(),
                     opcodes::MUL => self.wrapping_mul(),
                     opcodes::SUB => self.wrapping_sub(),
-                    opcodes::DIV => self.div(),
-                    opcodes::SDIV => self.sdiv(),
-                    opcodes::MOD => self.rem(),
-                    opcodes::SMOD => self.smod(),
-                    opcodes::ADDMOD => self.addmod(),
-                    opcodes::MULMOD => self.mulmod(),
+                    opcodes::DIV => self.div(system),
+                    opcodes::SDIV => self.sdiv(system),
+                    opcodes::MOD => self.rem(system),
+                    opcodes::SMOD => self.smod(system),
+                    opcodes::ADDMOD => self.addmod(system),
+                    opcodes::MULMOD => self.mulmod(system),
                     opcodes::EXP => self.eval_exp(),
                     opcodes::SIGNEXTEND => self.sign_extend(),
                     opcodes::LT => self.lt(),
@@ -195,7 +198,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::MSIZE => self.msize(),
                     opcodes::JUMPDEST => self.jumpdest(),
                     opcodes::PUSH0 => self.push0(),
-                    opcodes::PUSH1 => self.push::<1>(),
+                    opcodes::PUSH1 => self.push1(),
                     opcodes::PUSH2 => self.push::<2>(),
                     opcodes::PUSH3 => self.push::<3>(),
                     opcodes::PUSH4 => self.push::<4>(),
@@ -508,8 +511,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
         create2_buffer[1..(1 + 20)]
             .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
-        create2_buffer[(1 + 20)..(1 + 20 + 32)]
-            .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+        create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
         create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
             .copy_from_slice(initcode_hash.as_u8_array_ref());
 

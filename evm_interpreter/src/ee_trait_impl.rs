@@ -14,7 +14,6 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
-use zk_ee::utils::b160_to_u256;
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Interpreter<'ee, S> {
@@ -44,7 +43,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             returndata_location: 0..0,
             bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
-            call_value: U256::ZERO,
+            call_value: U256::zero(),
             is_constructor: false,
             pending_os_request: None,
         })
@@ -199,7 +198,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.is_constructor = is_constructor;
         self.calldata = calldata;
         self.heap = heap;
-        self.call_value = nominal_token_value;
+        self.call_value = U256::from(nominal_token_value);
 
         self.execute_till_yield_point(system, hooks, tracer)
     }
@@ -274,7 +273,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         self.returndata = return_values.returndata;
                         // we need to push address to stack
                         self.stack
-                            .push(&b160_to_u256(deployed_at))
+                            .push(&U256::from_b160(deployed_at))
                             .expect("must have enough space");
                     }
                 }
