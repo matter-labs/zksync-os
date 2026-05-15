@@ -276,7 +276,11 @@ impl<S: EthereumLikeTypes> Tracer<S> for PrecompileStatsTracer<S> {
         // frame mechanism — the assertion below catches the silent
         // overwrite that would otherwise misattribute stats. Promote to
         // a stack of `Option<PendingFrame>` if that becomes a real path.
-        debug_assert!(
+        // Hard-asserted (rather than debug-asserted) because this tracer
+        // only runs host-side as part of benchmarking — silently
+        // misattributing stats in release builds is worse than panicking
+        // in a non-production codepath.
+        assert!(
             self.pending.is_none(),
             "PrecompileStatsTracer: a new execution frame opened while a precompile pending frame was still recorded — \
              nested precompile dispatch would clobber the outer frame's stats."
