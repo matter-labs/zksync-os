@@ -55,6 +55,20 @@ jobs:
           ref: ${{ needs.merge-base.outputs.sha }}
           fetch-depth: 1
           submodules: recursive
+      # The bench orchestration scripts (`bench_scripts/run_bench_side.sh`,
+      # `bench_scripts/render_pr_comment.sh`) were introduced on the PR;
+      # the merge-base tree doesn't have them yet. Overlay the PR head's
+      # `bench_scripts/` so both sides run with identical orchestration —
+      # same forward-compat pattern this workflow already uses for
+      # `for-tests-benchmarking-pectra` / `bench-fast` / `BENCH_DA_SCHEME`.
+      - name: Overlay bench_scripts/ from PR head
+        shell: bash
+        run: |
+          git fetch --depth=1 \
+            "${{ github.event.pull_request.head.repo.clone_url }}" \
+            "${{ github.event.pull_request.head.sha }}"
+          git checkout FETCH_HEAD -- bench_scripts/
+          chmod +x bench_scripts/*.sh 2>/dev/null || true
       - uses: ./.github/actions/setup-toolchain
       - name: Compile for RISC-V
         working-directory: ./zksync_os
