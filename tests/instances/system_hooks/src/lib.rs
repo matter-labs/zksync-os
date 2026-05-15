@@ -2111,7 +2111,9 @@ mod fri_admission_api {
         maybe_decompress, resolve_path, FRI_PRIMARY_PROOF_FIXTURE,
     };
     use rig::alloy::primitives::B256;
-    use rig::forward_system::run::{validate_fri_statement, FriAdmissionError};
+    use rig::forward_system::run::{
+        validate_fri_statement, FriAdmissionError, FriHostVerifyError,
+    };
     use rig::zk_ee::utils::Bytes32;
 
     fn b256_to_bytes32(hash: B256) -> Bytes32 {
@@ -2161,7 +2163,7 @@ mod fri_admission_api {
             .expect_err("mismatched hash must be rejected");
         assert_eq!(
             err,
-            FriAdmissionError::StatementHashMismatch,
+            FriAdmissionError::Verify(FriHostVerifyError::StatementHashMismatch),
             "wrong hash must surface as StatementHashMismatch, got {err:?}"
         );
     }
@@ -2233,9 +2235,14 @@ mod fri_admission_api {
         assert!(
             matches!(
                 err,
-                FriAdmissionError::BincodeDecode | FriAdmissionError::VerifierRejected
+                FriAdmissionError::BincodeDecode
+                    | FriAdmissionError::Verify(
+                        FriHostVerifyError::VerifierRejected
+                            | FriHostVerifyError::TrailingWords
+                            | FriHostVerifyError::UnsupportedOpType,
+                    )
             ),
-            "truncated proof must reject as BincodeDecode or VerifierRejected, got {err:?}"
+            "truncated proof must reject as BincodeDecode or verifier failure, got {err:?}"
         );
     }
 }

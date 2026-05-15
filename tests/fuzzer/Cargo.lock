@@ -1981,6 +1981,7 @@ dependencies = [
  "cfg-if",
  "cycle_marker",
  "evm_interpreter_forward",
+ "full_statement_verifier",
  "hex",
  "paste",
  "ruint",

@@ -10,14 +10,11 @@
 //!
 //! - [`drive_fri_verification`] — runs only when
 //!   `Config::VERIFY_FRI_PROOFS == true`, i.e. in
-//!   `BasicBootloaderProvingExecutionConfig`. Two sub-behaviors:
-//!     - **Host (recording pass)**: issue the oracle query and drain
-//!       the response so `ReadWitnessSource` captures the proof
-//!       stream the RISC-V guest will replay.
-//!     - **RISC-V guest**: drive the CSR-based non-determinism
-//!       source and invoke the airbender unified verifier. That
-//!       verifier is the final authority; bad proofs make the block
-//!       fail to prove.
+//!   `BasicBootloaderProvingExecutionConfig`. Issues the
+//!   `FRI_PROOF_QUERY_ID` oracle query for each claimed statement
+//!   hash and hands the response to
+//!   [`crate::bootloader::fri_verifier::verify_fri_statement_stream`],
+//!   which dispatches to the host or RISC-V verifier.
 //!
 //! The sequencer's forward run, `eth_call`, and ETH-replay paths all
 //! set `VERIFY_FRI_PROOFS = false` and never call
@@ -25,6 +22,7 @@
 //! trusted, similar to how the sequencer trusts
 //! `VALIDATE_EOA_SIGNATURE = false` for tx signatures.
 use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::fri_verifier::verify_fri_statement_stream;
 use crate::bootloader::transaction::Transaction;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
@@ -32,25 +30,6 @@ use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
 use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
-
-#[cfg(target_arch = "riscv32")]
-use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
-#[cfg(target_arch = "riscv32")]
-use crypto::{sha3::Keccak256, MiniDigest};
-
-/// Derive `statement_versioned_hash` from the 16 `u32` output
-/// registers returned by the FRI unified verifier. The hash format is
-/// `version || keccak256(output_words_le)[1..]`.
-#[cfg(target_arch = "riscv32")]
-fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
-    let mut hasher = Keccak256::new();
-    for word in output.iter() {
-        hasher.update(word.to_le_bytes());
-    }
-    let mut hash = hasher.finalize();
-    hash[0] = FRI_STATEMENT_HASH_VERSION;
-    Bytes32::from_array(hash)
-}
 
 /// Structural admission checks for a `FriProofTx`'s statement-hash
 /// list: enforce `is_gateway`, cap against `MAX_FRI_STATEMENTS_PER_TX`,
@@ -94,8 +73,7 @@ where
 }
 
 /// Drive the `FRI_PROOF_QUERY_ID` oracle query for each hash in
-/// `verified` and, on the RISC-V guest only, invoke the airbender
-/// unified verifier.
+/// `verified` and dispatch to the target-specific verifier.
 pub(super) fn drive_fri_verification<S: EthereumLikeTypes>(
     system: &mut System<S>,
     verified: &[Bytes32],
@@ -110,211 +88,18 @@ where
 }
 
 /// Issue the `FRI_PROOF_QUERY_ID` oracle query for a single claimed
-/// `statement_versioned_hash`, then either drain the response (host)
-/// or invoke the airbender unified verifier (RISC-V guest).
-pub(super) fn verify_fri_statement<S: EthereumLikeTypes>(
+/// `statement_versioned_hash`, then verify the proof using the
+/// target-specific verifier backend.
+fn verify_fri_statement<S: EthereumLikeTypes>(
     system: &mut System<S>,
     statement_versioned_hash: Bytes32,
 ) -> Result<(), TxError>
 where
     S::IO: IOSubsystemExt,
 {
-    #[allow(unused_mut)] // only the RISC-V arm mutates (calls `.next()`)
-    let mut response = system
+    let response = system
         .io
         .oracle()
         .raw_query(FRI_PROOF_QUERY_ID, &statement_versioned_hash)?;
-
-    #[cfg(not(target_arch = "riscv32"))]
-    {
-        // Drain the iterator so `ReadWitnessSource` (in
-        // `oracle_provider`) captures every word. Without this drain
-        // the prover's CSR replay would be missing the proof bytes.
-        for _ in response {}
-        Ok(())
-    }
-    #[cfg(target_arch = "riscv32")]
-    {
-        verify_fri_statement_riscv(response, statement_versioned_hash)
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-fn verify_fri_statement_riscv<R>(
-    mut response: R,
-    statement_versioned_hash: Bytes32,
-) -> Result<(), TxError>
-where
-    R: ExactSizeIterator<Item = usize>,
-{
-    // On RISC-V:
-    // - the first guest word is the verifier word count;
-    // - the verifier payload follows immediately as raw u32 CSR words;
-    // - when the total u32 response length is odd, the final host u64
-    //   contributes one trailing zero padding word after the payload.
-    let verifier_word_count = begin_fri_verifier_stream(&mut response)?;
-    drop(response);
-    let output = run_fri_verifier()?;
-    finish_fri_verifier_stream_after_verifier(verifier_word_count)?;
-    check_statement_hash_matches(&output, statement_versioned_hash)
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-fn begin_fri_verifier_stream(
-    response: &mut impl ExactSizeIterator<Item = usize>,
-) -> Result<usize, TxError> {
-    let verifier_word_count = response.next().ok_or(TxError::Validation(
-        InvalidTransaction::FriProofSidecarMissing,
-    ))?;
-
-    // On RISC-V this is the host-declared remaining CSR word count
-    // surfaced through the generic oracle iterator.
-    let expected_remaining = verifier_word_count + usize::from(verifier_word_count % 2 == 0);
-    if response.len() != expected_remaining {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
-    }
-
-    Ok(verifier_word_count)
-}
-
-#[cfg(test)]
-fn finish_fri_verifier_stream(
-    response: &mut impl Iterator<Item = usize>,
-    verifier_word_count: usize,
-) -> Result<(), TxError> {
-    if verifier_word_count % 2 == 0 {
-        let trailing_padding = response.next().ok_or(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ))?;
-        if trailing_padding != 0 {
-            return Err(TxError::Validation(
-                InvalidTransaction::FriProofVerificationFailed,
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(target_arch = "riscv32")]
-fn finish_fri_verifier_stream_after_verifier(verifier_word_count: usize) -> Result<(), TxError> {
-    use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
-    use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
-
-    if verifier_word_count % 2 == 0 {
-        // The iterator is dropped before verifier execution; the verifier
-        // has consumed the payload from the same CSR stream by now.
-        let trailing_padding = DefaultNonDeterminismSource::read_word() as usize;
-        if trailing_padding != 0 {
-            return Err(TxError::Validation(
-                InvalidTransaction::FriProofVerificationFailed,
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(target_arch = "riscv32")]
-#[inline(always)]
-fn run_fri_verifier() -> Result<[u32; 16], TxError> {
-    use full_statement_verifier::definitions::OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT;
-    use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
-    use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
-
-    // Pin to unified recursion.
-    let op_type = DefaultNonDeterminismSource::read_word();
-    if op_type != OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofVerificationFailed,
-        ));
-    }
-
-    Ok(
-        full_statement_verifier::unified_circuit_statement::verify_unified_circuit_recursion_layer(
-            full_statement_verifier::verifier_common::SecurityModel::Security80,
-        ),
-    )
-}
-
-#[cfg(target_arch = "riscv32")]
-fn check_statement_hash_matches(output: &[u32; 16], expected: Bytes32) -> Result<(), TxError> {
-    let computed = statement_versioned_hash_from_verifier_output(output);
-    if computed != expected {
-        return Err(TxError::Validation(
-            InvalidTransaction::FriProofStatementHashMismatch,
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Statement-hash equivalence coverage lives in
-    // `basic_bootloader::bootloader::fri_admission::tests` since that
-    // is where the host-callable copy of the function is defined.
-
-    #[test]
-    fn fri_verifier_stream_consumes_prefix_and_trailing_padding() {
-        let mut response = vec![4usize, 11, 22, 33, 44, 0].into_iter();
-
-        let verifier_word_count = begin_fri_verifier_stream(&mut response).unwrap();
-        assert_eq!(verifier_word_count, 4);
-        assert_eq!(response.next(), Some(11));
-        assert_eq!(response.next(), Some(22));
-        assert_eq!(response.next(), Some(33));
-        assert_eq!(response.next(), Some(44));
-        finish_fri_verifier_stream(&mut response, verifier_word_count).unwrap();
-        assert_eq!(response.next(), None);
-    }
-
-    #[test]
-    fn fri_verifier_stream_rejects_length_mismatch() {
-        let mut response = vec![4usize, 11, 22, 33].into_iter();
-
-        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
-        assert!(matches!(
-            err,
-            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
-        ));
-    }
-
-    #[test]
-    fn fri_verifier_stream_odd_count_has_no_trailing_padding() {
-        let mut response = vec![3usize, 11, 22, 33].into_iter();
-
-        let verifier_word_count = begin_fri_verifier_stream(&mut response).unwrap();
-        assert_eq!(verifier_word_count, 3);
-        for expected in [11usize, 22, 33] {
-            assert_eq!(response.next(), Some(expected));
-        }
-        finish_fri_verifier_stream(&mut response, verifier_word_count).unwrap();
-        assert_eq!(response.next(), None);
-    }
-
-    #[test]
-    fn fri_verifier_stream_rejects_mismatched_remaining_words() {
-        let mut response = vec![3usize, 11, 22].into_iter();
-
-        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
-        assert!(matches!(
-            err,
-            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
-        ));
-    }
-
-    #[test]
-    fn fri_verifier_stream_rejects_extra_remaining_words() {
-        let mut response = vec![3usize, 11, 22, 33, 0].into_iter();
-
-        let err = begin_fri_verifier_stream(&mut response).unwrap_err();
-        assert!(matches!(
-            err,
-            TxError::Validation(InvalidTransaction::FriProofVerificationFailed)
-        ));
-    }
+    verify_fri_statement_stream(response, statement_versioned_hash)
 }

@@ -2,43 +2,31 @@
 
 use crate::run::fri_proof_decode::decode_and_flatten_proof;
 use crate::run::query_processors::FriVerifierArtifacts;
-use basic_bootloader::bootloader::fri_admission::{
-    run_host_verifier, statement_versioned_hash_from_verifier_output, FriHostVerifyError,
+use basic_bootloader::bootloader::fri_host_verifier::{
+    verify_host_fri_statement, FriHostVerifyError,
 };
 use zk_ee::utils::Bytes32;
 
 /// Errors returned by [`validate_fri_statement`].
+///
+/// Admission has two sources of failure: decoding the proof bytes,
+/// and running the host verifier. `Verify` re-exports the bootloader's
+/// `FriHostVerifyError` verbatim so callers can pattern-match on the
+/// exact verifier verdict (e.g. distinguish `StatementHashMismatch`
+/// from a malformed-proof rejection).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FriAdmissionError {
     /// `proof_bytes` could not be decoded as a bincode
     /// `UnrolledProgramProof`. Caller is expected to reject the
     /// transaction.
     BincodeDecode,
-    /// The verifier rejected the proof. Either the airbender
-    /// verifier panicked on malformed input, or the input stream
-    /// carried trailing words the verifier did not consume.
-    VerifierRejected,
-    /// The verifier returned a result, but the statement hash
-    /// re-derived from its 16-register output did not match the
-    /// caller-supplied `statement_versioned_hash`. The proof is
-    /// internally valid but does not prove the claimed statement —
-    /// reject.
-    StatementHashMismatch,
-    /// Could not spawn the dedicated verifier worker thread (system
-    /// resource exhaustion).
-    VerifierThreadSpawn,
+    /// Host verification failed; see inner variant for the verdict.
+    Verify(FriHostVerifyError),
 }
 
 impl From<FriHostVerifyError> for FriAdmissionError {
     fn from(err: FriHostVerifyError) -> Self {
-        match err {
-            FriHostVerifyError::VerifierThreadSpawn => Self::VerifierThreadSpawn,
-            // Trailing words, wrong op type, and verifier-panic all
-            // indicate the proof is not valid input.
-            FriHostVerifyError::VerifierRejected
-            | FriHostVerifyError::TrailingWords
-            | FriHostVerifyError::UnsupportedOpType => Self::VerifierRejected,
-        }
+        Self::Verify(err)
     }
 }
 
@@ -49,12 +37,7 @@ pub fn validate_fri_statement(
     proof_bytes: &[u8],
     artifacts: &FriVerifierArtifacts,
 ) -> Result<(), FriAdmissionError> {
-    let verifier_words =
-        decode_and_flatten_proof(proof_bytes, artifacts).ok_or(FriAdmissionError::BincodeDecode)?;
-    let output = run_host_verifier(&verifier_words)?;
-    let computed = statement_versioned_hash_from_verifier_output(&output);
-    if computed != statement_versioned_hash {
-        return Err(FriAdmissionError::StatementHashMismatch);
-    }
+    let verifier_words = decode_and_flatten_proof(proof_bytes, artifacts)?;
+    verify_host_fri_statement(&verifier_words, statement_versioned_hash)?;
     Ok(())
 }
