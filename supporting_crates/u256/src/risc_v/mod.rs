@@ -38,30 +38,52 @@ impl U256 {
         Self(DelegatedU256::from_limbs(limbs))
     }
 
-    pub unsafe fn write_into_ptr(&self, dst: *mut Self) {
-        delegated_u256::write_into_ptr(dst.cast(), &self.0);
+    /// # Safety
+    /// `dst` must be 32 byte aligned and point to 32 bytes of accessible memory.
+    pub unsafe fn write_into_ptr(dst: *mut Self, source: &Self) {
+        delegated_u256::write_into_ptr(dst.cast(), &source.0);
     }
 
-    pub unsafe fn write_into_ptr_unchecked(&self, dst: *mut Self) {
-        delegated_u256::write_into_ptr_unchecked(dst.cast(), &self.0);
+    /// # Safety
+    /// `dst` must be 32 byte aligned and point to 32 bytes of accessible memory.
+    pub unsafe fn write_into_ptr_unchecked(dst: *mut Self, source: &Self) {
+        delegated_u256::write_into_ptr_unchecked(dst.cast(), &source.0);
+    }
+
+    /// # Safety
+    /// `a` and `b` must be valid, properly aligned pointers to initialized `Self` values.
+    ///
+    /// On the delegated backend this is cheaper than a generic `mem::swap`, because it stays on
+    /// the bigint memcopy path instead of forcing a raw 32-byte move sequence in RISC-V code.
+    pub unsafe fn swap_in_place(a: *mut Self, b: *mut Self) {
+        if core::ptr::eq(a, b) {
+            return;
+        }
+
+        let mut tmp = core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            Self::write_into_ptr_unchecked(tmp.as_mut_ptr(), &*a);
+            Self::write_into_ptr_unchecked(a, &*b);
+            Self::write_into_ptr_unchecked(b, tmp.assume_init_ref());
+        }
     }
 
     pub fn clone_into(&self, dst: &mut Self) {
-        unsafe { self.write_into_ptr(dst as *mut _) };
+        unsafe { Self::write_into_ptr(dst as *mut _, self) };
     }
 
     pub unsafe fn clone_into_unchecked(&self, dst: &mut Self) {
-        self.write_into_ptr_unchecked(dst as *mut _);
+        Self::write_into_ptr_unchecked(dst as *mut _, self);
     }
 
     #[inline(always)]
     pub fn zero() -> Self {
-        Self(DelegatedU256::zero())
+        Self::from_limbs([0, 0, 0, 0])
     }
 
     #[inline(always)]
     pub fn one() -> Self {
-        Self(DelegatedU256::one())
+        Self::from_limbs([1, 0, 0, 0])
     }
 
     pub fn bytereverse(&mut self) {
@@ -86,6 +108,11 @@ impl U256 {
     #[inline(always)]
     pub unsafe fn write_one_into_ptr(into: *mut Self) {
         delegated_u256::write_one_into_ptr(into.cast());
+    }
+
+    #[inline(always)]
+    pub unsafe fn write_u64_into_ptr(into: *mut Self, value: u64) {
+        delegated_u256::write_u64_into_ptr(into.cast(), value);
     }
 
     #[inline(always)]
@@ -166,12 +193,13 @@ impl U256 {
     }
 
     #[inline(always)]
-    /// Panics if divisor is 0
+    /// Panics if divisor is 0.
+    /// Note: EVM opcodes use the IOOracle-based advice path in zk_ee instead.
+    /// This software fallback is used by div_ceil, add_mod, and tests.
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
-        // Eventually it'll be solved via non-determinism and comparison that a = q * divisor + r,
-        // but for now it's just a naive one
         let is_zero = divisor_or_remainder.0.is_zero_mut();
         assert!(is_zero == false);
+
         ruint::algorithms::div(
             dividend_or_quotient.as_limbs_mut(),
             divisor_or_remainder.as_limbs_mut(),
@@ -216,6 +244,10 @@ impl U256 {
 
     pub fn to_be_bytes(&self) -> [u8; 32] {
         self.0.to_be_bytes()
+    }
+
+    pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
+        self.0.write_be_bytes_into(dst);
     }
 
     pub fn bit_len(&self) -> usize {
@@ -264,16 +296,16 @@ impl U256 {
         modulus_or_result.clone_from(a);
     }
 
+    /// Note: EVM MULMOD opcode uses the IOOracle-based advice path in zk_ee instead.
+    /// This software fallback is used by tests.
     pub fn mul_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
         if modulus_or_result.0.is_zero_mut() {
             return;
         }
 
-        let mut product = [a.clone(), a.clone()];
-        let (low, high) = product.split_at_mut(1);
-        Self::widening_mul_assign_into(&mut low[0], &mut high[0], &*b);
-        let product: &mut [u64; 8] = unsafe { core::mem::transmute(&mut product[0]) };
-        ruint::algorithms::div(product, modulus_or_result.as_limbs_mut());
+        let mut product = [0u64; 8];
+        let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
+        ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
     }
 
     pub fn pow(base: &Self, exp: &Self, dst: &mut Self) {
@@ -324,7 +356,34 @@ impl U256 {
             Some(result)
         }
     }
+
+    #[inline(always)]
+    pub fn arithmetic_shr_assign(&mut self, shift: usize) {
+        let is_negative = self.bit(255);
+
+        if shift >= 256 {
+            if is_negative {
+                *self = Self::from_limbs([u64::MAX; 4]);
+            } else {
+                Self::write_zero(self);
+            }
+            return;
+        }
+
+        if shift == 0 {
+            return;
+        }
+
+        *self >>= shift as u32;
+        if is_negative {
+            let mut mask = Self::from_limbs([u64::MAX; 4]);
+            mask <<= (256 - shift) as u32;
+            core::ops::BitOrAssign::bitor_assign(self, &mask);
+        }
+    }
 }
+
+crate::conversions::impl_conversions!(U256);
 
 impl From<ruint::aliases::U256> for U256 {
     #[inline(always)]

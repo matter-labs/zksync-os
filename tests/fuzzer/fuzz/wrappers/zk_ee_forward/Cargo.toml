@@ -17,6 +17,7 @@ path = "../../../../../zk_ee/src/lib.rs"
 
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 cfg-if = "*"
 crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5", package = "airbender-crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
@@ -39,5 +40,6 @@ error_origins = []
 detailed_errors = []
 prevrandao = []
 evm_refunds = []
+delegation = ["u256/delegation"]
 
 [dev-dependencies]

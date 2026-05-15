@@ -13,6 +13,7 @@ categories.workspace = true
 
 [dependencies]
 ruint = { workspace = true, default-features = false }
+u256 = { path = "../supporting_crates/u256", default-features = false }
 arrayvec = { workspace = true, default-features = false }
 zk_ee = { path = "../zk_ee", default-features = false }
 crypto = { workspace = true }
@@ -32,3 +33,4 @@ default = []
 testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
+delegation = ["u256/delegation", "zk_ee/delegation"]
