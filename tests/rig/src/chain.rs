@@ -28,6 +28,7 @@ use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::output::BlockOutput;
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use forward_system::system::system_types::ForwardRunningSystem;
@@ -53,7 +54,6 @@ use zk_ee::system::validator::TxValidator;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
-use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::StorageWrite;
 
 /// Trait for creating oracles with custom configuration

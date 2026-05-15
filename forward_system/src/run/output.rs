@@ -4,9 +4,10 @@ use crate::run::convert::IntoInterface;
 use crate::run::convert_alloy::IntoAlloy;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use ruint::aliases::B160;
 use std::collections::HashMap;
+use alloy::consensus::{Header, Sealed};
 use zk_ee::common_structs::{derive_flat_storage_key, GenericLogContent, PreimageType};
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::utils::Bytes32;
@@ -21,7 +22,6 @@ use basic_system::system_implementation::flat_storage_model::{
     AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use zk_ee::types_config::EthereumIOTypesConfig;
-pub use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::L2ToL1LogWithPreimage;
 
 pub type TxResult = Result<TxOutput, InvalidTransaction>;
@@ -42,6 +42,17 @@ impl StorageWriteExt for StorageWrite {
             account_key: key.into_alloy(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockOutput {
+    pub header: Sealed<Header>,
+    pub tx_results: Vec<Result<TxOutput, InvalidTransaction>>,
+    pub storage_writes: Vec<StorageWrite>,
+    pub account_diffs: Vec<AccountDiff>,
+    pub published_preimages: Vec<(B256, Vec<u8>)>,
+    pub pubdata: Vec<u8>,
+    pub computational_native_used: u64,
 }
 
 impl<TR: TxResultCallback>

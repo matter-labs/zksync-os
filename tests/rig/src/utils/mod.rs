@@ -15,7 +15,7 @@ use forward_system::run::convert_alloy::FromAlloy;
 use std::io::Read;
 use std::path::PathBuf;
 pub use zksync_os_api::helpers::*;
-use zksync_os_interface::types::BlockOutput;
+use forward_system::run::output::BlockOutput;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::l1_tx::ZKsyncL1Tx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;

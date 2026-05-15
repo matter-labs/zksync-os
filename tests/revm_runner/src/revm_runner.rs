@@ -2,6 +2,7 @@ use alloy::primitives::{Bytes, Log, U256};
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use forward_system::run::convert_alloy::IntoAlloy;
+use forward_system::run::output::BlockOutput;
 use revm::{
     context::{ContextTr, TxEnv},
     context_interface::block::BlobExcessGasAndPrice,
@@ -11,7 +12,7 @@ use revm::{
     DatabaseRef,
 };
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
-use zksync_os_interface::types::{BlockContext, BlockOutput};
+use zksync_os_interface::types::BlockContext;
 use zksync_os_revm::ZKsyncTx;
 use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
