@@ -16,46 +16,39 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     ]);
 
     pub fn sha3(&mut self, system: &mut System<S>) -> InstructionResult {
-        let (memory_offset, len) = self.stack.pop_2()?;
+        // Wrap the whole dispatch — including the early stack/length/base-cost
+        // checks that may short-circuit via `?` — so the marker fires once per
+        // SHA3 opcode dispatch, matching `EvmOpcodeStatsTracer`'s per-dispatch
+        // sample count. Positional pairing in `cycles_per_native_report.py` /
+        // `join_precompile_samples.py` relies on this 1:1 correspondence. The
+        // inner `"keccak"` marker (from `Keccak256Impl::execute`) still fires
+        // for the system-function call, so bootloader/intrinsic keccak
+        // invocations remain attributed to `"keccak"` alone.
+        //
+        // `wrap!` (markers only) is used rather than `wrap_with_resources!`:
+        // SHA3 gas/native are already captured by `EvmOpcodeStatsTracer`, so
+        // the per-call resource diff would be redundant.
+        cycle_marker::wrap!("keccak_execution_environment", {
+            let (memory_offset, len) = self.stack.pop_2()?;
+            let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
+            self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
 
-        let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
-        self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
+            // Eagerly cast `memory_offset` to an owned `usize` so the
+            // `&memory_offset` borrow on `self.stack` ends here and does not
+            // collide with the final `self.stack.push(&hash)` below.
+            let memory_offset_usize: Option<usize> = if len > 0 {
+                Some(Self::cast_to_usize(
+                    &memory_offset,
+                    EvmError::InvalidOperandOOG.into(),
+                )?)
+            } else {
+                None
+            };
 
-        // Cycle marker wraps the SHA3 dispatch (including the `len == 0`
-        // constant-lookup shortcut) so it fires exactly once per SHA3
-        // opcode invocation, matching the tracer's per-call sample count.
-        // Otherwise positional pairing in `cycles_per_native_report.py` /
-        // `join_precompile_samples.py` breaks when some invocations skip
-        // the inner keccak SF dispatch. The inner `"keccak"` marker (from
-        // `Keccak256Impl::execute`) still fires, so bootloader/intrinsic
-        // keccak invocations remain under the `"keccak"` label only.
-        // Eagerly cast `memory_offset` to a `usize` (Copy, no aliasing) BEFORE
-        // entering the cycle marker's closure. Otherwise the closure would
-        // capture `&memory_offset` (a `&U256` borrowed from `self.stack` via
-        // `pop_2()`) and conflict with the mutable `self.gas` / `self.heap`
-        // borrows inside the closure. For `len == 0` we never use the offset.
-        let memory_offset_usize: Option<usize> = if len > 0 {
-            Some(Self::cast_to_usize(
-                &memory_offset,
-                EvmError::InvalidOperandOOG.into(),
-            )?)
-        } else {
-            None
-        };
-
-        // Use `wrap!` (markers only) rather than `wrap_with_resources!`
-        // here: the latter expands `$resources.clone()` BEFORE and AFTER the
-        // inner closure to compute the ergs/native diff, and those borrow
-        // `self.gas` mutably while the closure ALSO captures `self` (for the
-        // `spend_gas`/`resize_heap`/`heap` accesses inside) → conflicting
-        // mutable borrows. `wrap!` doesn't snapshot resources, so the closure
-        // is the sole borrower. We don't need the per-call ergs/native log
-        // here — SHA3 gas/native are already captured by `EvmOpcodeStatsTracer`.
-        let hash = cycle_marker::wrap!("keccak_execution_environment", {
-            let r: Result<U256, crate::ExitCode> = match memory_offset_usize {
+            let hash = match memory_offset_usize {
                 None => {
                     self.gas.spend_gas(gas_constants::SHA3)?;
-                    Ok(Self::EMPTY_SLICE_SHA3)
+                    Self::EMPTY_SLICE_SHA3
                 }
                 Some(memory_offset) => {
                     self.resize_heap(memory_offset, len)?;
@@ -87,13 +80,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                     }
 
                     // Convert ruint::aliases::U256 to u256::U256
-                    Ok(U256::from(hash_ruint))
+                    U256::from(hash_ruint)
                 }
             };
-            r
-        })?;
 
-        self.stack.push(&hash)
+            self.stack.push(&hash)
+        })
     }
 
     pub fn address(&mut self) -> InstructionResult {
