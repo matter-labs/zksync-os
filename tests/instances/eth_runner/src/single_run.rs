@@ -93,7 +93,7 @@ fn run<const RANDOMIZED: bool>(
     let precompile_stats_enabled = std::env::var("PRECOMPILE_STATS_PATH").is_ok()
         || std::env::var("PRECOMPILE_SAMPLES_DIR").is_ok();
 
-    let (output, stats) = match (opcode_stats, precompile_stats_enabled) {
+    let (output, stats, pubdata) = match (opcode_stats, precompile_stats_enabled) {
         (true, true) => {
             let mut composite = Pair::new(
                 EvmOpcodeStatsTracer::<ForwardRunningSystem>::default(),
@@ -145,6 +145,22 @@ fn run<const RANDOMIZED: bool>(
 
     let _ratio = compute_ratio(stats);
 
+    // Append the pubdata size to the cycle-marker bench file so
+    // `compare_pubdata.py` can A/B it across a PR. Best-effort: only fires
+    // when MARKER_PATH is set (i.e. the caller asked for bench output), and
+    // silently no-ops if the file isn't writable. Matches the parsing
+    // contract in `bench_scripts/compare_pubdata.py`.
+    if let Ok(path) = std::env::var("MARKER_PATH") {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "pubdata_bytes: {}", pubdata.len());
+        }
+    }
+
     post_check(output, receipts, diff_trace, prestate_cache).unwrap();
 
     Ok(())
@@ -156,7 +172,7 @@ fn run_with_tracer<const RANDOMIZED: bool>(
     block_context: BlockContext,
     run_config: rig::chain::RunConfig,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
-) -> (BlockOutput, BlockExtraStats) {
+) -> (BlockOutput, BlockExtraStats, Vec<u8>) {
     // Allow benchmarking to opt into a non-default DA commitment scheme. The
     // bench currently runs two passes per block: the default `BlobsAndPubdataKeccak256`
     // (which emits a placeholder zero-hash blob plus a keccak commitment over
@@ -179,7 +195,7 @@ fn run_with_tracer<const RANDOMIZED: bool>(
         }
     });
 
-    let (output, stats, _, _) = chain
+    let (output, stats, _, pubdata) = chain
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
@@ -190,7 +206,7 @@ fn run_with_tracer<const RANDOMIZED: bool>(
         )
         .unwrap();
 
-    (output, stats)
+    (output, stats, pubdata)
 }
 
 #[allow(clippy::too_many_arguments)]
