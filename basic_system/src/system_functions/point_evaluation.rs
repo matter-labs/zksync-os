@@ -1,6 +1,6 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_ERGS, POINT_EVALUATION_NATIVE_COST};
 use crypto::ark_ec::pairing::Pairing;
-use crypto::ark_ec::{AffineRepr, CurveGroup};
+use crypto::ark_ec::{AdditiveGroup, AffineRepr, CurveGroup};
 use crypto::ark_ff::{Field, PrimeField};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::interface_error;
@@ -10987,9 +10987,34 @@ pub fn verify_kzg_proof(
     //
     // Move the z multiplication from G2 to G1:
     // e(yG1 - commitment - z*proof, G2) * e(proof, tauG2) == 1.
-    let mut left_g1 = crypto::bls12_381::G1Affine::generator().mul_bigint(&y);
+    //
+    // The two G1 scalar mults are fused via a 2-base interleaved
+    // double-and-add: one shared 255-step doubling loop instead of two.
+    // Same pattern as the small-N path in bls12_381::msm (we avoid
+    // arkworks' VariableBaseMSM because it allocates internally and the
+    // proving binary's allocator setup breaks it).
+    let neg_z = (-crypto::bls12_381::Fr::from_bigint(z)
+        .expect("z is canonical, validated by parse_scalar / Fr::into_bigint upstream"))
+    .into_bigint();
+
+    let bases = [crypto::bls12_381::G1Affine::generator(), proof];
+    let scalars = [y, neg_z];
+
+    const NUM_BITS: usize = 256;
+    let mut left_g1 = crypto::bls12_381::G1Projective::ZERO;
+    for bit in (0..NUM_BITS).rev() {
+        let word_idx = bit / 64;
+        let bit_idx = bit % 64;
+        for (base, scalar) in bases.iter().zip(scalars.iter()) {
+            if scalar.0[word_idx] & (1u64 << bit_idx) > 0 {
+                left_g1 += base;
+            }
+        }
+        if bit > 0 {
+            left_g1.double_in_place();
+        }
+    }
     left_g1 -= &commitment;
-    left_g1 -= proof.mul_bigint(&z);
 
     let left_g1 = left_g1.into_affine();
 
