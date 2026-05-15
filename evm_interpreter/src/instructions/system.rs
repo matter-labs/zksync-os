@@ -21,39 +21,77 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
         self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
 
-        let hash = if len == 0 {
-            self.gas.spend_gas(gas_constants::SHA3)?;
-            Self::EMPTY_SLICE_SHA3
+        // Cycle marker wraps the SHA3 dispatch (including the `len == 0`
+        // constant-lookup shortcut) so it fires exactly once per SHA3
+        // opcode invocation, matching the tracer's per-call sample count.
+        // Otherwise positional pairing in `cycles_per_native_report.py` /
+        // `join_precompile_samples.py` breaks when some invocations skip
+        // the inner keccak SF dispatch. The inner `"keccak"` marker (from
+        // `Keccak256Impl::execute`) still fires, so bootloader/intrinsic
+        // keccak invocations remain under the `"keccak"` label only.
+        // Eagerly cast `memory_offset` to a `usize` (Copy, no aliasing) BEFORE
+        // entering the cycle marker's closure. Otherwise the closure would
+        // capture `&memory_offset` (a `&U256` borrowed from `self.stack` via
+        // `pop_2()`) and conflict with the mutable `self.gas` / `self.heap`
+        // borrows inside the closure. For `len == 0` we never use the offset.
+        let memory_offset_usize: Option<usize> = if len > 0 {
+            Some(Self::cast_to_usize(
+                &memory_offset,
+                EvmError::InvalidOperandOOG.into(),
+            )?)
         } else {
-            let memory_offset =
-                Self::cast_to_usize(&memory_offset, EvmError::InvalidOperandOOG.into())?;
-
-            self.resize_heap(memory_offset, len)?;
-
-            let allocator = system.get_allocator();
-            let input = &self.heap[memory_offset..(memory_offset + len)];
-
-            let mut dst = U256Builder::default();
-            S::SystemFunctions::keccak256(&input, &mut dst, self.gas.resources_mut(), allocator)
-                .map_err(SystemError::from)?;
-
-            let hash_ruint = dst.build();
-
-            if Self::PRINT_OPCODES {
-                use core::fmt::Write;
-                use zk_ee::logger_log;
-                use zk_ee::system::logger::Logger;
-                let mut logger = system.get_logger();
-                let input = &self.heap()[memory_offset..(memory_offset + len)];
-                let input_iter = input.iter().copied();
-                logger_log!(logger, " input: ",);
-                let _ = logger.log_data(input_iter);
-                logger_log!(logger, " -> 0x{hash_ruint:0x}");
-            }
-
-            // Convert ruint::aliases::U256 to u256::U256
-            U256::from(hash_ruint)
+            None
         };
+
+        // Use `wrap!` (markers only) rather than `wrap_with_resources!`
+        // here: the latter expands `$resources.clone()` BEFORE and AFTER the
+        // inner closure to compute the ergs/native diff, and those borrow
+        // `self.gas` mutably while the closure ALSO captures `self` (for the
+        // `spend_gas`/`resize_heap`/`heap` accesses inside) → conflicting
+        // mutable borrows. `wrap!` doesn't snapshot resources, so the closure
+        // is the sole borrower. We don't need the per-call ergs/native log
+        // here — SHA3 gas/native are already captured by `EvmOpcodeStatsTracer`.
+        let hash = cycle_marker::wrap!("keccak_execution_environment", {
+            let r: Result<U256, crate::ExitCode> = match memory_offset_usize {
+                None => {
+                    self.gas.spend_gas(gas_constants::SHA3)?;
+                    Ok(Self::EMPTY_SLICE_SHA3)
+                }
+                Some(memory_offset) => {
+                    self.resize_heap(memory_offset, len)?;
+
+                    let allocator = system.get_allocator();
+                    let input = &self.heap[memory_offset..(memory_offset + len)];
+
+                    let mut dst = U256Builder::default();
+                    S::SystemFunctions::keccak256(
+                        &input,
+                        &mut dst,
+                        self.gas.resources_mut(),
+                        allocator,
+                    )
+                    .map_err(SystemError::from)?;
+
+                    let hash_ruint = dst.build();
+
+                    if Self::PRINT_OPCODES {
+                        use core::fmt::Write;
+                        use zk_ee::logger_log;
+                        use zk_ee::system::logger::Logger;
+                        let mut logger = system.get_logger();
+                        let input = &self.heap()[memory_offset..(memory_offset + len)];
+                        let input_iter = input.iter().copied();
+                        logger_log!(logger, " input: ",);
+                        let _ = logger.log_data(input_iter);
+                        logger_log!(logger, " -> 0x{hash_ruint:0x}");
+                    }
+
+                    // Convert ruint::aliases::U256 to u256::U256
+                    Ok(U256::from(hash_ruint))
+                }
+            };
+            r
+        })?;
 
         self.stack.push(&hash)
     }
