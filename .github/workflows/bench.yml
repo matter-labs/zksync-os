@@ -97,6 +97,18 @@ jobs:
             blk=$(basename "$dir")
             # Pass 1: default DA scheme (BlobsAndPubdataKeccak256) — full
             # instrumentation (opcodes + precompiles + cycle markers).
+            #
+            # `PRECOMPILE_STATS_PATH`, `PRECOMPILE_SAMPLES_DIR`, and
+            # `LABEL_CYCLE_SAMPLES_DIR` are best-effort on the base side:
+            # they're consumed by `PrecompileStatsTracer` and the
+            # label-cycle dump path, both introduced on this PR. When the
+            # merge-base predates that instrumentation the env vars are
+            # ignored, no `base_block_${blk}_precompile_stats.csv` is
+            # produced, and `compare_precompile_stats.py` skips rows for
+            # which a base CSV is missing — same pattern as the
+            # `for-tests-benchmarking-pectra` / `BENCH_DA_SCHEME` fallbacks
+            # above. The degradation resolves on the next PR cycle once a
+            # merge-base contains the tracer code.
             OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/base_${blk} \
             OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/base_${blk} \
             MARKER_PATH=$(pwd)/base_block_${blk}.bench \
