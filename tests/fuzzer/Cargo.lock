@@ -71,7 +71,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -80,7 +80,7 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254 0.5.0",
@@ -120,7 +120,7 @@ dependencies = [
 [[package]]
 name = "airbender-host"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=825dd25c9397afc53f1205cbb369c4072e7d3ea5#825dd25c9397afc53f1205cbb369c4072e7d3ea5"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -1980,6 +1980,7 @@ dependencies = [
  "cfg-if",
  "cycle_marker",
  "evm_interpreter_forward",
+ "full_statement_verifier",
  "hex",
  "paste",
  "ruint",
@@ -9884,12 +9885,12 @@ checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=26b9c1a95fede005480cdde51e2c249a7e083e36#26b9c1a95fede005480cdde51e2c249a7e083e36"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=71f9d8edac658e8384c245cf63c3f03d6c5b2454#71f9d8edac658e8384c245cf63c3f03d6c5b2454"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=26b9c1a95fede005480cdde51e2c249a7e083e36#26b9c1a95fede005480cdde51e2c249a7e083e36"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=71f9d8edac658e8384c245cf63c3f03d6c5b2454#71f9d8edac658e8384c245cf63c3f03d6c5b2454"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

@@ -1,5 +1,4 @@
 pub mod errors;
-#[cfg(feature = "host_admission")]
 pub mod fri_admission;
 mod fri_proof_decode;
 mod fri_proof_sidecar;
@@ -53,7 +52,7 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
-#[cfg(feature = "host_admission")]
+pub use basic_bootloader::bootloader::fri_host_verifier::FriHostVerifyError;
 pub use crate::run::fri_admission::{validate_fri_statement, FriAdmissionError};
 pub use crate::run::query_processors::FriVerifierArtifacts;
 pub use fri_proof_sidecar::{FriProofSidecarSource, NoFriProofSidecar};

@@ -1,17 +1,13 @@
-//! Host-side FRI proof admission helpers.
-//!
-//! These helpers exist so callers outside the bootloader can verify a single FRI
-//! statement against its `statement_versioned_hash` before admitting a
-//! `FriProofTx` to the block. This is an admission check that fails fast
-//! on bad proofs so they never reach the prover.
+//! Host-side FRI verifier runner.
 
-use crate::bootloader::constants::FRI_STATEMENT_HASH_VERSION;
-use crypto::{sha3::Keccak256, MiniDigest};
+#![cfg(not(target_arch = "riscv32"))]
+
+use crate::bootloader::fri_verifier::statement_versioned_hash_from_verifier_output;
 use zk_ee::utils::Bytes32;
 
-const FRI_ADMISSION_VERIFIER_STACK_SIZE: usize = 1 << 27;
+const FRI_HOST_VERIFIER_STACK_SIZE: usize = 1 << 27;
 
-/// Errors returned by [`run_host_verifier`].
+/// Errors returned by host FRI verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FriHostVerifyError {
     /// The verifier thread could not be spawned (resource exhaustion).
@@ -28,24 +24,26 @@ pub enum FriHostVerifyError {
     /// the umbrella dispatch would let the verifier branch on
     /// adversary-chosen op words.
     UnsupportedOpType,
+    /// The verifier output does not bind to the claimed statement hash.
+    StatementHashMismatch,
 }
 
-/// Derive `statement_versioned_hash` from the 16 `u32` output
-/// registers returned by the FRI unified verifier. The hash format is
-/// `version || keccak256(output_words_le)[1..]`.
-pub fn statement_versioned_hash_from_verifier_output(output: &[u32; 16]) -> Bytes32 {
-    let mut hasher = Keccak256::new();
-    for word in output.iter() {
-        hasher.update(word.to_le_bytes());
+/// Verify a pre-flattened FRI statement word stream against the claimed
+/// `statement_versioned_hash`.
+pub fn verify_host_fri_statement(
+    verifier_words: &[u32],
+    statement_versioned_hash: Bytes32,
+) -> Result<(), FriHostVerifyError> {
+    let output = run_host_verifier(verifier_words)?;
+    if statement_versioned_hash_from_verifier_output(&output) != statement_versioned_hash {
+        return Err(FriHostVerifyError::StatementHashMismatch);
     }
-    let mut hash = hasher.finalize();
-    hash[0] = FRI_STATEMENT_HASH_VERSION;
-    Bytes32::from_array(hash)
+    Ok(())
 }
 
 /// Run the host airbender unified verifier on a pre-flattened
 /// verifier word stream and return the 16 final-register output.
-pub fn run_host_verifier(verifier_words: &[u32]) -> Result<[u32; 16], FriHostVerifyError> {
+fn run_host_verifier(verifier_words: &[u32]) -> Result<[u32; 16], FriHostVerifyError> {
     use full_statement_verifier::definitions::OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT;
     use full_statement_verifier::verifier_common::prover::nd_source_std;
 
@@ -57,14 +55,18 @@ pub fn run_host_verifier(verifier_words: &[u32]) -> Result<[u32; 16], FriHostVer
         return Err(FriHostVerifyError::UnsupportedOpType);
     }
 
+    // The verifier is stack-heavy. A plain `catch_unwind` would catch
+    // verifier panics, but it would still run on the caller's stack and
+    // would not make stack overflow a reliable recoverable error.
+    //
     // `nd_source_std::set_iterator` stores a boxed `'static` iterator
     // in thread-local state, so the spawned verifier thread must own
     // the verifier words.
-    let words: Vec<u32> = rest.to_vec();
+    let words = rest.to_vec();
 
     let join = std::thread::Builder::new()
-        .name("fri-admission-verifier".to_string())
-        .stack_size(FRI_ADMISSION_VERIFIER_STACK_SIZE)
+        .name(std::string::String::from("fri-host-verifier"))
+        .stack_size(FRI_HOST_VERIFIER_STACK_SIZE)
         .spawn(move || {
             nd_source_std::set_iterator(words.into_iter());
             let output = full_statement_verifier::unified_circuit_statement::verify_unified_circuit_recursion_layer(
@@ -76,8 +78,8 @@ pub fn run_host_verifier(verifier_words: &[u32]) -> Result<[u32; 16], FriHostVer
         .map_err(|_| FriHostVerifyError::VerifierThreadSpawn)?;
 
     // The verifier panics on malformed input; `join()` surfaces the
-    // panic as `Err`. We do not propagate the payload: the admission
-    // API treats any panic as "proof is not valid".
+    // panic as `Err`. We do not propagate the payload: the caller
+    // treats any panic as "proof is not valid".
     let (output, trailing) = join
         .join()
         .map_err(|_| FriHostVerifyError::VerifierRejected)?;
@@ -92,36 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn statement_hash_depends_on_all_verifier_words_and_version() {
-        let mut output = [0u32; 16];
-        for (idx, word) in output.iter_mut().enumerate() {
-            *word = idx as u32 + 1;
-        }
-
-        let baseline = statement_versioned_hash_from_verifier_output(&output);
-
-        output[8] ^= 0xdead_beef;
-        let changed = statement_versioned_hash_from_verifier_output(&output);
-        assert_ne!(baseline, changed);
-
-        assert_eq!(changed.as_u8_array_ref()[0], FRI_STATEMENT_HASH_VERSION);
-
-        let mut hasher = Keccak256::new();
-        for word in output.iter() {
-            hasher.update(word.to_le_bytes());
-        }
-        let without_version = Bytes32::from_array(hasher.finalize());
-
-        assert_eq!(
-            &changed.as_u8_array_ref()[1..],
-            &without_version.as_u8_array_ref()[1..]
-        );
-    }
-
-    #[test]
     fn run_host_verifier_rejects_empty_stream() {
-        // Empty stream -> no op-type word -> immediate rejection
-        // before the verifier thread is spawned.
         let err = run_host_verifier(&[]).unwrap_err();
         assert_eq!(err, FriHostVerifyError::UnsupportedOpType);
     }
@@ -129,6 +102,7 @@ mod tests {
     #[test]
     fn run_host_verifier_rejects_non_unified_op_type() {
         use full_statement_verifier::definitions::OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT;
+
         // Any op word other than the pinned unified op must be
         // rejected without invoking the upstream umbrella, so we
         // never accidentally accept unrolled proofs even with the
@@ -140,10 +114,11 @@ mod tests {
 
     #[test]
     fn run_host_verifier_rejects_garbage_after_correct_op() {
+        use full_statement_verifier::definitions::OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT;
+
         // Correct op type but garbage payload: verifier panics
         // inside the worker thread; the join boundary surfaces it
         // as VerifierRejected.
-        use full_statement_verifier::definitions::OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT;
         let mut words = vec![OP_VERIFY_UNIFIED_RECURSION_LAYER_IN_UNIFIED_CIRCUIT];
         words.extend(0u32..256);
         let err = run_host_verifier(&words).unwrap_err();

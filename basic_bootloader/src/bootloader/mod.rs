@@ -22,8 +22,8 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
-#[cfg(all(not(target_arch = "riscv32"), feature = "host_admission"))]
-pub mod fri_admission;
+pub mod fri_host_verifier;
+mod fri_verifier;
 pub mod result_keeper;
 mod rlp;
 pub mod stf;
