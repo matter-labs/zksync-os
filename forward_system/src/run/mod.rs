@@ -52,9 +52,9 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
-pub use basic_bootloader::bootloader::fri_host_verifier::FriHostVerifyError;
 pub use crate::run::fri_admission::{validate_fri_statement, FriAdmissionError};
 pub use crate::run::query_processors::FriVerifierArtifacts;
+pub use basic_bootloader::bootloader::fri_host_verifier::FriHostVerifyError;
 pub use fri_proof_sidecar::{FriProofSidecarSource, NoFriProofSidecar};
 pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;

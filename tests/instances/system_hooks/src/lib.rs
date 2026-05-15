@@ -2111,9 +2111,7 @@ mod fri_admission_api {
         maybe_decompress, resolve_path, FRI_PRIMARY_PROOF_FIXTURE,
     };
     use rig::alloy::primitives::B256;
-    use rig::forward_system::run::{
-        validate_fri_statement, FriAdmissionError, FriHostVerifyError,
-    };
+    use rig::forward_system::run::{validate_fri_statement, FriAdmissionError, FriHostVerifyError};
     use rig::zk_ee::utils::Bytes32;
 
     fn b256_to_bytes32(hash: B256) -> Bytes32 {

@@ -70,6 +70,8 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -83,6 +85,8 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -92,10 +96,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
 
 /// Default oracle factory used by normal rig runs.
 #[derive(Clone, Default)]
-pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool> {
-    pub fri_sidecar: Option<crate::fri::InMemoryFriProofSidecarSource>,
-    pub fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
-}
+pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
 
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     for DefaultOracleFactory<RANDOMIZED_TREE>
@@ -106,6 +107,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -116,8 +119,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
-            self.fri_sidecar.clone().unwrap_or_default(),
-            self.fri_artifacts.clone(),
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -131,6 +134,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -141,8 +146,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
-            self.fri_sidecar.clone().unwrap_or_default(),
-            self.fri_artifacts.clone(),
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -712,6 +717,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut NopTracer::default(),
             &mut NopTxValidator,
             oracle_factory,
+            Default::default(),
+            None,
         )
         .unwrap()
         .0
@@ -732,6 +739,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             &factory,
+            Default::default(),
+            None,
             &mut NopTracer::default(),
             &mut NopTxValidator,
         )
@@ -755,6 +764,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             &factory,
+            Default::default(),
+            None,
             tracer,
             validator,
         )
@@ -771,6 +782,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
@@ -778,6 +791,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             oracle_factory,
+            fri_sidecar,
+            fri_artifacts,
             tracer,
             validator,
         )
@@ -792,6 +807,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: RunConfig,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
@@ -843,6 +860,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             self.state_tree.clone(),
             self.preimage_source.clone(),
             tx_source.clone(),
+            fri_sidecar.clone(),
+            fri_artifacts.clone(),
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
@@ -871,6 +890,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
                 tx_source.clone(),
+                fri_sidecar,
+                fri_artifacts,
                 Some(proof_data),
                 Some(da_commitment_scheme),
                 false,

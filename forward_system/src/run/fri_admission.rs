@@ -37,7 +37,8 @@ pub fn validate_fri_statement(
     proof_bytes: &[u8],
     artifacts: &FriVerifierArtifacts,
 ) -> Result<(), FriAdmissionError> {
-    let verifier_words = decode_and_flatten_proof(proof_bytes, artifacts)?;
+    let verifier_words =
+        decode_and_flatten_proof(proof_bytes, artifacts).ok_or(FriAdmissionError::BincodeDecode)?;
     verify_host_fri_statement(&verifier_words, statement_versioned_hash)?;
     Ok(())
 }

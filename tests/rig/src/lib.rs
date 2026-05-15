@@ -104,6 +104,8 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
     oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
+    fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+    fri_artifacts: Option<Arc<forward_system::run::FriVerifierArtifacts>>,
 }
 
 impl TestingFramework<true> {
@@ -122,6 +124,8 @@ impl TestingFramework<true> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -148,6 +152,8 @@ impl TestingFramework<false> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -219,15 +225,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     tracer,
                     validator,
                     oracle_factory.as_ref(),
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
             } else {
-                self.chain.run_block_with_extra_stats(
+                let factory = DefaultOracleFactory::<RANDOMIZED_TREE>::default();
+                self.chain.run_block_with_extra_stats_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
                     Some(run_config),
                     tracer,
                     validator,
+                    &factory,
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
             };
 
@@ -378,10 +390,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
         let counter = sidecar_source.lookup_counter();
-        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
-            fri_sidecar: Some(sidecar_source),
-            fri_artifacts: artifacts.map(Arc::new),
-        }));
+        self.fri_sidecar = sidecar_source;
+        self.fri_artifacts = artifacts.map(Arc::new);
         (self, counter)
     }
 
@@ -494,10 +504,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
-        self.oracle_factory = Some(Box::new(DefaultOracleFactory::<RANDOMIZED_TREE> {
-            fri_sidecar: Some(sidecars.into_iter().collect()),
-            fri_artifacts: None,
-        }));
+        self.fri_sidecar = sidecars.into_iter().collect();
+        self.fri_artifacts = None;
         self
     }
 

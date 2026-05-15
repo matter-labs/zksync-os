@@ -57,9 +57,10 @@ where
 }
 
 fn expected_remaining_response_words(verifier_word_count: usize) -> usize {
-    verifier_word_count + usize::from(verifier_word_count % 2 == 0)
+    verifier_word_count + usize::from(verifier_word_count.is_multiple_of(2))
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 fn begin_fri_verifier_stream(
     response: &mut impl ExactSizeIterator<Item = usize>,
 ) -> Result<usize, TxError> {
@@ -127,7 +128,7 @@ mod host {
         }
 
         let (verifier_words, trailing_padding) = remaining_words.split_at(verifier_word_count);
-        if verifier_word_count % 2 == 0 && trailing_padding.first().copied() != Some(0) {
+        if verifier_word_count.is_multiple_of(2) && trailing_padding.first().copied() != Some(0) {
             return Err(TxError::Validation(
                 InvalidTransaction::FriProofVerificationFailed,
             ));
@@ -184,7 +185,7 @@ mod guest {
         use full_statement_verifier::verifier_common::non_determinism_source::NonDeterminismSource;
         use full_statement_verifier::verifier_common::DefaultNonDeterminismSource;
 
-        if verifier_word_count % 2 == 0 {
+        if verifier_word_count.is_multiple_of(2) {
             // The iterator is dropped before verifier execution; the verifier
             // has consumed the payload from the same CSR stream by now.
             let trailing_padding = DefaultNonDeterminismSource::read_word() as usize;
@@ -264,7 +265,7 @@ mod tests {
         response: &mut impl Iterator<Item = usize>,
         verifier_word_count: usize,
     ) -> Result<(), TxError> {
-        if verifier_word_count % 2 == 0 {
+        if verifier_word_count.is_multiple_of(2) {
             let trailing_padding = response.next().ok_or(TxError::Validation(
                 InvalidTransaction::FriProofVerificationFailed,
             ))?;
