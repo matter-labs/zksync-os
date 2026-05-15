@@ -14,6 +14,7 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::system::ForwardRunningSystem;
+use forward_system::run::output::BlockOutput;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
@@ -32,7 +33,6 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
-use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::StorageWrite;
 
 /// Trait for creating oracles with custom configuration

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::traits::EncodedTx;
-use zksync_os_interface::types::BlockOutput;
+use forward_system::run::output::BlockOutput;
 
 pub use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,

@@ -2,7 +2,7 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::log::{error, info};
-use rig::zksync_os_interface::types::BlockOutput;
+use forward_system::run::output::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
