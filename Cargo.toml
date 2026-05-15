@@ -45,6 +45,9 @@ members = [
     "scripts",
 ]
 
+# evm_tester, evm_divergence_validator, and eth_runner are intentionally
+# excluded from default-members: they enable features on forward_system
+# (via rig) that conflict with other tests through workspace feature unification.
 default-members = [
     "api",
     "basic_bootloader",

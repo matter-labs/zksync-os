@@ -101,6 +101,7 @@ mod tests {
     use crate::arguments::Arguments;
 
     #[test]
+    #[ignore]
     fn test_manually() {
         std::env::set_current_dir("..").expect("Change directory failed");
 

@@ -379,7 +379,7 @@ pub fn post_check(
                 );
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Hash(receipt.transaction_hash.to_string()),
-                    msg: ":e#?".to_string(),
+                    msg: format!("{e:#?}"),
                 });
             }
         };
