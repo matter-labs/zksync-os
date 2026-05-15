@@ -86,36 +86,53 @@ done
 
 precompiles_pair="(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
 
-# Section 1: headline.
-{
-  echo "## Block-level effective cycles"
-  echo ""
-  python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${headline_pairs}]"
-  echo ""
-} >> "$OUT"
+# Each sub-script emits nothing when no row moved between base and head.
+# We capture into a tmpfile and skip the surrounding header/<details>
+# entirely when the body is empty, so reviewers don't see "## Per-opcode"
+# followed by silence on a PR that didn't touch any opcode.
+emit_section() {
+  # emit_section <body_file> <header_lines...>
+  # Appends header_lines + body to $OUT only when body_file is non-empty.
+  local body="$1"; shift
+  if [ -s "$body" ]; then
+    for line in "$@"; do printf '%s\n' "$line" >> "$OUT"; done
+    cat "$body" >> "$OUT"
+    printf '\n' >> "$OUT"
+  fi
+}
+emit_details_section() {
+  # emit_details_section <body_file> <summary>
+  # Wraps non-empty body in <details><summary>…</summary>; same skip rule.
+  local body="$1"; local summary="$2"
+  if [ -s "$body" ]; then
+    {
+      printf '<details><summary>%s</summary>\n\n' "$summary"
+      cat "$body"
+      printf '\n</details>\n\n'
+    } >> "$OUT"
+  fi
+}
+
+# Section 1: headline (process_block per (block, DA scheme)).
+headline_body=$(mktemp)
+python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${headline_pairs}]" > "$headline_body"
+emit_section "$headline_body" "## Block-level effective cycles" ""
+rm -f "$headline_body"
 
 # Section 2: sub-phases (collapsed).
-{
-  echo "<details><summary>Block-level sub-phases</summary>"
-  echo ""
-  python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title --sort-by-symbol "[${subphase_pairs}]"
-  echo ""
-  echo "</details>"
-  echo ""
-} >> "$OUT"
+subphase_body=$(mktemp)
+python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title --sort-by-symbol "[${subphase_pairs}]" > "$subphase_body"
+emit_details_section "$subphase_body" "Block-level sub-phases"
+rm -f "$subphase_body"
 
 # Section 3: precompiles test-crate bench (collapsed).
-{
-  echo "<details><summary>Precompiles test-crate bench (synthetic workload, all labels)</summary>"
-  echo ""
-  python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${precompiles_pair}]"
-  echo ""
-  echo "</details>"
-  echo ""
-} >> "$OUT"
+precompiles_body=$(mktemp)
+python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${precompiles_pair}]" > "$precompiles_body"
+emit_details_section "$precompiles_body" "Precompiles test-crate bench (synthetic workload, all labels)"
+rm -f "$precompiles_body"
 
-# Sections 4 + 5: per-opcode. Each sub-script emits nothing when nothing
-# moved, so the section header may have no rows under it.
+# Section 4: per-opcode. Two sub-scripts each emit nothing when nothing
+# moved; we suppress the "## Per-opcode" header when both are silent.
 stats_args=""
 cycle_args=""
 gas_args=""
@@ -130,20 +147,25 @@ for dir in tests/instances/eth_runner/blocks/*; do
   cycle_sample_args="$cycle_sample_args $(pwd)/opcode_samples/base_${blk} $(pwd)/opcode_cycles/base_${blk} $(pwd)/opcode_samples/head_${blk} $(pwd)/opcode_cycles/head_${blk}"
 done
 
-{
-  echo "## Per-opcode"
-  if ! python3 "$REPO_ROOT/bench_scripts/compare_opcode_stats.py" $stats_args \
-       --sample-dirs $stats_sample_args; then
-    echo ""
-    echo "_Per-opcode gas/native diff generation failed; see CI logs._"
-  fi
-  if ! python3 "$REPO_ROOT/bench_scripts/compare_opcode_cycles.py" $cycle_args \
-       --gas-stats $gas_args \
-       --sample-dirs $cycle_sample_args; then
-    echo ""
-    echo "_Per-opcode cycles diff generation failed; see CI logs._"
-  fi
-} >> "$OUT"
+stats_body=$(mktemp)
+if ! python3 "$REPO_ROOT/bench_scripts/compare_opcode_stats.py" $stats_args \
+     --sample-dirs $stats_sample_args > "$stats_body"; then
+  printf '\n_Per-opcode gas/native diff generation failed; see CI logs._\n' > "$stats_body"
+fi
+cycles_body=$(mktemp)
+if ! python3 "$REPO_ROOT/bench_scripts/compare_opcode_cycles.py" $cycle_args \
+     --gas-stats $gas_args \
+     --sample-dirs $cycle_sample_args > "$cycles_body"; then
+  printf '\n_Per-opcode cycles diff generation failed; see CI logs._\n' > "$cycles_body"
+fi
+if [ -s "$stats_body" ] || [ -s "$cycles_body" ]; then
+  {
+    printf '## Per-opcode\n'
+    cat "$stats_body"
+    cat "$cycles_body"
+  } >> "$OUT"
+fi
+rm -f "$stats_body" "$cycles_body"
 
 # Section 6: per-execution precompile ratios.
 # `--bench-file` and `--opcode-samples-dir` are positionally matched to
@@ -179,17 +201,17 @@ for dir in tests/instances/eth_runner/blocks/*; do
   fi
 done
 
-{
-  echo ""
-  echo "## Per-precompile"
-  echo ""
-  echo "<details><summary>Per-precompile per-execution ratios (head)</summary>"
-  echo ""
-  echo '```'
-  if ! python3 "$REPO_ROOT/bench_scripts/join_precompile_samples.py" $join_pairs $join_bench_args $join_opcode_args --summary; then
-    echo "(per-execution ratios generation failed; see CI logs)"
-  fi
-  echo '```'
-  echo ""
-  echo "</details>"
-} >> "$OUT"
+precompile_body=$(mktemp)
+if ! python3 "$REPO_ROOT/bench_scripts/join_precompile_samples.py" $join_pairs $join_bench_args $join_opcode_args --summary > "$precompile_body"; then
+  printf '(per-execution ratios generation failed; see CI logs)\n' > "$precompile_body"
+fi
+if [ -s "$precompile_body" ]; then
+  {
+    printf '## Per-precompile\n\n'
+    printf '<details><summary>Per-precompile per-execution ratios (head)</summary>\n\n'
+    printf '```\n'
+    cat "$precompile_body"
+    printf '```\n\n</details>\n'
+  } >> "$OUT"
+fi
+rm -f "$precompile_body"
