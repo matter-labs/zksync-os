@@ -11,8 +11,9 @@ use zksync_os_rig::chain::RunConfig;
 use zksync_os_rig::zksync_os_api::helpers;
 use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
 use zksync_os_rig::zksync_os_interface::traits::EncodedTx;
-use zksync_os_rig::zksync_os_interface::types::{BlockOutput, TxOutput};
+use zksync_os_rig::zksync_os_interface::types::TxOutput;
 use zksync_os_rig::BlockContext;
+use zksync_os_rig::BlockOutput;
 use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;

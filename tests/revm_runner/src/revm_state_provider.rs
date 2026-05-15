@@ -13,11 +13,9 @@ use std::{
     fmt,
     sync::{Arc, Mutex, MutexGuard},
 };
+use zk_ee::system::metadata::zk_metadata::BlockHashes;
 use zk_ee::{common_structs::derive_flat_storage_key, utils::Bytes32};
-use zksync_os_interface::{
-    traits::{PreimageSource, ReadStorage},
-    types::BlockHashes,
-};
+use zksync_os_interface::traits::{PreimageSource, ReadStorage};
 
 #[derive(Debug)]
 pub enum RevmStateProviderError {

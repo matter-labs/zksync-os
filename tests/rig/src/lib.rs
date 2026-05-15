@@ -48,7 +48,6 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
-use zksync_os_interface::types::BlockOutput;
 use zksync_os_revm_runner::revm_runner::RevmRunner;
 pub use zksync_os_runner::FlamegraphOptions;
 pub use zksync_os_tests_common;
@@ -57,6 +56,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::chain::{BlockExtraStats, RunConfig};
 use crate::chain::{DefaultOracleFactory, TestingOracleFactory};
+pub use crate::forward_system::run::output::BlockOutput;
 use crate::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 
 static INIT_LOGGER_ONCE: Once = Once::new();

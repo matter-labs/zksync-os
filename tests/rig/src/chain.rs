@@ -18,6 +18,7 @@ use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
+use forward_system::run::output::BlockOutput;
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
@@ -58,7 +59,7 @@ use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::{
-    AccountDiff, BlockOutput, ExecutionOutput, ExecutionResult, StorageWrite, TxOutput,
+    AccountDiff, ExecutionOutput, ExecutionResult, StorageWrite, TxOutput,
 };
 
 /// Trait for creating oracles with custom configuration

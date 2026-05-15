@@ -421,7 +421,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
 
 fn apply_root_gas_used_from_block_output(
     mut traces: Vec<CallFrame>,
-    block_output: &rig::zksync_os_interface::types::BlockOutput,
+    block_output: &rig::BlockOutput,
 ) -> Vec<CallFrame> {
     if traces.len() != block_output.tx_results.len() {
         eprintln!(
