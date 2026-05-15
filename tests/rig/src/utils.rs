@@ -16,7 +16,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 pub use zksync_os_api::helpers::*;
-use zksync_os_interface::types::BlockOutput;
+use forward_system::run::output::BlockOutput;
 use zksync_web3_rs::eip712::{Eip712Transaction, Eip712TransactionRequest};
 use zksync_web3_rs::signers::Signer;
 use zksync_web3_rs::zks_utils::EIP712_TX_TYPE;

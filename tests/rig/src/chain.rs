@@ -15,6 +15,7 @@ use forward_system::run::test_impl::{
     InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
 };
 use forward_system::run::ForwardRunningOracle;
+use forward_system::run::output::BlockOutput;
 use forward_system::system::bootloader::run_forward;
 use forward_system::system::bootloader::run_forward_no_panic;
 use log::{debug, info, trace};
@@ -30,7 +31,6 @@ use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
-use zksync_os_interface::types::BlockOutput;
 
 ///
 /// In memory chain state, mainly to be used in tests.
