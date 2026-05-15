@@ -119,7 +119,18 @@ def compare(base, head):
         h_max_gas = h.get("max_gas", 0)
         b_max_native = b.get("max_native", 0)
         h_max_native = h.get("max_native", 0)
-        if b_max_gas == h_max_gas and b_max_native == h_max_native:
+        b_med_gas = b.get("med_gas", 0)
+        h_med_gas = h.get("med_gas", 0)
+        b_med_native = b.get("med_native", 0)
+        h_med_native = h.get("med_native", 0)
+        # Suppress unchanged rows. Includes median because a median regression
+        # with a flat max would otherwise vanish from the report.
+        if (
+            b_max_gas == h_max_gas
+            and h_max_native == b_max_native
+            and b_med_gas == h_med_gas
+            and b_med_native == h_med_native
+        ):
             continue
         rows.append(
             {
@@ -129,12 +140,12 @@ def compare(base, head):
                 "h_count": h.get("count", 0),
                 "b_max_gas": b_max_gas,
                 "h_max_gas": h_max_gas,
-                "b_med_gas": b.get("med_gas", 0),
-                "h_med_gas": h.get("med_gas", 0),
+                "b_med_gas": b_med_gas,
+                "h_med_gas": h_med_gas,
                 "b_max_native": b_max_native,
                 "h_max_native": h_max_native,
-                "b_med_native": b.get("med_native", 0),
-                "h_med_native": h.get("med_native", 0),
+                "b_med_native": b_med_native,
+                "h_med_native": h_med_native,
             }
         )
     return rows
