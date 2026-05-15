@@ -532,34 +532,35 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
         cm.delegation_counter
     ));
 
+    // Shared writer for the two per-execution sample dumps below
+    // (OPCODE_CYCLE_SAMPLES_DIR and LABEL_CYCLE_SAMPLES_DIR). Both files are
+    // append-only u64-per-line; caller is responsible for cleaning the dir
+    // before the first invocation so stale runs don't bleed through.
+    let append_samples = |path: std::path::PathBuf, samples: &[u64]| {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .expect("Failed to open cycle samples file for append");
+        use std::io::Write;
+        for &c in samples {
+            writeln!(f, "{}", c).expect("Failed to write cycle sample");
+        }
+    };
+
     // Dump per-execution cycle samples if requested via env var. Writes
     // two files per opcode (same layout as the label dump below):
     //   `<dir>/<OPCODE>.cycles`           — raw RISC-V cycles per execution
     //   `<dir>/<OPCODE>.effective.cycles` — raw + delegation weights
-    // Caller contract: clean the dir before the first invocation (e.g. with
-    // `rm -rf`) so that stale files from a previous run are not mixed in.
-    // This block APPENDS to existing files so that multi-block test runs
-    // accumulate all samples rather than keeping only the last block's data.
     if let Ok(dir) = std::env::var("OPCODE_CYCLE_SAMPLES_DIR") {
         let dir = std::path::Path::new(&dir);
         std::fs::create_dir_all(dir).expect("Failed to create cycle samples dir");
-        let append = |path: std::path::PathBuf, samples: &[u64]| {
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .expect("Failed to open cycle samples file for append");
-            use std::io::Write;
-            for &c in samples {
-                writeln!(f, "{}", c).expect("Failed to write cycle sample");
-            }
-        };
         for (name, acc) in &opcode_aggregated {
             if acc.samples.is_empty() {
                 continue;
             }
-            append(dir.join(format!("{}.cycles", name)), &acc.samples);
-            append(
+            append_samples(dir.join(format!("{}.cycles", name)), &acc.samples);
+            append_samples(
                 dir.join(format!("{}.effective.cycles", name)),
                 &acc.samples_effective,
             );
@@ -576,31 +577,16 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     // OPCODE_CYCLE_SAMPLES_DIR's format so the same join scripts can consume
     // it. Effective values let cycles/gas analysis reflect prover cost
     // including delegation work (which raw RISC-V cycles do not capture).
-    // Caller contract: clean the dir before the first invocation so that stale
-    // files from a previous run are not mixed in. This block APPENDS so that
-    // multi-block test runs accumulate all samples rather than keeping only the
-    // last block's data.
     if let Ok(dir) = std::env::var("LABEL_CYCLE_SAMPLES_DIR") {
         let dir = std::path::Path::new(&dir);
         std::fs::create_dir_all(dir).expect("Failed to create label cycle samples dir");
-        let append = |path: std::path::PathBuf, samples: &[u64]| {
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .expect("Failed to open label cycle samples file for append");
-            use std::io::Write;
-            for &c in samples {
-                writeln!(f, "{}", c).expect("Failed to write label cycle sample");
-            }
-        };
         for (name, samples) in &label_cycle_samples {
             if samples.is_empty() {
                 continue;
             }
-            append(dir.join(format!("{}.cycles", name)), samples);
+            append_samples(dir.join(format!("{}.cycles", name)), samples);
             if let Some(eff) = label_effective_samples.get(name) {
-                append(dir.join(format!("{}.effective.cycles", name)), eff);
+                append_samples(dir.join(format!("{}.effective.cycles", name)), eff);
             }
         }
     }
