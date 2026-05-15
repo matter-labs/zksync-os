@@ -458,3 +458,30 @@ fn to_auth_list(src: &Option<Vec<AuthorizationListItem>>) -> Vec<SignedAuthoriza
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_list_item_deserializes_from_hex() {
+        let json = r#"{
+            "chainId": "0x01",
+            "address": "0x0000000000000000000000000000000000000001",
+            "nonce": "0x00",
+            "yParity": "0x01",
+            "v": "0x01",
+            "r": "0xdead000000000000000000000000000000000000000000000000000000000000",
+            "s": "0xbeef000000000000000000000000000000000000000000000000000000000000"
+        }"#;
+
+        let item: AuthorizationListItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.chain_id, U256::from(1));
+        assert_eq!(item.nonce, U256::ZERO);
+        assert_eq!(item.y_parity, U256::from(1));
+        assert_eq!(item.nonce.to::<u64>(), 0u64);
+        assert_eq!(item.y_parity.to::<u64>(), 1u64);
+        assert!(item.r > U256::ZERO);
+        assert!(item.s > U256::ZERO);
+    }
+}

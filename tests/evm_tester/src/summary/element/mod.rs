@@ -81,7 +81,7 @@ impl Element {
                     "".to_string()
                 }
             }
-            Outcome::Invalid { ref error } => error.to_string(),
+            Outcome::Invalid { ref error } | Outcome::Panicked { ref error } => error.to_string(),
             _ => String::new(),
         };
 

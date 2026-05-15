@@ -28,7 +28,7 @@ csv = "1.3"
 reqwest = { workspace = true, features = ["json", "blocking", "rustls-tls"] }
 zstd = "0.13"
 
-airbender-host = { workspace = true, default-features = false }
+airbender-host = { workspace = true }
 
 [features]
 proving = []
