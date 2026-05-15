@@ -46,7 +46,7 @@ jobs:
   bench-base:
     name: Bench base
     needs: merge-base
-    runs-on: [matterlabs-ci-runner-highmem]
+    runs-on: [matterlabs-ci-runner-high-performance]
     permissions:
       contents: read
     steps:
@@ -58,27 +58,81 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
       - name: Compile for RISC-V
         working-directory: ./zksync_os
+        # `for-tests-benchmarking-pectra` was introduced on the PR side of
+        # this workflow; the merge-base may predate it. Fall back to the
+        # non-pectra type so bench-base can still produce baseline numbers
+        # for `test_precompiles` even if the merge-base lacks pectra
+        # support (test_pectra_precompiles / test_kzg_regression are then
+        # exercised only on the head side — best-effort coverage).
         run: |
-          ./dump_bin.sh --type for-tests-benchmarking
+          if grep -q "for-tests-benchmarking-pectra" dump_bin.sh; then
+            ./dump_bin.sh --type for-tests-benchmarking-pectra
+          else
+            ./dump_bin.sh --type for-tests-benchmarking
+          fi
           ./dump_bin.sh --type evm-replay-benchmarking
       - name: Run benchmarks
         shell: bash
+        # Profile/feature/test-filter selection adapts to the checked-out tree:
+        #   - `bench-fast` profile: introduced on the PR; merge-base may lack
+        #     it, in which case we fall back to `--release`.
+        #   - `precompiles/pectra` feature + extra test functions:
+        #     introduced together with `for-tests-benchmarking-pectra`; if the
+        #     proving binary type is unavailable, the proving binary can't run
+        #     BLS/BLAKE2F/KZG vectors, so we drop those tests + the feature.
         run: |
+          if grep -q "bench-fast" Cargo.toml; then
+            PROFILE="--profile bench-fast"
+          else
+            PROFILE="--release"
+          fi
+          if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
+            PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,precompiles/pectra,rig/unlimited_native"
+            PRECOMPILES_TESTS="test_precompiles test_pectra_precompiles test_kzg_regression"
+          else
+            PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,rig/unlimited_native"
+            PRECOMPILES_TESTS="test_precompiles"
+          fi
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
+            # Pass 1: default DA scheme (BlobsAndPubdataKeccak256) — full
+            # instrumentation (opcodes + precompiles + cycle markers).
             OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/base_${blk} \
             OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/base_${blk} \
             MARKER_PATH=$(pwd)/base_block_${blk}.bench \
-            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
+            PRECOMPILE_STATS_PATH=$(pwd)/base_block_${blk}_precompile_stats.csv \
+            PRECOMPILE_SAMPLES_DIR=$(pwd)/precompile_samples/base_${blk} \
+            LABEL_CYCLE_SAMPLES_DIR=$(pwd)/precompile_cycles/base_${blk} \
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
+            # Pass 2: BlobsZKsyncOS DA scheme. Only the post-tx-op stage
+            # differs (the tx-loop work is identical to pass 1), so we capture
+            # ONLY the cycle markers here — no opcode/precompile dumps.
+            # Skip on merge-bases that lack BENCH_DA_SCHEME plumbing.
+            if grep -q "BENCH_DA_SCHEME" tests/instances/eth_runner/src/single_run.rs; then
+              BENCH_DA_SCHEME=blobs_zksync_os \
+              MARKER_PATH=$(pwd)/base_block_${blk}_blobs.bench \
+              cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}_blobs.out
+            fi
           done
-          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          # Test name substring filters (Rust's harness matches if ANY substring matches):
+          #   test_precompiles       — 114 core precompile vectors (TESTS)
+          #   test_pectra_precompiles — 6 BLAKE2F + BLS12-381 vectors (PECTRA_TESTS, gated by `precompiles/pectra` feature)
+          #   test_kzg_regression    — 1 KZG / point_evaluation vector (KZG_TESTS)
+          # `test_p256` (781 P256 vectors) is `#[ignore = "Too long for CI"]`; would
+          # need `--include-ignored` to run, which significantly lengthens CI. Tracked
+          # as a follow-up coverage gap.
+          MARKER_PATH=$(pwd)/base_precompiles.bench PRECOMPILE_STATS_PATH=$(pwd)/base_precompile_stats.csv PRECOMPILE_SAMPLES_DIR=$(pwd)/base_precompile_samples LABEL_CYCLE_SAMPLES_DIR=$(pwd)/base_precompile_cycles cargo test $PROFILE --features $PRECOMPILES_FEATURES -p precompiles -- --test-threads=1 $PRECOMPILES_TESTS
       - uses: actions/upload-artifact@v4
         with:
           name: bench-base-results
           path: |
             base_block_*.bench
+            base_block_*_blobs.bench
             base_block_*.out
+            base_block_*_blobs.out
+            base_block_*_precompile_stats.csv
             base_precompiles.bench
+            base_precompile_stats.csv
             opcode_samples/
             opcode_cycles/
 
@@ -86,7 +140,7 @@ jobs:
   bench-head:
     name: Bench head
     needs: merge-base
-    runs-on: [matterlabs-ci-runner-highmem]
+    runs-on: [matterlabs-ci-runner-high-performance]
     permissions:
       contents: read
     steps:
@@ -99,31 +153,75 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
       - name: Compile for RISC-V
         working-directory: ./zksync_os
+        # `for-tests-benchmarking-pectra` was introduced on the PR side of
+        # this workflow; the merge-base may predate it. Fall back to the
+        # non-pectra type so bench-base can still produce baseline numbers
+        # for `test_precompiles` even if the merge-base lacks pectra
+        # support (test_pectra_precompiles / test_kzg_regression are then
+        # exercised only on the head side — best-effort coverage).
         run: |
-          ./dump_bin.sh --type for-tests-benchmarking
+          if grep -q "for-tests-benchmarking-pectra" dump_bin.sh; then
+            ./dump_bin.sh --type for-tests-benchmarking-pectra
+          else
+            ./dump_bin.sh --type for-tests-benchmarking
+          fi
           ./dump_bin.sh --type evm-replay-benchmarking
       - name: Run benchmarks
         shell: bash
+        # See bench-base for the rationale on profile/feature/test-filter
+        # detection. Mirrored here so the same fallback applies if/when the
+        # head also lacks one of these (defensive — usually head has them).
         run: |
+          if grep -q "bench-fast" Cargo.toml; then
+            PROFILE="--profile bench-fast"
+          else
+            PROFILE="--release"
+          fi
+          if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
+            PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,precompiles/pectra,rig/unlimited_native"
+            PRECOMPILES_TESTS="test_precompiles test_pectra_precompiles test_kzg_regression"
+          else
+            PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,rig/unlimited_native"
+            PRECOMPILES_TESTS="test_precompiles"
+          fi
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
+            # Pass 1: default DA scheme (BlobsAndPubdataKeccak256).
             OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/head_${blk} \
             OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/head_${blk} \
             OPCODE_STATS_PATH=$(pwd)/head_block_${blk}_opcode_stats.csv \
             MARKER_PATH=$(pwd)/head_block_${blk}.bench \
-            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
+            PRECOMPILE_STATS_PATH=$(pwd)/head_block_${blk}_precompile_stats.csv \
+            PRECOMPILE_SAMPLES_DIR=$(pwd)/precompile_samples/head_${blk} \
+            LABEL_CYCLE_SAMPLES_DIR=$(pwd)/precompile_cycles/head_${blk} \
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
+            # Pass 2: BlobsZKsyncOS — only cycle markers captured.
+            if grep -q "BENCH_DA_SCHEME" tests/instances/eth_runner/src/single_run.rs; then
+              BENCH_DA_SCHEME=blobs_zksync_os \
+              MARKER_PATH=$(pwd)/head_block_${blk}_blobs.bench \
+              cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > head_block_${blk}_blobs.out
+            fi
           done
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          # See bench-base step for filter-substring rationale.
+          MARKER_PATH=$(pwd)/head_precompiles.bench PRECOMPILE_STATS_PATH=$(pwd)/head_precompile_stats.csv PRECOMPILE_SAMPLES_DIR=$(pwd)/head_precompile_samples LABEL_CYCLE_SAMPLES_DIR=$(pwd)/head_precompile_cycles cargo test $PROFILE --features $PRECOMPILES_FEATURES -p precompiles -- --test-threads=1 $PRECOMPILES_TESTS
       - uses: actions/upload-artifact@v4
         with:
           name: bench-head-results
           path: |
             head_block_*.bench
+            head_block_*_blobs.bench
             head_block_*.out
+            head_block_*_blobs.out
             head_block_*_opcode_stats.csv
+            head_block_*_precompile_stats.csv
             head_precompiles.bench
+            head_precompile_stats.csv
+            head_precompile_samples/
+            head_precompile_cycles/
             opcode_samples/
             opcode_cycles/
+            precompile_samples/
+            precompile_cycles/
 
   # Compare base and head results, post comment.
   compare:
@@ -158,33 +256,103 @@ jobs:
           # Move all files to the workspace root so scripts find them by name.
           cp base-results/base_block_*.bench base-results/base_block_*.out base-results/base_precompiles.bench . 2>/dev/null || true
           cp head-results/head_block_*.bench head-results/head_block_*.out head-results/head_precompiles.bench . 2>/dev/null || true
+          cp base-results/base_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_precompile_stats.csv . 2>/dev/null || true
+          cp base-results/base_block_*_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_block_*_precompile_stats.csv . 2>/dev/null || true
           cp head-results/head_block_*_opcode_stats.csv . 2>/dev/null || true
+          # Precompile per-execution samples + cycles are head-only (base
+          # currently has no per-block tracer wiring); the comparison join
+          # consumes only the head-side data.
+          cp -r head-results/head_precompile_samples . 2>/dev/null || true
+          cp -r head-results/head_precompile_cycles . 2>/dev/null || true
           # Merge opcode_samples and opcode_cycles directories
           mkdir -p opcode_samples opcode_cycles
           cp -r base-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
           cp -r head-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
           cp -r base-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
           cp -r head-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
+          # Per-block precompile samples and cycles (head only).
+          mkdir -p precompile_samples precompile_cycles
+          cp -r head-results/precompile_samples/* precompile_samples/ 2>/dev/null || true
+          cp -r head-results/precompile_cycles/* precompile_cycles/ 2>/dev/null || true
 
       - name: Generate comparison
         shell: bash
         id: comparison
         run: |
           mkdir -p bench_results
-          pairs=""
+          # Build three separate pair lists so the resulting PR comment has a
+          # clear top-level structure:
+          #   - Headline:    `process_block` per (block, DA scheme) — the rows
+          #                  reviewers should always see.
+          #   - Sub-phases:  `system_init`, `run_tx_loop`, `da_commitment`,
+          #                  `state_commitment_update`, `blob_versioned_hash`.
+          #                  Useful when something
+          #                  regresses inside one of these stages; otherwise
+          #                  visual debt → collapsed under <details>.
+          #   - Precompiles bench: the synthetic test-crate workload, which
+          #                  expands to ~30 labels — collapsed under <details>.
+          headline_pairs=""
+          subphase_pairs=""
+          # The default DA scheme run (BlobsAndPubdataKeccak256) gets all four
+          # sub-phases. The BlobsZKsyncOS pass only differs in the post-tx-op
+          # stage (the tx loop is identical), so we surface only the rows that
+          # actually change: `da_commitment`, `state_commitment_update`, and `blob_versioned_hash`.
+          subphase_symbols_keccak="system_init run_tx_loop da_commitment state_commitment_update"
+          subphase_symbols_blobs="da_commitment state_commitment_update blob_versioned_hash"
+          add_pair() {
+            local list_var="$1"; local entry="$2"
+            if [ -z "${!list_var}" ]; then
+              eval "$list_var=\$entry"
+            else
+              eval "$list_var=\"\${$list_var},\$entry\""
+            fi
+          }
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
             python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
             python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
-            if [ -z "$pairs" ]; then
-              pairs="(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
-            else
-              pairs="${pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
+            add_pair headline_pairs "(\"block_${blk} (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
+            for sym in $subphase_symbols_keccak; do
+              add_pair subphase_pairs "(\"block_${blk} (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"${sym}\")"
+            done
+            # When the merge-base predates `BENCH_DA_SCHEME` plumbing the
+            # bench-base job emits no blobs `.bench` file. Fall back to
+            # comparing the head's blobs file against itself so the absolute
+            # values are still visible in the PR comment (deltas will read 0%
+            # — fine until the next PR cycles after merge).
+            if [ -f "head_block_${blk}_blobs.bench" ]; then
+              if [ -f "base_block_${blk}_blobs.bench" ]; then
+                base_blob="base_block_${blk}_blobs.bench"
+              else
+                base_blob="head_block_${blk}_blobs.bench"
+              fi
+              add_pair headline_pairs "(\"block_${blk} (blobs DA)\", \"${base_blob}\", \"head_block_${blk}_blobs.bench\", \"process_block\")"
+              for sym in $subphase_symbols_blobs; do
+                add_pair subphase_pairs "(\"block_${blk} (blobs DA)\", \"${base_blob}\", \"head_block_${blk}_blobs.bench\", \"${sym}\")"
+              done
             fi
           done
-          pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
-          # Save comparison to file (for artifact + comment workflow fallback)
-          python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
+          precompiles_pair="(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
+          # Headline section: process_block per (block, DA scheme).
+          echo "## Block-level effective cycles" > bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          python3 bench_scripts/compare_bench.py --no-title "[${headline_pairs}]" >> bench_results/comparison.md
+          # Block sub-phases collapsed under <details>.
+          echo "" >> bench_results/comparison.md
+          echo "<details><summary>Block-level sub-phases</summary>" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          python3 bench_scripts/compare_bench.py --no-title --sort-by-symbol "[${subphase_pairs}]" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          echo "</details>" >> bench_results/comparison.md
+          # Synthetic precompiles test-crate bench collapsed under <details>.
+          echo "" >> bench_results/comparison.md
+          echo "<details><summary>Precompiles test-crate bench (synthetic workload, all labels)</summary>" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          python3 bench_scripts/compare_bench.py --no-title "[${precompiles_pair}]" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          echo "</details>" >> bench_results/comparison.md
           # Collect file lists for aggregated per-opcode comparison
           stats_args=""
           cycle_args=""
@@ -199,15 +367,74 @@ jobs:
             stats_sample_args="$stats_sample_args $(pwd)/opcode_samples/base_${blk} $(pwd)/opcode_samples/head_${blk}"
             cycle_sample_args="$cycle_sample_args $(pwd)/opcode_samples/base_${blk} $(pwd)/opcode_cycles/base_${blk} $(pwd)/opcode_samples/head_${blk} $(pwd)/opcode_cycles/head_${blk}"
           done
+          # Per-opcode changes — both scripts emit nothing if nothing moved.
+          echo "" >> bench_results/comparison.md
+          echo "## Per-opcode" >> bench_results/comparison.md
           # Aggregated per-opcode EVM stats (gas/native/ratios)
-          python3 bench_scripts/compare_opcode_stats.py $stats_args \
+          if ! python3 bench_scripts/compare_opcode_stats.py $stats_args \
             --sample-dirs $stats_sample_args \
-            >> bench_results/comparison.md 2>/dev/null || true
+            >> bench_results/comparison.md; then
+            echo "" >> bench_results/comparison.md
+            echo "_Per-opcode gas/native diff generation failed; see CI logs._" >> bench_results/comparison.md
+          fi
           # Aggregated per-opcode RISC-V cycles (and cycles/gas ratios)
-          python3 bench_scripts/compare_opcode_cycles.py $cycle_args \
+          if ! python3 bench_scripts/compare_opcode_cycles.py $cycle_args \
             --gas-stats $gas_args \
             --sample-dirs $cycle_sample_args \
-            >> bench_results/comparison.md 2>/dev/null || true
+            >> bench_results/comparison.md; then
+            echo "" >> bench_results/comparison.md
+            echo "_Per-opcode cycles diff generation failed; see CI logs._" >> bench_results/comparison.md
+          fi
+          # Per-execution precompile join inputs: aggregate the per-block
+          # tracer sample dirs and cycle sample dirs into positional pairs
+          # for `join_precompile_samples.py`. `--opcode-samples-dir`
+          # provides gas/native for synthetic precompile entries (currently
+          # `keccak` sourced from `SHA3.samples`).
+          join_pairs="head_precompile_samples head_precompile_cycles"
+          join_bench_args=""
+          join_opcode_args=""
+          if [ -f head_precompiles.bench ]; then
+            join_bench_args="--bench-file head_precompiles.bench"
+          fi
+          # Test-crate run dumps opcode samples to a flat dir; per-block runs
+          # dump under opcode_samples/head_${blk}. Pass the flat dir as the
+          # first --opcode-samples-dir to align with the first join pair.
+          if [ -d head_precompile_samples ]; then
+            join_opcode_args="--opcode-samples-dir opcode_samples"
+          fi
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            if [ -d "precompile_samples/head_${blk}" ] && [ -d "precompile_cycles/head_${blk}" ]; then
+              join_pairs="$join_pairs precompile_samples/head_${blk} precompile_cycles/head_${blk}"
+              # Each --bench-file / --opcode-samples-dir is matched positionally
+              # to its (tracer_dir, cycles_dir) pair.
+              if [ -f "head_block_${blk}.bench" ]; then
+                join_bench_args="$join_bench_args --bench-file head_block_${blk}.bench"
+              else
+                join_bench_args="$join_bench_args --bench-file /dev/null"
+              fi
+              if [ -d "opcode_samples/head_${blk}" ]; then
+                join_opcode_args="$join_opcode_args --opcode-samples-dir opcode_samples/head_${blk}"
+              else
+                join_opcode_args="$join_opcode_args --opcode-samples-dir /dev/null"
+              fi
+            fi
+          done
+          # Per-execution precompile cycles/gas + native/gas (joined),
+          # aggregated across the test crate + all block benchmarks.
+          echo "" >> bench_results/comparison.md
+          echo "## Per-precompile" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          echo "<details><summary>Per-precompile per-execution ratios (head)</summary>" >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          echo '```' >> bench_results/comparison.md
+          if ! python3 bench_scripts/join_precompile_samples.py $join_pairs $join_bench_args $join_opcode_args --summary \
+            >> bench_results/comparison.md; then
+            echo "(per-execution ratios generation failed; see CI logs)" >> bench_results/comparison.md
+          fi
+          echo '```' >> bench_results/comparison.md
+          echo "" >> bench_results/comparison.md
+          echo "</details>" >> bench_results/comparison.md
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
@@ -217,17 +444,20 @@ jobs:
       - name: Collect per-opcode artifacts
         shell: bash
         run: |
+          # These produce supplementary CSV artifacts (not PR-comment
+          # content). On failure we let the job continue (`|| true`) but
+          # send stderr to the log so failures are visible during debug.
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
             # Combined gas+native+cycles stats CSV
             python3 bench_scripts/join_opcode_stats.py \
               head_block_${blk}.out head_block_${blk}.bench \
-              --csv bench_results/head_block_${blk}_joined_stats.csv 2>/dev/null || true
+              --csv bench_results/head_block_${blk}_joined_stats.csv || true
             # Per-execution joined CSVs
             if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
               python3 bench_scripts/join_samples.py \
                 opcode_samples/head_${blk} opcode_cycles/head_${blk} \
-                --out-dir bench_results/per_opcode/block_${blk} 2>/dev/null || true
+                --out-dir bench_results/per_opcode/block_${blk} || true
             fi
           done
           # Generate visualization charts
