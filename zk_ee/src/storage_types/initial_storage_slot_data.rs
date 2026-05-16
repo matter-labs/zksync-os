@@ -2,7 +2,9 @@ use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use crate::utils::exact_size_chain::ExactSizeChain;
 use crate::{system::errors::internal::InternalError, types_config::SystemIOTypesConfig};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(bound(serialize = "IOTypes::StorageValue: serde::Serialize"))]
+#[serde(bound(deserialize = "IOTypes::StorageValue: for<'a> serde::Deserialize<'a>"))]
 pub struct InitialStorageSlotData<IOTypes: SystemIOTypesConfig> {
     // We need to know what was a value of the storage slot,
     // and whether it existed in the state or has to be created

@@ -8,8 +8,7 @@ use crate::{
 /// Rust representation of `L2DACommitmentScheme` from l1 contracts.
 /// It's used to define DA commitment zksync os outputs.
 ///
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum DACommitmentScheme {
     /// Invalid option.

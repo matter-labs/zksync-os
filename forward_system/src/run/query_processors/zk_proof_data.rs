@@ -11,8 +11,7 @@ use zk_ee::types_config::EthereumIOTypesConfig;
 /// commitment before the block.
 ///
 /// The data is consumed once per query and must be set initially.
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ZKProofDataResponder {
     /// Proof data to be returned when queried (consumed on first access)
     pub data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,

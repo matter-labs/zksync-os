@@ -6,8 +6,7 @@ use std::alloc::Global;
 use std::collections::HashMap;
 use zk_ee::utils::Bytes32;
 
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct InMemoryTree<const RANDOMIZED_TREE: bool = false> {
     /// Hash map from a pair of Address, slot into values.
     pub cold_storage: HashMap<Bytes32, Bytes32>,

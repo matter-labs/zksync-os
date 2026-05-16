@@ -15,7 +15,7 @@ u256 = { path = "../supporting_crates/u256", default-features = false }
 evm_interpreter = { path = "../evm_interpreter"  }
 ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
-serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 crypto = { workspace = true, features = ["secp256k1-static-context"] }
 either = { workspace = true, default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
@@ -30,7 +30,7 @@ rand = {version = "0.9.0", optional = true}
 strum_macros = { workspace = true }
 paste = { workspace = true }
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 proving = ["crypto/proving"]

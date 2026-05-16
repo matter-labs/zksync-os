@@ -6,6 +6,7 @@ use zk_ee::utils::exact_size_chain::ExactSizeChain;
 pub const BLOB_COMMITMENT_AND_PROOF_QUERY_ID: u32 =
     zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK | 0x20;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 #[repr(C, align(8))]
 pub struct KZGCommitmentAndProof {
     pub commitment: [u8; 48],

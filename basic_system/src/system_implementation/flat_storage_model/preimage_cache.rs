@@ -22,8 +22,7 @@ use crate::cost_constants::blake2s_native_cost;
 pub const FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: u32 =
     PREIMAGE_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PreimageRequest {
     pub hash: Bytes32,
     pub expected_preimage_len_in_bytes: u32,

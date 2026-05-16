@@ -318,8 +318,7 @@ pub fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), 
         .map_err(TxError::oon_as_validation)
 }
 
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum TxEncodingFormat {
     Abi = 0,

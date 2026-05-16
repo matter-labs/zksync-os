@@ -2,7 +2,13 @@ use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use crate::utils::exact_size_chain::ExactSizeChain;
 use crate::{system::errors::internal::InternalError, types_config::SystemIOTypesConfig};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(bound(
+    serialize = "IOTypes::Address: serde::Serialize, IOTypes::StorageKey: serde::Serialize"
+))]
+#[serde(bound(
+    deserialize = "IOTypes::Address: for<'a> serde::Deserialize<'a>, IOTypes::StorageKey: for<'a> serde::Deserialize<'a>"
+))]
 pub struct StorageAddress<IOTypes: SystemIOTypesConfig> {
     pub address: IOTypes::Address,
     pub key: IOTypes::StorageKey,

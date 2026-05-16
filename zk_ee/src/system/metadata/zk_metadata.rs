@@ -58,7 +58,6 @@ impl Default for BlockHashes {
     }
 }
 
-#[cfg(feature = "serde")]
 impl serde::Serialize for BlockHashes {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -68,13 +67,12 @@ impl serde::Serialize for BlockHashes {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for BlockHashes {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let vec: Vec<U256> = Vec::deserialize(deserializer)?;
+        let vec: alloc::vec::Vec<U256> = alloc::vec::Vec::deserialize(deserializer)?;
         let array: [U256; BLOCK_HASHES_WINDOW_SIZE] = vec
             .try_into()
             .map_err(|_| serde::de::Error::custom("Expected array of length 256"))?;
@@ -109,8 +107,7 @@ impl UsizeDeserializable for BlockHashes {
 // those that define "block", like uniform fee for block,
 // block number, etc
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle

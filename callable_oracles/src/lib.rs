@@ -73,7 +73,7 @@ pub mod test_utils {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegionDescriptionParams {
     pub offset: u32,
     pub len: u32,

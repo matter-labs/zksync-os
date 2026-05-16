@@ -17,7 +17,7 @@ system_hooks = { path = "../system_hooks", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 ruint = { workspace = true, default-features = false }
 arrayvec = { workspace = true, default-features = false }
-serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 crypto = { workspace = true }
 hex = { workspace = true, optional = true }
 strum_macros = { workspace = true }
@@ -32,8 +32,7 @@ alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
-serde = ["dep:serde", "ruint/serde"]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "hex"]
 default = ["testing"]
 eip-2935 = []
 eip-7702 = []

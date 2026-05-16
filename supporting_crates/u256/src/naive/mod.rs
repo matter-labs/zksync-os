@@ -1,7 +1,6 @@
 use core::ops::*;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 pub struct U256(ruint::aliases::U256);
 

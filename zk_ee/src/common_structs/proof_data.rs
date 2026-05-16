@@ -11,8 +11,7 @@ use super::state_root_view::StateRootView;
 /// We'll validate reads/apply writes against `state_root_view` and validate that block timestamp is greater than `last_block_timestamp`.
 /// At the end we'll calculate chain state commitment before using this fields and other metadata values(block number, hashes) used during execution.
 ///
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProofData<SR: StateRootView<EthereumIOTypesConfig>> {
     pub state_root_view: SR,
     pub last_block_timestamp: u64,

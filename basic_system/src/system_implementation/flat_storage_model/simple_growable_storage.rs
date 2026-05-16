@@ -46,8 +46,7 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
     pub value: Bytes32,
@@ -132,8 +131,7 @@ impl FlatStorageHasher for Blake2sStorageHasher {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FlatStorageCommitment<const N: usize> {
     pub root: Bytes32,
     pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes

@@ -3,8 +3,7 @@ use oracle_provider::OracleQueryProcessor;
 use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug)]
 pub struct BlockMetadataResponder {
     pub block_metadata: BlockMetadataFromOracle,
 }

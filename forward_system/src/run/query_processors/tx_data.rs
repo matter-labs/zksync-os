@@ -18,8 +18,7 @@ use zk_ee::utils::usize_rw::ReadIterWrapper;
 ///    current transaction.
 /// 4. TX_FROM_QUERY_ID - Returns the originator address of the current
 ///    transaction. Only to be called for RLP encoded transactions.
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct TxDataResponder<TS: TxSource> {
     pub tx_source: TS,
     /// Cached next transaction data, populated after size query

@@ -14,7 +14,7 @@ categories.workspace = true
 [dependencies]
 ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
-serde = { workspace = true, default-features = false, features = ["derive"], optional = true  }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 
 u256 = { path = "../supporting_crates/u256", default-features = false }
 cfg-if = { workspace = true }
@@ -24,10 +24,8 @@ strum_macros = { workspace = true }
 paste = { workspace = true }
 
 [features]
-# serde derivation has to be disabled for risc-v target until we update ruint version
-serde = ["dep:serde", "ruint/serde"]
-testing = ["serde"]
-default = ["serde", "error_origins", "detailed_errors"]
+testing = []
+default = ["error_origins", "detailed_errors"]
 cycle_marker = ["cycle_marker/log_to_file"]
 global-alloc = []
 # Adds location (file, line number) where an error is raised

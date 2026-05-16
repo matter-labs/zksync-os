@@ -16,6 +16,7 @@ crypto = { workspace = true }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 
 c-kzg = "2.1.5"
 

@@ -34,8 +34,7 @@ impl SimpleOracleQuery for PreimageLengthQuery {
     type Output = u32;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PreimageRequestForUnknownLength {
     pub hash: Bytes32,
     pub preimage_type: PreimageType,
