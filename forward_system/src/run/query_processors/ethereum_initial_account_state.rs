@@ -48,15 +48,16 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = B160::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+        let address: B160 = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode address failed"))?;
 
         let account = if let Some(data) = self.source.get(&address).copied() {
             data
@@ -89,6 +90,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
             }
         };
 
-        DynUsizeIterator::from_constructor(account, UsizeSerializable::iter)
+        AirbenderCodecV0::encode(&account).map_err(|_| internal_error!("encode account failed"))
     }
 }

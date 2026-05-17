@@ -1,3 +1,7 @@
+use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use basic_bootloader::bootloader::oracle_types::{
+    DivRemResponse, ModexpResponse, WideDivRemResponse,
+};
 use basic_system::system_functions::modexp::{
     ModExpAdviceParams, ModExpAdviceParams64, MODEXP_ADVICE_QUERY_ID,
 };
@@ -7,90 +11,24 @@ use basic_system::system_functions::u256_advice::{
 };
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
+use zk_ee::internal_error;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
+use zk_ee::system::errors::internal::InternalError;
 
-use crate::utils::{
-    evaluate::{read_memory_as_u64, read_struct},
-    usize_slice_iterator::UsizeSliceIteratorOwned,
-};
+use crate::utils::evaluate::{read_memory_as_u64, read_struct};
 use crate::{read_host_struct, read_u64_words};
 
-#[inline]
-fn extract_single_ptr(query: Vec<usize>) -> usize {
-    let mut it = query.into_iter();
-    let ptr = it.next().expect("expected params pointer");
-    assert!(it.next().is_none(), "expected exactly one pointer");
-    ptr
-}
-
-struct ArithmeticQueryOutput {
-    quotient: Vec<u64>,
-    remainder: Vec<u64>,
-}
-
-impl ArithmeticQueryOutput {
-    fn into_usize_iterator(
-        self,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        // Trim zeros
-        fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
-            let mut digits = input.len();
-            for el in input.iter().rev() {
-                if *el == 0 {
-                    digits -= 1;
-                } else {
-                    break;
-                }
-            }
-            &input[..digits]
-        }
-        let quotient = strip_leading_zeroes(&self.quotient);
-        let remainder = strip_leading_zeroes(&self.remainder);
-
-        // account for usize being u64 here
-        let q_len_in_u32_words = quotient.len() * 2;
-        let r_len_in_u32_words = remainder.len() * 2;
-        // account for LE, and we will ask quotient first, then remainder
-        let header = [(q_len_in_u32_words as u64) | ((r_len_in_u32_words as u64) << 32)];
-
-        let r = header
-            .iter()
-            .chain(quotient.iter())
-            .chain(remainder.iter())
-            .map(|x| *x as usize)
-            .collect::<Vec<_>>();
-        let r = Vec::into_boxed_slice(r);
-
-        let n = UsizeSliceIteratorOwned::new(r);
-
-        Box::new(n)
-    }
-}
-
-/// Emit u64 limbs as usizes into a result Vec.
-fn push_limbs(result: &mut Vec<usize>, limbs: &[u64]) {
-    for limb in limbs {
-        result.push(*limb as usize);
-    }
-}
-
-fn u256_div_rem_output(
-    mut dividend: [u64; 4],
-    mut divisor: [u64; 4],
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+fn u256_div_rem(mut dividend: [u64; 4], mut divisor: [u64; 4]) -> DivRemResponse {
     ruint::algorithms::div(&mut dividend, &mut divisor);
-
     // Return quotient only (4 limbs), guest derives remainder
-    let mut result = Vec::with_capacity(4);
-    push_limbs(&mut result, &dividend);
-    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
+    DivRemResponse { quotient: dividend }
 }
 
-fn u256_wide_div_rem_output(
+fn u256_wide_div_rem(
     dividend_lo: [u64; 4],
     dividend_hi: [u64; 4],
     mut divisor: [u64; 4],
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+) -> WideDivRemResponse {
     let mut dividend = [0u64; 8];
     dividend[..4].copy_from_slice(&dividend_lo);
     dividend[4..].copy_from_slice(&dividend_hi);
@@ -98,9 +36,10 @@ fn u256_wide_div_rem_output(
     ruint::algorithms::div(&mut dividend, &mut divisor);
 
     // Return quotient only (8 limbs), no remainder
-    let mut result = Vec::with_capacity(8);
-    push_limbs(&mut result, &dividend);
-    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
+    WideDivRemResponse {
+        quotient_lo: [dividend[0], dividend[1], dividend[2], dividend[3]],
+        quotient_hi: [dividend[4], dividend[5], dividend[6], dividend[7]],
+    }
 }
 
 /// Read a U256 (4 u64 limbs) from guest memory at the given u32 address.
@@ -115,15 +54,11 @@ fn read_u256_from_host(ptr: u64) -> [u64; 4] {
     [limbs[0], limbs[1], limbs[2], limbs[3]]
 }
 
-fn process_modexp_riscv_query(
-    query: Vec<usize>,
-    memory: &dyn RamPeek,
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let arg_ptr = extract_single_ptr(query);
+fn process_modexp_riscv(arg_ptr: u32, memory: &dyn RamPeek) -> ModexpResponse {
     assert!(arg_ptr.is_multiple_of(4));
     const { assert!(core::mem::align_of::<ModExpAdviceParams>() <= 4) }
     const { assert!(core::mem::size_of::<ModExpAdviceParams>().is_multiple_of(4)) }
-    let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr as u32) }.unwrap();
+    let arg = unsafe { read_struct::<ModExpAdviceParams>(memory, arg_ptr) }.unwrap();
 
     const { assert!(8 == core::mem::size_of::<usize>()) };
     assert!(arg.a_ptr > 0);
@@ -137,18 +72,14 @@ fn process_modexp_riscv_query(
 
     ruint::algorithms::div(&mut n, &mut d);
 
-    ArithmeticQueryOutput {
+    ModexpResponse {
         quotient: n,
         remainder: d,
     }
-    .into_usize_iterator()
 }
 
-fn process_modexp_native_query(
-    query: Vec<usize>,
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let arg_ptr = extract_single_ptr(query);
-    let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr as u64);
+fn process_modexp_native(arg_ptr: u64) -> ModexpResponse {
+    let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr);
 
     assert!(arg.a_ptr > 0);
     assert!(arg.a_len > 0);
@@ -168,11 +99,10 @@ fn process_modexp_native_query(
 
     ruint::algorithms::div(&mut n, &mut d);
 
-    ArithmeticQueryOutput {
+    ModexpResponse {
         quotient: n,
         remainder: d,
     }
-    .into_usize_iterator()
 }
 
 #[derive(Default)]
@@ -187,40 +117,49 @@ impl OracleQueryProcessor for ArithmeticQuery {
         ]
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
+            let arg_ptr: u32 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode u256 div_rem ptr failed"))?;
             assert!(arg_ptr.is_multiple_of(4));
             const { assert!(core::mem::align_of::<U256DivRemAdviceParams>() <= 4) }
             const { assert!(core::mem::size_of::<U256DivRemAdviceParams>().is_multiple_of(4)) }
-            let params: U256DivRemAdviceParams =
-                unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
+            let params: U256DivRemAdviceParams = unsafe { read_struct(memory, arg_ptr) }.unwrap();
             let dividend = read_u256_from_guest(memory, params.dividend_ptr);
             let divisor = read_u256_from_guest(memory, params.divisor_ptr);
-            return u256_div_rem_output(dividend, divisor);
+            let response = u256_div_rem(dividend, divisor);
+            return AirbenderCodecV0::encode(&response)
+                .map_err(|_| internal_error!("encode div_rem response failed"));
         }
 
         if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
+            let arg_ptr: u32 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode u256 wide div_rem ptr failed"))?;
             assert!(arg_ptr.is_multiple_of(4));
             const { assert!(core::mem::align_of::<U256WideDivRemAdviceParams>() <= 4) }
             const { assert!(core::mem::size_of::<U256WideDivRemAdviceParams>().is_multiple_of(4)) }
             let params: U256WideDivRemAdviceParams =
-                unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
+                unsafe { read_struct(memory, arg_ptr) }.unwrap();
             let dividend_lo = read_u256_from_guest(memory, params.dividend_lo_ptr);
             let dividend_hi = read_u256_from_guest(memory, params.dividend_hi_ptr);
             let divisor = read_u256_from_guest(memory, params.divisor_ptr);
-            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
+            let response = u256_wide_div_rem(dividend_lo, dividend_hi, divisor);
+            return AirbenderCodecV0::encode(&response)
+                .map_err(|_| internal_error!("encode wide div_rem response failed"));
         }
 
-        process_modexp_riscv_query(query, memory)
+        let arg_ptr: u32 = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode modexp ptr failed"))?;
+        let response = process_modexp_riscv(arg_ptr, memory);
+        AirbenderCodecV0::encode(&response)
+            .map_err(|_| internal_error!("encode modexp response failed"))
     }
 }
 
@@ -240,32 +179,42 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         ]
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            let params: U256DivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
+            let arg_ptr: u64 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode u256 div_rem ptr failed"))?;
+            let params: U256DivRemAdviceParams64 = read_host_struct(arg_ptr);
             let dividend = read_u256_from_host(params.dividend_ptr);
             let divisor = read_u256_from_host(params.divisor_ptr);
-            return u256_div_rem_output(dividend, divisor);
+            let response = u256_div_rem(dividend, divisor);
+            return AirbenderCodecV0::encode(&response)
+                .map_err(|_| internal_error!("encode div_rem response failed"));
         }
 
         if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            let params: U256WideDivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
+            let arg_ptr: u64 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode u256 wide div_rem ptr failed"))?;
+            let params: U256WideDivRemAdviceParams64 = read_host_struct(arg_ptr);
             let dividend_lo = read_u256_from_host(params.dividend_lo_ptr);
             let dividend_hi = read_u256_from_host(params.dividend_hi_ptr);
             let divisor = read_u256_from_host(params.divisor_ptr);
-            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
+            let response = u256_wide_div_rem(dividend_lo, dividend_hi, divisor);
+            return AirbenderCodecV0::encode(&response)
+                .map_err(|_| internal_error!("encode wide div_rem response failed"));
         }
 
-        process_modexp_native_query(query)
+        let arg_ptr: u64 = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode modexp ptr failed"))?;
+        let response = process_modexp_native(arg_ptr);
+        AirbenderCodecV0::encode(&response)
+            .map_err(|_| internal_error!("encode modexp response failed"))
     }
 }
 
@@ -274,9 +223,7 @@ mod tests {
     use super::*;
 
     use crate::test_utils::TestMemorySource;
-    use basic_system::system_functions::u256_advice::U256WideDivRemAdviceParams64;
     use oracle_provider::DummyMemorySource;
-    use zk_ee::oracle::query_ids::U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
 
     impl TestMemorySource {
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
@@ -354,21 +301,12 @@ mod tests {
         memory.insert_u64_words(A_ADDR, dividend_u64);
         memory.insert_u64_words(m_addr, modulus_u64);
 
-        let result: Vec<usize> = ArithmeticQuery
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![PARAMS_ADDR as usize], &memory)
-            .collect();
-
-        assert!(!result.is_empty(), "Expected at least a header word");
-        let header = result[0] as u64;
-        let q_len_u32 = (header & 0xFFFF_FFFF) as usize;
-        let r_len_u32 = (header >> 32) as usize;
-        let q_len = q_len_u32 / 2;
-        let r_len = r_len_u32 / 2;
-        assert_eq!(result.len(), 1 + q_len + r_len);
-
-        let quotient: Vec<u64> = result[1..1 + q_len].iter().map(|&x| x as u64).collect();
-        let remainder: Vec<u64> = result[1 + q_len..].iter().map(|&x| x as u64).collect();
-        (quotient, remainder)
+        let input = AirbenderCodecV0::encode(&(PARAMS_ADDR as u32)).unwrap();
+        let result_bytes = ArithmeticQuery
+            .process(MODEXP_ADVICE_QUERY_ID, &input, &memory)
+            .unwrap();
+        let response: ModexpResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
+        (response.quotient, response.remainder)
     }
 
     #[test]
@@ -432,20 +370,16 @@ mod tests {
             modulus_len: 1,
         };
 
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                MODEXP_ADVICE_QUERY_ID,
-                vec![(&arg as *const ModExpAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
+        let input =
+            AirbenderCodecV0::encode(&((&arg as *const ModExpAdviceParams64).addr() as u64))
+                .unwrap();
+        let result_bytes = NativeArithmeticQuery
+            .process(MODEXP_ADVICE_QUERY_ID, &input, &DummyMemorySource)
+            .unwrap();
+        let response: ModexpResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
 
-        assert_eq!(output.len(), 3);
-        let packed_lens = output[0] as u64;
-        assert_eq!(packed_lens as u32, 2);
-        assert_eq!((packed_lens >> 32) as u32, 2);
-        assert_eq!(output[1], 3);
-        assert_eq!(output[2], 1);
+        assert_eq!(response.quotient, vec![3]);
+        assert_eq!(response.remainder, vec![1]);
     }
 
     #[test]
@@ -456,15 +390,15 @@ mod tests {
             dividend_ptr: dividend.as_ptr().addr() as u64,
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256DivRemAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
+        let input =
+            AirbenderCodecV0::encode(&((&params as *const U256DivRemAdviceParams64).addr() as u64))
+                .unwrap();
+        let result_bytes = NativeArithmeticQuery
+            .process(U256_DIV_REM_ADVICE_QUERY_ID, &input, &DummyMemorySource)
+            .unwrap();
+        let response: DivRemResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
         // Quotient only: 4 limbs
-        assert_eq!(output, vec![3, 0, 0, 0]);
+        assert_eq!(response.quotient, [3, 0, 0, 0]);
     }
 
     #[test]
@@ -478,17 +412,22 @@ mod tests {
             dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
+        let input = AirbenderCodecV0::encode(
+            &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
+        )
+        .unwrap();
+        let result_bytes = NativeArithmeticQuery
+            .process(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
+                &input,
                 &DummyMemorySource,
             )
-            .collect();
-        // Quotient only: 8 limbs
-        assert_eq!(output.len(), 8);
-        assert_eq!(output[0], 5); // q_lo limb 0
-        assert_eq!(&output[1..], &[0, 0, 0, 0, 0, 0, 0]);
+            .unwrap();
+        let response: WideDivRemResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
+        // Quotient only: lo=5, hi=0
+        assert_eq!(response.quotient_lo[0], 5);
+        assert_eq!(response.quotient_lo[1..], [0, 0, 0]);
+        assert_eq!(response.quotient_hi, [0, 0, 0, 0]);
     }
 
     #[test]
@@ -502,17 +441,22 @@ mod tests {
             dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
+        let input = AirbenderCodecV0::encode(
+            &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
+        )
+        .unwrap();
+        let result_bytes = NativeArithmeticQuery
+            .process(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
+                &input,
                 &DummyMemorySource,
             )
-            .collect();
-        assert_eq!(output.len(), 8);
-        assert_eq!(output[0], u64::MAX as usize);
-        assert_eq!(output[1], u64::MAX as usize);
-        assert_eq!(&output[2..8], &[0, 0, 0, 0, 0, 0]);
+            .unwrap();
+        let response: WideDivRemResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
+        assert_eq!(response.quotient_lo[0], u64::MAX);
+        assert_eq!(response.quotient_lo[1], u64::MAX);
+        assert_eq!(response.quotient_lo[2..], [0, 0]);
+        assert_eq!(response.quotient_hi, [0, 0, 0, 0]);
     }
 
     #[test]
@@ -542,13 +486,11 @@ mod tests {
         memory.insert_u64_words(GUEST_DIVIDEND_ADDR, &dividend);
         memory.insert_u64_words(GUEST_MODULUS_ADDR, &modulus);
 
-        let riscv_output: Vec<usize> = ArithmeticQuery
-            .process_buffered_query(
-                MODEXP_ADVICE_QUERY_ID,
-                vec![GUEST_ARG_ADDR as usize],
-                &memory,
-            )
-            .collect();
+        let riscv_input = AirbenderCodecV0::encode(&(GUEST_ARG_ADDR as u32)).unwrap();
+        let riscv_result_bytes = ArithmeticQuery
+            .process(MODEXP_ADVICE_QUERY_ID, &riscv_input, &memory)
+            .unwrap();
+        let riscv_response: ModexpResponse = AirbenderCodecV0::decode(&riscv_result_bytes).unwrap();
 
         let host_arg = ModExpAdviceParams64 {
             op: 0,
@@ -559,40 +501,24 @@ mod tests {
             modulus_ptr: modulus.as_mut_ptr().addr() as u64,
             modulus_len: MODULUS_DIGITS as u64,
         };
-        let native_output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                MODEXP_ADVICE_QUERY_ID,
-                vec![(&host_arg as *const ModExpAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
+        let native_input =
+            AirbenderCodecV0::encode(&((&host_arg as *const ModExpAdviceParams64).addr() as u64))
+                .unwrap();
+        let native_result_bytes = NativeArithmeticQuery
+            .process(MODEXP_ADVICE_QUERY_ID, &native_input, &DummyMemorySource)
+            .unwrap();
+        let native_response: ModexpResponse =
+            AirbenderCodecV0::decode(&native_result_bytes).unwrap();
 
-        assert_eq!(native_output, riscv_output);
-
-        let packed_lens = native_output[0] as u64;
-        let q_len = packed_lens as u32;
-        let r_len = (packed_lens >> 32) as u32;
-        assert!(q_len.is_multiple_of(2));
-        assert!(r_len.is_multiple_of(2));
-        assert!(q_len > 2, "quotient should span multiple u64 limbs");
-        assert!(r_len > 2, "remainder should span multiple u64 limbs");
-    }
-
-    #[test]
-    #[should_panic(expected = "expected params pointer")]
-    fn arithmetic_query_panics_on_empty_query() {
-        let memory = TestMemorySource::default();
-        let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![], &memory);
-    }
-
-    #[test]
-    #[should_panic(expected = "expected exactly one pointer")]
-    fn arithmetic_query_panics_on_extra_args() {
-        let memory = TestMemorySource::default();
-        let _ = ArithmeticQuery.process_buffered_query(
-            MODEXP_ADVICE_QUERY_ID,
-            vec![0x100, 0x200],
-            &memory,
+        assert_eq!(native_response.quotient, riscv_response.quotient);
+        assert_eq!(native_response.remainder, riscv_response.remainder);
+        assert!(
+            native_response.quotient.len() > 1,
+            "quotient should span multiple u64 limbs"
+        );
+        assert!(
+            native_response.remainder.len() > 1,
+            "remainder should span multiple u64 limbs"
         );
     }
 
@@ -600,17 +526,14 @@ mod tests {
     #[should_panic]
     fn arithmetic_query_panics_on_misaligned_pointer() {
         let memory = TestMemorySource::default();
-        let _ =
-            ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x101], &memory);
+        let input = AirbenderCodecV0::encode(&(0x101u32)).unwrap();
+        let _ = ArithmeticQuery.process(MODEXP_ADVICE_QUERY_ID, &input, &memory);
     }
 
     #[test]
     #[should_panic]
     fn native_arithmetic_query_rejects_null_query_pointer() {
-        let _ = NativeArithmeticQuery.process_buffered_query(
-            MODEXP_ADVICE_QUERY_ID,
-            vec![0],
-            &DummyMemorySource,
-        );
+        let input = AirbenderCodecV0::encode(&(0u64)).unwrap();
+        let _ = NativeArithmeticQuery.process(MODEXP_ADVICE_QUERY_ID, &input, &DummyMemorySource);
     }
 }

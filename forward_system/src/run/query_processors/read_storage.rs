@@ -5,12 +5,7 @@ use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::storage_types::StorageAddress;
 use zk_ee::types_config::EthereumIOTypesConfig;
-use zk_ee::{
-    oracle::basic_queries::InitialStorageSlotQuery,
-    oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
-    utils::Bytes32,
-};
+use zk_ee::{oracle::basic_queries::InitialStorageSlotQuery, utils::Bytes32};
 
 /// This processor handles requests for reading initial storage slot values
 /// from the storage layer. It duplicates the storage read functionality of ReadTreeResponder
@@ -34,23 +29,21 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                    EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter()
-                )
-                .expect("must deserialize the address/slot");
-                let flat_key = derive_flat_storage_key(&address, &key);
+                let storage_address: StorageAddress<EthereumIOTypesConfig> =
+                    AirbenderCodecV0::decode(input)
+                        .map_err(|_| internal_error!("decode StorageAddress failed"))?;
+                let flat_key =
+                    derive_flat_storage_key(&storage_address.address, &storage_address.key);
                 let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                     if let Some(cold) = self.storage.read(flat_key) {
                         InitialStorageSlotData {
@@ -64,7 +57,8 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
                             is_new_storage_slot: true,
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                AirbenderCodecV0::encode(&slot_data)
+                    .map_err(|_| internal_error!("encode slot_data failed"))
             }
             _ => unreachable!(),
         }

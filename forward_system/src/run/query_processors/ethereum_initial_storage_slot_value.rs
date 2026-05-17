@@ -54,18 +54,16 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = StorageAddress::<EthereumIOTypesConfig>::from_iter(&mut query.into_iter())
-            .expect("must deserialize address value");
-
-        // println!("Reading for address 0x{:040x} and key {:?}", address.address.as_uint(), address.key);
+        let address: StorageAddress<EthereumIOTypesConfig> = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode storage address failed"))?;
 
         let data = self
             .source
@@ -75,7 +73,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
         let initial_root = data.storage_root;
         let mut value = Bytes32::ZERO;
         if !data.is_empty() && initial_root != EMPTY_ROOT_HASH {
-            // println!("Expecting non-empty value");
             use crypto::MiniDigest;
             let hash = crypto::sha3::Keccak256::digest(address.key.as_u8_array_ref());
             let digits = digits_from_key(&hash);
@@ -109,8 +106,7 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_constructor(initial_value, |inner_ref| {
-            UsizeSerializable::iter(inner_ref)
-        })
+        AirbenderCodecV0::encode(&initial_value)
+            .map_err(|_| internal_error!("encode initial value failed"))
     }
 }

@@ -31,12 +31,12 @@ impl OracleQueryProcessor for ZKProofDataResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
+        _input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let data = self
@@ -44,6 +44,6 @@ impl OracleQueryProcessor for ZKProofDataResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        DynUsizeIterator::from_constructor(data, UsizeSerializable::iter)
+        AirbenderCodecV0::encode(&data).map_err(|_| internal_error!("encode proof data failed"))
     }
 }

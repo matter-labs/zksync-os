@@ -32,7 +32,7 @@ use basic_bootloader::bootloader::config::{
     BasicBootloaderProvingExecutionConfig,
 };
 use errors::ForwardSubsystemError;
-use oracle_provider::ReadWitnessSource;
+use oracle_provider::witness_recording::WitnessRecordingOracle;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
@@ -61,7 +61,6 @@ use crate::run::test_impl::NoopTxCallback;
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
 use zksync_os_interface::traits::TxListSource;
 
@@ -152,13 +151,13 @@ pub fn generate_proof_input<
     oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
 
     // We'll wrap the source, to collect all the reads.
-    let copy_source = ReadWitnessSource::new(oracle);
+    let recording_oracle = WitnessRecordingOracle::new(oracle);
 
     let mut tracer = NopTracer::default();
     let mut result_keeper = ProverInputResultKeeper::new(tx_result_callback);
 
-    let prover_input = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
-        copy_source,
+    let inputs = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+        recording_oracle,
         &mut result_keeper,
         &mut tracer,
         &mut NopTxValidator,
@@ -166,6 +165,7 @@ pub fn generate_proof_input<
     .map_err(|e| wrap_error!(e))?;
     // Take pubdata, as it's not part of BlockOutput
     let pubdata = std::mem::take(&mut result_keeper.pubdata);
+    let prover_input = inputs.words().to_vec();
 
     Ok((prover_input, result_keeper.into(), pubdata))
 }
@@ -218,17 +218,14 @@ pub fn generate_batch_proof_input(
             for blob_data in blobs_data.chunks(31 * 4096) {
                 let advice =
                     callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof(blob_data);
+                // KZGCommitmentAndProof is 96 bytes (commitment: [u8;48] + proof: [u8;48])
+                // Serialize as 24 u32 words (LE)
+                let mut advice_bytes = [0u8; 96];
+                advice_bytes[..48].copy_from_slice(&advice.commitment);
+                advice_bytes[48..].copy_from_slice(&advice.proof);
                 blobs_advice.push(24);
-                for word in advice.iter() {
-                    #[cfg(target_pointer_width = "32")]
-                    blobs_advice.push(word as u32);
-                    #[cfg(target_pointer_width = "64")]
-                    {
-                        let low = word as u32;
-                        let high = (word >> 32) as u32;
-                        blobs_advice.push(low);
-                        blobs_advice.push(high);
-                    }
+                for chunk in advice_bytes.chunks_exact(4) {
+                    blobs_advice.push(u32::from_le_bytes(chunk.try_into().unwrap()));
                 }
             }
             blobs_advice

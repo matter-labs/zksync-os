@@ -1,9 +1,6 @@
 use super::*;
 use oracle_provider::OracleQueryProcessor;
-use zk_ee::{
-    oracle::query_ids::UART_QUERY_ID,
-    oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-};
+use zk_ee::oracle::query_ids::UART_QUERY_ID;
 
 /// This processor handles debug print requests from the RISC-V execution
 /// environment. It receives formatted string data and outputs it to stdout,
@@ -25,29 +22,21 @@ impl OracleQueryProcessor for UARTPrintResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let u32_vec: Vec<u32> = query
-            .into_iter()
-            .flat_map(|el| [el as u32, (el >> 32) as u32])
-            .collect();
-        assert!(!u32_vec.is_empty());
-        let message_len_in_bytes = u32_vec[0] as usize;
-        let mut string_bytes: Vec<u8> = u32_vec[1..]
-            .iter()
-            .flat_map(|el| el.to_le_bytes())
-            .collect();
-        assert!(string_bytes.len() >= message_len_in_bytes);
-        string_bytes.truncate(message_len_in_bytes);
+        // The input is the UART message encoded via AirbenderCodecV0.
+        // The guest sends the message as bytes (Vec<u8>).
+        let string_bytes: Vec<u8> = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode UART message failed"))?;
         print!("{}", String::from_utf8_lossy(&string_bytes));
-        // println!("UART: {}", String::from_utf8_lossy(&string_bytes));
 
-        DynUsizeIterator::from_constructor((), UsizeSerializable::iter)
+        // Return empty response
+        AirbenderCodecV0::encode(&()).map_err(|_| internal_error!("encode UART response failed"))
     }
 }

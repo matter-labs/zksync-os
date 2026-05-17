@@ -5,8 +5,6 @@ use basic_system::system_implementation::ethereum_storage_model::{
     ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
 };
 use basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::utils::usize_rw::ReadIterWrapper;
 use zk_ee::utils::Bytes32;
 
 /// This processor handles requests to resolve hash preimages - given a hash,
@@ -37,15 +35,16 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let hash = Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+        let hash: Bytes32 =
+            AirbenderCodecV0::decode(input).map_err(|_| internal_error!("decode hash failed"))?;
 
         let preimage = if hash.is_zero() {
             vec![]
@@ -62,11 +61,12 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
             || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
         {
             let len = preimage.len() as u32;
-            DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+            AirbenderCodecV0::encode(&len)
+                .map_err(|_| internal_error!("encode preimage length failed"))
         } else {
-            DynUsizeIterator::from_constructor(preimage, |inner_ref| {
-                ReadIterWrapper::from(inner_ref.iter().copied())
-            })
+            // Return raw bytes as Vec<u8>
+            AirbenderCodecV0::encode(&preimage)
+                .map_err(|_| internal_error!("encode preimage failed"))
         }
     }
 }

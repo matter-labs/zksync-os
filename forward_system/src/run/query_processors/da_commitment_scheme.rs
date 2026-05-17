@@ -23,12 +23,12 @@ impl OracleQueryProcessor for DACommitmentSchemeResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
+        _input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let data = self
@@ -36,6 +36,7 @@ impl OracleQueryProcessor for DACommitmentSchemeResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        DynUsizeIterator::from_constructor(data as u8, UsizeSerializable::iter)
+        AirbenderCodecV0::encode(&(data as u8))
+            .map_err(|_| internal_error!("encode DA commitment scheme failed"))
     }
 }

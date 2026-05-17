@@ -7,10 +7,7 @@ use basic_bootloader::bootloader::block_flow::ethereum::oracle_queries::{
 };
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
-use zk_ee::{
-    oracle::query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID,
-    utils::{usize_rw::ReadIterWrapper, Bytes32},
-};
+use zk_ee::{oracle::query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID, utils::Bytes32};
 
 #[derive(Clone, Debug)]
 pub struct EthereumCLResponder {
@@ -38,52 +35,50 @@ impl OracleQueryProcessor for EthereumCLResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
-            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => DynUsizeIterator::from_constructor(
-                self.withdrawals_list.len() as u32,
-                UsizeSerializable::iter,
-            ),
+            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => {
+                let len = self.withdrawals_list.len() as u32;
+                AirbenderCodecV0::encode(&len)
+                    .map_err(|_| internal_error!("encode withdrawals len failed"))
+            }
             ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID => {
-                DynUsizeIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                AirbenderCodecV0::encode(&self.withdrawals_list)
+                    .map_err(|_| internal_error!("encode withdrawals data failed"))
             }
             ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
-                DynUsizeIterator::from_constructor(
-                    self.parent_headers_encodings_list[input as usize].len() as u32,
-                    UsizeSerializable::iter,
-                )
+                let depth: u32 = AirbenderCodecV0::decode(input)
+                    .map_err(|_| internal_error!("decode historical depth failed"))?;
+                assert!(depth < 256);
+                let len = self.parent_headers_encodings_list[depth as usize].len() as u32;
+                AirbenderCodecV0::encode(&len)
+                    .map_err(|_| internal_error!("encode historical header len failed"))
             }
             ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
-                DynUsizeIterator::from_constructor(
-                    self.parent_headers_encodings_list[input as usize].clone(),
-                    |inner_ref| ReadIterWrapper::from(inner_ref.iter().copied()),
-                )
+                let depth: u32 = AirbenderCodecV0::decode(input)
+                    .map_err(|_| internal_error!("decode historical depth failed"))?;
+                assert!(depth < 256);
+                AirbenderCodecV0::encode(&self.parent_headers_encodings_list[depth as usize])
+                    .map_err(|_| internal_error!("encode historical header data failed"))
             }
             HISTORICAL_BLOCK_HASH_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
+                let depth: u32 = AirbenderCodecV0::decode(input)
+                    .map_err(|_| internal_error!("decode historical depth failed"))?;
+                assert!(depth < 256);
                 let hash: Bytes32 = self
                     .parent_headers_encodings_list
-                    .get(input as usize)
+                    .get(depth as usize)
                     .map(|el| crypto::sha3::Keccak256::digest(el).into())
                     .unwrap_or(Bytes32::ZERO);
-                DynUsizeIterator::from_constructor(hash, UsizeSerializable::iter)
+                AirbenderCodecV0::encode(&hash)
+                    .map_err(|_| internal_error!("encode block hash failed"))
             }
             _ => {
                 unreachable!()

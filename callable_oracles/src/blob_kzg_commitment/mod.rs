@@ -1,5 +1,5 @@
+use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
 use crate::utils::evaluate::read_memory_as_u8;
-use crate::utils::usize_slice_iterator::UsizeSliceIteratorOwned;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::blob_commitment_generator::ENCODABLE_BYTES_PER_BLOB;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
@@ -7,7 +7,8 @@ use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
+use zk_ee::internal_error;
+use zk_ee::system::errors::internal::InternalError;
 
 use crate::read_u8_words;
 
@@ -25,35 +26,28 @@ impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
         vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
         // this query processor supposed to work only on "host" architecture, which is always 64 bit
         const { assert!(8 == core::mem::size_of::<usize>()) };
-        let mut it = query.into_iter();
 
-        // Even though on riscv32 pointer and length are 32 bits, they are encoded as u64 and take a whole 64-bit word here
-        let data_ptr = it.next().unwrap() as u32;
-        let data_len = it.next().unwrap() as u32;
-        assert!(
-            it.next().is_none(),
-            "RISC-V ptr and len should've been passed."
-        );
+        // Decode (data_ptr, data_len) from the input - RISC-V sends these as two u32 values
+        let (data_ptr, data_len): (u32, u32) = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode blob ptr/len failed"))?;
 
         assert!(data_ptr.is_multiple_of(4));
 
         let data = read_memory_as_u8(memory, data_ptr, data_len).unwrap();
         let result = blob_kzg_commitment_and_proof(&data);
 
-        let r = UsizeSerializable::iter(&result).collect::<Vec<_>>();
-        let r = Vec::into_boxed_slice(r);
-        let n = UsizeSliceIteratorOwned::new(r);
-        Box::new(n)
+        AirbenderCodecV0::encode(&result)
+            .map_err(|_| internal_error!("encode blob commitment failed"))
     }
 }
 
@@ -72,31 +66,27 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
         vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
         // this query processor supposed to work only on "host" architecture, which is always 64 bit
         const { assert!(8 == core::mem::size_of::<usize>()) };
-        let mut it = query.into_iter();
-        let data_ptr = it.next().expect("A u64 should've been passed in.");
-        let data_len = it.next().expect("A u64 should've been passed in.");
-        assert!(
-            it.next().is_none(),
-            "Only a pointer and the length are expected."
-        );
-        assert!(data_len <= ENCODABLE_BYTES_PER_BLOB);
-        let data = read_u8_words(data_ptr as u64, data_len as u64);
+
+        // Decode (data_ptr, data_len) from the input - native sends these as two u64 values
+        let (data_ptr, data_len): (u64, u64) = AirbenderCodecV0::decode(input)
+            .map_err(|_| internal_error!("decode blob ptr/len failed"))?;
+
+        assert!(data_len <= ENCODABLE_BYTES_PER_BLOB as u64);
+        let data = read_u8_words(data_ptr, data_len);
         let result = blob_kzg_commitment_and_proof(&data);
 
-        let r = result.iter().collect::<Vec<_>>();
-        let r = Vec::into_boxed_slice(r);
-        let n = UsizeSliceIteratorOwned::new(r);
-        Box::new(n)
+        AirbenderCodecV0::encode(&result)
+            .map_err(|_| internal_error!("encode blob commitment failed"))
     }
 }
 
@@ -142,20 +132,23 @@ mod tests {
     use super::*;
     use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
-    use zk_ee::oracle::usize_serialization::UsizeSerializable;
 
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
-        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery
-            .process_buffered_query(
+        let input =
+            AirbenderCodecV0::encode(&(data.as_ptr().addr() as u64, data.len() as u64)).unwrap();
+        let result_bytes = NativeBlobCommitmentAndProofQuery
+            .process(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                vec![data.as_ptr().addr(), data.len()],
+                &input,
                 &DummyMemorySource,
             )
-            .collect();
+            .unwrap();
+        let result: KZGCommitmentAndProof = AirbenderCodecV0::decode(&result_bytes).unwrap();
 
-        assert!(!output.is_empty());
+        assert_eq!(result.commitment.len(), 48);
+        assert_eq!(result.proof.len(), 48);
     }
 
     #[test]
@@ -191,39 +184,25 @@ mod tests {
         let mut memory = TestMemorySource::default();
         memory.write_bytes(data_addr, data);
 
-        let result: Vec<usize> = BlobCommitmentAndProofQuery
-            .process_buffered_query(
-                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                vec![data_addr as usize, data.len() as usize],
-                &memory,
-            )
-            .collect();
-
-        assert!(!result.is_empty(), "Oracle should return non-empty result");
+        let input = AirbenderCodecV0::encode(&(data_addr, data.len() as u32)).unwrap();
+        let result_bytes = BlobCommitmentAndProofQuery
+            .process(BLOB_COMMITMENT_AND_PROOF_QUERY_ID, &input, &memory)
+            .unwrap();
+        let result: KZGCommitmentAndProof = AirbenderCodecV0::decode(&result_bytes).unwrap();
 
         let expected = blob_kzg_commitment_and_proof(data);
-        let expected_serialized: Vec<usize> = expected.iter().collect();
-        assert_eq!(result, expected_serialized);
+        assert_eq!(result.commitment, expected.commitment);
+        assert_eq!(result.proof, expected.proof);
     }
 
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let _ = NativeBlobCommitmentAndProofQuery.process_buffered_query(
+        let input = AirbenderCodecV0::encode(&(0u64, 1u64)).unwrap();
+        let _ = NativeBlobCommitmentAndProofQuery.process(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-            vec![0, 1],
+            &input,
             &DummyMemorySource,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "RISC-V ptr and len should've been passed")]
-    fn blob_kzg_oracle_panics_on_extra_args() {
-        let memory = TestMemorySource::default();
-        let _ = BlobCommitmentAndProofQuery.process_buffered_query(
-            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-            vec![0x100, 10, 42],
-            &memory,
         );
     }
 
@@ -231,9 +210,10 @@ mod tests {
     #[should_panic]
     fn blob_kzg_oracle_panics_on_misaligned_pointer() {
         let memory = TestMemorySource::default();
-        let _ = BlobCommitmentAndProofQuery.process_buffered_query(
+        let input = AirbenderCodecV0::encode(&(0x101u32, 10u32)).unwrap();
+        let _ = BlobCommitmentAndProofQuery.process(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-            vec![0x101, 10],
+            &input,
             &memory,
         );
     }

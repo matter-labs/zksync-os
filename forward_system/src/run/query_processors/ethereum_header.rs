@@ -4,7 +4,6 @@ use basic_bootloader::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM
 use basic_bootloader::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID;
 
 use oracle_provider::OracleQueryProcessor;
-use zk_ee::utils::usize_rw::ReadIterWrapper;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumTargetBlockHeaderResponder {
@@ -28,23 +27,24 @@ impl OracleQueryProcessor for EthereumTargetBlockHeaderResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
+        _input: &[u8],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
-            ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID => DynUsizeIterator::from_constructor(
-                self.target_header_encoding.len() as u32,
-                UsizeSerializable::iter,
-            ),
-            ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID => DynUsizeIterator::from_constructor(
-                self.target_header_encoding.clone(),
-                |inner_ref| ReadIterWrapper::from(inner_ref.iter().copied()),
-            ),
+            ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID => {
+                let len = self.target_header_encoding.len() as u32;
+                AirbenderCodecV0::encode(&len)
+                    .map_err(|_| internal_error!("encode header len failed"))
+            }
+            ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID => {
+                AirbenderCodecV0::encode(&self.target_header_encoding)
+                    .map_err(|_| internal_error!("encode header data failed"))
+            }
             _ => {
                 unreachable!()
             }

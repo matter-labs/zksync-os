@@ -134,7 +134,12 @@ pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource, fal
 pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
 
 /// Prover input system
-pub type ProverInputSystem = ForwardSystemTypes<oracle_provider::ReadWitnessSource, true>;
+pub type ProverInputSystem = ForwardSystemTypes<
+    oracle_provider::witness_recording::WitnessRecordingOracle<
+        oracle_provider::ZkEENonDeterminismSource,
+    >,
+    true,
+>;
 
 /// Bootloader for forward execution using ZK transaction flow (EOA only)
 pub type ForwardBootloader =
