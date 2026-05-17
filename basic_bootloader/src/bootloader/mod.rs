@@ -22,6 +22,7 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
+pub mod oracle_types;
 pub mod result_keeper;
 mod rlp;
 pub mod stf;
