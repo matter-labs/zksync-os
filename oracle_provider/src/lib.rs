@@ -2,6 +2,7 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
+pub mod legacy_adapter;
 pub mod witness_recording;
 
 #[cfg(all(
