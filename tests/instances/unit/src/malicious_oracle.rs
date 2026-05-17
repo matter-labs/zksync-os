@@ -1449,18 +1449,12 @@ mod callable_oracle_tests {
             // Get the correct result first
             let correct_bytes = self.inner.process(query_id, input, memory)?;
 
-            // Decode, corrupt, and re-encode
-            let correct: Vec<u64> = AirbenderCodecV0::decode(&correct_bytes)
-                .map_err(|_| internal_error!("decode arithmetic result failed"))?;
-
-            // Corrupt the quotient: add 1 to the first quotient word (index 1, after header)
-            let mut corrupted = correct;
-            if corrupted.len() > 1 {
-                corrupted[1] = corrupted[1].wrapping_add(1);
+            // Corrupt the response by flipping the last byte (always part of data)
+            let mut corrupted_bytes = correct_bytes;
+            if let Some(last) = corrupted_bytes.last_mut() {
+                *last ^= 0x01;
             }
-
-            AirbenderCodecV0::encode(&corrupted)
-                .map_err(|_| internal_error!("encode corrupted result failed"))
+            Ok(corrupted_bytes)
         }
     }
 

@@ -54,6 +54,12 @@ fn read_u256_from_host(ptr: u64) -> [u64; 4] {
     [limbs[0], limbs[1], limbs[2], limbs[3]]
 }
 
+fn strip_trailing_zeros(v: &mut Vec<u64>) {
+    while v.last() == Some(&0) {
+        v.pop();
+    }
+}
+
 fn process_modexp_riscv(arg_ptr: u32, memory: &dyn RamPeek) -> ModexpResponse {
     assert!(arg_ptr.is_multiple_of(4));
     const { assert!(core::mem::align_of::<ModExpAdviceParams>() <= 4) }
@@ -71,6 +77,9 @@ fn process_modexp_riscv(arg_ptr: u32, memory: &dyn RamPeek) -> ModexpResponse {
     let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
 
     ruint::algorithms::div(&mut n, &mut d);
+
+    strip_trailing_zeros(&mut n);
+    strip_trailing_zeros(&mut d);
 
     ModexpResponse {
         quotient: n,
@@ -98,6 +107,9 @@ fn process_modexp_native(arg_ptr: u64) -> ModexpResponse {
     let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
 
     ruint::algorithms::div(&mut n, &mut d);
+
+    strip_trailing_zeros(&mut n);
+    strip_trailing_zeros(&mut d);
 
     ModexpResponse {
         quotient: n,
