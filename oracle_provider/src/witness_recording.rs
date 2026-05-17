@@ -71,6 +71,48 @@ mod tests {
         }
     }
 
+    use basic_bootloader::bootloader::oracle_types::{
+        DivRemResponse, FieldSqrtResponse, ModexpResponse,
+    };
+
+    #[test]
+    fn roundtrip_mixed_types_including_callable_oracle_responses() {
+        let inner = FixedOracle::new(vec![
+            encode_value(&42u32),
+            encode_value(&DivRemResponse {
+                quotient: [1, 2, 3, 4],
+            }),
+            encode_value(&ModexpResponse {
+                quotient: vec![0xAA, 0xBB],
+                remainder: vec![0xCC],
+            }),
+            encode_value(&FieldSqrtResponse {
+                result: zk_ee::utils::Bytes32::zero(),
+                is_valid: true,
+            }),
+        ]);
+        let mut recorder = WitnessRecordingOracle::new(inner);
+
+        let _: u32 = recorder.query(0x40070000, &()).unwrap();
+        let _: DivRemResponse = recorder.query(0x40050030, &(0u32,)).unwrap();
+        let _: ModexpResponse = recorder.query(0x40050010, &(0u32,)).unwrap();
+        let _: FieldSqrtResponse = recorder.query(0x40050011, &(0u32,)).unwrap();
+
+        let (_, inputs) = recorder.into_inputs();
+        let mut transport = MockTransport::new(inputs.words().to_vec());
+
+        let r1: u32 = read_with(&mut transport).unwrap();
+        let r2: DivRemResponse = read_with(&mut transport).unwrap();
+        let r3: ModexpResponse = read_with(&mut transport).unwrap();
+        let r4: FieldSqrtResponse = read_with(&mut transport).unwrap();
+
+        assert_eq!(r1, 42);
+        assert_eq!(r2.quotient, [1, 2, 3, 4]);
+        assert_eq!(r3.quotient, vec![0xAA, 0xBB]);
+        assert_eq!(r3.remainder, vec![0xCC]);
+        assert!(r4.is_valid);
+    }
+
     #[test]
     fn roundtrip_recording_and_replay() {
         let inner = FixedOracle::new(vec![

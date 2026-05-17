@@ -32,7 +32,7 @@ alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex"]
 default = ["testing"]
 eip-2935 = []
 eip-7702 = []

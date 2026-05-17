@@ -19,3 +19,4 @@ serde = { workspace = true, default-features = false, features = ["derive"] }
 [dev-dependencies]
 airbender-guest = { workspace = true }
 airbender-core = { workspace = true }
+basic_bootloader = { path = "../basic_bootloader" }
