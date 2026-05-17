@@ -65,11 +65,17 @@ impl IOOracle for ZkEENonDeterminismSource {
         query_type: u32,
         input: &I,
     ) -> Result<O, InternalError> {
-        if query_type == DISCONNECT_ORACLE_QUERY_ID {
-            self.is_connected_to_external_oracle = false;
-        }
         if self.is_connected_to_external_oracle == false {
             return Err(internal_error!("oracle disconnected"));
+        }
+        if query_type == DISCONNECT_ORACLE_QUERY_ID {
+            self.is_connected_to_external_oracle = false;
+            // Encode a dummy response of the expected output type.
+            // DisconnectOracleQuery expects `()` as output.
+            let encoded = AirbenderCodecV0::encode(&())
+                .map_err(|_| internal_error!("encode disconnect response failed"))?;
+            return AirbenderCodecV0::decode(&encoded)
+                .map_err(|_| internal_error!("decode disconnect response failed"));
         }
         let input_bytes =
             AirbenderCodecV0::encode(input).map_err(|_| internal_error!("encode input failed"))?;
@@ -145,8 +151,9 @@ mod tests {
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(FixedResponseProcessor);
 
+        // The disconnect query itself succeeds
         let result: Result<(), _> = oracle.query(DISCONNECT_ORACLE_QUERY_ID, &());
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
         // After disconnect, further queries should fail
         let result: Result<Vec<u32>, _> = oracle.query(TEST_QUERY_ID, &7u64);

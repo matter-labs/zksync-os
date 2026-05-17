@@ -37,7 +37,8 @@ use forward_system::system::system_types::ethereum::{
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::witness_recording::WitnessRecordingOracle;
+use oracle_provider::ZkEENonDeterminismSource;
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
@@ -862,15 +863,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 false,
                 true,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let recording_oracle = WitnessRecordingOracle::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
             let mut validator = NopTxValidator;
-            let prover_input_forward = {
+            let inputs = {
                 // Avoid capturing markers from the second run, as it would duplicate them.
                 #[cfg(feature = "cycle_marker")]
                 let snapshot = cycle_marker::snapshot();
                 let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
-                    copy_source,
+                    recording_oracle,
                     &mut result_keeper_prover_input,
                     &mut tracer,
                     &mut validator,
@@ -879,6 +880,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 cycle_marker::revert(snapshot);
                 result?
             };
+            let prover_input_forward = inputs.words().to_vec();
 
             if let Some(path) = witness_output_file {
                 let mut file = File::create(&path).expect("should create file");
@@ -1274,7 +1276,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 block_header,
                 withdrawals,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let recording_oracle = WitnessRecordingOracle::new(prover_input_oracle);
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
@@ -1283,7 +1285,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 EthereumStorageSystemTypesWithPostOps<_>,
                 EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
             >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
-                copy_source,
+                recording_oracle,
                 &mut (),
                 &mut pi_result_keeper,
                 &mut pi_tracer,
@@ -1296,7 +1298,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 "storage writes mismatch between forward and prover-input runs"
             );
 
-            let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
+            let (_inner, inputs) = returned_oracle.into_inputs();
+            let prover_input_words: Vec<u32> = inputs.words().to_vec();
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::io_oracle::NonDeterminismCSRSourceImplementation;
+use crate::proving_oracle::ProvingOracle;
 use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
@@ -146,29 +146,23 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 /// Returns public input.
 ///
 #[inline(never)]
-pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>() -> [u32; 8] {
+pub fn run_proving<L: Logger + Default>() -> [u32; 8] {
     logger_log!(L::default(), "Enter proving bootloader");
 
     logger_log!(L::default(), "Allocator init is complete");
 
     u256::init();
 
-    // oracle is just a thin proxy
-    let oracle = CsrBasedIOOracle::<I>::init();
+    // oracle is just a thin proxy over the CSR transport
+    let oracle = ProvingOracle::new(airbender_guest::transport::CsrTransport);
 
     logger_log!(L::default(), "Oracle init is complete");
 
-    run_proving_inner::<_, I, L>(oracle)
+    run_proving_inner::<_, L>(oracle)
 }
 
 #[cfg(not(feature = "multiblock-batch"))]
-pub fn run_proving_inner<
-    O: IOOracle,
-    I: NonDeterminismCSRSourceImplementation,
-    L: Logger + Default,
->(
-    oracle: O,
-) -> [u32; 8] {
+pub fn run_proving_inner<O: IOOracle, L: Logger + Default>(oracle: O) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
 
     // Load all transactions from oracle and apply them.
@@ -186,19 +180,12 @@ pub fn run_proving_inner<
 }
 
 #[cfg(feature = "multiblock-batch")]
-pub fn run_proving_inner<
-    O: IOOracle,
-    I: NonDeterminismCSRSourceImplementation,
-    L: Logger + Default,
->(
-    mut oracle: O,
-) -> [u32; 8] {
+pub fn run_proving_inner<O: IOOracle, L: Logger + Default>(mut oracle: O) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
 
-    // simulating query, just in case
-    I::csr_write_impl(0xdeadbeef);
-    I::csr_write_impl(0);
-    let count = I::csr_read_impl();
+    let count: usize = oracle
+        .query(0xdeadbeef, &())
+        .expect("failed to read multiblock batch count");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
         oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(

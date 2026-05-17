@@ -1,4 +1,3 @@
-use crate::io_oracle::CsrBasedIOOracle;
 use crate::system::bootloader::BootloaderAllocator;
 use alloc::alloc::Allocator;
 use basic_bootloader::bootloader::block_flow;

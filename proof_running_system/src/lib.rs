@@ -8,7 +8,6 @@
 
 extern crate alloc;
 
-pub mod io_oracle;
 pub mod proving_oracle;
 pub mod system;
 pub mod talc;
