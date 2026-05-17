@@ -454,11 +454,12 @@ mod tests {
     use crypto::sha3::Keccak256;
     use crypto::MiniDigest;
     use ruint::aliases::U256;
+    use serde::de::DeserializeOwned;
+    use serde::Serialize;
     use std::alloc::Global;
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::oracle::IOOracle;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
     use zk_ee::system::errors::internal::InternalError;
@@ -474,13 +475,11 @@ mod tests {
     struct TestOracle;
 
     impl IOOracle for TestOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+            &mut self,
             _query_type: u32,
             _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
+        ) -> Result<O, InternalError> {
             unimplemented!()
         }
     }

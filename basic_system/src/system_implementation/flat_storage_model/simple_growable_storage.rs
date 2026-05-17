@@ -845,9 +845,8 @@ fn get_proof_for_index<
     oracle: &mut O,
     index: u64,
 ) -> ValueAtIndexProof<N, H, A> {
-    // we can not use query here, but almost
     let proof: ValueAtIndexProof<N, H, A> = oracle
-        .query_serializable(PROOF_FOR_INDEX_QUERY_ID, &index)
+        .query(PROOF_FOR_INDEX_QUERY_ID, &index)
         .expect("must deserialize proof for index");
     assert_eq!(proof.proof.existing.index, index);
 
@@ -1014,6 +1013,114 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
     }
 }
 
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> serde::Serialize for LeafProof<N, H, A> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("LeafProof", 3)?;
+        state.serialize_field("index", &self.index)?;
+        state.serialize_field("leaf", &self.leaf)?;
+        state.serialize_field("path", self.path.as_slice())?;
+        state.end()
+    }
+}
+
+impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::Deserialize<'de>
+    for LeafProof<N, H, A>
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Index,
+            Leaf,
+            Path,
+        }
+
+        struct LeafProofVisitor<const N: usize, H: FlatStorageHasher, A: Allocator + Default>(
+            core::marker::PhantomData<(H, A)>,
+        );
+
+        impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default>
+            serde::de::Visitor<'de> for LeafProofVisitor<N, H, A>
+        {
+            type Value = LeafProof<N, H, A>;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct LeafProof")
+            }
+
+            fn visit_seq<V: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: V,
+            ) -> Result<LeafProof<N, H, A>, V::Error> {
+                let index = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let leaf = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                let path_vec: Vec<Bytes32> = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
+                let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
+                if path_vec.len() != N {
+                    return Err(serde::de::Error::invalid_length(
+                        path_vec.len(),
+                        &"N elements",
+                    ));
+                }
+                path.copy_from_slice(&path_vec);
+                Ok(LeafProof {
+                    index,
+                    leaf,
+                    path,
+                    _marker: core::marker::PhantomData,
+                })
+            }
+
+            fn visit_map<V: serde::de::MapAccess<'de>>(
+                self,
+                mut map: V,
+            ) -> Result<LeafProof<N, H, A>, V::Error> {
+                let mut index = None;
+                let mut leaf = None;
+                let mut path_vec: Option<Vec<Bytes32>> = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Index => index = Some(map.next_value()?),
+                        Field::Leaf => leaf = Some(map.next_value()?),
+                        Field::Path => path_vec = Some(map.next_value()?),
+                    }
+                }
+                let index = index.ok_or_else(|| serde::de::Error::missing_field("index"))?;
+                let leaf = leaf.ok_or_else(|| serde::de::Error::missing_field("leaf"))?;
+                let path_vec = path_vec.ok_or_else(|| serde::de::Error::missing_field("path"))?;
+                let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
+                if path_vec.len() != N {
+                    return Err(serde::de::Error::invalid_length(
+                        path_vec.len(),
+                        &"N elements",
+                    ));
+                }
+                path.copy_from_slice(&path_vec);
+                Ok(LeafProof {
+                    index,
+                    leaf,
+                    path,
+                    _marker: core::marker::PhantomData,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["index", "leaf", "path"];
+        deserializer.deserialize_struct(
+            "LeafProof",
+            FIELDS,
+            LeafProofVisitor::<N, H, A>(core::marker::PhantomData),
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExistingReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub existing: LeafProof<N, H, A>,
@@ -1038,6 +1145,75 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
         let existing = UsizeDeserializable::from_iter(src)?;
 
         Ok(Self { existing })
+    }
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> serde::Serialize
+    for ExistingReadProof<N, H, A>
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ExistingReadProof", 1)?;
+        state.serialize_field("existing", &self.existing)?;
+        state.end()
+    }
+}
+
+impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::Deserialize<'de>
+    for ExistingReadProof<N, H, A>
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Existing,
+        }
+
+        struct Visitor<const N: usize, H: FlatStorageHasher, A: Allocator + Default>(
+            core::marker::PhantomData<(H, A)>,
+        );
+
+        impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default>
+            serde::de::Visitor<'de> for Visitor<N, H, A>
+        {
+            type Value = ExistingReadProof<N, H, A>;
+
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("struct ExistingReadProof")
+            }
+
+            fn visit_seq<V: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: V,
+            ) -> Result<ExistingReadProof<N, H, A>, V::Error> {
+                let existing = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                Ok(ExistingReadProof { existing })
+            }
+
+            fn visit_map<V: serde::de::MapAccess<'de>>(
+                self,
+                mut map: V,
+            ) -> Result<ExistingReadProof<N, H, A>, V::Error> {
+                let mut existing = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Existing => existing = Some(map.next_value()?),
+                    }
+                }
+                let existing =
+                    existing.ok_or_else(|| serde::de::Error::missing_field("existing"))?;
+                Ok(ExistingReadProof { existing })
+            }
+        }
+
+        const FIELDS: &[&str] = &["existing"];
+        deserializer.deserialize_struct(
+            "ExistingReadProof",
+            FIELDS,
+            Visitor::<N, H, A>(core::marker::PhantomData),
+        )
     }
 }
 
@@ -1291,6 +1467,74 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
         let new = Self { proof };
 
         Ok(new)
+    }
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> serde::Serialize
+    for ValueAtIndexProof<N, H, A>
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ValueAtIndexProof", 1)?;
+        state.serialize_field("proof", &self.proof)?;
+        state.end()
+    }
+}
+
+impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::Deserialize<'de>
+    for ValueAtIndexProof<N, H, A>
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Proof,
+        }
+
+        struct Visitor<const N: usize, H: FlatStorageHasher, A: Allocator + Default>(
+            core::marker::PhantomData<(H, A)>,
+        );
+
+        impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default>
+            serde::de::Visitor<'de> for Visitor<N, H, A>
+        {
+            type Value = ValueAtIndexProof<N, H, A>;
+
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("struct ValueAtIndexProof")
+            }
+
+            fn visit_seq<V: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: V,
+            ) -> Result<ValueAtIndexProof<N, H, A>, V::Error> {
+                let proof = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                Ok(ValueAtIndexProof { proof })
+            }
+
+            fn visit_map<V: serde::de::MapAccess<'de>>(
+                self,
+                mut map: V,
+            ) -> Result<ValueAtIndexProof<N, H, A>, V::Error> {
+                let mut proof = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Proof => proof = Some(map.next_value()?),
+                    }
+                }
+                let proof = proof.ok_or_else(|| serde::de::Error::missing_field("proof"))?;
+                Ok(ValueAtIndexProof { proof })
+            }
+        }
+
+        const FIELDS: &[&str] = &["proof"];
+        deserializer.deserialize_struct(
+            "ValueAtIndexProof",
+            FIELDS,
+            Visitor::<N, H, A>(core::marker::PhantomData),
+        )
     }
 }
 
@@ -1721,9 +1965,7 @@ mod test {
     use ruint::aliases::{B160, U256};
     use std::{collections::HashMap, ops};
     use zk_ee::common_structs::derive_flat_storage_key;
-    use zk_ee::{
-        oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator, system::NullLogger,
-    };
+    use zk_ee::system::NullLogger;
 
     fn hex_bytes(s: &str) -> Bytes32 {
         let s = s.strip_prefix("0x").unwrap_or(s);
@@ -1947,48 +2189,37 @@ mod test {
     }
 
     impl<const R: bool> IOOracle for TestingTree<R> {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<I: serde::Serialize, O: serde::de::DeserializeOwned + serde::Serialize>(
+            &mut self,
             query_type: u32,
             input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            unsafe {
-                match query_type {
-                    ExactIndexQuery::QUERY_ID => {
-                        let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_index_for_existing(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PreviousIndexQuery::QUERY_ID => {
-                        let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_prev_index(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PROOF_FOR_INDEX_QUERY_ID => {
-                        let position = ProofForIndexQuery::<
-                            TESTING_TREE_HEIGHT,
-                            Blake2sStorageHasher,
-                            Global,
-                        >::transmute_input_ref_unchecked(
-                            input
-                        );
-                        let existing = self.get_proof_for_position(*position);
-                        let proof = ValueAtIndexProof {
-                            proof: ExistingReadProof { existing },
-                        };
-                        Ok(DynUsizeIterator::from_constructor(proof, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    _ => {
-                        panic!("unsupported query type 0x{:08x}", query_type);
-                    }
+        ) -> Result<O, InternalError> {
+            // Deserialize the input to determine the query type
+            let input_bytes = serde_json::to_vec(input).unwrap();
+            match query_type {
+                ExactIndexQuery::QUERY_ID => {
+                    let flat_key: Bytes32 = serde_json::from_slice(&input_bytes).unwrap();
+                    let existing = self.get_index_for_existing(&flat_key);
+                    let result_bytes = serde_json::to_vec(&existing).unwrap();
+                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                }
+                PreviousIndexQuery::QUERY_ID => {
+                    let flat_key: Bytes32 = serde_json::from_slice(&input_bytes).unwrap();
+                    let existing = self.get_prev_index(&flat_key);
+                    let result_bytes = serde_json::to_vec(&existing).unwrap();
+                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                }
+                PROOF_FOR_INDEX_QUERY_ID => {
+                    let position: u64 = serde_json::from_slice(&input_bytes).unwrap();
+                    let existing = self.get_proof_for_position(position);
+                    let proof = ValueAtIndexProof::<TESTING_TREE_HEIGHT, Blake2sStorageHasher> {
+                        proof: ExistingReadProof { existing },
+                    };
+                    let result_bytes = serde_json::to_vec(&proof).unwrap();
+                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                }
+                _ => {
+                    panic!("unsupported query type 0x{:08x}", query_type);
                 }
             }
         }

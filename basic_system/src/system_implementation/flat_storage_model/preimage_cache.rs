@@ -11,7 +11,7 @@ use zk_ee::{
         IOResultKeeper, Resources,
     },
     types_config::EthereumIOTypesConfig,
-    utils::{num_usize_words_for_u8_capacity, Bytes32, UsizeAlignedByteBox},
+    utils::{Bytes32, UsizeAlignedByteBox},
 };
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
@@ -107,18 +107,18 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // We do not charge for gas in this concrete implementation and
             // expect higher-level model to do so.
             // We charge for native.
-            let it = oracle
-                .raw_query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
-                .expect("must make an iterator for preimage");
+            let preimage_bytes = oracle
+                .query_bytes(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
+                .expect("must get preimage bytes");
             // IMPORTANT: oracle should be somewhat "sane", it also limits the number of cycles spent below.
 
-            if it.len() > num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes) {
+            if preimage_bytes.len() > expected_preimage_len_in_bytes {
                 return Err(
-                    internal_error!("Iterator length exceeds expected preimage length").into(),
+                    internal_error!("Preimage length exceeds expected preimage length").into(),
                 );
             }
             let mut buffered =
-                UsizeAlignedByteBox::from_usize_iterator_in(it, self.allocator.clone());
+                UsizeAlignedByteBox::from_slice_in(&preimage_bytes, self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 

@@ -13,7 +13,7 @@ use zk_ee::{
         errors::{internal::InternalError, system::SystemError},
         Resources,
     },
-    utils::{Bytes32, UsizeAlignedByteBox, USIZE_SIZE},
+    utils::{Bytes32, UsizeAlignedByteBox},
 };
 
 use super::super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
@@ -79,18 +79,11 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
             // We charge for native.
             let expected_length_in_bytes =
                 PreimageLengthQuery::get(oracle, hash).expect("must get preimage length") as usize;
-            // NOTE: we leave some slack for 64/32 bit arch mismatches
-            let buffer_size = expected_length_in_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
-            let buffer_size = buffer_size.next_multiple_of(2);
-            let mut buffered = UsizeAlignedByteBox::from_init_fn_in(
-                buffer_size,
-                |dst| {
-                    oracle
-                        .expose_preimage(ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID, hash, dst)
-                        .expect("must get preimage")
-                },
-                self.allocator.clone(),
-            );
+            let preimage_bytes = oracle
+                .query_bytes(ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID, hash)
+                .expect("must get preimage");
+            let mut buffered =
+                UsizeAlignedByteBox::from_slice_in(&preimage_bytes, self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_length_in_bytes);
 

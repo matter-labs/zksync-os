@@ -1,9 +1,12 @@
 //! Query for field operations hints, such as square root and inverse in secp256k1 fields together with their use for implementing secp256k1 hooks.
 
+use crate::oracle_types::{FieldInverseResponse, FieldSqrtResponse};
 use crypto::secp256k1::field::FieldElement;
 use crypto::secp256k1::scalars::Scalar;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use zk_ee::{
-    oracle::{query_ids::ADVICE_SUBSPACE_MASK, usize_serialization::UsizeDeserializable, IOOracle},
+    oracle::{query_ids::ADVICE_SUBSPACE_MASK, IOOracle},
     utils::Bytes32,
 };
 
@@ -62,8 +65,10 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         }
 
         let input = Bytes32::from_array(x.to_bytes().into());
-        let (sqrt_candidate, is_quadratic_non_residue): (Bytes32, bool) =
+        let response: FieldSqrtResponse =
             self.query_field_op(FieldHintOp::Secp256k1BaseFieldSqrt, &input);
+        let sqrt_candidate = response.result;
+        let is_quadratic_non_residue = !response.is_valid;
 
         // Answer must be a valid field element
         let fe = FieldElement::from_bytes(sqrt_candidate.as_u8_array_ref()).unwrap();
@@ -94,10 +99,11 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         }
 
         let input = Bytes32::from_array(x.to_bytes().into());
-        let inv: Bytes32 = self.query_field_op(FieldHintOp::Secp256k1BaseFieldInverse, &input);
+        let response: FieldInverseResponse =
+            self.query_field_op(FieldHintOp::Secp256k1BaseFieldInverse, &input);
 
         // answer must be a field element
-        let inv = FieldElement::from_bytes(inv.as_u8_array_ref()).unwrap();
+        let inv = FieldElement::from_bytes(response.result.as_u8_array_ref()).unwrap();
 
         // we must check that hint was correct
         let mut t = *x;
@@ -115,7 +121,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         }
 
         let input = Bytes32::from_array(x.to_repr().into());
-        let inverse: Bytes32 =
+        let response: FieldInverseResponse =
             self.query_field_op(FieldHintOp::Secp256k1ScalarFieldInverse, &input);
 
         // answer is must be a field element
@@ -123,7 +129,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         use crypto::k256::elliptic_curve::Curve;
         use crypto::k256::U256;
 
-        let inverse = U256::from_be_slice(inverse.as_u8_array_ref());
+        let inverse = U256::from_be_slice(response.result.as_u8_array_ref());
         assert!(inverse < crypto::k256::Secp256k1::ORDER);
         let inverse: Scalar =
             Scalar::from_k256_scalar(crypto::k256::Scalar::from_uint_unchecked(inverse));
@@ -137,7 +143,11 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 }
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
-    fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
+    fn query_field_op<R: DeserializeOwned + Serialize>(
+        &mut self,
+        op: FieldHintOp,
+        input: &Bytes32,
+    ) -> R {
         // We use different advice params depending on architecture
         // They are mostly the same, main difference is the width of pointers
         #[cfg(target_pointer_width = "32")]
@@ -148,7 +158,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
                 src_len_u32_words: 8,
             };
             self.oracle
-                .query_serializable(
+                .query(
                     FIELD_OPS_ADVISE_QUERY_ID,
                     &((&hint_request as *const FieldOpsHint).addr() as u32),
                 )
@@ -162,7 +172,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
                 src_len_u32_words: 8,
             };
             self.oracle
-                .query_serializable(
+                .query(
                     FIELD_OPS_ADVISE_QUERY_ID,
                     &((&hint_request as *const FieldOpsHint64).addr() as u64),
                 )

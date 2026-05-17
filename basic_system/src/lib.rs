@@ -29,5 +29,6 @@
 extern crate alloc;
 
 pub mod cost_constants;
+pub mod oracle_types;
 pub mod system_functions;
 pub mod system_implementation;

@@ -47,23 +47,32 @@ impl<'o, O: IOOracle> PreimagesOracle for OracleProxy<'o, O> {
         // first length
         let expected_bytes: u32 = self
             .0
-            .query_serializable(
+            .query(
                 ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
                 &Bytes32::from_array(*key),
             )
             .map_err(|_| ())?;
-        let words_buffer_size = (expected_bytes as usize).next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        let key = Bytes32::from_array(*key);
+        let preimage_bytes = self
+            .0
+            .query_bytes(ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID, &key)
+            .map_err(|_| ())?;
         assert!(I::SUPPORTS_WORD_LEVEL_INTERNING);
+        let words_buffer_size = (expected_bytes as usize).next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
         // NOTE: we leave some slack for 64/32 bit arch mismatches
         let mut buffer = interner.get_word_buffer(words_buffer_size.next_multiple_of(2))?;
-        let key = Bytes32::from_array(*key);
+        // Copy bytes into the word buffer's spare capacity
         let capacity = buffer.spare_capacity_mut();
-        let num_written = self
-            .0
-            .expose_preimage(ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID, &key, capacity)
-            .map_err(|_| ())?;
+        let num_words = preimage_bytes.len().next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        for (i, dst) in capacity[..num_words].iter_mut().enumerate() {
+            let start = i * USIZE_SIZE;
+            let end = core::cmp::min(start + USIZE_SIZE, preimage_bytes.len());
+            let mut word_bytes = [0u8; USIZE_SIZE];
+            word_bytes[..(end - start)].copy_from_slice(&preimage_bytes[start..end]);
+            dst.write(usize::from_ne_bytes(word_bytes));
+        }
         unsafe {
-            buffer.set_word_len(num_written);
+            buffer.set_word_len(num_words);
         }
 
         Ok(buffer.flush_as_bytes(expected_bytes as usize))

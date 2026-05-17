@@ -9,13 +9,13 @@ compile_error!("host-side modexp advice handling requires a 64-bit little-endian
 
 use super::super::MODEXP_ADVICE_QUERY_ID;
 use super::u256::*;
+use crate::oracle_types::ModexpResponse;
 use crate::system_functions::modexp::ModExpAdviceParams64;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 use crypto::{bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps};
-use ruint::aliases::U256;
 use zk_ee::oracle::IOOracle;
 
 // There is a small choice to make - either we do exponentiation walking as via LE or BE exponent.
@@ -822,37 +822,33 @@ pub(crate) struct OracleAdvisor<'a, O: IOOracle> {
     pub(crate) inner: &'a mut O,
 }
 
-const BIGINT_DIGIT_USIZE_SIZE: usize = U256::BYTES / core::mem::size_of::<usize>();
+/// Number of u64 limbs per DelegatedU256 (each is 256 bits = 4 * u64).
+const BIGINT_DIGIT_U64_SIZE: usize = 4;
 
-fn write_bigint(
-    it: &mut impl ExactSizeIterator<Item = usize>,
-    mut to_consume: usize,
-    dst: &mut BigintRepr<impl Allocator + Clone>,
-) {
+fn write_bigint_from_u64_digits(digits: &[u64], dst: &mut BigintRepr<impl Allocator + Clone>) {
     // NOTE: even if oracle overstates the number of digits (so - iterator length), it is not important
-    // as long as caller checks that number of digits is within bounds of soundness
-    // Safety: we only write initialized `usize` chunks into spare capacity and
+    // as long as caller checks that number of digits is within bounds of soundness.
+    // Safety: we only write initialized u64 chunks into spare capacity and
     // then set the number of initialized big-int digits accordingly.
     unsafe {
         let num_digits =
-            to_consume.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE;
+            digits.len().next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
         let dst_capacity = dst.clear_as_capacity_mut();
-        for dst in dst_capacity[..num_digits].iter_mut() {
-            let dst: *mut usize = dst
+        let mut src_idx = 0;
+        for dst_slot in dst_capacity[..num_digits].iter_mut() {
+            let dst_ptr: *mut u64 = dst_slot
                 .as_mut_ptr()
-                .cast::<[usize; BIGINT_DIGIT_USIZE_SIZE]>()
+                .cast::<[u64; BIGINT_DIGIT_U64_SIZE]>()
                 .cast();
-            for i in 0..BIGINT_DIGIT_USIZE_SIZE {
-                if to_consume > 0 {
-                    to_consume -= 1;
-                    let digit = it.next().unwrap();
-                    dst.add(i).write(digit);
+            for i in 0..BIGINT_DIGIT_U64_SIZE {
+                if src_idx < digits.len() {
+                    dst_ptr.add(i).write(digits[src_idx]);
+                    src_idx += 1;
                 } else {
-                    dst.add(i).write(0);
+                    dst_ptr.add(i).write(0);
                 }
             }
         }
-        assert_eq!(to_consume, 0);
         dst.set_num_digits(num_digits);
     }
 }
@@ -868,7 +864,7 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         // We use different advice params depending on architecture
         // Both are mostly the same, main difference is the width of pointers
         #[cfg(target_pointer_width = "32")]
-        let (mut it, q_len, r_len) = {
+        let response: ModexpResponse = {
             use crate::system_functions::modexp::ModExpAdviceParams;
             let arg: ModExpAdviceParams = {
                 let a_len = a.digits;
@@ -889,21 +885,16 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
                     modulus_len: modulus_len as u32,
                 }
             };
-            // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
-            let mut it = self
-                .inner
-                .raw_query(
+            self.inner
+                .query(
                     MODEXP_ADVICE_QUERY_ID,
                     &((&arg as *const ModExpAdviceParams).addr() as u32),
                 )
-                .unwrap();
-            let q_len = it.next().expect("quotient length");
-            let r_len = it.next().expect("remainder length");
-            (it, q_len, r_len)
+                .unwrap()
         };
 
         #[cfg(target_pointer_width = "64")]
-        let (mut it, q_len, r_len) = {
+        let response: ModexpResponse = {
             let arg: ModExpAdviceParams64 = {
                 let a_len = a.digits;
                 let a_ptr = a.backing.as_ptr();
@@ -923,26 +914,12 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
                     modulus_len: modulus_len as u64,
                 }
             };
-            // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
-            let mut it = self
-                .inner
-                .raw_query(
+            self.inner
+                .query(
                     MODEXP_ADVICE_QUERY_ID,
                     &((&arg as *const ModExpAdviceParams64).addr() as u64),
                 )
-                .unwrap();
-            // Oracle provides lengths as u32, so in this case they are
-            // packed into a single usize
-            // Note lengths are in 32-bit words, so we have to divide
-            // by 2 on 64-bit arch.
-            let packed_lens = it.next().expect("packed lengths");
-            let q_len = (packed_lens & 0xFFFF_FFFF) as usize;
-            let r_len = (packed_lens >> 32) as usize;
-            assert!(
-                q_len.is_multiple_of(2) && r_len.is_multiple_of(2),
-                "oracle returned an odd number of u32 words"
-            );
-            (it, q_len / 2, r_len / 2)
+                .unwrap()
         };
 
         let max_quotient_digits = if a.digits < m.digits {
@@ -956,20 +933,22 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         let max_remainder_digits = m.digits;
 
         // check that hint is "sane" in upper bound
+        let q_num_digits = response
+            .quotient
+            .len()
+            .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
+            / BIGINT_DIGIT_U64_SIZE;
+        let r_num_digits = response
+            .remainder
+            .len()
+            .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
+            / BIGINT_DIGIT_U64_SIZE;
 
-        assert!(
-            q_len.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE
-                <= max_quotient_digits
-        );
-        assert!(
-            r_len.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE
-                <= max_remainder_digits
-        );
+        assert!(q_num_digits <= max_quotient_digits);
+        assert!(r_num_digits <= max_remainder_digits);
 
-        write_bigint(&mut it, q_len, quotient_dst);
-        write_bigint(&mut it, r_len, remainder_dst);
-
-        assert!(it.next().is_none());
+        write_bigint_from_u64_digits(&response.quotient, quotient_dst);
+        write_bigint_from_u64_digits(&response.remainder, remainder_dst);
     }
 }
 
@@ -978,48 +957,66 @@ mod tests {
     use std::alloc::Global;
 
     use super::*;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use serde::{de::DeserializeOwned, Serialize};
     use zk_ee::system::errors::internal::InternalError;
 
-    struct PackedLengthOracle {
-        packed_lens: usize,
+    /// Oracle that returns a fixed ModexpResponse for any query
+    struct FixedResponseOracle {
+        response: ModexpResponse,
     }
 
-    impl IOOracle for PackedLengthOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+    impl IOOracle for FixedResponseOracle {
+        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+            &mut self,
             query_type: u32,
             _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
+        ) -> Result<O, InternalError> {
             assert_eq!(query_type, MODEXP_ADVICE_QUERY_ID);
-            Ok(Box::new([self.packed_lens].into_iter()))
+            // Serialize response to bytes, then deserialize as O
+            let bytes = serde_json::to_vec(&self.response).unwrap();
+            Ok(serde_json::from_slice(&bytes).unwrap())
         }
     }
 
-    fn assert_odd_word_count_panics(packed_lens: usize) {
+    #[test]
+    #[should_panic]
+    fn oracle_advisor_rejects_oversized_quotient() {
         super::super::u256::init();
 
         let dividend = BigintRepr::from_big_endian_with_double_capacity(&[0xA5; 96], Global);
         let modulus = BigintRepr::from_big_endian_with_double_capacity(&[0x5A; 64], Global);
         let mut quotient = BigintRepr::with_capacity_in(4, Global);
         let mut remainder = BigintRepr::with_capacity_in(4, Global);
-        let mut oracle = PackedLengthOracle { packed_lens };
+        // Provide a quotient that has too many u64 limbs (exceeds max_quotient_digits * 4)
+        let mut oracle = FixedResponseOracle {
+            response: ModexpResponse {
+                quotient: vec![1u64; 20], // way too large
+                remainder: vec![0u64; 4],
+            },
+        };
         let mut advisor = OracleAdvisor { inner: &mut oracle };
 
         advisor.get_reduction_op_advice(&dividend, &modulus, &mut quotient, &mut remainder);
     }
 
     #[test]
-    #[should_panic(expected = "oracle returned an odd number of u32 words")]
-    fn oracle_advisor_rejects_odd_quotient_word_count() {
-        assert_odd_word_count_panics(3 | (4 << 32));
-    }
+    #[should_panic]
+    fn oracle_advisor_rejects_oversized_remainder() {
+        super::super::u256::init();
 
-    #[test]
-    #[should_panic(expected = "oracle returned an odd number of u32 words")]
-    fn oracle_advisor_rejects_odd_remainder_word_count() {
-        assert_odd_word_count_panics(4 | (3 << 32));
+        let dividend = BigintRepr::from_big_endian_with_double_capacity(&[0xA5; 96], Global);
+        let modulus = BigintRepr::from_big_endian_with_double_capacity(&[0x5A; 64], Global);
+        let mut quotient = BigintRepr::with_capacity_in(4, Global);
+        let mut remainder = BigintRepr::with_capacity_in(4, Global);
+        // Provide a remainder that has too many u64 limbs (exceeds max_remainder_digits * 4)
+        let mut oracle = FixedResponseOracle {
+            response: ModexpResponse {
+                quotient: vec![0u64; 4],
+                remainder: vec![1u64; 20], // way too large
+            },
+        };
+        let mut advisor = OracleAdvisor { inner: &mut oracle };
+
+        advisor.get_reduction_op_advice(&dividend, &modulus, &mut quotient, &mut remainder);
     }
 }

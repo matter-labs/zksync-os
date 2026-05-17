@@ -1,6 +1,6 @@
+use crate::oracle_types::{DivRemResponse, WideDivRemResponse};
 use u256::U256;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{DivRemExt, WideDivRemExt};
 
@@ -122,16 +122,6 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
     }
 }
 
-#[inline(always)]
-fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> [u64; 4] {
-    [
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 0"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 1"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 2"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 3"),
-    ]
-}
-
 #[inline]
 pub fn u256_div_rem_with_advice<O: IOOracle>(
     dividend_or_quotient: &mut U256,
@@ -141,13 +131,13 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     assert!(!divisor_or_remainder.is_zero());
 
     #[cfg(target_pointer_width = "32")]
-    let mut it = {
+    let response: DivRemResponse = {
         let params = U256DivRemAdviceParams {
             dividend_ptr: (dividend_or_quotient as *const U256).addr() as u32,
             divisor_ptr: (divisor_or_remainder as *const U256).addr() as u32,
         };
         oracle
-            .raw_query(
+            .query(
                 U256_DIV_REM_ADVICE_QUERY_ID,
                 &((&params as *const U256DivRemAdviceParams).addr() as u32),
             )
@@ -155,20 +145,20 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
     };
 
     #[cfg(target_pointer_width = "64")]
-    let mut it = {
+    let response: DivRemResponse = {
         let params = U256DivRemAdviceParams64 {
             dividend_ptr: (dividend_or_quotient as *const U256).addr() as u64,
             divisor_ptr: (divisor_or_remainder as *const U256).addr() as u64,
         };
         oracle
-            .raw_query(
+            .query(
                 U256_DIV_REM_ADVICE_QUERY_ID,
                 &((&params as *const U256DivRemAdviceParams64).addr() as u64),
             )
             .expect("div_rem oracle query failed")
     };
 
-    let q_limbs = read_limbs_from_oracle_response(&mut it);
+    let q_limbs = response.quotient;
 
     // verify modifies dividend_or_quotient in-place to hold the remainder
     assert!(verify_div_rem_hint(
@@ -202,14 +192,14 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
     assert!(!divisor.is_zero());
 
     #[cfg(target_pointer_width = "32")]
-    let mut it = {
+    let response: WideDivRemResponse = {
         let params = U256WideDivRemAdviceParams {
             dividend_lo_ptr: (dividend_lo as *const U256).addr() as u32,
             dividend_hi_ptr: (dividend_hi as *const U256).addr() as u32,
             divisor_ptr: (divisor as *const U256).addr() as u32,
         };
         oracle
-            .raw_query(
+            .query(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
                 &((&params as *const U256WideDivRemAdviceParams).addr() as u32),
             )
@@ -217,22 +207,22 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
     };
 
     #[cfg(target_pointer_width = "64")]
-    let mut it = {
+    let response: WideDivRemResponse = {
         let params = U256WideDivRemAdviceParams64 {
             dividend_lo_ptr: (dividend_lo as *const U256).addr() as u64,
             dividend_hi_ptr: (dividend_hi as *const U256).addr() as u64,
             divisor_ptr: (divisor as *const U256).addr() as u64,
         };
         oracle
-            .raw_query(
+            .query(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
                 &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
             )
             .expect("wide_div_rem oracle query failed")
     };
 
-    let q_lo_limbs = read_limbs_from_oracle_response(&mut it);
-    let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
+    let q_lo_limbs = response.quotient_lo;
+    let q_hi_limbs = response.quotient_hi;
 
     // verify modifies dividend_lo in-place to hold the remainder
     assert!(verify_wide_div_rem_hint(
