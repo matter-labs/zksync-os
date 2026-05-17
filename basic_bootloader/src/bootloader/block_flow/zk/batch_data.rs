@@ -309,20 +309,18 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
 mod tests {
     use super::*;
     use alloc::alloc::Global;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use serde::{de::DeserializeOwned, Serialize};
     use zk_ee::system::errors::internal::InternalError;
 
     struct DummyOracle;
 
     impl IOOracle for DummyOracle {
-        type RawIterator<'a> = core::iter::Empty<usize>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+            &mut self,
             _query_type: u32,
             _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            Ok(core::iter::empty())
+        ) -> Result<O, InternalError> {
+            panic!("DummyOracle::query not implemented")
         }
     }
 

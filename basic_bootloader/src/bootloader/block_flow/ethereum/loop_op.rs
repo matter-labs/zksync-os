@@ -61,12 +61,7 @@ where
     let mut tx_counter = 0;
 
     // now we can run every transaction
-    while let Some(r) = {
-        let allocator = system.get_allocator();
-        system.try_begin_next_tx(move |tx_length_in_bytes| {
-            UsizeAlignedByteBox::preallocated_in(tx_length_in_bytes, allocator)
-        })
-    } {
+    while let Some(r) = { system.try_begin_next_tx() } {
         match r {
             Err(err) => {
                 system_log!(
@@ -75,7 +70,10 @@ where
                 );
                 result_keeper.tx_processed(Err(InvalidTransaction::InvalidEncoding));
             }
-            Ok((_next_tx_len_bytes, initial_calldata_buffer)) => {
+            Ok(initial_calldata_vec) => {
+                let allocator = system.get_allocator();
+                let initial_calldata_buffer =
+                    UsizeAlignedByteBox::from_slice_in(&initial_calldata_vec, allocator);
                 // warm up the coinbase formally
                 {
                     let mut inf_resources = S::Resources::FORMAL_INFINITE;

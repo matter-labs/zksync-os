@@ -25,10 +25,10 @@ pub type EthereumBlockMetadata = SystemMetadata<
 impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for EthereumMetadataOp {
     fn metadata_op<'a, Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
-        allocator: S::Allocator,
+        _allocator: S::Allocator,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
         // make header's buffer, parse, make into our internal structure, save hash
-        let header = HeaderAndHistory::new(oracle, allocator.clone())?;
+        let header = HeaderAndHistory::new(oracle)?;
 
         // NOTE: we do NOT check the following:
         // - there is some historical header at all

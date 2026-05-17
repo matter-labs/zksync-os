@@ -1,10 +1,8 @@
 use crate::bootloader::block_flow::chain_check::ChainChecker;
 use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID;
-use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID;
 use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::RlpListDecode;
 use crate::bootloader::transaction_flow::ethereum::LogsBloom;
-use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -191,19 +189,14 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
 }
 
 impl HeaderAndHistory {
-    pub fn new(
-        oracle: &mut impl IOOracle,
-        allocator: impl core::alloc::Allocator,
-    ) -> Result<Self, InternalError> {
+    pub fn new(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
         let chain_id = 1u64;
         // get buffer
-        let target_header_buffer = oracle.get_bytes_from_query(
-            ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
-            ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
-            &(),
-            allocator,
-        )?;
-        let target_header_buffer = target_header_buffer.expect("target header is not empty slice");
+        let target_header_buffer =
+            oracle.query_bytes(ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID, &())?;
+        if target_header_buffer.is_empty() {
+            return Err(internal_error!("target header is not empty slice"));
+        }
         let target_header =
             PectraForkHeaderReflection::decode_list_full(target_header_buffer.as_slice())
                 .map_err(|_| internal_error!("must parse target header from bytes"))?;
@@ -332,16 +325,14 @@ impl ChainChecker for PectraForkHeader {
     type ExtraData = BlockHashesCache;
     type Output = Bytes32;
 
-    fn verify_chain<A: Allocator + Clone>(
+    fn verify_chain(
         &self,
         current_block_number: u64,
         verification_depth: usize,
         oracle: &mut impl IOOracle,
         extra_data: &Self::ExtraData,
-        allocator: A,
     ) -> Result<Self::Output, BootloaderSubsystemError> {
         use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID;
-        use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID;
 
         let history_cache = extra_data;
         assert!(verification_depth > 0);
@@ -359,14 +350,15 @@ impl ChainChecker for PectraForkHeader {
             assert!(block_number >= PECTRA_EL_FORK_BLOCK_NUMBER);
 
             let buffer = oracle
-                .get_bytes_from_query(
-                    ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
+                .query_bytes(
                     ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
                     &(depth as u32),
-                    allocator.clone(),
                 )
-                .expect("must get buffer for historical header")
-                .expect("buffer for historical header is not empty");
+                .expect("must get buffer for historical header");
+            assert!(
+                !buffer.is_empty(),
+                "buffer for historical header is not empty"
+            );
             let historical_header = PectraForkHeaderReflection::decode_list_full(buffer.as_slice())
                 .expect("must parse historical header");
             crypto::MiniDigest::update(&mut block_headers_hasher, buffer.as_slice());

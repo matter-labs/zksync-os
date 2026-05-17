@@ -3,19 +3,17 @@
 // the format of "previous" items
 
 use crate::bootloader::errors::BootloaderSubsystemError;
-use core::alloc::Allocator;
 use zk_ee::oracle::IOOracle;
 
 pub trait ChainChecker {
     type ExtraData;
     type Output;
 
-    fn verify_chain<A: Allocator + Clone>(
+    fn verify_chain(
         &self,
         current_block_number: u64,
         verification_depth: usize,
         oracle: &mut impl IOOracle,
         extra_data: &Self::ExtraData,
-        allocator: A,
     ) -> Result<Self::Output, BootloaderSubsystemError>;
 }

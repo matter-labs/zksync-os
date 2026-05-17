@@ -68,7 +68,6 @@ where
         // IO related part ends here, and we can flush all our changes
 
         let mut logger = system.get_logger();
-        let allocator = system.get_allocator();
 
         let System {
             mut io, metadata, ..
@@ -90,7 +89,6 @@ where
             num_to_verify,
             io.oracle(),
             unsafe { metadata.block_level.history_cache.as_ref_unchecked() },
-            allocator.clone(),
         )
         .expect("chain must be consistent");
 
