@@ -2,15 +2,15 @@ use airbender_host::Inputs;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use zk_ee::internal_error;
-use zk_ee::oracle::serde_oracle::SerdeIOOracle;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 
-pub struct WitnessRecordingOracle<O: SerdeIOOracle> {
+pub struct WitnessRecordingOracle<O: IOOracle> {
     inner: O,
     inputs: Inputs,
 }
 
-impl<O: SerdeIOOracle> WitnessRecordingOracle<O> {
+impl<O: IOOracle> WitnessRecordingOracle<O> {
     pub fn new(inner: O) -> Self {
         Self {
             inner,
@@ -23,7 +23,7 @@ impl<O: SerdeIOOracle> WitnessRecordingOracle<O> {
     }
 }
 
-impl<O: SerdeIOOracle> SerdeIOOracle for WitnessRecordingOracle<O> {
+impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
     fn query<I: Serialize, R: DeserializeOwned + Serialize>(
         &mut self,
         query_type: u32,
@@ -59,7 +59,7 @@ mod tests {
         }
     }
 
-    impl SerdeIOOracle for FixedOracle {
+    impl IOOracle for FixedOracle {
         fn query<I: Serialize, O: DeserializeOwned + Serialize>(
             &mut self,
             _query_type: u32,

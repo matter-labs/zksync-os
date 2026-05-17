@@ -6,12 +6,17 @@ use crate::oracle::query_ids::{
 use crate::oracle::simple_oracle_query::SimpleOracleQuery;
 use crate::storage_types::{InitialStorageSlotData, StorageAddress};
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub struct InitialStorageSlotQuery<IOTypes: SystemIOTypesConfig> {
     _marker: core::marker::PhantomData<IOTypes>,
 }
 
-impl<IOTypes: SystemIOTypesConfig> SimpleOracleQuery for InitialStorageSlotQuery<IOTypes> {
+impl<IOTypes: SystemIOTypesConfig> SimpleOracleQuery for InitialStorageSlotQuery<IOTypes>
+where
+    StorageAddress<IOTypes>: Serialize,
+    InitialStorageSlotData<IOTypes>: DeserializeOwned + Serialize,
+{
     const QUERY_ID: u32 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     type Input = StorageAddress<IOTypes>;
     type Output = InitialStorageSlotData<IOTypes>;
@@ -29,7 +34,7 @@ pub struct ZKProofDataQuery<IOTypes: SystemIOTypesConfig, SR: StateRootView<IOTy
     _marker: core::marker::PhantomData<(IOTypes, SR)>,
 }
 
-impl<SR: StateRootView<EthereumIOTypesConfig>> SimpleOracleQuery
+impl<SR: StateRootView<EthereumIOTypesConfig> + Serialize + DeserializeOwned> SimpleOracleQuery
     for ZKProofDataQuery<EthereumIOTypesConfig, SR>
 {
     const QUERY_ID: u32 = ZK_PROOF_DATA_INIT_QUERY_ID;

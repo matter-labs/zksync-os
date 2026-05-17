@@ -1,24 +1,19 @@
-use crate::{
-    oracle::{
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
-        IOOracle,
-    },
-    system::errors::internal::InternalError,
-};
+use crate::{oracle::IOOracle, system::errors::internal::InternalError};
+use serde::{de::DeserializeOwned, Serialize};
 
 ///
 /// Convenience trait to define all expected types under one umbrella.
 ///
 pub trait SimpleOracleQuery: Sized {
     const QUERY_ID: u32;
-    type Input: UsizeSerializable + UsizeDeserializable;
-    type Output: UsizeDeserializable;
+    type Input: Serialize;
+    type Output: DeserializeOwned + Serialize;
 
     fn get<O: IOOracle>(
         oracle: &mut O,
         input: &Self::Input,
     ) -> Result<Self::Output, InternalError> {
-        oracle.query_serializable(Self::QUERY_ID, input)
+        oracle.query(Self::QUERY_ID, input)
     }
 
     /// # Safety

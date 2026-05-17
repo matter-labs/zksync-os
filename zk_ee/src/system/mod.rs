@@ -1,9 +1,6 @@
 use arrayvec::ArrayVec;
 use common_structs::system_hooks::HooksStorage;
 use types_config::TryIntoLowAddress;
-use utils::num_usize_words_for_u8_capacity;
-use utils::usize_rw::AsUsizeWritable;
-use utils::UsizeAlignedByteBox;
 
 use super::*;
 pub mod base_system_functions;
@@ -288,15 +285,13 @@ where
     }
 
     ///
-    /// Get the next transaction data from the oracle and write it into the provided iterator.
+    /// Get the next transaction data from the oracle as raw bytes.
     /// Returns None when there are no more transactions to process.
     /// Returns Some(Err(_)) if there's an encoding or oracle error.
     ///
-    pub fn try_begin_next_tx<B: AsUsizeWritable>(
+    pub fn try_begin_next_tx(
         &mut self,
-        buffer_constructor: impl FnOnce(usize) -> B,
-    ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
+    ) -> Option<Result<alloc::vec::Vec<u8>, NextTxSubsystemError>> {
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,
@@ -315,65 +310,36 @@ where
             )));
         }
 
-        // create buffer
-        let mut buffer = (buffer_constructor)(next_tx_len_bytes);
-        let mut as_writable = buffer.as_writable();
-        let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
-        if as_writable.len() < next_tx_len_usize_words {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::DestinationBufferInsufficient
-            )));
-        }
-        let tx_iterator = match self
-            .io
-            .oracle()
-            .raw_query_with_empty_input(TX_DATA_WORDS_QUERY_ID)
-        {
-            Ok(it) => it,
+        let tx_bytes = match self.io.oracle().query_bytes(TX_DATA_WORDS_QUERY_ID, &()) {
+            Ok(bytes) => bytes,
             Err(e) => return Some(Err(e.into())),
         };
-        if tx_iterator.len() > as_writable.len() {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
-            )));
-        }
-        // We preallocate uninitialized memory; if oracle returns too few words for the declared
-        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
-        let tx_iterator_num_bytes =
-            match tx_iterator.len().checked_mul(core::mem::size_of::<usize>()) {
-                Some(num_bytes) => num_bytes,
-                None => {
-                    return Some(Err(interface_error!(
-                        crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-                    )))
-                }
-            };
-        if tx_iterator_num_bytes < next_tx_len_bytes {
+
+        if tx_bytes.len() < next_tx_len_bytes {
             return Some(Err(interface_error!(
                 crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
             )));
         }
-        for word in tx_iterator {
-            unsafe {
-                as_writable.write_usize(word);
-            }
-        }
-        drop(as_writable);
+
+        let mut tx_bytes = tx_bytes;
+        tx_bytes.truncate(next_tx_len_bytes);
 
         self.io.begin_next_tx();
 
-        Some(Ok((next_tx_len_bytes, buffer)))
+        Some(Ok(tx_bytes))
     }
 
     pub fn get_bytes_from_query(
         &mut self,
-        length_query_id: u32, // must return number of bytes
-        body_query_id: u32,   // must return
-    ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
-        let allocator = self.get_allocator();
-        self.io
-            .oracle()
-            .get_bytes_from_query(length_query_id, body_query_id, &(), allocator)
+        _length_query_id: u32,
+        body_query_id: u32,
+    ) -> Result<Option<alloc::vec::Vec<u8>>, InternalError> {
+        let bytes = self.io.oracle().query_bytes(body_query_id, &())?;
+        if bytes.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(bytes))
+        }
     }
 
     pub fn deploy_bytecode(

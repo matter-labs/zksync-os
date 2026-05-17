@@ -5,9 +5,8 @@
 //!
 //! The oracle system is built around several key components:
 //!
-//! - **IOOracle trait**: Core interface for querying external data
+//! - **IOOracle trait**: Core interface for querying external data via serde
 //! - **Query system**: Type-safe query definitions with unique IDs (uniqueness is not enforced)
-//! - **Serialization and deserialization**: `usize`-based data encoding/decoding
 //! - **Query processors**: Server- or simulator-side handlers for specific query types
 //!
 //! # Security Model
@@ -17,18 +16,14 @@
 
 pub mod basic_queries;
 pub mod query_ids;
-pub mod serde_oracle;
 pub mod simple_oracle_query;
 pub mod usize_serialization;
 
-use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
-use crate::utils::{Bytes32, UsizeAlignedByteBox};
-use core::alloc::Allocator;
-use core::mem::MaybeUninit;
 use core::num::NonZeroU32;
+use serde::{de::DeserializeOwned, Serialize};
 
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
 /// an abstraction boundary on how ZKsync OS (system) gets IO information and eventually
@@ -36,11 +31,9 @@ use core::num::NonZeroU32;
 ///
 /// This trait abstracts access to external state like storage, preimages, and transaction data.
 /// Implementations provide the data without validating its correctness - validation occurs
-/// at higher system layers. The interface is designed for zero-copy operation using exact-size
-/// iterators over `usize` values.
+/// at higher system layers. All data exchange uses serde serialization/deserialization.
 ///
 /// # Design Notes
-/// - All data exchange uses `usize` sequences for cross-architecture compatibility
 /// - Query types are identified by `u32` IDs organized in namespaced ranges
 ///
 /// # Security Implications
@@ -49,134 +42,37 @@ use core::num::NonZeroU32;
 /// - ZK proof verification (in combination with state and data commitments)
 ///   should ensure data correctness
 pub trait IOOracle: 'static + Sized {
-    /// Iterator type that oracle returns for raw usize values
-    type RawIterator<'a>: ExactSizeIterator<Item = usize>;
-
-    ///
-    /// Main method to query oracle with typed input.
-    /// Returns raw iterator over usize values that can be deserialized.
-    ///
-    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-        &'a mut self,
-        query_type: u32,
-        input: &I,
-    ) -> Result<Self::RawIterator<'a>, InternalError>;
-
-    ///
-    /// Main method to query oracle.
-    /// Returns raw iterator.
-    ///
-    fn raw_query_with_empty_input<'a>(
-        &'a mut self,
-        query_type: u32,
-    ) -> Result<Self::RawIterator<'a>, InternalError> {
-        self.raw_query(query_type, &())
-    }
-
-    ///
-    /// Convenience method to query oracle.
-    /// Returns deserialized output.
-    ///
-    fn query_serializable<I: UsizeSerializable + UsizeDeserializable, O: UsizeDeserializable>(
+    /// Main method to query oracle with typed input and typed output.
+    fn query<I: Serialize, O: DeserializeOwned + Serialize>(
         &mut self,
         query_type: u32,
         input: &I,
+    ) -> Result<O, InternalError>;
+
+    /// Convenience method to query oracle with no input.
+    fn query_with_empty_input<O: DeserializeOwned + Serialize>(
+        &mut self,
+        query_type: u32,
     ) -> Result<O, InternalError> {
-        let mut it = self.raw_query(query_type, input)?;
-        let result: O = UsizeDeserializable::from_iter(&mut it)?;
-
-        // Validate that all data was consumed to detect malformed responses
-        if it.next().is_some() {
-            return Err(internal_error!("Oracle response contains excess data"));
-        }
-
-        Ok(result)
+        self.query::<(), O>(query_type, &())
     }
 
-    // Few wrappers that return output in convenient types
-
-    ///
-    /// Returns the requested type. Expects that such query type has trivial input parameters.
-    ///
-    fn query_with_empty_input<T: UsizeDeserializable>(
-        &mut self,
-        query_type: u32,
-    ) -> Result<T, InternalError> {
-        self.query_serializable::<_, T>(query_type, &())
-    }
-
-    ///
     /// Returns the byte length of the next transaction.
     ///
     /// If there are no more transactions returns `None`.
     /// Note: length can't be 0, as 0 interpreted as no more transactions.
-    ///
     fn try_begin_next_tx(&mut self) -> Result<Option<NonZeroU32>, InternalError> {
-        let size = self.query_with_empty_input::<u32>(NEXT_TX_SIZE_QUERY_ID)?;
-
+        let size: u32 = self.query_with_empty_input(NEXT_TX_SIZE_QUERY_ID)?;
         Ok(NonZeroU32::new(size))
     }
 
-    ///
-    /// Convenience to expose preimage into the preallocated buffer of bounded size.
-    ///
-    fn expose_preimage(
+    /// Query oracle and return raw bytes.
+    fn query_bytes<I: Serialize>(
         &mut self,
         query_type: u32,
-        hash: &Bytes32,
-        destination: &mut [MaybeUninit<usize>],
-    ) -> Result<usize, InternalError> {
-        let mut it = self
-            .raw_query(query_type, hash)
-            .expect("must make an iterator for preimage");
-        if it.len() > destination.len() {
-            return Err(internal_error!(
-                "preimage from oracle is longer than destination buffer"
-            ));
-        }
-        let words_written = it.len();
-        for word in destination.iter_mut().take(words_written) {
-            unsafe {
-                // Contract of ExactSizeIterator
-                word.write(it.next().unwrap_unchecked());
-            }
-        }
-
-        Ok(words_written)
-    }
-
-    ///
-    /// Helper to perform a dynamic query, based on two queries
-    /// (one for length and the next one for the actual data).
-    ///
-    fn get_bytes_from_query<A: Allocator, I: UsizeSerializable + UsizeDeserializable>(
-        &mut self,
-        length_query_id: u32, // must return number of bytes
-        body_query_id: u32,   // must return
         input: &I,
-        allocator: A,
-    ) -> Result<Option<UsizeAlignedByteBox<A>>, InternalError> {
-        use crate::internal_error;
-        use crate::utils::USIZE_SIZE;
-
-        let size = self.query_serializable::<I, u32>(length_query_id, input)?;
-        if size == 0 {
-            return Ok(None);
-        }
-        let num_bytes = size as usize;
-        let num_words = num_bytes.div_ceil(USIZE_SIZE);
-        // NOTE: we leave some slack for 64/32 bit arch mismatches
-        let num_words = num_words.next_multiple_of(2);
-        let body_query_it = self.raw_query(body_query_id, input)?;
-        let body_it_len = body_query_it.len();
-        if body_it_len > num_words {
-            return Err(internal_error!("iterator len is inconsistent"));
-        }
-        // create buffer
-        let mut buffer = UsizeAlignedByteBox::from_usize_iterator_in(body_query_it, allocator);
-        buffer.truncated_to_byte_length(num_bytes);
-
-        Ok(Some(buffer))
+    ) -> Result<alloc::vec::Vec<u8>, InternalError> {
+        self.query::<I, alloc::vec::Vec<u8>>(query_type, input)
     }
 }
 

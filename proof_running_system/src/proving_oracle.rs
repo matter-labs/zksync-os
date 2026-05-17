@@ -3,7 +3,7 @@ use airbender_guest::transport::Transport;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use zk_ee::internal_error;
-use zk_ee::oracle::serde_oracle::SerdeIOOracle;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 
 pub struct ProvingOracle<T: Transport> {
@@ -16,7 +16,7 @@ impl<T: Transport> ProvingOracle<T> {
     }
 }
 
-impl<T: Transport + 'static> SerdeIOOracle for ProvingOracle<T> {
+impl<T: Transport + 'static> IOOracle for ProvingOracle<T> {
     fn query<I: Serialize, O: DeserializeOwned + Serialize>(
         &mut self,
         _query_type: u32,
