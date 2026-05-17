@@ -26,7 +26,7 @@ mod tests {
 
     fn verify_binary(app: &str) {
         let text_section = read_text_section(app);
-        type M = prover::cs::machine::machine_configurations::full_isa_with_delegation_no_exceptions_no_signed_mul_div::FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv;
+        type M = prover::cs::machine::machine_configurations::full_isa_with_delegation_no_exceptions::FullIsaMachineWithDelegationNoExceptionHandling;
         let unsupported_opcodes =
             <M as Machine<Mersenne31Field>>::verify_bytecode_base(&text_section);
         if unsupported_opcodes.len() > 0 {
