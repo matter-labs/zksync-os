@@ -11,9 +11,36 @@ pub const BYTES32_USIZE_SIZE: usize = 8;
 pub const BYTES32_USIZE_SIZE: usize = 4;
 
 #[repr(align(8))]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
+}
+
+impl serde::Serialize for Bytes32 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(self.as_u8_array_ref())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Bytes32 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Bytes32Visitor;
+        impl serde::de::Visitor<'_> for Bytes32Visitor {
+            type Value = Bytes32;
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("32 bytes")
+            }
+            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Bytes32, E> {
+                if v.len() != 32 {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(v);
+                Ok(Bytes32::from_array(arr))
+            }
+        }
+        deserializer.deserialize_bytes(Bytes32Visitor)
+    }
 }
 
 const _: () = const {

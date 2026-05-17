@@ -17,6 +17,6 @@ airbender-codec = { workspace = true }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 
 [dev-dependencies]
-airbender-guest = { workspace = true }
+airbender-guest = { workspace = true, features = ["allocator-custom"] }
 airbender-core = { workspace = true }
 basic_bootloader = { path = "../basic_bootloader" }

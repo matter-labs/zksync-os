@@ -5,10 +5,36 @@ use delegated_u256::*;
 
 // Even though we derive, internally we use delegation circuit for equality, ordering and cloning
 // See DelegatedU256 implementations for details
-#[derive(
-    Clone, Hash, PartialEq, Eq, Ord, PartialOrd, Debug, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Hash, PartialEq, Eq, Ord, PartialOrd, Debug)]
 pub struct U256(DelegatedU256);
+
+impl serde::Serialize for U256 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let be_bytes = self.to_be_bytes();
+        serializer.serialize_bytes(&be_bytes)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for U256 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct U256Visitor;
+        impl serde::de::Visitor<'_> for U256Visitor {
+            type Value = U256;
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("32 bytes of U256 in big-endian")
+            }
+            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<U256, E> {
+                if v.len() != 32 {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+                let mut be_bytes = [0u8; 32];
+                be_bytes.copy_from_slice(v);
+                Ok(U256::from_be_bytes(&be_bytes))
+            }
+        }
+        deserializer.deserialize_bytes(U256Visitor)
+    }
+}
 
 impl core::fmt::Display for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
