@@ -130,16 +130,19 @@ the response type changes to `Vec<u8>` or a domain-specific struct.
 For callable oracle call sites that currently pass pointers:
 
 ```rust
-// Before (passes pointer, host reads guest memory):
+// Before:
 let quotient = oracle.raw_query(U256_DIV_REM_ADVICE_QUERY_ID, &(ptr as u32))?;
 
-// After (passes actual values, or a struct wrapping them):
-let response: DivRemResponse = oracle.query(U256_DIV_REM_ADVICE_QUERY_ID, &DivRemInput { dividend, divisor })?;
+// After:
+let response: DivRemResponse = oracle.query(U256_DIV_REM_ADVICE_QUERY_ID, &(ptr as u32))?;
 ```
 
-In proving mode, the input is ignored (response is pre-computed). In forward/prover-input
-mode, the input contains the actual values (not pointers — since we're running natively,
-we have direct access to the values).
+Callable oracle call sites **keep passing pointers** — a u32/u64 serializes trivially
+via serde, no large data copies. The `cfg(target_pointer_width)` branches stay.
+In forward/prover-input mode, the processor receives the pointer and reads operands
+from host process memory. In proving mode, the input is ignored entirely (response
+is pre-computed). Serializing large operands (e.g., modexp bigints) through the
+oracle would be expensive and unnecessary.
 
 ### Response types for callable oracles
 
