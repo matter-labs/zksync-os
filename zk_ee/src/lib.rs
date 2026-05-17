@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(all(not(feature = "testing"), not(test)), no_std)]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
