@@ -17,6 +17,7 @@
 
 pub mod basic_queries;
 pub mod query_ids;
+pub mod serde_oracle;
 pub mod simple_oracle_query;
 pub mod usize_serialization;
 
