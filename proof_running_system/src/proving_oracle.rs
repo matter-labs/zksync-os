@@ -17,7 +17,7 @@ impl<T: Transport> ProvingOracle<T> {
 }
 
 impl<T: Transport + 'static> SerdeIOOracle for ProvingOracle<T> {
-    fn query<I: Serialize, O: DeserializeOwned>(
+    fn query<I: Serialize, O: DeserializeOwned + Serialize>(
         &mut self,
         _query_type: u32,
         _input: &I,

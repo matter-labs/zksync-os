@@ -2,6 +2,8 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
+pub mod witness_recording;
+
 #[cfg(all(
     not(target_arch = "riscv32"),
     not(all(target_pointer_width = "64", target_endian = "little"))

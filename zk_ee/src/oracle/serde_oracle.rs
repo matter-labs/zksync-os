@@ -5,13 +5,13 @@ use serde::{de::DeserializeOwned, Serialize};
 use super::query_ids::NEXT_TX_SIZE_QUERY_ID;
 
 pub trait SerdeIOOracle: 'static + Sized {
-    fn query<I: Serialize, O: DeserializeOwned>(
+    fn query<I: Serialize, O: DeserializeOwned + Serialize>(
         &mut self,
         query_type: u32,
         input: &I,
     ) -> Result<O, InternalError>;
 
-    fn query_with_empty_input<O: DeserializeOwned>(
+    fn query_with_empty_input<O: DeserializeOwned + Serialize>(
         &mut self,
         query_type: u32,
     ) -> Result<O, InternalError> {

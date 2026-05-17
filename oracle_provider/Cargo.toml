@@ -12,3 +12,10 @@ categories.workspace = true
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
 riscv_transpiler = { workspace = true }
+airbender-host = { workspace = true, default-features = false }
+airbender-codec = { workspace = true }
+serde = { workspace = true, default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+airbender-guest = { workspace = true }
+airbender-core = { workspace = true }
