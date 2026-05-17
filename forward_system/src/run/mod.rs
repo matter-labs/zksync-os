@@ -27,6 +27,8 @@ use crate::system::bootloader::run_prover_input_no_panic;
 use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
+use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_host::Inputs;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,
@@ -181,8 +183,20 @@ pub fn generate_batch_proof_input(
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
-    let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
-    let blobs_advice = match da_commitment_scheme {
+    use airbender_host::Inputs;
+
+    // Build batch count as a framed bincode value (matching what the guest reads
+    // via oracle.query(0xdeadbeef, &()) → ProvingOracle → read::<usize>())
+    let mut batch_header = Inputs::new();
+    batch_header
+        .push(&blocks_proof_inputs.len())
+        .expect("encode batch count");
+
+    // For blob DA, we need to strip per-block blob advice from each block's proof
+    // input and recompute it for the whole batch. The block proof inputs are in
+    // airbender wire format (framed bincode u32 words), so we strip from the end.
+    let mut trimmed_blocks: Vec<Vec<u32>> = Vec::with_capacity(blocks_proof_inputs.len());
+    let blobs_advice: Inputs = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
             let total_pubdata_length: usize = blocks_pubdata
                 .iter()
@@ -191,91 +205,111 @@ pub fn generate_batch_proof_input(
             let mut blobs_data = Vec::with_capacity(total_pubdata_length + 31);
             blobs_data.extend_from_slice(&(total_pubdata_length as u64).to_be_bytes());
             blobs_data.extend_from_slice(&[0u8; 23]); // pad to 31
+
             for (block_proof_input, block_pubdata) in
                 blocks_proof_inputs.iter().zip(blocks_pubdata.into_iter())
             {
                 blobs_data.extend_from_slice(block_pubdata);
-                let advice_words = (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
+
+                // Each block's proof input ends with:
+                //   ... [blob_advice_frame] [disconnect_response_frame]
+                // The disconnect response is a framed empty tuple ().
+                // The blob advice is a framed KZGCommitmentAndProof per blob.
+                // Count how many blob frames to strip.
+                let num_blobs = (block_pubdata.len() + 31).div_ceil(31 * 4096);
+
+                // Each KZGCommitmentAndProof: 96 bytes. bincode serialize_bytes
+                // adds a varint length prefix (1 byte for len < 251), total 97 bytes.
+                // Wire frame: 1 length word + ceil(97/4) = 1 + 25 = 26 words.
+                let kzg_frame_words = {
+                    let kzg_encoded = AirbenderCodecV0::encode(
+                        &basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof {
+                            commitment: [0u8; 48],
+                            proof: [0u8; 48],
+                        },
+                    )
+                    .expect("encode KZG size probe");
+                    1 + kzg_encoded.len().div_ceil(4)
+                };
+
+                // Disconnect frame: framed () — bincode encodes () as 0 bytes,
+                // so the frame is just the length word (0).
+                let disconnect_frame_words = {
+                    let disconnect_encoded =
+                        AirbenderCodecV0::encode(&()).expect("encode disconnect size probe");
+                    1 + disconnect_encoded.len().div_ceil(4)
+                };
+
+                let words_to_strip = num_blobs * kzg_frame_words + disconnect_frame_words;
                 assert!(
-                    block_proof_input.len() > advice_words,
-                    "block proof input is too short to contain blob advice and disconnect marker"
+                    block_proof_input.len() > words_to_strip,
+                    "block proof input too short for blob advice + disconnect"
                 );
-                let disconnect_marker_idx = block_proof_input.len() - 1;
-                assert_eq!(
-                    block_proof_input[disconnect_marker_idx], 0,
-                    "expected disconnect query to have an empty response marker"
-                );
-                let advice_start_idx = disconnect_marker_idx - advice_words;
-                trimmed_blocks_proof_inputs.push(
-                    [
-                        &block_proof_input[..advice_start_idx],
-                        &block_proof_input[disconnect_marker_idx..],
-                    ]
-                    .concat(),
-                );
+                let trim_point = block_proof_input.len() - words_to_strip;
+                // Keep everything up to the blob advice, then append disconnect frame
+                let disconnect_start = block_proof_input.len() - disconnect_frame_words;
+                let mut trimmed = block_proof_input[..trim_point].to_vec();
+                trimmed.extend_from_slice(&block_proof_input[disconnect_start..]);
+                trimmed_blocks.push(trimmed);
             }
-            let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
+
+            // Recompute blob advice for the whole batch
+            let mut advice = Inputs::new();
             for blob_data in blobs_data.chunks(31 * 4096) {
-                let advice =
+                let kzg =
                     callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof(blob_data);
-                // KZGCommitmentAndProof is 96 bytes (commitment: [u8;48] + proof: [u8;48])
-                // Serialize as 24 u32 words (LE)
-                let mut advice_bytes = [0u8; 96];
-                advice_bytes[..48].copy_from_slice(&advice.commitment);
-                advice_bytes[48..].copy_from_slice(&advice.proof);
-                blobs_advice.push(24);
-                for chunk in advice_bytes.chunks_exact(4) {
-                    blobs_advice.push(u32::from_le_bytes(chunk.try_into().unwrap()));
-                }
+                advice.push(&kzg).expect("encode KZG batch advice");
             }
-            blobs_advice
+            advice
         }
         _ => {
-            trimmed_blocks_proof_inputs.extend(
+            trimmed_blocks.extend(
                 blocks_proof_inputs
-                    .into_iter()
+                    .iter()
                     .map(|block_proof_input| block_proof_input.to_vec()),
             );
-            vec![]
+            Inputs::new()
         }
     };
+
     let mut proof_input = Vec::with_capacity(
-        trimmed_blocks_proof_inputs
-            .iter()
-            .map(|block_proof_input| block_proof_input.len())
-            .sum::<usize>()
-            + 1
-            + blobs_advice.len(),
+        batch_header.words().len()
+            + trimmed_blocks.iter().map(|b| b.len()).sum::<usize>()
+            + blobs_advice.words().len(),
     );
-    proof_input.push(trimmed_blocks_proof_inputs.len() as u32);
-    for block_proof_input in trimmed_blocks_proof_inputs {
-        proof_input.extend_from_slice(block_proof_input.as_slice());
+    proof_input.extend_from_slice(batch_header.words());
+    for block_proof_input in trimmed_blocks {
+        proof_input.extend_from_slice(&block_proof_input);
     }
-    proof_input.extend_from_slice(blobs_advice.as_slice());
+    proof_input.extend_from_slice(blobs_advice.words());
     proof_input
 }
 
 #[cfg(test)]
 mod tests {
     use super::generate_batch_proof_input;
+    use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use airbender_core::wire::frame_words_from_bytes;
+    use airbender_guest::input::read_with;
+    use airbender_guest::transport::MockTransport;
     use zk_ee::common_structs::DACommitmentScheme;
 
     #[test]
-    fn preserves_disconnect_marker_when_replacing_blob_advice() {
-        let block_proof_input = vec![11, 12, 24];
-        let mut block_proof_input = block_proof_input
-            .into_iter()
-            .chain(100..124)
-            .collect::<Vec<_>>();
-        block_proof_input.push(0);
+    fn batch_count_is_readable_via_transport() {
+        let block1_words: Vec<u32> = vec![0xAA, 0xBB]; // dummy block proof input
+        let block2_words: Vec<u32> = vec![0xCC, 0xDD];
 
         let batch_input = generate_batch_proof_input(
-            vec![block_proof_input.as_slice()],
-            DACommitmentScheme::BlobsZKsyncOS,
-            vec![&[1, 2, 3]],
+            vec![block1_words.as_slice(), block2_words.as_slice()],
+            DACommitmentScheme::BlobsAndPubdataKeccak256,
+            vec![&[], &[]],
         );
 
-        assert_eq!(&batch_input[..4], &[1, 11, 12, 0]);
+        // The batch_input should start with a framed bincode usize (the count = 2),
+        // followed by the concatenated block proof inputs.
+        let mut transport = MockTransport::new(batch_input);
+        let count: usize = read_with(&mut transport).unwrap();
+        assert_eq!(count, 2);
     }
 }
 

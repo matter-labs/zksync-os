@@ -18,28 +18,62 @@ pub struct Bytes32 {
 
 impl serde::Serialize for Bytes32 {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(self.as_u8_array_ref())
+        if serializer.is_human_readable() {
+            // For JSON and other human-readable formats: serialize as hex string
+            let mut hex = alloc::string::String::with_capacity(66);
+            hex.push_str("0x");
+            for byte in self.as_u8_array_ref() {
+                use core::fmt::Write;
+                write!(hex, "{:02x}", byte).unwrap();
+            }
+            serializer.serialize_str(&hex)
+        } else {
+            serializer.serialize_bytes(self.as_u8_array_ref())
+        }
     }
 }
 
 impl<'de> serde::Deserialize<'de> for Bytes32 {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Bytes32Visitor;
-        impl serde::de::Visitor<'_> for Bytes32Visitor {
-            type Value = Bytes32;
-            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                f.write_str("32 bytes")
-            }
-            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Bytes32, E> {
-                if v.len() != 32 {
-                    return Err(E::invalid_length(v.len(), &self));
+        if deserializer.is_human_readable() {
+            struct HexVisitor;
+            impl serde::de::Visitor<'_> for HexVisitor {
+                type Value = Bytes32;
+                fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_str("a 0x-prefixed hex string of 32 bytes")
                 }
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(v);
-                Ok(Bytes32::from_array(arr))
+                fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Bytes32, E> {
+                    let v = v.strip_prefix("0x").unwrap_or(v);
+                    if v.len() != 64 {
+                        return Err(E::invalid_length(v.len() / 2, &self));
+                    }
+                    let mut arr = [0u8; 32];
+                    for (i, chunk) in v.as_bytes().chunks(2).enumerate() {
+                        let s = core::str::from_utf8(chunk).map_err(E::custom)?;
+                        arr[i] = u8::from_str_radix(s, 16).map_err(E::custom)?;
+                    }
+                    Ok(Bytes32::from_array(arr))
+                }
             }
+            deserializer.deserialize_str(HexVisitor)
+        } else {
+            struct BytesVisitor;
+            impl serde::de::Visitor<'_> for BytesVisitor {
+                type Value = Bytes32;
+                fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    f.write_str("32 bytes")
+                }
+                fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Bytes32, E> {
+                    if v.len() != 32 {
+                        return Err(E::invalid_length(v.len(), &self));
+                    }
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(v);
+                    Ok(Bytes32::from_array(arr))
+                }
+            }
+            deserializer.deserialize_bytes(BytesVisitor)
         }
-        deserializer.deserialize_bytes(Bytes32Visitor)
     }
 }
 
