@@ -93,7 +93,7 @@ mod block_metadata {
     }
 
     /// Verifies that block execution fails with u64::MAX as gas limit.
-    /// This is a large overflow case — u64::MAX is well above MAX_BLOCK_GAS_LIMIT.
+    /// This is a large overflow case -- u64::MAX is well above MAX_BLOCK_GAS_LIMIT.
     #[test]
     fn test_block_rejects_u64_max_gas_limit() {
         let mut tester = TestingFramework::new();
@@ -151,33 +151,34 @@ mod block_metadata {
 }
 
 mod tx_encoding_format {
-    //! Unit tests for transaction encoding format oracle validation.
+    //! Unit tests for transaction encoding format serde validation.
     //!
-    //! TxEncodingFormat::from_iter validates the oracle-provided encoding format byte.
+    //! TxEncodingFormat is deserialized from oracle data via serde.
     //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected
-    //! with an internal error rather than panicking.
+    //! with a deserialization error rather than panicking.
 
     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-    use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
 
     #[test]
     fn test_tx_encoding_format_accepts_abi() {
-        let mut iter = [0usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let encoded = AirbenderCodecV0::encode(&TxEncodingFormat::Abi).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_accepts_rlp() {
-        let mut iter = [1usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let encoded = AirbenderCodecV0::encode(&TxEncodingFormat::Rlp).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_2() {
-        let mut iter = [2usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        // Encode value 2u8 and try to decode as TxEncodingFormat
+        let encoded = AirbenderCodecV0::encode(&2u8).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
         assert!(
             result.is_err(),
             "TxEncodingFormat should reject value 2 (only 0=Abi and 1=Rlp are valid)"
@@ -186,21 +187,17 @@ mod tx_encoding_format {
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_255() {
-        let mut iter = [255usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let encoded = AirbenderCodecV0::encode(&255u8).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
         assert!(result.is_err(), "TxEncodingFormat should reject value 255");
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_large_value() {
-        // Values that would be truncated to u8 — the from_iter first deserializes
-        // as u8, so large usize values test the u8 deserialization path too.
-        let mut iter = [256usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
-        assert!(
-            result.is_err(),
-            "TxEncodingFormat should reject value 256 (overflows u8)"
-        );
+        // Large u32 value that doesn't fit valid enum variants
+        let encoded = AirbenderCodecV0::encode(&256u32).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        assert!(result.is_err(), "TxEncodingFormat should reject value 256");
     }
 }
 
@@ -265,18 +262,23 @@ mod custom_oracle_factories {
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::forward_system::run::{NextTxResponse, PreimageSource};
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
     use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
     use rig::ruint::aliases::B160;
-    use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+    use rig::zk_ee::common_structs::{
+        da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
+    };
+    use rig::zk_ee::internal_error;
+    use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
     use rig::zk_ee::oracle::query_ids::{
         NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
         TX_FROM_QUERY_ID,
     };
     use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-    use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-    use rig::zk_ee::oracle::usize_serialization::UsizeSerializable;
+    use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+    use rig::zk_ee::system::errors::internal::InternalError;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
-    use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
+    use rig::zk_ee::types_config::EthereumIOTypesConfig;
     use rig::zk_ee::utils::Bytes32;
     use rig::zksync_os_interface::traits::{EncodedTx, TxListSource, TxSource};
     use rig::{common_target_address, TestingFramework};
@@ -394,11 +396,11 @@ mod custom_oracle_factories {
         tx_source: TxListSource,
         next_tx: Option<Vec<u8>>,
         next_tx_from: Option<B160>,
-        malicious_format_value: usize,
+        malicious_format_value: u8,
     }
 
     impl MaliciousTxFormatResponder {
-        fn new(tx_source: TxListSource, malicious_format_value: usize) -> Self {
+        fn new(tx_source: TxListSource, malicious_format_value: u8) -> Self {
             Self {
                 tx_source,
                 next_tx: None,
@@ -424,12 +426,12 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
+            _input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             match query_id {
@@ -454,25 +456,27 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&len)
+                        .map_err(|_| internal_error!("encode tx size failed"))
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    AirbenderCodecV0::encode(&tx)
+                        .map_err(|_| internal_error!("encode tx data failed"))
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // MALICIOUS: return an invalid encoding format value
-                    Box::new(core::iter::once(self.malicious_format_value))
+                    AirbenderCodecV0::encode(&self.malicious_format_value)
+                        .map_err(|_| internal_error!("encode malicious format failed"))
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&from)
+                        .map_err(|_| internal_error!("encode tx from failed"))
                 }
                 _ => unreachable!(),
             }
@@ -481,7 +485,7 @@ mod custom_oracle_factories {
 
     /// Helper: builds a CustomOracleFactory that injects a MaliciousTxFormatResponder.
     fn malicious_tx_format_factory(
-        malicious_format_value: usize,
+        malicious_format_value: u8,
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
@@ -575,8 +579,8 @@ mod custom_oracle_factories {
         );
     }
 
-    /// Verifies that the system rejects a large TX encoding format value (usize::MAX)
-    /// from a malicious oracle via a custom oracle factory. Tests the u8 overflow path.
+    /// Verifies that the system rejects a large TX encoding format value (255)
+    /// from a malicious oracle via a custom oracle factory.
     #[test]
     fn test_malicious_oracle_tx_encoding_format_overflow() {
         let mut tester = TestingFramework::new();
@@ -597,8 +601,8 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // Malicious oracle returns usize::MAX — overflows u8 deserialization
-        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(usize::MAX));
+        // Malicious oracle returns 255 -- an invalid enum discriminant
+        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(255));
 
         let result = tester.execute_block_no_panic(vec![tx]);
         assert!(
@@ -645,28 +649,21 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-
+        ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+            let hash: Bytes32 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode hash failed"))?;
 
             let preimage = if hash.is_zero() {
                 vec![]
             } else if self.blocked_hashes.iter().any(|h| *h == hash) {
                 // MALICIOUS: refuse to provide preimage for blocked hashes.
-                // Note: this panic originates in the test responder, simulating the
-                // GenericPreimageResponder's behavior when a preimage is unknown.
-                // The system's hash-level preimage validation (in expose_preimage)
-                // only runs in PROOF_ENV mode; in forward mode (release), preimage
-                // hashes are checked via debug_assert only.
                 panic!(
                     "must know a preimage for hash {} for query ID 0x{:016x}",
                     hex::encode(hash.as_u8_array_ref()),
@@ -690,11 +687,11 @@ mod custom_oracle_factories {
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                AirbenderCodecV0::encode(&len)
+                    .map_err(|_| internal_error!("encode preimage length failed"))
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                AirbenderCodecV0::encode(&preimage)
+                    .map_err(|_| internal_error!("encode preimage failed"))
             }
         }
     }
@@ -737,8 +734,7 @@ mod custom_oracle_factories {
     }
 
     /// Verifies that the system panics when a malicious oracle refuses to provide
-    /// the bytecode preimage for a deployed contract. This simulates an attack where
-    /// the oracle withholds required data during contract execution.
+    /// the bytecode preimage for a deployed contract.
     #[test]
     #[should_panic(expected = "must know a preimage")]
     fn test_malicious_oracle_missing_bytecode_preimage() {
@@ -751,20 +747,15 @@ mod custom_oracle_factories {
         // Simple contract: PUSH1 0x00 PUSH1 0x00 RETURN (returns empty)
         let simple_bytecode = hex::decode("60006000f3").unwrap();
 
-        // Deploy the contract normally first to register its account properties
         tester = tester
             .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
             .with_evm_contract(contract_address, &simple_bytecode);
 
-        // Get the bytecode hash from the deployed account to block it
         let account_props = tester.get_account_properties(&contract_address);
         let bytecode_hash = account_props.bytecode_hash;
 
-        // Now set up the malicious factory that blocks this bytecode's preimage
         tester = tester.with_custom_oracle_factory(malicious_preimage_factory(vec![bytecode_hash]));
 
-        // Call the deployed contract — the system will try to decommit its bytecode
-        // and the malicious oracle will refuse to provide the preimage
         let tx = {
             let tx = TxEip2930 {
                 chain_id: 37u64,
@@ -785,9 +776,6 @@ mod custom_oracle_factories {
     // ---- Malicious account properties responder ----
 
     /// Oracle query processor that returns corrupted account properties hashes.
-    /// For queries targeting ACCOUNT_PROPERTIES_STORAGE_ADDRESS, returns a non-zero
-    /// hash that doesn't correspond to any real preimage, simulating an oracle that
-    /// provides fake account data.
     struct MaliciousAccountStorageResponder<S: rig::forward_system::run::ReadStorage> {
         storage: S,
     }
@@ -797,11 +785,8 @@ mod custom_oracle_factories {
             Self { storage }
         }
 
-        const SUPPORTED_QUERY_IDS: &[u32] = &[
-            rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery::<
-                rig::zk_ee::types_config::EthereumIOTypesConfig,
-            >::QUERY_ID,
-        ];
+        const SUPPORTED_QUERY_IDS: &[u32] =
+            &[InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID];
     }
 
     impl<S: rig::forward_system::run::ReadStorage> OracleQueryProcessor
@@ -815,34 +800,25 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-            use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
-            use rig::zk_ee::types_config::EthereumIOTypesConfig;
-
+        ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let StorageAddress { address, key } =
-                <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter(),
-                )
-                .expect("must deserialize the address/slot");
+            let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
+                AirbenderCodecV0::decode(input)
+                    .map_err(|_| internal_error!("decode StorageAddress failed"))?;
 
             use rig::basic_system::system_implementation::flat_storage_model::storage_cache::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 
-            let flat_key = rig::zk_ee::common_structs::derive_flat_storage_key(&address, &key);
+            let flat_key = derive_flat_storage_key(&address, &key);
 
             let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                 if address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
                     // MALICIOUS: return a fake non-zero hash for account properties.
-                    // This hash won't correspond to any preimage in the preimage source,
-                    // so the system should fail when trying to decommit account data.
                     InitialStorageSlotData {
                         initial_value: Bytes32::from_array([0xDE; 32]),
                         is_new_storage_slot: false,
@@ -859,7 +835,8 @@ mod custom_oracle_factories {
                     }
                 };
 
-            DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+            AirbenderCodecV0::encode(&slot_data)
+                .map_err(|_| internal_error!("encode slot_data failed"))
         }
     }
 
@@ -897,8 +874,7 @@ mod custom_oracle_factories {
     }
 
     /// Verifies that the system panics when a malicious oracle provides a fake hash
-    /// for account properties. The fake hash doesn't correspond to any real preimage,
-    /// so the system should fail when trying to decommit account data.
+    /// for account properties.
     #[test]
     #[should_panic(expected = "must know a preimage")]
     fn test_malicious_oracle_corrupted_account_properties() {
@@ -906,8 +882,6 @@ mod custom_oracle_factories {
         let wallet = tester.random_signer();
         tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
-        // The malicious factory will return fake hashes for ALL account property reads,
-        // including the sender's balance lookup during transaction validation.
         tester = tester.with_custom_oracle_factory(malicious_account_storage_factory());
 
         let tx = {
@@ -930,8 +904,6 @@ mod custom_oracle_factories {
     // ---- Malicious TX data corruption responder ----
 
     /// Oracle query processor that corrupts the transaction data bytes.
-    /// Returns valid transaction size and format, but replaces the actual TX bytes
-    /// with garbage data.
     struct MaliciousTxDataCorruptResponder {
         tx_source: TxListSource,
         next_tx: Option<Vec<u8>>,
@@ -964,12 +936,12 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
+            _input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             match query_id {
@@ -996,25 +968,28 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&len)
+                        .map_err(|_| internal_error!("encode tx size failed"))
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    AirbenderCodecV0::encode(&tx)
+                        .map_err(|_| internal_error!("encode tx data failed"))
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // Return valid RLP format so parsing is attempted on garbage data
-                    Box::new(core::iter::once(1usize)) // 1 = Rlp
+                    use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
+                    AirbenderCodecV0::encode(&TxEncodingFormat::Rlp)
+                        .map_err(|_| internal_error!("encode tx format failed"))
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&from)
+                        .map_err(|_| internal_error!("encode tx from failed"))
                 }
                 _ => unreachable!(),
             }
@@ -1049,9 +1024,7 @@ mod custom_oracle_factories {
     }
 
     /// Verifies that corrupted transaction data bytes from a malicious oracle
-    /// cause the transaction to be rejected. The block still completes (an internal
-    /// error during TX parsing causes the bootloader to reject that TX), but
-    /// no transaction should be successfully executed.
+    /// cause the transaction to be rejected.
     #[test]
     fn test_malicious_oracle_corrupted_tx_data() {
         let mut tester = TestingFramework::new();
@@ -1074,16 +1047,12 @@ mod custom_oracle_factories {
 
         tester = tester.with_custom_oracle_factory(malicious_tx_data_corrupt_factory());
 
-        // The block completes (corrupted TX is rejected during parsing),
-        // but no transaction should succeed.
         let result = tester.execute_block_no_panic(vec![tx]);
         match result {
             Err(_) => {
-                // Block-level error from corrupted data — expected behavior
+                // Block-level error from corrupted data -- expected behavior
             }
             Ok(output) => {
-                // Block completed, but the corrupted TX must not have succeeded.
-                // Use the same pattern as assert_all_txs_succeeded but inverted:
                 let any_succeeded = output
                     .tx_results
                     .iter()
@@ -1099,9 +1068,7 @@ mod custom_oracle_factories {
     // ---- Malicious storage responder: false "existing" claim for new slots ----
 
     /// Oracle query processor that claims all storage slots already exist (is_new=false)
-    /// even when they are actually new. This tests whether the system handles incorrect
-    /// is_new_storage_slot flags — in forward mode this may silently corrupt pubdata
-    /// accounting, but should not crash.
+    /// even when they are actually new.
     struct FalseExistingSlotResponder<S: rig::forward_system::run::ReadStorageTree> {
         storage: S,
     }
@@ -1112,9 +1079,7 @@ mod custom_oracle_factories {
         }
 
         const SUPPORTED_QUERY_IDS: &[u32] = &[
-            rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery::<
-                rig::zk_ee::types_config::EthereumIOTypesConfig,
-            >::QUERY_ID,
+            InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID,
             rig::basic_system::system_implementation::flat_storage_model::PreviousIndexQuery::QUERY_ID,
             rig::basic_system::system_implementation::flat_storage_model::ExactIndexQuery::QUERY_ID,
             rig::basic_system::system_implementation::flat_storage_model::PROOF_FOR_INDEX_QUERY_ID,
@@ -1132,33 +1097,26 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u8>, InternalError> {
             use rig::basic_system::system_implementation::flat_storage_model::{
-                ExactIndexQuery, PreviousIndexQuery, PROOF_FOR_INDEX_QUERY_ID,
+                ExactIndexQuery, ExistingReadProof, PreviousIndexQuery, ValueAtIndexProof,
+                PROOF_FOR_INDEX_QUERY_ID,
             };
-            use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-            use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
-            use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             match query_id {
                 _ if query_id == InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                    let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                        EthereumIOTypesConfig,
-                    > as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter()
-                    )
-                    .expect("must deserialize the address/slot");
+                    let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
+                        AirbenderCodecV0::decode(input)
+                            .map_err(|_| internal_error!("decode StorageAddress failed"))?;
 
-                    let flat_key =
-                        rig::zk_ee::common_structs::derive_flat_storage_key(&address, &key);
+                    let flat_key = derive_flat_storage_key(&address, &key);
 
                     let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                         if let Some(cold) = self.storage.read(flat_key) {
@@ -1174,39 +1132,39 @@ mod custom_oracle_factories {
                             }
                         };
 
-                    DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&slot_data)
+                        .map_err(|_| internal_error!("encode slot_data failed"))
                 }
                 _ if query_id == PreviousIndexQuery::QUERY_ID => {
-                    let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter(),
-                    )
-                    .expect("must deserialize key");
+                    let key: <PreviousIndexQuery as SimpleOracleQuery>::Input =
+                        AirbenderCodecV0::decode(input).map_err(|_| {
+                            internal_error!("decode PreviousIndexQuery input failed")
+                        })?;
                     let prev_index = self.storage.prev_tree_index(key);
-                    DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&prev_index)
+                        .map_err(|_| internal_error!("encode prev_index failed"))
                 }
                 _ if query_id == ExactIndexQuery::QUERY_ID => {
-                    let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter(),
-                    )
-                    .expect("must deserialize key");
+                    let key: <ExactIndexQuery as SimpleOracleQuery>::Input =
+                        AirbenderCodecV0::decode(input)
+                            .map_err(|_| internal_error!("decode ExactIndexQuery input failed"))?;
                     let index = self
                         .storage
                         .tree_index(key)
                         .expect("Reading index for key that is not in the tree");
-                    DynUsizeIterator::from_constructor(index, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&index)
+                        .map_err(|_| internal_error!("encode tree index failed"))
                 }
                 _ if query_id == PROOF_FOR_INDEX_QUERY_ID => {
-                    use rig::basic_system::system_implementation::flat_storage_model::{
-                        ExistingReadProof, ValueAtIndexProof,
-                    };
-                    let index =
-                        u64::from_iter(&mut query.into_iter()).expect("must deserialize index");
+                    let index: u64 = AirbenderCodecV0::decode(input)
+                        .map_err(|_| internal_error!("decode proof index failed"))?;
                     let proof = ValueAtIndexProof {
                         proof: ExistingReadProof {
                             existing: self.storage.merkle_proof(index),
                         },
                     };
-                    DynUsizeIterator::from_constructor(proof, UsizeSerializable::iter)
+                    AirbenderCodecV0::encode(&proof)
+                        .map_err(|_| internal_error!("encode proof failed"))
                 }
                 _ => unreachable!(),
             }
@@ -1246,11 +1204,7 @@ mod custom_oracle_factories {
     }
 
     /// Verifies that a malicious oracle claiming new slots are existing (is_new=false)
-    /// is caught by the tree index lookup. In draft-0.4.0, the flat storage model
-    /// validates the is_new claim by looking up the tree index — if the key is not in
-    /// the tree but was reported as existing, the lookup panics.
-    ///
-    /// Forward-only: Uses the custom oracle factory with full tree-index support.
+    /// is caught by the tree index lookup.
     #[test]
     #[should_panic(expected = "expected existing leaf for key")]
     fn test_malicious_oracle_false_existing_slot_detected() {
@@ -1261,7 +1215,6 @@ mod custom_oracle_factories {
             rig::alloy::primitives::address!("1000000000000000000000000000000000000001");
 
         // Simple storage contract: SSTORE(0, calldata[0..32])
-        // PUSH1 0x00 CALLDATALOAD PUSH1 0x00 SSTORE STOP POP POP
         let store_bytecode = hex::decode("600035600055005050").unwrap();
 
         tester = tester
@@ -1270,8 +1223,7 @@ mod custom_oracle_factories {
 
         tester = tester.with_custom_oracle_factory(false_existing_slot_factory());
 
-        // Write to storage slot 0 — the oracle will falsely claim the slot already exists
-        let calldata = [0u8; 32]; // store zero (avoids pubdata cost differences)
+        let calldata = [0u8; 32];
         let tx = {
             let tx = TxEip2930 {
                 chain_id: 37u64,
@@ -1286,21 +1238,12 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // The false is_new flag is caught by the tree index lookup — the tree doesn't
-        // have the key, so the lookup panics with "expected existing leaf for key".
         let _result = tester.execute_block(vec![tx]);
     }
 
-    // ---- Corrupted preimage responder: returns wrong bytes for targeted hashes ----
+    // ---- Corrupted preimage responder ----
 
     /// Oracle query processor that returns corrupted preimage data for targeted hashes.
-    /// Unlike MaliciousPreimageResponder (which blocks/panics), this responder returns
-    /// data that is the correct LENGTH but has wrong content, causing a hash mismatch
-    /// in the preimage validation path.
-    ///
-    /// In forward mode, the hash mismatch is detected via `debug_assert` only (stripped
-    /// in release builds). In proving mode (PROOF_ENV=true), the hard check returns
-    /// `internal_error!("Account hash mismatch")` or `internal_error!("Bytecode hash mismatch")`.
     struct CorruptedPreimageResponder {
         preimage_source: InMemoryPreimageSource,
         /// Hashes for which preimage data will be corrupted (bytes XOR'd with 0xFF)
@@ -1335,18 +1278,16 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u8],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-
+        ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+            let hash: Bytes32 = AirbenderCodecV0::decode(input)
+                .map_err(|_| internal_error!("decode hash failed"))?;
 
             let is_corrupted = self.corrupted_hashes.iter().any(|h| *h == hash);
 
@@ -1361,8 +1302,6 @@ mod custom_oracle_factories {
                     )
                 });
                 if is_corrupted && !data.is_empty() {
-                    // Corrupt the data by flipping bits in the first byte.
-                    // The length stays the same, but the content no longer matches the hash.
                     data[0] ^= 0xFF;
                 }
                 data
@@ -1375,14 +1314,12 @@ mod custom_oracle_factories {
             if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
-                // Length queries return the correct length even for corrupted preimages.
-                // The corruption is in the content, not the metadata.
                 let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                AirbenderCodecV0::encode(&len)
+                    .map_err(|_| internal_error!("encode preimage length failed"))
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                AirbenderCodecV0::encode(&preimage)
+                    .map_err(|_| internal_error!("encode preimage failed"))
             }
         }
     }
@@ -1425,14 +1362,6 @@ mod custom_oracle_factories {
     }
 
     /// Verifies that corrupted preimage data (hash mismatch) is detected in debug mode.
-    ///
-    /// The `expose_preimage` function validates preimage hashes:
-    /// - In PROOF_ENV (proving mode): hard error on mismatch
-    /// - In forward mode: `debug_assert` only (stripped in release builds)
-    ///
-    /// This test corrupts the bytecode preimage for a deployed contract and verifies
-    /// the debug_assert fires. Only runs in debug builds; in release mode the corruption
-    /// goes undetected in forward mode (proving mode catches it via the hard check).
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
@@ -1443,14 +1372,12 @@ mod custom_oracle_factories {
         let contract_address =
             rig::alloy::primitives::address!("1000000000000000000000000000000000000001");
 
-        // Simple contract: PUSH1 0x00 PUSH1 0x00 RETURN (returns empty)
         let simple_bytecode = hex::decode("60006000f3").unwrap();
 
         tester = tester
             .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
             .with_evm_contract(contract_address, &simple_bytecode);
 
-        // Get the bytecode hash to target for corruption
         let account_props = tester.get_account_properties(&contract_address);
         let bytecode_hash = account_props.bytecode_hash;
 
@@ -1470,8 +1397,6 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // In debug mode, the debug_assert in expose_preimage should catch the
-        // hash mismatch and panic. In release mode, this would silently pass.
         let _result = tester.execute_block(vec![tx]);
     }
 }
@@ -1479,20 +1404,11 @@ mod custom_oracle_factories {
 mod callable_oracle_tests {
     //! Tests for callable oracle processors (ModExp arithmetic, Blob KZG commitment).
     //!
-    //! Callable oracles provide computational advice to the proving system. They are
-    //! registered as external processors in ZkEENonDeterminismSource and queried
-    //! during RISC-V proof execution. In forward mode, the system computes these
-    //! operations directly without querying callable oracles.
-    //!
     //! These tests validate the callable oracle processors themselves using
-    //! a TestMemorySource (BTreeMap-based RamPeek impl), which allows testing
-    //! the full oracle query path (memory read, computation, response serialization)
-    //! without RISC-V simulation. A malicious oracle factory integration test is
-    //! included to demonstrate the custom factory pattern for callable oracle testing.
+    //! a TestMemorySource (BTreeMap-based RamPeek impl).
 
-    use rig::callable_oracles::arithmetic::ArithmeticQuery;
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
-    use rig::callable_oracles::test_utils::TestMemorySource;
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
     use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
 
     use rig::alloy::consensus::TxEip2930;
@@ -1501,17 +1417,19 @@ mod callable_oracle_tests {
     use rig::basic_system::system_implementation::flat_storage_model::{
         FlatStorageCommitment, TREE_HEIGHT,
     };
+    use rig::callable_oracles::arithmetic::ArithmeticQuery;
+    use rig::callable_oracles::test_utils::TestMemorySource;
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::oracle_provider::ZkEENonDeterminismSource;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+    use rig::zk_ee::internal_error;
+    use rig::zk_ee::system::errors::internal::InternalError;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zksync_os_interface::traits::TxListSource;
     use rig::{common_target_address, TestingFramework};
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
     /// A malicious arithmetic oracle that returns deliberately wrong division results.
-    /// When queried for modexp advice, it corrupts the quotient by adding 1 to each word,
-    /// which will cause the verification step (q * modulus + r == dividend) to fail.
     #[derive(Default)]
     struct MaliciousArithmeticQuery {
         inner: ArithmeticQuery,
@@ -1522,17 +1440,18 @@ mod callable_oracle_tests {
             self.inner.supported_query_ids()
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u8],
             memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u8>, InternalError> {
             // Get the correct result first
-            let correct: Vec<usize> = self
-                .inner
-                .process_buffered_query(query_id, query, memory)
-                .collect();
+            let correct_bytes = self.inner.process(query_id, input, memory)?;
+
+            // Decode, corrupt, and re-encode
+            let correct: Vec<u64> = AirbenderCodecV0::decode(&correct_bytes)
+                .map_err(|_| internal_error!("decode arithmetic result failed"))?;
 
             // Corrupt the quotient: add 1 to the first quotient word (index 1, after header)
             let mut corrupted = correct;
@@ -1540,13 +1459,12 @@ mod callable_oracle_tests {
                 corrupted[1] = corrupted[1].wrapping_add(1);
             }
 
-            Box::new(corrupted.into_iter())
+            AirbenderCodecV0::encode(&corrupted)
+                .map_err(|_| internal_error!("encode corrupted result failed"))
         }
     }
 
     /// Helper: builds a CustomOracleFactory with MaliciousArithmeticQuery.
-    /// In forward mode, callable oracles aren't queried (no effect).
-    /// In RISC-V mode, the malicious arithmetic oracle returns wrong modexp results.
     fn malicious_callable_oracle_factory() -> super::custom_oracle_factories::CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
@@ -1583,8 +1501,6 @@ mod callable_oracle_tests {
     }
 
     /// Test that the MaliciousArithmeticQuery actually produces wrong results.
-    /// This verifies the malicious oracle implementation itself works correctly
-    /// (i.e., it corrupts the output).
     #[test]
     fn test_malicious_arithmetic_query_corrupts_output() {
         let params_addr: u32 = 0x100;
@@ -1607,34 +1523,29 @@ mod callable_oracle_tests {
         // modulus = 3
         memory.insert_u32(m_addr, 3);
 
+        // Build the input bytes as the RISC-V oracle expects: a pointer to params
+        let input_bytes = AirbenderCodecV0::encode(&params_addr).unwrap();
+
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();
-        let correct: Vec<usize> = correct_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let correct_bytes = correct_oracle
+            .process(MODEXP_ADVICE_QUERY_ID, &input_bytes, &memory)
+            .unwrap();
 
         // Get malicious result
         let mut malicious_oracle = MaliciousArithmeticQuery::default();
-        let malicious: Vec<usize> = malicious_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let malicious_bytes = malicious_oracle
+            .process(MODEXP_ADVICE_QUERY_ID, &input_bytes, &memory)
+            .unwrap();
 
         // Verify the malicious oracle corrupted the output
         assert_ne!(
-            correct, malicious,
+            correct_bytes, malicious_bytes,
             "Malicious oracle should produce different output from correct oracle"
         );
-        // Header should be the same (lengths unchanged)
-        assert_eq!(correct[0], malicious[0], "Header should be unchanged");
-        // Quotient should be corrupted
-        assert_ne!(correct[1], malicious[1], "Quotient should be corrupted");
     }
 
     /// Integration test: register a malicious callable oracle factory and execute a block.
-    /// In forward mode, callable oracles are not queried, so this test passes — it
-    /// demonstrates that forward mode does not depend on callable oracle correctness.
-    /// In RISC-V mode (CI with ZKSYNC_RISC_V_RUN=true), the modexp precompile would
-    /// query the malicious oracle and the verification should catch the wrong result.
     #[test]
     fn test_malicious_callable_oracle_factory_forward_mode() {
         let mut tester = TestingFramework::new();
@@ -1659,8 +1570,6 @@ mod callable_oracle_tests {
             .with_custom_oracle_factory(malicious_callable_oracle_factory())
             .with_run_config(rig::run_config::forward_only());
 
-        // In forward mode, callable oracles are not used, so execution should
-        // succeed even with a malicious arithmetic oracle registered.
         let result = tester.execute_block_no_panic(vec![tx]);
         assert!(
             result.is_ok(),
@@ -1668,15 +1577,12 @@ mod callable_oracle_tests {
         );
     }
 
-    /// Test that the blob_kzg_commitment_and_proof function produces valid output
-    /// via the direct (non-oracle) path. This validates the computation that would
-    /// be verified against oracle results in proving mode.
+    /// Test that the blob_kzg_commitment_and_proof function produces valid output.
     #[test]
     fn test_blob_kzg_commitment_computation_consistency() {
         let data = b"test blob data for commitment verification";
         let result = blob_kzg_commitment_and_proof(data);
 
-        // Verify output has correct structure
         assert_eq!(
             result.commitment.len(),
             48,
@@ -1684,7 +1590,6 @@ mod callable_oracle_tests {
         );
         assert_eq!(result.proof.len(), 48, "KZG proof should be 48 bytes");
 
-        // Verify determinism
         let result2 = blob_kzg_commitment_and_proof(data);
         assert_eq!(result.commitment, result2.commitment);
         assert_eq!(result.proof, result2.proof);

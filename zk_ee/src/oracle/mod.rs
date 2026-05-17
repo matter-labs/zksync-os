@@ -20,7 +20,6 @@ pub mod simple_oracle_query;
 pub mod usize_serialization;
 
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use core::num::NonZeroU32;
 use serde::{de::DeserializeOwned, Serialize};
@@ -74,21 +73,4 @@ pub trait IOOracle: 'static + Sized {
     ) -> Result<alloc::vec::Vec<u8>, InternalError> {
         self.query::<I, alloc::vec::Vec<u8>>(query_type, input)
     }
-}
-
-/// Extended interface to allow to define supported query types. Only to be used on the other
-/// end of the wire, but placed here for consistency
-pub trait IOResponder {
-    fn supports_query_id(&self, query_type: u32) -> bool;
-
-    fn all_supported_query_ids<'a>(&'a self) -> impl ExactSizeIterator<Item = u32> + 'a;
-
-    fn query_serializable_static<
-        I: 'static + UsizeSerializable + UsizeDeserializable,
-        O: 'static + UsizeDeserializable,
-    >(
-        &mut self,
-        query_type: u32,
-        input: &I,
-    ) -> Result<O, InternalError>;
 }

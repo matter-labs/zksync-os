@@ -339,39 +339,51 @@ mod tests {
                 self.inner.supported_query_ids()
             }
 
-            fn process_buffered_query(
+            fn process(
                 &mut self,
                 query_id: u32,
-                query: Vec<usize>,
+                input: &[u8],
                 memory: &dyn RamPeek,
-            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-                // Get the correct response
-                let correct_iter = self.inner.process_buffered_query(query_id, query, memory);
-                let correct_response: Vec<usize> = correct_iter.collect();
+            ) -> Result<Vec<u8>, zk_ee::system::errors::internal::InternalError> {
+                use oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
 
-                // Determine if this is a sqrt query (returns Bytes32 + bool) or inverse query (returns Bytes32)
-                // sqrt response: 4 usize for Bytes32 + 1 usize for bool = 5 usize
-                // inverse response: 4 usize for Bytes32 = 4 usize
-                let is_sqrt_query = correct_response.len() == 5;
-
-                let mut corrupted = correct_response.clone();
-
-                if is_sqrt_query && self.lie_about_sqrt_existence {
-                    // Flip the boolean (last element)
-                    corrupted[4] ^= 1;
-                } else {
-                    // Corrupt the Bytes32 result (first 4 usize = 32 bytes)
-                    let mut bytes = [0u8; 32];
-                    for (i, &word) in corrupted[..4].iter().enumerate() {
-                        bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
-                    }
-                    self.corruption.apply(&mut bytes);
-                    for (i, chunk) in bytes.chunks(8).enumerate() {
-                        corrupted[i] = usize::from_le_bytes(chunk.try_into().unwrap());
-                    }
+                // Mirror types matching basic_bootloader::bootloader::oracle_types
+                // (basic_bootloader is not a dev-dependency of basic_system)
+                #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+                struct SqrtResponse {
+                    result: zk_ee::utils::Bytes32,
+                    is_valid: bool,
+                }
+                #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+                struct InverseResponse {
+                    result: zk_ee::utils::Bytes32,
                 }
 
-                Box::new(corrupted.into_iter())
+                // Get the correct response bytes
+                let correct_bytes = self.inner.process(query_id, input, memory)?;
+
+                // Try to decode as SqrtResponse first (has is_valid bool)
+                if let Ok(mut sqrt_resp) = AirbenderCodecV0::decode::<SqrtResponse>(&correct_bytes)
+                {
+                    if self.lie_about_sqrt_existence {
+                        sqrt_resp.is_valid = !sqrt_resp.is_valid;
+                    } else {
+                        let mut bytes = *sqrt_resp.result.as_u8_array_ref();
+                        self.corruption.apply(&mut bytes);
+                        sqrt_resp.result = zk_ee::utils::Bytes32::from_array(bytes);
+                    }
+                    return AirbenderCodecV0::encode(&sqrt_resp)
+                        .map_err(|_| zk_ee::internal_error!("encode corrupted sqrt failed"));
+                }
+
+                // Otherwise decode as InverseResponse
+                let mut inv_resp: InverseResponse = AirbenderCodecV0::decode(&correct_bytes)
+                    .map_err(|_| zk_ee::internal_error!("decode inverse response failed"))?;
+                let mut bytes = *inv_resp.result.as_u8_array_ref();
+                self.corruption.apply(&mut bytes);
+                inv_resp.result = zk_ee::utils::Bytes32::from_array(bytes);
+                AirbenderCodecV0::encode(&inv_resp)
+                    .map_err(|_| zk_ee::internal_error!("encode corrupted inverse failed"))
             }
         }
 
@@ -645,12 +657,12 @@ mod tests {
                 vec![FIELD_OPS_ADVISE_QUERY_ID]
             }
 
-            fn process_buffered_query(
+            fn process(
                 &mut self,
                 query_id: u32,
-                _query: Vec<usize>,
+                _input: &[u8],
                 _memory: &dyn RamPeek,
-            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            ) -> Result<Vec<u8>, zk_ee::system::errors::internal::InternalError> {
                 panic!("field ops oracle should not be queried for zero input, query_id=0x{query_id:08x}");
             }
         }

@@ -2,7 +2,6 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
-pub mod legacy_adapter;
 pub mod witness_recording;
 
 #[cfg(all(
@@ -20,6 +19,7 @@ use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
 
+pub use airbender_codec;
 pub use riscv_transpiler::vm::RamPeek;
 
 pub struct DummyMemorySource;

@@ -20,16 +20,17 @@ use rig::forward_system::run::query_processors::{
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
+use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
 use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
 };
+use rig::zk_ee::internal_error;
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::system::errors::internal::InternalError;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
@@ -62,22 +63,19 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u8],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                    EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter()
-                )
-                .expect("must deserialize the address/slot");
+                let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
+                    AirbenderCodecV0::decode(input)
+                        .map_err(|_| internal_error!("decode StorageAddress failed"))?;
                 let flat_key = derive_flat_storage_key(&address, &key);
                 let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                     if let Some(cold) = self.storage.read(flat_key) {
@@ -106,7 +104,8 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                             }
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                AirbenderCodecV0::encode(&slot_data)
+                    .map_err(|_| internal_error!("encode slot_data failed"))
             }
             _ => unreachable!(),
         }
