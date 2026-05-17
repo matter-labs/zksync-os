@@ -17,6 +17,8 @@ evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
+airbender-guest = { workspace = true, default-features = false }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 ruint = { workspace = true, default-features = false }
 crypto = { workspace = true }
 u256 = { path = "../supporting_crates/u256", default-features = false }
@@ -27,6 +29,8 @@ talc = { version = "4.4.3", default-features = false, features = ["allocator", "
 [dev-dependencies]
 hex = { workspace = true }
 fastrand = "2.0.2"
+airbender-codec = { workspace = true }
+airbender-core = { workspace = true }
 
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing"]

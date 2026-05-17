@@ -69,6 +69,7 @@ blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "
 prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 
 airbender-codec = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
+airbender-core = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
 airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
 airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
 airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }

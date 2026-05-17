@@ -1,3 +1,4 @@
+use serde_big_array::BigArray;
 use zk_ee::internal_error;
 use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use zk_ee::system::errors::internal::InternalError;
@@ -9,7 +10,9 @@ pub const BLOB_COMMITMENT_AND_PROOF_QUERY_ID: u32 =
 #[derive(serde::Serialize, serde::Deserialize)]
 #[repr(C, align(8))]
 pub struct KZGCommitmentAndProof {
+    #[serde(with = "BigArray")]
     pub commitment: [u8; 48],
+    #[serde(with = "BigArray")]
     pub proof: [u8; 48],
 }
 
