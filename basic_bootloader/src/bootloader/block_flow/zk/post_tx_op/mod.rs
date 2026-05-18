@@ -1,4 +1,5 @@
 use super::*;
+use alloc::vec::Vec;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
@@ -9,7 +10,7 @@ use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADD
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::{IOSubsystem, Resource, Resources};
+use zk_ee::system::{IOSubsystem, NopResultKeeper, Resource, Resources};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
@@ -18,6 +19,7 @@ pub mod da_commitment_generator;
 mod post_tx_op_proving_multiblock_batch;
 mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
+mod pubdata_compression;
 pub mod public_input;
 
 /// Version byte for pubdata encoding format.
@@ -25,9 +27,28 @@ pub mod public_input;
 /// Version 2: Remove artifacts_len and artifacts from pubdata; storage diffs
 ///            use a header + initial/repeated split, with repeated writes
 ///            referenced by compact tree index.
-pub const PUBDATA_ENCODING_VERSION: u8 = 2;
+/// Version 3: v2 body bytes are wrapped in a DEFLATE stream. Header
+///            (version + block_hash + timestamp) stays uncompressed so
+///            consumers can read them without inflating.
+pub const PUBDATA_ENCODING_VERSION: u8 = 3;
+
+/// Adapter that lets the storage / logs body emitters drive a single
+/// `Vec<u8, A>` sink through the `WriteBytes` trait. Used internally by
+/// `write_pubdata` to collect the v3 body before deflate.
+struct VecWriteBytes<'a, A: Allocator>(&'a mut Vec<u8, A>);
+
+impl<A: Allocator> WriteBytes for VecWriteBytes<'_, A> {
+    fn write(&mut self, buf: &[u8]) {
+        self.0.extend_from_slice(buf);
+    }
+}
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
+///
+/// v3 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`
+/// where `BODY` is the byte stream the v2 emitter produces (storage diffs +
+/// logs + messages). Header stays uncompressed so consumers can read
+/// block_hash / timestamp without inflating.
 ///
 /// Storage diffs are emitted in the v2 compressed format and reference
 /// per-block tree indices for repeated writes; the caller must therefore
@@ -59,7 +80,10 @@ fn write_pubdata<
         PROOF_ENV,
     >,
 ) {
-    // Write version byte first to enable future pubdata format upgrades
+    let allocator = A::default();
+
+    // Uncompressed header — keeps `pubdata[0]` the version byte and the
+    // 32-byte block hash + 8-byte timestamp inspectable without inflating.
     pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
     pubdata_dst.write(block_hash.as_u8_ref());
     pubdata_dst.write(&timestamp.to_be_bytes());
@@ -68,14 +92,27 @@ fn write_pubdata<
     result_keeper.pubdata(block_hash.as_u8_ref());
     result_keeper.pubdata(&timestamp.to_be_bytes());
 
+    // Accumulate the v2 body bytes (storage diffs + logs + messages) into
+    // a buffer. The body emitters do a dual-write to (pubdata_dst,
+    // result_keeper); we suppress the result_keeper mirror here by passing
+    // a NopResultKeeper, and capture the bytes via the `pubdata_dst` arg.
+    // The compressed body is mirrored to both real sinks below.
+    let mut body: Vec<u8, A> = Vec::new_in(allocator.clone());
+    let mut body_sink = VecWriteBytes(&mut body);
+    let mut nop_rk = NopResultKeeper::<()>::default();
+
     io.storage.apply_storage_diffs_pubdata(
-        result_keeper,
-        pubdata_dst,
+        &mut nop_rk,
+        &mut body_sink,
         &mut io.oracle,
         repeated_write_index_encoding_length,
     );
+    io.logs_storage.apply_pubdata(&mut body_sink, &mut nop_rk);
+    drop(body_sink);
 
-    io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
+    let compressed = pubdata_compression::deflate_pubdata_body(&body, allocator);
+    pubdata_dst.write(&compressed);
+    result_keeper.pubdata(&compressed);
 }
 
 /// Helper method to create block header.

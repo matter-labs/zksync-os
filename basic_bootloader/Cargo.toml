@@ -24,6 +24,7 @@ strum_macros = { workspace = true }
 paste = { workspace = true }
 cfg-if = { workspace = true }
 serde-big-array = "0.5"
+miniz_nostd_compression = { path = "../supporting_crates/nostd_compression" }
 
 
 [dev-dependencies]
