@@ -1,7 +1,12 @@
 #![cfg(test)]
 
+use std::sync::{Mutex, OnceLock};
+
+use forward_system::system::system_types::ForwardRunningSystem;
+use forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
@@ -28,6 +33,26 @@ macro_rules! assert_matches {
             ),
         }
     };
+}
+
+/// Process-scoped tracer enabled when `PRECOMPILE_STATS_PATH` (or
+/// `PRECOMPILE_SAMPLES_DIR`) is set. Forward-mode-only; serialized across
+/// concurrent tests via the wrapping `Mutex`. The CSV and per-execution
+/// `.samples` files are rewritten after every precompile call — last writer
+/// wins, with each rewrite containing the cumulative in-memory state.
+static PRECOMPILE_STATS: OnceLock<Mutex<PrecompileStatsTracer<ForwardRunningSystem>>> =
+    OnceLock::new();
+
+fn precompile_stats_path() -> Option<std::path::PathBuf> {
+    std::env::var("PRECOMPILE_STATS_PATH").ok().map(Into::into)
+}
+
+fn precompile_samples_dir() -> Option<std::path::PathBuf> {
+    std::env::var("PRECOMPILE_SAMPLES_DIR").ok().map(Into::into)
+}
+
+fn precompile_stats_tracer() -> &'static Mutex<PrecompileStatsTracer<ForwardRunningSystem>> {
+    PRECOMPILE_STATS.get_or_init(|| Mutex::new(PrecompileStatsTracer::default()))
 }
 
 /// Performs two calls:
@@ -92,7 +117,35 @@ fn run_precompile_inner(
         tester = tester.without_revm_consistency_check();
     }
 
-    tester.execute_block(vec![direct_tx, forwarded_tx])
+    let txs = vec![direct_tx, forwarded_tx];
+
+    let stats_path = precompile_stats_path();
+    let samples_dir = precompile_samples_dir();
+    if stats_path.is_some() || samples_dir.is_some() {
+        let mutex = precompile_stats_tracer();
+        let mut guard = mutex.lock().expect("stats mutex poisoned");
+        // The mutex is held across the full forward+proof run inside
+        // `execute_block_with_tracing`. The stats tracer only sees the forward
+        // pass; the proof-mode (RISC-V) pass uses its own nop tracer. When the
+        // CI cycle bench runs with `ZKSYNC_RISC_V_RUN=true` this serializes
+        // the proof run across precompile invocations — still correct, just
+        // sequential.
+        let out = tester.execute_block_with_tracing(txs, &mut *guard, &mut NopTxValidator);
+        // Cumulative writes: each rewrite contains the in-memory state so far.
+        if let Some(path) = stats_path.as_ref() {
+            if let Err(e) = guard.write_csv(path) {
+                eprintln!("warning: failed to write {}: {e}", path.display());
+            }
+        }
+        if let Some(dir) = samples_dir.as_ref() {
+            if let Err(e) = guard.dump_samples(dir) {
+                eprintln!("warning: failed to dump samples to {}: {e}", dir.display());
+            }
+        }
+        out
+    } else {
+        tester.execute_block(txs)
+    }
 }
 
 fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {

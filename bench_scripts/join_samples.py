@@ -2,7 +2,19 @@
 
 Reads:
   - <tracer_dir>/<OPCODE>.samples: "gas,native" per line (execution order)
-  - <cycles_dir>/<OPCODE>.cycles: "cycles" per line (execution order)
+  - <cycles_dir>/<OPCODE>.effective.cycles (preferred) or
+    <cycles_dir>/<OPCODE>.cycles (fallback): one cycle count per line in
+    execution order.
+
+The `.effective.cycles` variant includes delegation cost (Blake/BigInt/Keccak)
+using the same coefficients as the block-wide `block_effective` formula in
+`cycle_marker`. Without it, `cycles/gas` reflects raw RISC-V cycles only and
+undercounts opcodes whose handlers delegate (SHA3 → keccak; SLOAD/SSTORE,
+BALANCE/EXTCODE*, SELFBALANCE → Blake via account/storage tree;
+CALL/DELEGATECALL/STATICCALL/CALLCODE and CREATE/CREATE2 → keccak +
+Blake + any inner precompile delegations). The script prefers the
+effective variant and falls back to raw with a stderr note when only
+raw is available.
 
 Since both runs are deterministic, line K in both files corresponds to
 the Kth execution of that opcode.
@@ -18,33 +30,13 @@ import os
 import sys
 import argparse
 
-
-def load_tracer_samples(path):
-    """Load gas,native pairs from .samples file."""
-    samples = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(",")
-            samples.append((int(parts[0]), int(parts[1])))
-    return samples
-
-
-def load_cycle_samples(path):
-    """Load cycle values from .cycles file."""
-    samples = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                samples.append(int(line))
-    return samples
-
-
-def ratio(num, den):
-    return num / den if den > 0 else 0.0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from benchlib import (  # noqa: E402
+    load_gas_native_samples as load_tracer_samples,
+    load_int_samples as load_cycle_samples,
+    percentile as _benchlib_percentile,
+    ratio,
+)
 
 
 def process_opcode(name, tracer_samples, cycle_samples, out_dir):
@@ -84,10 +76,7 @@ def process_opcode(name, tracer_samples, cycle_samples, out_dir):
     cycles_per_gas_values.sort()
     native_per_gas_values.sort()
 
-    def percentile(sorted_vals, p):
-        # Nearest-rank method: rank = ceil(p/100 * N), 1-indexed
-        rank = max(1, -(-len(sorted_vals) * p // 100))  # ceiling division
-        return sorted_vals[min(rank, len(sorted_vals)) - 1]
+    percentile = _benchlib_percentile
 
     return {
         "name": name,
@@ -111,9 +100,18 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Print summary table")
     args = parser.parse_args()
 
-    # Find opcodes present in both directories
+    # Find opcodes present in both directories. Cycle files come in two
+    # flavors: `<OPCODE>.effective.cycles` (preferred, includes delegations)
+    # and `<OPCODE>.cycles` (raw). Strip both suffixes when computing the
+    # opcode name set.
     tracer_opcodes = {f.replace(".samples", "") for f in os.listdir(args.tracer_dir) if f.endswith(".samples")}
-    cycle_opcodes = {f.replace(".cycles", "") for f in os.listdir(args.cycles_dir) if f.endswith(".cycles")}
+    cycle_files = set(os.listdir(args.cycles_dir))
+    cycle_opcodes = set()
+    for f in cycle_files:
+        if f.endswith(".effective.cycles"):
+            cycle_opcodes.add(f[: -len(".effective.cycles")])
+        elif f.endswith(".cycles"):
+            cycle_opcodes.add(f[: -len(".cycles")])
     common = sorted(tracer_opcodes & cycle_opcodes)
 
     if not common:
@@ -121,9 +119,16 @@ def main():
         sys.exit(1)
 
     summaries = []
+    used_kinds = set()
     for name in common:
         tracer_path = os.path.join(args.tracer_dir, f"{name}.samples")
-        cycles_path = os.path.join(args.cycles_dir, f"{name}.cycles")
+        effective_file = f"{name}.effective.cycles"
+        if effective_file in cycle_files:
+            cycles_path = os.path.join(args.cycles_dir, effective_file)
+            used_kinds.add("effective")
+        else:
+            cycles_path = os.path.join(args.cycles_dir, f"{name}.cycles")
+            used_kinds.add("raw")
 
         tracer_samples = load_tracer_samples(tracer_path)
         cycle_samples = load_cycle_samples(cycles_path)
@@ -136,8 +141,22 @@ def main():
         args.summary = True
 
     if args.summary and summaries:
+        if used_kinds == {"effective"}:
+            cycles_label = "cycles = effective (raw + Blake×16 + BigInt×4 + Keccak×4)"
+        elif used_kinds == {"raw"}:
+            cycles_label = "cycles = raw RISC-V (delegations NOT included)"
+        elif used_kinds == {"raw", "effective"}:
+            cycles_label = "cycles = mixed (some opcodes lack effective dump; see stderr)"
+            print(
+                "Warning: cycles dump kind mixed across opcodes — re-run with a"
+                " consistent cycle_marker build to avoid skewed comparisons.",
+                file=sys.stderr,
+            )
+        else:
+            cycles_label = "cycles = (no samples consumed)"
         # Sort by worst-case cycles/gas
         summaries.sort(key=lambda s: s["max_cpg"], reverse=True)
+        print(cycles_label)
         print(f"{'opcode':<16} {'count':>8}"
               f" {'med c/g':>8} {'p95 c/g':>8} {'p99 c/g':>8} {'max c/g':>8}"
               f" {'med n/g':>8} {'p95 n/g':>8} {'p99 n/g':>8} {'max n/g':>8}")

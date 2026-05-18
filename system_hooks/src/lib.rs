@@ -126,6 +126,40 @@ where
     }
 }
 
+/// EE-triggered ecrecover invocation. Wraps the existing ecrecover dispatch
+/// in an outer `"ecrecover_execution_environment"` cycle marker so
+/// per-execution cycles can be joined cleanly with the
+/// `PrecompileStatsTracer` `ecrecover.samples` (which only sees EE precompile
+/// dispatch frames). The bootloader's intrinsic sig-recovery calls do not go
+/// through this path, so the new marker fires only for EE-triggered calls.
+/// The inner `"ecrecover"` marker (from `EcRecoverImpl::execute`) still
+/// fires, preserving backward compatibility for older consumers.
+struct EcRecoverEEInvocation<S: SystemTypes>(PhantomData<S>);
+
+impl<S: SystemTypes>
+    SystemFunctionInvocation<S, zk_ee::system::base_system_functions::Secp256k1ECRecoverErrors>
+    for EcRecoverEEInvocation<S>
+where
+    S::IO: IOSubsystemExt,
+    S: EthereumLikeTypes,
+{
+    fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<zk_ee::system::base_system_functions::Secp256k1ECRecoverErrors>>
+    {
+        cycle_marker::wrap_with_resources!("ecrecover_execution_environment", resources, {
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Secp256k1ECRecover::execute(
+                input, output, resources, oracle, logger, allocator,
+            )
+        })
+    }
+}
+
 ///
 /// Adds EVM precompiles hooks.
 ///
@@ -135,12 +169,16 @@ pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
 where
     S::IO: IOSubsystemExt,
 {
-    add_precompile_ext::<
-        _,
-        _,
-        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Secp256k1ECRecover,
-        Secp256k1ECRecoverErrors,
-    >(hooks, ECRECOVER_HOOK_ADDRESS_LOW)?;
+    // EE-frame ecrecover dispatch uses a dedicated invocation wrapper that
+    // emits the `"ecrecover_execution_environment"` cycle marker around the
+    // underlying system function call, so per-execution stats can be joined
+    // without the positional bootloader/intrinsic filter heuristic. Routed
+    // through `install_precompile_hook` so the address sanity check stays
+    // in lockstep with `add_precompile` / `add_precompile_ext`.
+    install_precompile_hook::<S, A, EcRecoverEEInvocation<S>, Secp256k1ECRecoverErrors>(
+        hooks,
+        ECRECOVER_HOOK_ADDRESS_LOW,
+    )?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(
         hooks,
         SHA256_HOOK_ADDRESS_LOW,
@@ -366,6 +404,36 @@ where
     )
 }
 
+/// Install a precompile hook with a hand-picked invocation type.
+///
+/// Centralizes the `PRECOMPILE_ADDRESSES_LOWS` sanity check so any future
+/// hook wired through this helper inherits the same defensive guard as
+/// `add_precompile`. Used both by `add_precompile_ext` (generic SystemFunctionExt
+/// dispatch) and the ecrecover EE dispatch below (which uses a custom
+/// invocation type to inject the `ecrecover_execution_environment` cycle
+/// marker).
+fn install_precompile_hook<S, A, I, E>(
+    hooks: &mut HooksStorage<S, A>,
+    address_low: u16,
+) -> Result<(), InternalError>
+where
+    S: EthereumLikeTypes,
+    S::IO: IOSubsystemExt,
+    A: Allocator + Clone,
+    I: SystemFunctionInvocation<S, E>,
+    E: Subsystem,
+{
+    if !PRECOMPILE_ADDRESSES_LOWS.contains(&address_low) {
+        return Err(internal_error!(
+            "Attempted to add a precompile that is not in the precompile addresses list"
+        ));
+    }
+    hooks.add_call_hook(
+        address_low,
+        SystemCallHook::new(pure_system_function_hook_impl::<I, E, S>),
+    )
+}
+
 fn add_precompile_ext<
     S: EthereumLikeTypes,
     A: Allocator + Clone,
@@ -378,12 +446,7 @@ fn add_precompile_ext<
 where
     S::IO: IOSubsystemExt,
 {
-    hooks.add_call_hook(
-        address_low,
-        SystemCallHook::new(
-            pure_system_function_hook_impl::<SystemFunctionInvocationExt<S, E, P>, E, S>,
-        ),
-    )
+    install_precompile_hook::<S, A, SystemFunctionInvocationExt<S, E, P>, E>(hooks, address_low)
 }
 
 ///
