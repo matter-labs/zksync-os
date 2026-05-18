@@ -20,7 +20,7 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use metadata::basic_metadata::{BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata};
+use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -190,7 +190,6 @@ impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     type TransactionContext = TxContextForPreAndPostProcessing<S>;
@@ -640,7 +639,6 @@ impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     fn execute_call<'a>(

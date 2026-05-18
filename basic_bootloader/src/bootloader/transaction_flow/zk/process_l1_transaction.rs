@@ -26,9 +26,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-use zk_ee::system::metadata::basic_metadata::{
-    BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata,
-};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
@@ -63,7 +61,6 @@ pub(crate) fn process_l1_transaction<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // The work done by the bootloader (outside of EE or EOA specific
@@ -451,7 +448,6 @@ fn prepare_and_check_resources<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // For L1->L2 txs, we use a constant native price to avoid censorship.
@@ -588,7 +584,6 @@ fn execute_l1_transaction_and_notify_result<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     system_log!(system, "Executing L1 transaction\n");
@@ -760,7 +755,6 @@ fn mint_base_token<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecuti
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     notify_l2_asset_tracker::<S, Config>(
@@ -874,7 +868,6 @@ fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloade
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {

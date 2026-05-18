@@ -188,6 +188,9 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.computed_blob_base_fee_per_gas
     }
+    fn is_gateway(&self) -> bool {
+        false
+    }
 }
 
 impl HeaderAndHistory {

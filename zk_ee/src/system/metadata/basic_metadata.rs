@@ -38,6 +38,9 @@ pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Base fee per blob gas*(EIP-4844), if supported.
     fn blob_base_fee_per_gas(&self) -> U256;
+
+    /// Runtime block-scoped flag for Gateway-specific features.
+    fn is_gateway(&self) -> bool;
 }
 
 /// Transaction-level metadata describing the currently executing transaction.
@@ -71,11 +74,6 @@ pub trait ZkSpecificPricingMetadata {
 
     /// Price in base token of 1 byte of pubdata.
     fn get_pubdata_price(&self) -> U256;
-}
-
-/// Runtime block-scoped flag for Gateway-specific features.
-pub trait GatewayModeMetadata {
-    fn is_gateway(&self) -> bool;
 }
 
 /// Convenience super-trait for environments that expose both block- and tx-level

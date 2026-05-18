@@ -22,9 +22,7 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
-use zk_ee::system::metadata::basic_metadata::{
-    BasicMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata,
-};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
@@ -54,7 +52,6 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
-        + GatewayModeMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,

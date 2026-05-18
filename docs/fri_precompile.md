@@ -2,9 +2,9 @@
 
 The FRI precompile lets contracts on a Gateway-mode chain check, from
 inside a transaction, whether a specific `statement_versioned_hash`
-is in the current tx-scoped verified-statements list. The list is
-populated by `FriProofTx` validation; actual proof verification
-happens upstream in server, host and proving paths. The proof bytes
+is in the current tx-scoped verified-statements list. The verification
+is part of transaction validation in the server, as well as host and
+proving paths within zksync-os. The proof bytes
 themselves are supplied off-tx via an oracle sidecar; the
 `FriProofTx` transaction type declares the list of statement hashes
 the transaction sender claims to have proofs for.

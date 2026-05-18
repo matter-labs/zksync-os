@@ -61,6 +61,9 @@ impl<
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.block_level.blob_base_fee_per_gas()
     }
+    fn is_gateway(&self) -> bool {
+        self.block_level.is_gateway()
+    }
 }
 
 /// Forwards to `tx_level`.
@@ -103,17 +106,6 @@ impl<
     }
     fn get_pubdata_price(&self) -> U256 {
         self.block_level.get_pubdata_price()
-    }
-}
-
-impl<
-        IOTypes: SystemIOTypesConfig,
-        B: BasicBlockMetadata<IOTypes> + GatewayModeMetadata,
-        TX: BasicTransactionMetadata<IOTypes>,
-    > GatewayModeMetadata for SystemMetadata<IOTypes, B, TX>
-{
-    fn is_gateway(&self) -> bool {
-        self.block_level.is_gateway()
     }
 }
 

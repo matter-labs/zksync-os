@@ -2,7 +2,7 @@
 //! We will move it in future PRs.
 
 use super::basic_metadata::{
-    BasicBlockMetadata, BasicTransactionMetadata, GatewayModeMetadata, ZkSpecificPricingMetadata,
+    BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
 };
 use super::system_metadata::SystemMetadata;
 use crate::system::constants::*;
@@ -194,6 +194,10 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.blob_fee
     }
+
+    fn is_gateway(&self) -> bool {
+        self.is_gateway
+    }
 }
 
 impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
@@ -205,12 +209,6 @@ impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
     }
     fn get_pubdata_limit(&self) -> u64 {
         self.pubdata_limit
-    }
-}
-
-impl GatewayModeMetadata for BlockMetadataFromOracle {
-    fn is_gateway(&self) -> bool {
-        self.is_gateway
     }
 }
 

@@ -1,11 +1,10 @@
 use super::*;
 use zk_ee::system::errors::internal::InternalError;
-use zk_ee::system::metadata::basic_metadata::GatewayModeMetadata;
+use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 
 impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: GatewayModeMetadata,
 {
     fn post_init_op<Config: BasicBootloaderExecutionConfig>(
         #[cfg_attr(feature = "disable_system_contracts", allow(unused_variables))]
