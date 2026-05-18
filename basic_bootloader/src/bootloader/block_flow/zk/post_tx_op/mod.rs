@@ -15,6 +15,8 @@ use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 
+use self::da_commitment_generator::blob_commitment_generator::BUFFER_CAPACITY;
+
 pub mod da_commitment_generator;
 mod post_tx_op_proving_multiblock_batch;
 mod post_tx_op_proving_singleblock_batch;
@@ -102,7 +104,13 @@ fn write_pubdata<
     // result_keeper); we suppress the result_keeper mirror here by passing
     // a NopResultKeeper, and capture the bytes via the `pubdata_dst` arg.
     // The compressed body is mirrored to both real sinks below.
-    let mut body: Vec<u8, A> = Vec::new_in(allocator.clone());
+    //
+    // Pre-allocate to the per-batch pubdata cap: in the proving environment
+    // `ProxyAllocator::grow` panics, so Vec must not be allowed to reallocate.
+    // `BUFFER_CAPACITY` is the same upper bound the v2 path already enforced
+    // via `BlobCommitmentGenerator.buffer: ArrayVec<u8, BUFFER_CAPACITY>`, so
+    // any v2 body that fit before still fits after deflate.
+    let mut body: Vec<u8, A> = Vec::with_capacity_in(BUFFER_CAPACITY, allocator.clone());
     let mut body_sink = VecWriteBytes(&mut body);
     let mut nop_rk = NopResultKeeper::<()>::default();
 
