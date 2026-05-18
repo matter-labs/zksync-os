@@ -1,5 +1,7 @@
 use super::*;
 use zk_ee::system::errors::internal::InternalError;
+#[cfg(not(feature = "disable_system_contracts"))]
+use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 
 impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where

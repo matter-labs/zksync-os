@@ -1401,12 +1401,13 @@ mod fri_precompile {
 mod fri_precompile_e2e {
     use super::*;
     use rig::alloy::eips::eip2930::AccessList;
-    use rig::alloy::primitives::B256;
+    use rig::alloy::primitives::{B256, U256 as AlloyU256};
     use rig::zksync_os_interface::types::ExecutionOutput;
     use zksync_os_tests_common::zksync_tx::{
         fri_proof_tx::UnsignedZKsyncFriProofTx, ZKsyncTxEnvelope,
     };
 
+    use alloy_sol_types::SolCall;
     use execution_utils::setups::{read_and_pad_binary, CompiledCircuitsSet};
     use execution_utils::unified_circuit::{
         get_unified_circuit_artifact_for_machine_type, verify_proof_in_unified_layer,
@@ -1422,10 +1423,22 @@ mod fri_precompile_e2e {
     pub(super) const FRI_STATEMENT_HASH_VERSION: u8 = 1;
     // Address 0x0101 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+    const FRI_VERIFIER_CONTRACT: Address = address!("000000000000000000000000000000000000f101");
+    // Runtime bytecode compiled from
+    // contracts/l1-contracts/contracts/state-transition/verifiers/ZKsyncOSVerifierFri.sol
+    // in zksync-era-clean-latest.
+    const FRI_VERIFIER_DEPLOYED_BYTECODE: &str =
+        include_str!("../../../fixtures/fri/zksync_os_verifier_fri_deployed_bytecode.hex");
     pub(super) const FRI_PRIMARY_PROOF_FIXTURE: &str =
         "tests/fixtures/fri/airbender_test_proof.bin";
     const FRI_SECONDARY_PROOF_FIXTURE: &str =
         "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin";
+
+    sol! {
+        interface ZKsyncOSVerifierFri {
+            function verify(uint256[] calldata _publicInputs, uint256[] calldata _proof) external view returns (bool);
+        }
+    }
 
     fn repo_root() -> PathBuf {
         // CARGO_MANIFEST_DIR = tests/instances/system_hooks
@@ -1573,7 +1586,7 @@ mod fri_precompile_e2e {
         B256::from(hash)
     }
 
-    /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
+/// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
     ///
     /// Simulates the submitter side: decompress the on-disk fixture, decode
     /// it, run the host-side verifier to derive `statement_versioned_hash`.
@@ -1607,6 +1620,36 @@ mod fri_precompile_e2e {
         .expect("proof must verify");
         let stmt_hash = statement_versioned_hash(&verifier_output);
         Some((proof_bytes, stmt_hash))
+    }
+
+    fn load_proof_fixture_with_output(
+        fixture_relative: &str,
+        setup_path: &PathBuf,
+        layout_path: &PathBuf,
+    ) -> Option<(Vec<u8>, [u32; 16])> {
+        let proof_path = resolve_path("FRI_ORACLE_PATH", fixture_relative);
+        if !proof_path.exists() {
+            eprintln!(
+                "skipping FRI verifier contract test: missing fixture {}",
+                proof_path.display()
+            );
+            return None;
+        }
+
+        let fixture_bytes = std::fs::read(&proof_path).expect("read proof");
+        let proof_bytes = maybe_decompress(&fixture_bytes);
+        let proof: UnrolledProgramProof = decode_bincode(&proof_bytes, "UnrolledProgramProof");
+        let (setup, compiled_layouts) =
+            ensure_recursion_unified_artifacts(&proof, setup_path, layout_path);
+        let verifier_output = verify_proof_in_unified_layer(
+            &proof,
+            &setup,
+            &compiled_layouts,
+            false,
+            SecurityModel::Security80,
+        )
+        .expect("proof must verify");
+        Some((proof_bytes, verifier_output))
     }
 
     pub(super) fn default_setup_and_layout_paths() -> (PathBuf, PathBuf) {
@@ -1753,6 +1796,84 @@ mod fri_precompile_e2e {
                 );
             }
             other => panic!("expected success with true return, got: {other:?}"),
+        }
+    }
+
+    /// Real proof + compiled Solidity verifier bytecode:
+    ///
+    /// The tx first verifies the FRI sidecar through the bootloader path, then
+    /// executes `ZKsyncOSVerifierFri.verify(...)`. The contract recomputes the
+    /// statement hash from the proof arguments and reaches the FRI precompile
+    /// at 0x0101. A `true` return proves the contract bytecode, ABI shape,
+    /// tx-scoped verified-statement state, and precompile all line up.
+    #[test]
+    fn fri_verifier_contract_returns_true_for_verified_proof() {
+        let (setup_path, layout_path) = default_setup_and_layout_paths();
+        let verifier_bytecode = hex::decode(FRI_VERIFIER_DEPLOYED_BYTECODE.trim())
+            .expect("decode FRI verifier bytecode");
+        let Some((proof_bytes, verifier_output)) =
+            load_proof_fixture_with_output(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+        else {
+            return;
+        };
+
+        let stmt_hash = statement_versioned_hash(&verifier_output);
+        let words_to_u256 = |words: &[u32]| {
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            AlloyU256::from_be_slice(&bytes)
+        };
+        let public_input_hash = words_to_u256(&verifier_output[..8]);
+        let recursion_chain_hash = words_to_u256(&verifier_output[8..]);
+
+        let call = ZKsyncOSVerifierFri::verifyCall {
+            _publicInputs: vec![public_input_hash >> 32],
+            _proof: vec![public_input_hash, recursion_chain_hash],
+        };
+
+        let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
+            .expect("artifacts must be present if fixture verification succeeded");
+        let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
+        let (mut tester, _counter) = TestingFramework::new()
+            .with_mock_fri_sidecars([(stmt_bytes32, proof_bytes)], Some(artifacts));
+        tester.set_evm_contract(FRI_VERIFIER_CONTRACT, &verifier_bytecode);
+        let wallet = tester.prefunded_random_signer();
+
+        let unsigned = UnsignedZKsyncFriProofTx {
+            chain_id: 37,
+            nonce: 0,
+            max_priority_fee_per_gas: 1_000,
+            max_fee_per_gas: 25_000,
+            gas_limit: 10_000_000,
+            to: FRI_VERIFIER_CONTRACT,
+            value: Default::default(),
+            input: call.abi_encode().into(),
+            access_list: AccessList::default(),
+            statement_versioned_hashes: vec![stmt_hash],
+        };
+        let signed = unsigned.sign(wallet);
+        let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
+
+        let output = tester.execute_block(vec![fri_tx]);
+
+        assert!(
+            tx_succeeded(&output, 0),
+            "FRI verifier contract call must succeed, got: {:?}",
+            output.tx_results[0]
+        );
+        let result = output.tx_results[0].as_ref().unwrap();
+        match &result.execution_result {
+            rig::zksync_os_interface::types::ExecutionResult::Success(ExecutionOutput::Call(
+                data,
+            )) => {
+                let mut expected = [0u8; 32];
+                expected[31] = 1;
+                assert_eq!(
+                    data.as_slice(),
+                    &expected,
+                    "compiled FRI verifier contract must return ABI-encoded true"
+                );
+            }
+            other => panic!("expected verifier contract success with true return, got: {other:?}"),
         }
     }
 
