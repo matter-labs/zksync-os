@@ -45,11 +45,16 @@ run_block() {
     local block_samples_dir="$output_dir/opcode_samples/block_${blk}"
     local block_cycles_dir="$output_dir/opcode_cycles/block_${blk}"
     local block_stats_path="$output_dir/opcode_stats/block_${blk}.csv"
+    local precompile_stats_path="$output_dir/block_${blk}_precompile_stats.csv"
+    local precompile_samples_dir="$output_dir/precompile_samples/block_${blk}"
+    local precompile_cycles_dir="$output_dir/precompile_cycles/block_${blk}"
 
     rm -rf "$block_samples_dir" "$block_cycles_dir"
-    rm -f "$block_stats_path"
+    rm -rf "$precompile_samples_dir" "$precompile_cycles_dir"
+    rm -f "$block_stats_path" "$precompile_stats_path"
 
     mkdir -p "$output_dir/opcode_samples" "$output_dir/opcode_cycles" "$output_dir/opcode_stats"
+    mkdir -p "$output_dir/precompile_samples" "$output_dir/precompile_cycles"
 
     echo "==> Benchmarking block $blk..."
     ZKSYNC_RISC_V_RUN=true \
@@ -57,6 +62,9 @@ run_block() {
     OPCODE_CYCLE_SAMPLES_DIR="$block_cycles_dir" \
     OPCODE_STATS_PATH="$block_stats_path" \
     MARKER_PATH="$output_dir/block_${blk}.bench" \
+    PRECOMPILE_STATS_PATH="$precompile_stats_path" \
+    PRECOMPILE_SAMPLES_DIR="$precompile_samples_dir" \
+    LABEL_CYCLE_SAMPLES_DIR="$precompile_cycles_dir" \
     cargo run --manifest-path "$ETH_RUNNER_MANIFEST" \
         --release -j 3 \
         --features "$FEATURES" \
@@ -67,14 +75,73 @@ run_block() {
 run_precompiles() {
     local output_dir="$1"
 
+    # Use a dedicated sub-namespace so we don't clobber per-block dirs that
+    # `run_all_blocks` already wrote under $output_dir/precompile_{samples,cycles}/block_*.
+    local samples_dir="$output_dir/precompile_samples/test_precompiles"
+    local cycles_dir="$output_dir/precompile_cycles/test_precompiles"
+
+    # Clean only our subdir so per-block artifacts survive.
+    rm -rf "$samples_dir" "$cycles_dir"
+    mkdir -p "$samples_dir" "$cycles_dir"
+
     echo "==> Benchmarking precompiles..."
     ZKSYNC_RISC_V_RUN=true \
     MARKER_PATH="$output_dir/precompiles.bench" \
+    PRECOMPILE_STATS_PATH="$output_dir/precompile_stats.csv" \
+    PRECOMPILE_SAMPLES_DIR="$samples_dir" \
+    LABEL_CYCLE_SAMPLES_DIR="$cycles_dir" \
     cargo test --manifest-path "$PRECOMPILE_MANIFEST" \
         --release -j 3 \
         --features "$PRECOMPILE_FEATURES" \
         -- test_precompiles \
         > "$output_dir/precompiles.out" 2>&1
+}
+
+join_precompile_samples_run() {
+    local output_dir="$1"
+
+    local pairs=()
+    local bench_args=()
+
+    # Test-crate cycle bench (test_precompiles). Lives in its own subdir so
+    # it doesn't collide with the per-block subdirs that share the parent.
+    local tc_samples="$output_dir/precompile_samples/test_precompiles"
+    local tc_cycles="$output_dir/precompile_cycles/test_precompiles"
+    if [ -d "$tc_samples" ] && [ -d "$tc_cycles" ]; then
+        pairs+=("$tc_samples" "$tc_cycles")
+        if [ -f "$output_dir/precompiles.bench" ]; then
+            bench_args+=(--bench-file "$output_dir/precompiles.bench")
+        else
+            bench_args+=(--bench-file /dev/null)
+        fi
+    fi
+
+    # Per-block eth_runner bench (real workloads).
+    for dir in "$BLOCKS_DIR"/*/; do
+        local blk
+        blk="$(basename "$dir")"
+        local p_samples="$output_dir/precompile_samples/block_${blk}"
+        local p_cycles="$output_dir/precompile_cycles/block_${blk}"
+        local p_bench="$output_dir/block_${blk}.bench"
+        if [ -d "$p_samples" ] && [ -d "$p_cycles" ]; then
+            pairs+=("$p_samples" "$p_cycles")
+            if [ -f "$p_bench" ]; then
+                bench_args+=(--bench-file "$p_bench")
+            else
+                bench_args+=(--bench-file /dev/null)
+            fi
+        fi
+    done
+
+    if [ ${#pairs[@]} -ge 2 ]; then
+        echo "==> Joining precompile per-execution samples (${#pairs[@]} dirs across $((${#pairs[@]} / 2)) sources)..."
+        python3 "$REPO_ROOT/bench_scripts/join_precompile_samples.py" \
+            "${pairs[@]}" \
+            "${bench_args[@]}" \
+            --out-dir "$output_dir/precompile_joined" \
+            --summary \
+            > "$output_dir/precompile_joined_summary.txt" 2>&1 || true
+    fi
 }
 
 run_all_blocks() {
@@ -89,6 +156,7 @@ do_baseline() {
     build_riscv_binary
     run_all_blocks "$BASELINE_DIR"
     run_precompiles "$BASELINE_DIR"
+    join_precompile_samples_run "$BASELINE_DIR"
     echo "==> Baseline saved to $BASELINE_DIR"
 }
 
@@ -97,6 +165,7 @@ do_run() {
     build_riscv_binary
     run_all_blocks "$CURRENT_DIR"
     run_precompiles "$CURRENT_DIR"
+    join_precompile_samples_run "$CURRENT_DIR"
     echo "==> Results saved to $CURRENT_DIR"
 }
 
@@ -205,6 +274,28 @@ do_compare() {
     if [ ${#cycle_args[@]} -gt 0 ]; then
         python3 "$REPO_ROOT/bench_scripts/compare_opcode_cycles.py" \
             "${cycle_args[@]}" --gas-stats "${gas_args[@]}" --sample-dirs "${cycle_sample_args[@]}" \
+            2>/dev/null || true
+    fi
+    # Aggregate per-precompile stats across test-crate + all block benchmarks.
+    local precompile_stats_args=()
+    if [ -f "$BASELINE_DIR/precompile_stats.csv" ] && [ -f "$CURRENT_DIR/precompile_stats.csv" ]; then
+        precompile_stats_args+=(
+            "$BASELINE_DIR/precompile_stats.csv"
+            "$CURRENT_DIR/precompile_stats.csv"
+        )
+    fi
+    for dir in "$BLOCKS_DIR"/*/; do
+        local blk
+        blk="$(basename "$dir")"
+        local base_csv="$BASELINE_DIR/block_${blk}_precompile_stats.csv"
+        local head_csv="$CURRENT_DIR/block_${blk}_precompile_stats.csv"
+        if [ -f "$base_csv" ] && [ -f "$head_csv" ]; then
+            precompile_stats_args+=("$base_csv" "$head_csv")
+        fi
+    done
+    if [ ${#precompile_stats_args[@]} -ge 2 ]; then
+        python3 "$REPO_ROOT/bench_scripts/compare_precompile_stats.py" \
+            "${precompile_stats_args[@]}" \
             2>/dev/null || true
     fi
 }

@@ -8,6 +8,8 @@ use crate::receipts::{BlockReceipts, TransactionReceipt};
 use rig::chain::BlockExtraStats;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer;
+use rig::forward_system::system::tracers::pair::Pair;
+use rig::forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::log::info;
 use rig::*;
 use std::fs::{self, File};
@@ -56,44 +58,108 @@ fn run<const RANDOMIZED: bool>(
         ..Default::default()
     };
 
-    let (output, stats) = if opcode_stats {
-        let mut tracer = EvmOpcodeStatsTracer::<ForwardRunningSystem>::default();
-        let result = run_with_tracer(
-            &mut chain,
-            transactions,
-            block_context,
-            run_config,
-            &mut tracer,
-        );
-
+    let dump_opcode_tracer = |tracer: &EvmOpcodeStatsTracer<ForwardRunningSystem>| {
         tracer.print_stats();
-
         if let Ok(path) = std::env::var("OPCODE_STATS_PATH") {
             tracer
                 .write_csv(std::path::Path::new(&path))
                 .expect("Failed to write opcode stats CSV");
             info!("Opcode stats written to {path}");
         }
-
         if let Ok(dir) = std::env::var("OPCODE_SAMPLES_DIR") {
             tracer
                 .dump_samples(std::path::Path::new(&dir))
                 .expect("Failed to dump opcode samples");
             info!("Opcode samples dumped to {dir}");
         }
+    };
 
-        result
-    } else {
-        run_with_tracer(
+    let dump_precompile_tracer = |tracer: &PrecompileStatsTracer<ForwardRunningSystem>| {
+        tracer.print_stats();
+        if let Ok(path) = std::env::var("PRECOMPILE_STATS_PATH") {
+            tracer
+                .write_csv(std::path::Path::new(&path))
+                .expect("Failed to write precompile stats CSV");
+            info!("Precompile stats written to {path}");
+        }
+        if let Ok(dir) = std::env::var("PRECOMPILE_SAMPLES_DIR") {
+            tracer
+                .dump_samples(std::path::Path::new(&dir))
+                .expect("Failed to dump precompile samples");
+            info!("Precompile samples dumped to {dir}");
+        }
+    };
+
+    let precompile_stats_enabled = std::env::var("PRECOMPILE_STATS_PATH").is_ok()
+        || std::env::var("PRECOMPILE_SAMPLES_DIR").is_ok();
+
+    let (output, stats, pubdata) = match (opcode_stats, precompile_stats_enabled) {
+        (true, true) => {
+            let mut composite = Pair::new(
+                EvmOpcodeStatsTracer::<ForwardRunningSystem>::default(),
+                PrecompileStatsTracer::<ForwardRunningSystem>::default(),
+            );
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut composite,
+            );
+            dump_opcode_tracer(&composite.a);
+            dump_precompile_tracer(&composite.b);
+            result
+        }
+        (true, false) => {
+            let mut tracer = EvmOpcodeStatsTracer::<ForwardRunningSystem>::default();
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut tracer,
+            );
+            dump_opcode_tracer(&tracer);
+            result
+        }
+        (false, true) => {
+            let mut p_tracer = PrecompileStatsTracer::<ForwardRunningSystem>::default();
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut p_tracer,
+            );
+            dump_precompile_tracer(&p_tracer);
+            result
+        }
+        (false, false) => run_with_tracer(
             &mut chain,
             transactions,
             block_context,
             run_config,
             &mut NopTracer::default(),
-        )
+        ),
     };
 
     let _ratio = compute_ratio(stats);
+
+    // Append the pubdata size to the cycle-marker bench file so
+    // `compare_pubdata.py` can A/B it across a PR. Best-effort: only fires
+    // when MARKER_PATH is set (i.e. the caller asked for bench output), and
+    // silently no-ops if the file isn't writable. Matches the parsing
+    // contract in `bench_scripts/compare_pubdata.py`.
+    if let Ok(path) = std::env::var("MARKER_PATH") {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "pubdata_bytes: {}", pubdata.len());
+        }
+    }
 
     post_check(output, receipts, diff_trace, prestate_cache).unwrap();
 
@@ -106,19 +172,41 @@ fn run_with_tracer<const RANDOMIZED: bool>(
     block_context: BlockContext,
     run_config: rig::chain::RunConfig,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
-) -> (BlockOutput, BlockExtraStats) {
-    let (output, stats, _, _) = chain
+) -> (BlockOutput, BlockExtraStats, Vec<u8>) {
+    // Allow benchmarking to opt into a non-default DA commitment scheme. The
+    // bench currently runs two passes per block: the default `BlobsAndPubdataKeccak256`
+    // (which emits a placeholder zero-hash blob plus a keccak commitment over
+    // pubdata) and `BlobsZKsyncOS` (which actually exercises the
+    // `BlobCommitmentGenerator` and the `blob_versioned_hash` cycle marker).
+    // Falls back to the rig default when unset.
+    //
+    // NOTE: the literal string `BENCH_DA_SCHEME` is used as a `grep -q`
+    // fallback target by `.github/workflows/bench.yml` — if this env var
+    // name is renamed, update the workflow too.
+    let da_commitment_scheme = std::env::var("BENCH_DA_SCHEME").ok().map(|s| {
+        use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+        match s.as_str() {
+            "keccak" | "blobs_and_pubdata_keccak256" => {
+                DACommitmentScheme::BlobsAndPubdataKeccak256
+            }
+            "blobs_zksync_os" | "blobs" => DACommitmentScheme::BlobsZKsyncOS,
+            "empty_no_da" => DACommitmentScheme::EmptyNoDA,
+            other => panic!("Unknown BENCH_DA_SCHEME: {other}"),
+        }
+    });
+
+    let (output, stats, _, pubdata) = chain
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
-            None,
+            da_commitment_scheme,
             Some(run_config),
             tracer,
             &mut NopTxValidator,
         )
         .unwrap();
 
-    (output, stats)
+    (output, stats, pubdata)
 }
 
 #[allow(clippy::too_many_arguments)]

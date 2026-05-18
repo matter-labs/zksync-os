@@ -11,9 +11,13 @@ Usage:
     python join_opcode_stats.py <block.out> <block.bench> [--csv output.csv]
 """
 
+import os
 import sys
 import re
 import argparse
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from benchlib import ratio  # noqa: E402
 
 
 def parse_tracer_stats(filename):
@@ -79,10 +83,6 @@ def parse_cycle_stats(filename):
         except (ValueError, IndexError):
             continue
     return stats
-
-
-def ratio(num, den):
-    return num / den if den > 0 else 0.0
 
 
 def main():

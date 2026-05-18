@@ -838,6 +838,40 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
+        // The regular forward run uses ZKHeaderStructurePostTxOpSequencing,
+        // which substitutes NopCommitmentGenerator for the DA commit work.
+        // Under DA schemes that fire cycle markers only in proving mode
+        // (notably BlobsZKsyncOS → blob_versioned_hash), the sequencing run's
+        // LABELS would have fewer entries than the RISC-V proving run's
+        // markers, tripping the count assertion in print_cycle_markers.
+        // Snapshot LABELS before the sequencing run and revert after, so the
+        // sequencing labels are discarded; only the prover_input forward run
+        // (which uses proving STF) contributes labels for RISC-V matching.
+        // LABELS is a `thread_local!`, so the snapshot is local to whichever
+        // thread runs `run_inner`; the snapshot covers only the sequencing
+        // forward call below.
+        //
+        // The guard pattern ensures the revert runs even when
+        // `run_forward_no_panic` returns `Err` (the `?` propagation would
+        // otherwise leave stale sequencing labels in LABELS and the next
+        // run on this thread would trip the marker-count assertion).
+        #[cfg(feature = "cycle_marker")]
+        struct SeqLabelsGuard {
+            snap: Option<cycle_marker::Snapshot>,
+        }
+        #[cfg(feature = "cycle_marker")]
+        impl Drop for SeqLabelsGuard {
+            fn drop(&mut self) {
+                if let Some(snap) = self.snap.take() {
+                    cycle_marker::revert(snap);
+                }
+            }
+        }
+        #[cfg(feature = "cycle_marker")]
+        let _seq_labels_guard = SeqLabelsGuard {
+            snap: Some(cycle_marker::snapshot()),
+        };
+
         // we use proving config here for benchmarking,
         // although sequencer can have extra optimizations
         run_forward_no_panic::<BasicBootloaderProvingExecutionConfig>(
@@ -846,6 +880,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             tracer,
             validator,
         )?;
+
+        // Explicit drop: sequencing labels are discarded HERE so the
+        // prover_input forward run below appends to a clean LABELS.
+        #[cfg(feature = "cycle_marker")]
+        drop(_seq_labels_guard);
 
         let block_output: BlockOutput = result_keeper.into();
 
@@ -866,17 +905,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let mut tracer = NopTracer::default();
             let mut validator = NopTxValidator;
             let prover_input_forward = {
-                // Avoid capturing markers from the second run, as it would duplicate them.
-                #[cfg(feature = "cycle_marker")]
-                let snapshot = cycle_marker::snapshot();
+                // This run uses ProverInputSystem (proving STF) — its labels
+                // are exactly what RISC-V will fire markers for, so we keep
+                // them in LABELS for the post-RISC-V count match. The earlier
+                // sequencing forward run's labels were already reverted, so
+                // LABELS now contains only this run's proving-mode labels.
                 let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
                     copy_source,
                     &mut result_keeper_prover_input,
                     &mut tracer,
                     &mut validator,
                 );
-                #[cfg(feature = "cycle_marker")]
-                cycle_marker::revert(snapshot);
                 result?
             };
 
