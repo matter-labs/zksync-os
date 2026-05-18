@@ -22,10 +22,17 @@ pub mod public_input;
 
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
-/// Version 2: Remove artifacts_len and artifacts from pubdata
+/// Version 2: Remove artifacts_len and artifacts from pubdata; storage diffs
+///            use a header + initial/repeated split, with repeated writes
+///            referenced by compact tree index.
 pub const PUBDATA_ENCODING_VERSION: u8 = 2;
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
+///
+/// Storage diffs are emitted in the v2 compressed format and reference
+/// per-block tree indices for repeated writes; the caller must therefore
+/// have already run `update_commitment` with the actual state commitment so
+/// `io.storage.key_to_index_cache` is populated.
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,
@@ -40,6 +47,7 @@ fn write_pubdata<
     result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = BlockHeader>,
     block_hash: Bytes32,
     timestamp: u64,
+    repeated_write_index_encoding_length: u8,
     io: &mut FullIO<
         A,
         R,
@@ -60,8 +68,12 @@ fn write_pubdata<
     result_keeper.pubdata(block_hash.as_u8_ref());
     result_keeper.pubdata(&timestamp.to_be_bytes());
 
-    io.storage
-        .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
+    io.storage.apply_storage_diffs_pubdata(
+        result_keeper,
+        pubdata_dst,
+        &mut io.oracle,
+        repeated_write_index_encoding_length,
+    );
 
     io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
 }
