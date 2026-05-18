@@ -94,7 +94,7 @@ impl<
         }
     }
 
-    fn pubdata_used_by_tx(&self) -> u32 {
+    fn pubdata_used_by_tx(&self, _repeated_write_index_encoding_length: u8) -> u32 {
         0
     }
 

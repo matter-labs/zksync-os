@@ -294,7 +294,8 @@ where
         // from pubdata payment after execution.
         // In the future we may consider using intrinsic pubdata here,
         // so worst case validation pubdata will be "refunded" if not used
-        context.validation_pubdata = system.net_pubdata_used()?;
+        context.validation_pubdata =
+            system.net_pubdata_used(system.repeated_write_index_encoding_length())?;
 
         // Save resources to be able to calculate computational native consumption after everything
         let initial_resources = context.resources.main_resources.clone();

@@ -189,7 +189,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         source: impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone,
         allocator: A,
         logger: &mut impl Logger,
-    ) -> Result<(), InternalError> {
+    ) -> Result<BTreeMap<Bytes32, u64, A>, InternalError> {
         // we know that for our storage model we have a luxury of amortizing all new writes,
         // so our strategy is to:
         // - verify all reads
@@ -214,7 +214,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         // If there was no IO, just return
         if source.clone().next().is_none() {
-            return Ok(());
+            return Ok(key_to_index_cache);
         }
 
         let reads_iter = source
@@ -790,7 +790,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             // root should not change in such case
         }
 
-        Ok(())
+        Ok(key_to_index_cache)
     }
 }
 

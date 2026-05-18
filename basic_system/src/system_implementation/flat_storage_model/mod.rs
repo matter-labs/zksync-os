@@ -115,9 +115,12 @@ impl<
         }
     }
 
-    fn pubdata_used_by_tx(&self) -> u32 {
-        self.account_data_cache.calculate_pubdata_used_by_tx()
-            + self.storage_cache.calculate_pubdata_used_by_tx()
+    fn pubdata_used_by_tx(&self, repeated_write_index_encoding_length: u8) -> u32 {
+        self.account_data_cache
+            .calculate_pubdata_used_by_tx(repeated_write_index_encoding_length)
+            + self
+                .storage_cache
+                .calculate_pubdata_used_by_tx(repeated_write_index_encoding_length)
     }
 
     fn storage_read(

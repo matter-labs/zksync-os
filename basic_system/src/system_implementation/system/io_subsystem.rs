@@ -396,8 +396,13 @@ impl<
         )
     }
 
-    fn net_pubdata_used(&self) -> Result<u64, InternalError> {
-        Ok(self.storage.pubdata_used_by_tx() as u64
+    fn net_pubdata_used(
+        &self,
+        repeated_write_index_encoding_length: u8,
+    ) -> Result<u64, InternalError> {
+        Ok(self
+            .storage
+            .pubdata_used_by_tx(repeated_write_index_encoding_length) as u64
             + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
     }
 
