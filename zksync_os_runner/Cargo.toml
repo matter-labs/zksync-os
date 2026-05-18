@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-airbender-host = { workspace = true }
+airbender-host = { workspace = true, features = ["gpu-prover"] }
 common_constants = { workspace = true }
 riscv_transpiler = { workspace = true, features = ["flamegraph"] }
 cycle_marker = { path = "../cycle_marker", optional = true }

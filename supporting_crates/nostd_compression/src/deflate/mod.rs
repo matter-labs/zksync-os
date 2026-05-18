@@ -40,6 +40,7 @@ pub fn compress_flags_zlib(level: u8) -> u32 {
 /// Caller is responsible to provide a buffer that is large enough for simplicity.
 /// Returns actually filler number of bytes in the output buffer. Will error if the buffer
 /// is not large enough
+#[allow(clippy::result_unit_err)]
 pub fn compress_to_buffer(
     compressor: &mut CompressorOxideInner<'_>,
     mut input: &[u8],

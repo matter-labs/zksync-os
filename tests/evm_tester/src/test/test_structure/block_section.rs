@@ -3,6 +3,7 @@ use alloy::primitives::*;
 use serde::Deserializer;
 use serde::{de::IgnoredAny, Deserialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderSection {

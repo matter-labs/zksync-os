@@ -1,6 +1,5 @@
 use crate::test::case::transaction::encode_transaction;
 use alloy::primitives::*;
-use core::panic;
 use std::cmp::min;
 use std::str::FromStr;
 use zk_ee::utils::u256_to_u64_saturated;
@@ -17,8 +16,6 @@ use zksync_os_rig::BlockContext;
 use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;
-
-use super::execution_result;
 
 // mod transaction;
 
@@ -54,6 +51,12 @@ pub struct ZKsyncOSTxExecutionResult {
 ///
 pub struct ZKsyncOS {
     pub chain: Chain,
+}
+
+impl Default for ZKsyncOS {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ZKsyncOS {
@@ -139,9 +142,10 @@ impl ZKsyncOS {
     ) -> anyhow::Result<ZKsyncOSTxExecutionResult, String> {
         match tx_result {
             Ok(tx_output) => {
-                let mut execution_result = ZKsyncOSTxExecutionResult::default();
-
-                execution_result.gas = U256::from(tx_output.gas_used);
+                let mut execution_result = ZKsyncOSTxExecutionResult {
+                    gas: U256::from(tx_output.gas_used),
+                    ..Default::default()
+                };
                 // TODO events
 
                 match &tx_output.execution_result {

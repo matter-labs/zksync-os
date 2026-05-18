@@ -48,14 +48,14 @@ pub struct AccessListItem {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationListItem {
-    pub chain_id: web3::types::U256,
+    pub chain_id: U256,
     pub address: Address,
-    pub nonce: web3::types::U256,
-    pub v: Option<web3::types::U256>,
-    pub r: web3::types::U256,
-    pub s: web3::types::U256,
+    pub nonce: U256,
+    pub v: Option<U256>,
+    pub r: U256,
+    pub s: U256,
     pub signer: Option<Address>,
-    pub y_parity: web3::types::U256,
+    pub y_parity: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -198,21 +198,16 @@ pub fn encode_transaction(
                              signer: _,
                              y_parity,
                          }| {
-                            let mut r_buf = [0u8; 32];
-                            r.to_big_endian(&mut r_buf);
-                            let mut s_buf = [0u8; 32];
-                            s.to_big_endian(&mut s_buf);
+                            let r_bytes: B256 = r.into();
+                            let s_bytes: B256 = s.into();
                             let y_parity = !y_parity.is_zero();
 
                             #[allow(deprecated)]
-                            let signature = Signature::from_scalars_and_parity(
-                                alloy::primitives::FixedBytes::from_slice(&r_buf),
-                                alloy::primitives::FixedBytes::from_slice(&s_buf),
-                                y_parity,
-                            );
+                            let signature =
+                                Signature::from_scalars_and_parity(r_bytes, s_bytes, y_parity);
                             alloy::eips::eip7702::Authorization {
-                                chain_id: chain_id.into(),
-                                nonce: nonce.as_u64(),
+                                chain_id,
+                                nonce: nonce.to::<u64>(),
                                 address: alloy::primitives::Address::from_slice(address.as_ref()),
                             }
                             .into_signed(signature)
@@ -262,7 +257,9 @@ pub fn encode_transaction(
                 tx.secret_key.as_slice(),
             )
             .unwrap();
-            Ok(helpers::sign_and_encode_transaction_request(request, &wallet))
+            Ok(helpers::sign_and_encode_transaction_request(
+                request, &wallet,
+            ))
         }
         Transaction::Signed(tx) => {
             let env = to_alloy_envelope(tx, system_context.chain_id)?;
@@ -446,24 +443,45 @@ fn to_auth_list(src: &Option<Vec<AuthorizationListItem>>) -> Vec<SignedAuthoriza
     if let Some(list) = src {
         for a in list {
             let auth = AlloyAuthorization {
-                chain_id: w3_u256_to_alloy_u256(&a.chain_id),
+                chain_id: a.chain_id,
                 address: a.address,
-                nonce: a.nonce.as_u64(),
+                nonce: a.nonce.to::<u64>(),
             };
             // Preserve the raw y_parity value to maintain correct RLP encoding
             // for pre-signed transactions. Invalid values (not 0 or 1) will cause
             // the auth entry to be silently skipped during recovery per EIP-7702.
-            let y_parity = a.y_parity.as_u64() as u8;
-            let r = w3_u256_to_alloy_u256(&a.r);
-            let s = w3_u256_to_alloy_u256(&a.s);
+            let y_parity = a.y_parity.to::<u64>() as u8;
+            let r = a.r;
+            let s = a.s;
             out.push(SignedAuthorization::new_unchecked(auth, y_parity, r, s));
         }
     }
     out
 }
 
-fn w3_u256_to_alloy_u256(x: &web3::types::U256) -> alloy::primitives::U256 {
-    let mut buf = [0u8; 32];
-    x.to_big_endian(&mut buf);
-    alloy::primitives::U256::from_be_bytes(buf)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_list_item_deserializes_from_hex() {
+        let json = r#"{
+            "chainId": "0x01",
+            "address": "0x0000000000000000000000000000000000000001",
+            "nonce": "0x00",
+            "yParity": "0x01",
+            "v": "0x01",
+            "r": "0xdead000000000000000000000000000000000000000000000000000000000000",
+            "s": "0xbeef000000000000000000000000000000000000000000000000000000000000"
+        }"#;
+
+        let item: AuthorizationListItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.chain_id, U256::from(1));
+        assert_eq!(item.nonce, U256::ZERO);
+        assert_eq!(item.y_parity, U256::from(1));
+        assert_eq!(item.nonce.to::<u64>(), 0u64);
+        assert_eq!(item.y_parity.to::<u64>(), 1u64);
+        assert!(item.r > U256::ZERO);
+        assert!(item.s > U256::ZERO);
+    }
 }

@@ -12,6 +12,7 @@ use statistics::RunStatistics;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 pub fn live_run(
     start_block: u64,
     end_block: u64,
@@ -43,22 +44,34 @@ pub fn live_run(
 
     let prover: Box<dyn airbender_host::Prover> = {
         let dist_dir = rig::chain::get_zksync_os_dist_dir(&Some("evm_replay".to_string()));
-        let program = airbender_host::Program::load(&dist_dir)
-            .expect("failed to load program");
+        let program = airbender_host::Program::load(&dist_dir).expect("failed to load program");
         #[cfg(feature = "gpu")]
         {
             info!("Setting up GPU prover...");
-            let p = program.gpu_prover().build().expect("failed to build GPU prover");
+            let p = program
+                .gpu_prover()
+                .build()
+                .expect("failed to build GPU prover");
             info!("Done setting up GPU prover.");
             Box::new(p)
         }
         #[cfg(all(feature = "proving", not(feature = "gpu")))]
         {
-            Box::new(program.cpu_prover().build().expect("failed to build CPU prover"))
+            Box::new(
+                program
+                    .cpu_prover()
+                    .build()
+                    .expect("failed to build CPU prover"),
+            )
         }
         #[cfg(not(any(feature = "proving", feature = "gpu")))]
         {
-            Box::new(program.dev_prover().build().expect("failed to build dev prover"))
+            Box::new(
+                program
+                    .dev_prover()
+                    .build()
+                    .expect("failed to build dev prover"),
+            )
         }
     };
 

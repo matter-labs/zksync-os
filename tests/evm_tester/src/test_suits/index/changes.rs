@@ -22,29 +22,29 @@ pub struct Changes {
 
 impl fmt::Display for Changes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Created:\n")?;
+        writeln!(f, "Created:")?;
         for x in self.created.iter() {
-            write!(f, " - {:?}\n", x)?;
+            writeln!(f, " - {:?}", x)?;
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
 
-        write!(f, "Deleted:\n")?;
+        writeln!(f, "Deleted:")?;
         for x in self.deleted.iter() {
-            write!(f, " - {:?}\n", x)?;
+            writeln!(f, " - {:?}", x)?;
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
 
-        write!(f, "Updated:\n")?;
+        writeln!(f, "Updated:")?;
         for x in self.updated.iter() {
-            write!(f, " - {:?}\n", x)?;
+            writeln!(f, " - {:?}", x)?;
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
 
-        write!(f, "Conflicts:\n")?;
+        writeln!(f, "Conflicts:")?;
         for x in self.conflicts.iter() {
-            write!(f, " - {:?}\n", x)?;
+            writeln!(f, " - {:?}", x)?;
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         Ok(())
     }

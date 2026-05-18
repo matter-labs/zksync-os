@@ -41,6 +41,7 @@ fn format_block_failure_message(
 /// Updates total_block_time with backup execution time.
 ///
 /// Note: This function should only be called when primary execution has already failed.
+#[allow(clippy::too_many_arguments)]
 pub fn retry_block_with_backup_endpoint(
     block_number: u64,
     backup_endpoint: &str,

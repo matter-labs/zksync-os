@@ -18,7 +18,58 @@ members = [
     "supporting_crates/keccak",
     "supporting_crates/solidity_abi",
     "supporting_crates/solidity_abi_derive",
+    "supporting_crates/delegated_u256",
+    "supporting_crates/u256",
+    "supporting_crates/nostd_compression",
     "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
+    "cycle_marker",
+    "tests/common",
+    "tests/rig",
+    "tests/instances/transactions",
+    "tests/instances/erc20",
+    "tests/instances/forge_tests",
+    "tests/instances/precompiles",
+    "tests/instances/bench",
+    "tests/instances/unit",
+    "tests/instances/system_hooks",
+    "tests/instances/multiblock_batch",
+    "tests/instances/header",
+    "tests/instances/interop",
+    "tests/instances/evm",
+    "tests/instances/eth_runner",
+    "tests/block_reexecutor",
+    "tests/revm_runner",
+    "tests/binary_checker",
+    "tests/evm_tester",
+    "tests/evm_divergence_validator",
+    "scripts",
+]
+
+# evm_tester, evm_divergence_validator, and eth_runner are intentionally
+# excluded from default-members: they enable features on forward_system
+# (via rig) that conflict with other tests through workspace feature unification.
+default-members = [
+    "api",
+    "basic_bootloader",
+    "basic_system",
+    "callable_oracles",
+    "evm_interpreter",
+    "forward_system",
+    "oracle_provider",
+    "proof_running_system",
+    "storage_models",
+    "zk_ee",
+    "zksync_os_runner",
+    "system_hooks",
+    "supporting_crates/modexp",
+    "supporting_crates/keccak",
+    "supporting_crates/solidity_abi",
+    "supporting_crates/solidity_abi_derive",
+    "supporting_crates/delegated_u256",
+    "supporting_crates/u256",
+    "supporting_crates/nostd_compression",
+    "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
+    "cycle_marker",
     "tests/common",
     "tests/rig",
     "tests/instances/transactions",
@@ -34,20 +85,13 @@ members = [
     "tests/instances/evm",
     "tests/block_reexecutor",
     "tests/revm_runner",
-    "cycle_marker",
     "tests/binary_checker",
-    "supporting_crates/delegated_u256",
-    "supporting_crates/u256",
-    "scripts"
+    "scripts",
 ]
 
 exclude = [
     "zksync_os",
-    "supporting_crates/nostd_compression",
     "circuit_test_program",
-    "tests/evm_tester",
-    "tests/evm_divergence_validator",
-    "tests/instances/eth_runner",
 ]
 
 [workspace.package]
@@ -86,6 +130,7 @@ crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "825
 
 seq-macro = { version = "0.3.6", default-features = false }
 
+anyhow = "1"
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
