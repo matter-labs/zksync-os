@@ -1,6 +1,5 @@
 use super::*;
 use zk_ee::system::errors::internal::InternalError;
-use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 
 impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where
