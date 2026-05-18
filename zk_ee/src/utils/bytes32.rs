@@ -350,7 +350,7 @@ impl UsizeDeserializable for Bytes32 {
 #[cfg(test)]
 mod serde_tests {
     use super::*;
-    use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 
     #[test]
     fn bytes32_serde_roundtrip() {
@@ -358,8 +358,8 @@ mod serde_tests {
         bytes[0] = 0xAB;
         bytes[31] = 0xCD;
         let b32 = Bytes32::from_array(bytes);
-        let encoded = AirbenderCodecV0::encode(&b32).unwrap();
-        let decoded: Bytes32 = AirbenderCodecV0::decode(&encoded).unwrap();
+        let encoded = AirbenderCodecV1::encode(&b32).unwrap();
+        let decoded: Bytes32 = AirbenderCodecV1::decode(&encoded).unwrap();
         assert_eq!(b32.as_u8_array_ref(), decoded.as_u8_array_ref());
     }
 
@@ -370,7 +370,7 @@ mod serde_tests {
             bytes[i] = i as u8;
         }
         let b32 = Bytes32::from_array(bytes);
-        let encoded = AirbenderCodecV0::encode(&b32).unwrap();
+        let encoded = AirbenderCodecV1::encode(&b32).unwrap();
         // bincode serialize_bytes: varint length + raw bytes
         // With standard config, 32 < 251 so length is 1 byte
         assert_eq!(encoded.len(), 33); // 1 byte length + 32 bytes data

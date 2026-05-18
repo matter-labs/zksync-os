@@ -29,7 +29,7 @@ impl OracleQueryProcessor for BlockMetadataResponder {
     ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        AirbenderCodecV0::encode(&self.block_metadata)
+        AirbenderCodecV1::encode(&self.block_metadata)
             .map_err(|_| internal_error!("encode block metadata failed"))
     }
 }

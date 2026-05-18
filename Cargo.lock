@@ -77,7 +77,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -124,9 +124,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "airbender-guest"
+version = "0.1.0"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+dependencies = [
+ "airbender-codec",
+ "airbender-core",
+ "airbender-rt",
+ "serde",
+]
+
+[[package]]
 name = "airbender-host"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -140,6 +151,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "verifier_common",
+]
+
+[[package]]
+name = "airbender-rt"
+version = "0.1.0"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+dependencies = [
+ "getrandom 0.2.17",
+ "riscv_common",
 ]
 
 [[package]]
@@ -1961,6 +1981,7 @@ dependencies = [
  "serde_json",
  "storage_models",
  "strum_macros",
+ "u256",
  "zk_ee",
 ]
 
@@ -2166,6 +2187,7 @@ dependencies = [
 name = "block_reexecutor"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
  "alloy",
  "anyhow",
  "clap 4.6.1",
@@ -2286,12 +2308,14 @@ dependencies = [
 name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
  "airbender-crypto",
  "basic_bootloader",
  "basic_system",
  "c-kzg",
  "oracle_provider",
  "ruint",
+ "serde",
  "zk_ee",
 ]
 
@@ -3355,6 +3379,7 @@ dependencies = [
  "paste",
  "ruint",
  "strum_macros",
+ "u256",
  "zk_ee",
 ]
 
@@ -3538,7 +3563,11 @@ dependencies = [
 name = "forward_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
+ "airbender-core",
  "airbender-crypto",
+ "airbender-guest",
+ "airbender-host",
  "alloy",
  "basic_bootloader",
  "basic_system",
@@ -5351,7 +5380,13 @@ dependencies = [
 name = "oracle_provider"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
+ "airbender-core",
+ "airbender-guest",
+ "airbender-host",
+ "basic_bootloader",
  "riscv_transpiler",
+ "serde",
  "zk_ee",
 ]
 
@@ -5780,7 +5815,10 @@ dependencies = [
 name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
+ "airbender-core",
  "airbender-crypto",
+ "airbender-guest",
  "basic_bootloader",
  "basic_system",
  "cfg-if",
@@ -5788,8 +5826,10 @@ dependencies = [
  "fastrand",
  "hex",
  "ruint",
+ "serde",
  "system_hooks",
  "talc",
+ "u256",
  "zk_ee",
 ]
 
@@ -9633,6 +9673,7 @@ dependencies = [
 name = "zk_ee"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
  "airbender-crypto",
  "arrayvec",
  "cfg-if",
@@ -9641,6 +9682,7 @@ dependencies = [
  "ruint",
  "serde",
  "strum_macros",
+ "u256",
 ]
 
 [[package]]

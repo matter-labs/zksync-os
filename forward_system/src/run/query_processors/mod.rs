@@ -1,4 +1,4 @@
-use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use oracle_provider::OracleQueryProcessor;
 use serde::{Deserialize, Serialize};
 use zk_ee::internal_error;

@@ -36,7 +36,7 @@ impl OracleQueryProcessor for DACommitmentSchemeResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        AirbenderCodecV0::encode(&(data as u8))
+        AirbenderCodecV1::encode(&(data as u8))
             .map_err(|_| internal_error!("encode DA commitment scheme failed"))
     }
 }

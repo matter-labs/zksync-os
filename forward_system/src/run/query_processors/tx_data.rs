@@ -85,7 +85,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     }
                 } as u32;
 
-                AirbenderCodecV0::encode(&len).map_err(|_| internal_error!("encode tx size failed"))
+                AirbenderCodecV1::encode(&len).map_err(|_| internal_error!("encode tx size failed"))
             }
             TX_DATA_WORDS_QUERY_ID => {
                 let Some(tx) = self.next_tx.take() else {
@@ -94,7 +94,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                AirbenderCodecV0::encode(&tx).map_err(|_| internal_error!("encode tx data failed"))
+                AirbenderCodecV1::encode(&tx).map_err(|_| internal_error!("encode tx data failed"))
             }
             TX_ENCODING_FORMAT_QUERY_ID => {
                 let Some(format) = self.next_tx_format.take() else {
@@ -103,7 +103,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                AirbenderCodecV0::encode(&format)
+                AirbenderCodecV1::encode(&format)
                     .map_err(|_| internal_error!("encode tx format failed"))
             }
             TX_FROM_QUERY_ID => {
@@ -112,7 +112,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                         "trying to read next tx from before size query, after seal response or for a zk transaction"
                     );
                 };
-                AirbenderCodecV0::encode(&from)
+                AirbenderCodecV1::encode(&from)
                     .map_err(|_| internal_error!("encode tx from failed"))
             }
             _ => unreachable!(),

@@ -5,7 +5,7 @@ use std::{
 
 use crate::rpc_client::RpcClient;
 
-use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use alloy::hex;
 use rig::basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, TREE_HEIGHT,
@@ -116,7 +116,7 @@ impl OracleQueryProcessor for RpcStorageResponder {
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key } =
-                    AirbenderCodecV0::decode::<StorageAddress<EthereumIOTypesConfig>>(input)
+                    AirbenderCodecV1::decode::<StorageAddress<EthereumIOTypesConfig>>(input)
                         .map_err(|_| internal_error!("decode StorageAddress failed"))?;
 
                 let mut cached_value = self
@@ -198,11 +198,11 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         }
                     };
 
-                AirbenderCodecV0::encode(&slot_data)
+                AirbenderCodecV1::encode(&slot_data)
                     .map_err(|_| internal_error!("encode slot_data failed"))
             }
             FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
-                let hash: Bytes32 = AirbenderCodecV0::decode(input)
+                let hash: Bytes32 = AirbenderCodecV1::decode(input)
                     .map_err(|_| internal_error!("decode hash failed"))?;
 
                 let preimage = self
@@ -219,7 +219,7 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         )
                     });
 
-                AirbenderCodecV0::encode(&preimage)
+                AirbenderCodecV1::encode(&preimage)
                     .map_err(|_| internal_error!("encode preimage failed"))
             }
             _ => unreachable!(),

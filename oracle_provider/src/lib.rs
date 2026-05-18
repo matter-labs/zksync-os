@@ -12,7 +12,7 @@ compile_error!("oracle_provider requires a 64-bit little-endian host target");
 
 use std::collections::BTreeMap;
 
-use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
@@ -72,13 +72,13 @@ impl IOOracle for ZkEENonDeterminismSource {
             self.is_connected_to_external_oracle = false;
             // Encode a dummy response of the expected output type.
             // DisconnectOracleQuery expects `()` as output.
-            let encoded = AirbenderCodecV0::encode(&())
+            let encoded = AirbenderCodecV1::encode(&())
                 .map_err(|_| internal_error!("encode disconnect response failed"))?;
-            return AirbenderCodecV0::decode(&encoded)
+            return AirbenderCodecV1::decode(&encoded)
                 .map_err(|_| internal_error!("decode disconnect response failed"));
         }
         let input_bytes =
-            AirbenderCodecV0::encode(input).map_err(|_| internal_error!("encode input failed"))?;
+            AirbenderCodecV1::encode(input).map_err(|_| internal_error!("encode input failed"))?;
         let Some(processor_id) = self.ranges.get(&query_type).copied() else {
             return Err(internal_error!(
                 "Can not process query with ID = 0x{query_type:08x}"
@@ -86,7 +86,7 @@ impl IOOracle for ZkEENonDeterminismSource {
         };
         let processor = &mut self.processors[processor_id];
         let response_bytes = processor.process(query_type, &input_bytes, &DummyMemorySource)?;
-        AirbenderCodecV0::decode(&response_bytes)
+        AirbenderCodecV1::decode(&response_bytes)
             .map_err(|_| internal_error!("decode response failed"))
     }
 }
@@ -127,10 +127,10 @@ mod tests {
         ) -> Result<Vec<u8>, InternalError> {
             assert_eq!(query_id, TEST_QUERY_ID);
             let decoded: u64 =
-                AirbenderCodecV0::decode(input).map_err(|_| internal_error!("decode failed"))?;
+                AirbenderCodecV1::decode(input).map_err(|_| internal_error!("decode failed"))?;
             assert_eq!(decoded, 7u64);
             let response: Vec<u32> = vec![0x55667788, 0x11223344, 0xDDEEFF00, 0x99AABBCC];
-            AirbenderCodecV0::encode(&response).map_err(|_| internal_error!("encode failed"))
+            AirbenderCodecV1::encode(&response).map_err(|_| internal_error!("encode failed"))
         }
     }
 

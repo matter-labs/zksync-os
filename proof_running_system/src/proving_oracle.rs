@@ -1,4 +1,4 @@
-use airbender_guest::input::read_with;
+use airbender_guest::input::read_v1_with;
 use airbender_guest::transport::Transport;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -22,7 +22,7 @@ impl<T: Transport + 'static> IOOracle for ProvingOracle<T> {
         _query_type: u32,
         _input: &I,
     ) -> Result<O, InternalError> {
-        read_with::<O>(&mut self.transport)
+        read_v1_with::<O>(&mut self.transport)
             .map_err(|_e| internal_error!("proving oracle read failed"))
     }
 }
@@ -30,12 +30,12 @@ impl<T: Transport + 'static> IOOracle for ProvingOracle<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
     use airbender_core::wire::frame_words_from_bytes;
     use airbender_guest::transport::MockTransport;
 
     fn encode_value<T: serde::Serialize>(value: &T) -> Vec<u32> {
-        let bytes = AirbenderCodecV0::encode(value).expect("encode");
+        let bytes = AirbenderCodecV1::encode(value).expect("encode");
         frame_words_from_bytes(&bytes).expect("frame")
     }
 

@@ -4,7 +4,7 @@
 //! - [`FieldOpsQuery`]: Reads operands from simulated RISC-V memory.
 //! - [`NativeFieldOpsQuery`]: Reads operands directly from native memory (for host execution).
 
-use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use basic_bootloader::bootloader::oracle_types::{FieldInverseResponse, FieldSqrtResponse};
 use basic_system::system_functions::field_ops::{FieldHintOp, FieldOpsHint};
 use basic_system::system_functions::field_ops::{FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID};
@@ -26,19 +26,19 @@ fn compute_field_op(op: FieldHintOp, n: Bytes32) -> Result<Vec<u8>, InternalErro
                 result,
                 is_valid: !is_quadratic_non_residue,
             };
-            AirbenderCodecV0::encode(&response)
+            AirbenderCodecV1::encode(&response)
                 .map_err(|_| internal_error!("encode field sqrt response failed"))
         }
         FieldHintOp::Secp256k1BaseFieldInverse => {
             let result = impls::secp256k1_base_field_inverse(n);
             let response = FieldInverseResponse { result };
-            AirbenderCodecV0::encode(&response)
+            AirbenderCodecV1::encode(&response)
                 .map_err(|_| internal_error!("encode field inverse response failed"))
         }
         FieldHintOp::Secp256k1ScalarFieldInverse => {
             let result = impls::secp256k1_scalar_field_inverse(n);
             let response = FieldInverseResponse { result };
-            AirbenderCodecV0::encode(&response)
+            AirbenderCodecV1::encode(&response)
                 .map_err(|_| internal_error!("encode scalar field inverse response failed"))
         }
         _ => {
@@ -63,7 +63,7 @@ impl OracleQueryProcessor for FieldOpsQuery {
     ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
-        let arg_ptr: u32 = AirbenderCodecV0::decode(input)
+        let arg_ptr: u32 = AirbenderCodecV1::decode(input)
             .map_err(|_| internal_error!("decode field ops ptr failed"))?;
 
         assert!(arg_ptr.is_multiple_of(4));
@@ -109,7 +109,7 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
     ) -> Result<Vec<u8>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
-        let arg_ptr: u64 = AirbenderCodecV0::decode(input)
+        let arg_ptr: u64 = AirbenderCodecV1::decode(input)
             .map_err(|_| internal_error!("decode field ops ptr failed"))?;
         let arg: FieldOpsHint64 = read_host_struct(arg_ptr);
 
@@ -148,7 +148,7 @@ mod native_query_tests {
         };
 
         let encoded_input =
-            AirbenderCodecV0::encode(&((&hint as *const FieldOpsHint64).addr() as u64)).unwrap();
+            AirbenderCodecV1::encode(&((&hint as *const FieldOpsHint64).addr() as u64)).unwrap();
         let result_bytes = NativeFieldOpsQuery
             .process(
                 FIELD_OPS_ADVISE_QUERY_ID,
@@ -156,7 +156,7 @@ mod native_query_tests {
                 &DummyMemorySource,
             )
             .unwrap();
-        let response: FieldInverseResponse = AirbenderCodecV0::decode(&result_bytes).unwrap();
+        let response: FieldInverseResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
 
         assert!(!response.result.is_zero());
     }
@@ -164,7 +164,7 @@ mod native_query_tests {
     #[test]
     #[should_panic]
     fn native_field_ops_query_rejects_null_query_pointer() {
-        let encoded_input = AirbenderCodecV0::encode(&(0u64)).unwrap();
+        let encoded_input = AirbenderCodecV1::encode(&(0u64)).unwrap();
         let _ = NativeFieldOpsQuery.process(
             FIELD_OPS_ADVISE_QUERY_ID,
             &encoded_input,

@@ -345,7 +345,7 @@ mod tests {
                 input: &[u8],
                 memory: &dyn RamPeek,
             ) -> Result<Vec<u8>, zk_ee::system::errors::internal::InternalError> {
-                use oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+                use oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 
                 // Mirror types matching basic_bootloader::bootloader::oracle_types
                 // (basic_bootloader is not a dev-dependency of basic_system)
@@ -363,7 +363,7 @@ mod tests {
                 let correct_bytes = self.inner.process(query_id, input, memory)?;
 
                 // Try to decode as SqrtResponse first (has is_valid bool)
-                if let Ok(mut sqrt_resp) = AirbenderCodecV0::decode::<SqrtResponse>(&correct_bytes)
+                if let Ok(mut sqrt_resp) = AirbenderCodecV1::decode::<SqrtResponse>(&correct_bytes)
                 {
                     if self.lie_about_sqrt_existence {
                         sqrt_resp.is_valid = !sqrt_resp.is_valid;
@@ -372,17 +372,17 @@ mod tests {
                         self.corruption.apply(&mut bytes);
                         sqrt_resp.result = zk_ee::utils::Bytes32::from_array(bytes);
                     }
-                    return AirbenderCodecV0::encode(&sqrt_resp)
+                    return AirbenderCodecV1::encode(&sqrt_resp)
                         .map_err(|_| zk_ee::internal_error!("encode corrupted sqrt failed"));
                 }
 
                 // Otherwise decode as InverseResponse
-                let mut inv_resp: InverseResponse = AirbenderCodecV0::decode(&correct_bytes)
+                let mut inv_resp: InverseResponse = AirbenderCodecV1::decode(&correct_bytes)
                     .map_err(|_| zk_ee::internal_error!("decode inverse response failed"))?;
                 let mut bytes = *inv_resp.result.as_u8_array_ref();
                 self.corruption.apply(&mut bytes);
                 inv_resp.result = zk_ee::utils::Bytes32::from_array(bytes);
-                AirbenderCodecV0::encode(&inv_resp)
+                AirbenderCodecV1::encode(&inv_resp)
                     .map_err(|_| zk_ee::internal_error!("encode corrupted inverse failed"))
             }
         }

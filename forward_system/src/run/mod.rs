@@ -27,7 +27,7 @@ use crate::system::bootloader::run_prover_input_no_panic;
 use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
-use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use airbender_host::Inputs;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
@@ -222,7 +222,7 @@ pub fn generate_batch_proof_input(
                 // adds a varint length prefix (1 byte for len < 251), total 97 bytes.
                 // Wire frame: 1 length word + ceil(97/4) = 1 + 25 = 26 words.
                 let kzg_frame_words = {
-                    let kzg_encoded = AirbenderCodecV0::encode(
+                    let kzg_encoded = AirbenderCodecV1::encode(
                         &basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof {
                             commitment: [0u8; 48],
                             proof: [0u8; 48],
@@ -236,7 +236,7 @@ pub fn generate_batch_proof_input(
                 // so the frame is just the length word (0).
                 let disconnect_frame_words = {
                     let disconnect_encoded =
-                        AirbenderCodecV0::encode(&()).expect("encode disconnect size probe");
+                        AirbenderCodecV1::encode(&()).expect("encode disconnect size probe");
                     1 + disconnect_encoded.len().div_ceil(4)
                 };
 
@@ -288,7 +288,7 @@ pub fn generate_batch_proof_input(
 #[cfg(test)]
 mod tests {
     use super::generate_batch_proof_input;
-    use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
     use airbender_core::wire::frame_words_from_bytes;
     use airbender_guest::input::read_with;
     use airbender_guest::transport::MockTransport;

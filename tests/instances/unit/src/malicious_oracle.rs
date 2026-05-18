@@ -158,27 +158,27 @@ mod tx_encoding_format {
     //! with a deserialization error rather than panicking.
 
     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 
     #[test]
     fn test_tx_encoding_format_accepts_abi() {
-        let encoded = AirbenderCodecV0::encode(&TxEncodingFormat::Abi).unwrap();
-        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        let encoded = AirbenderCodecV1::encode(&TxEncodingFormat::Abi).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV1::decode(&encoded);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_accepts_rlp() {
-        let encoded = AirbenderCodecV0::encode(&TxEncodingFormat::Rlp).unwrap();
-        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        let encoded = AirbenderCodecV1::encode(&TxEncodingFormat::Rlp).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV1::decode(&encoded);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_2() {
         // Encode value 2u8 and try to decode as TxEncodingFormat
-        let encoded = AirbenderCodecV0::encode(&2u8).unwrap();
-        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        let encoded = AirbenderCodecV1::encode(&2u8).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV1::decode(&encoded);
         assert!(
             result.is_err(),
             "TxEncodingFormat should reject value 2 (only 0=Abi and 1=Rlp are valid)"
@@ -187,16 +187,16 @@ mod tx_encoding_format {
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_255() {
-        let encoded = AirbenderCodecV0::encode(&255u8).unwrap();
-        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        let encoded = AirbenderCodecV1::encode(&255u8).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV1::decode(&encoded);
         assert!(result.is_err(), "TxEncodingFormat should reject value 255");
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_large_value() {
         // Large u32 value that doesn't fit valid enum variants
-        let encoded = AirbenderCodecV0::encode(&256u32).unwrap();
-        let result: Result<TxEncodingFormat, _> = AirbenderCodecV0::decode(&encoded);
+        let encoded = AirbenderCodecV1::encode(&256u32).unwrap();
+        let result: Result<TxEncodingFormat, _> = AirbenderCodecV1::decode(&encoded);
         assert!(result.is_err(), "TxEncodingFormat should reject value 256");
     }
 }
@@ -262,7 +262,7 @@ mod custom_oracle_factories {
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::forward_system::run::{NextTxResponse, PreimageSource};
-    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV1};
     use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
     use rig::ruint::aliases::B160;
     use rig::zk_ee::common_structs::{
@@ -456,26 +456,26 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    AirbenderCodecV0::encode(&len)
+                    AirbenderCodecV1::encode(&len)
                         .map_err(|_| internal_error!("encode tx size failed"))
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    AirbenderCodecV0::encode(&tx)
+                    AirbenderCodecV1::encode(&tx)
                         .map_err(|_| internal_error!("encode tx data failed"))
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // MALICIOUS: return an invalid encoding format value
-                    AirbenderCodecV0::encode(&self.malicious_format_value)
+                    AirbenderCodecV1::encode(&self.malicious_format_value)
                         .map_err(|_| internal_error!("encode malicious format failed"))
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    AirbenderCodecV0::encode(&from)
+                    AirbenderCodecV1::encode(&from)
                         .map_err(|_| internal_error!("encode tx from failed"))
                 }
                 _ => unreachable!(),
@@ -657,7 +657,7 @@ mod custom_oracle_factories {
         ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash: Bytes32 = AirbenderCodecV0::decode(input)
+            let hash: Bytes32 = AirbenderCodecV1::decode(input)
                 .map_err(|_| internal_error!("decode hash failed"))?;
 
             let preimage = if hash.is_zero() {
@@ -687,10 +687,10 @@ mod custom_oracle_factories {
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 let len = preimage.len() as u32;
-                AirbenderCodecV0::encode(&len)
+                AirbenderCodecV1::encode(&len)
                     .map_err(|_| internal_error!("encode preimage length failed"))
             } else {
-                AirbenderCodecV0::encode(&preimage)
+                AirbenderCodecV1::encode(&preimage)
                     .map_err(|_| internal_error!("encode preimage failed"))
             }
         }
@@ -809,7 +809,7 @@ mod custom_oracle_factories {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
-                AirbenderCodecV0::decode(input)
+                AirbenderCodecV1::decode(input)
                     .map_err(|_| internal_error!("decode StorageAddress failed"))?;
 
             use rig::basic_system::system_implementation::flat_storage_model::storage_cache::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
@@ -835,7 +835,7 @@ mod custom_oracle_factories {
                     }
                 };
 
-            AirbenderCodecV0::encode(&slot_data)
+            AirbenderCodecV1::encode(&slot_data)
                 .map_err(|_| internal_error!("encode slot_data failed"))
         }
     }
@@ -968,27 +968,27 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    AirbenderCodecV0::encode(&len)
+                    AirbenderCodecV1::encode(&len)
                         .map_err(|_| internal_error!("encode tx size failed"))
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    AirbenderCodecV0::encode(&tx)
+                    AirbenderCodecV1::encode(&tx)
                         .map_err(|_| internal_error!("encode tx data failed"))
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // Return valid RLP format so parsing is attempted on garbage data
                     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-                    AirbenderCodecV0::encode(&TxEncodingFormat::Rlp)
+                    AirbenderCodecV1::encode(&TxEncodingFormat::Rlp)
                         .map_err(|_| internal_error!("encode tx format failed"))
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    AirbenderCodecV0::encode(&from)
+                    AirbenderCodecV1::encode(&from)
                         .map_err(|_| internal_error!("encode tx from failed"))
                 }
                 _ => unreachable!(),
@@ -1113,7 +1113,7 @@ mod custom_oracle_factories {
             match query_id {
                 _ if query_id == InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                     let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
-                        AirbenderCodecV0::decode(input)
+                        AirbenderCodecV1::decode(input)
                             .map_err(|_| internal_error!("decode StorageAddress failed"))?;
 
                     let flat_key = derive_flat_storage_key(&address, &key);
@@ -1132,38 +1132,38 @@ mod custom_oracle_factories {
                             }
                         };
 
-                    AirbenderCodecV0::encode(&slot_data)
+                    AirbenderCodecV1::encode(&slot_data)
                         .map_err(|_| internal_error!("encode slot_data failed"))
                 }
                 _ if query_id == PreviousIndexQuery::QUERY_ID => {
                     let key: <PreviousIndexQuery as SimpleOracleQuery>::Input =
-                        AirbenderCodecV0::decode(input).map_err(|_| {
+                        AirbenderCodecV1::decode(input).map_err(|_| {
                             internal_error!("decode PreviousIndexQuery input failed")
                         })?;
                     let prev_index = self.storage.prev_tree_index(key);
-                    AirbenderCodecV0::encode(&prev_index)
+                    AirbenderCodecV1::encode(&prev_index)
                         .map_err(|_| internal_error!("encode prev_index failed"))
                 }
                 _ if query_id == ExactIndexQuery::QUERY_ID => {
                     let key: <ExactIndexQuery as SimpleOracleQuery>::Input =
-                        AirbenderCodecV0::decode(input)
+                        AirbenderCodecV1::decode(input)
                             .map_err(|_| internal_error!("decode ExactIndexQuery input failed"))?;
                     let index = self
                         .storage
                         .tree_index(key)
                         .expect("Reading index for key that is not in the tree");
-                    AirbenderCodecV0::encode(&index)
+                    AirbenderCodecV1::encode(&index)
                         .map_err(|_| internal_error!("encode tree index failed"))
                 }
                 _ if query_id == PROOF_FOR_INDEX_QUERY_ID => {
-                    let index: u64 = AirbenderCodecV0::decode(input)
+                    let index: u64 = AirbenderCodecV1::decode(input)
                         .map_err(|_| internal_error!("decode proof index failed"))?;
                     let proof = ValueAtIndexProof {
                         proof: ExistingReadProof {
                             existing: self.storage.merkle_proof(index),
                         },
                     };
-                    AirbenderCodecV0::encode(&proof)
+                    AirbenderCodecV1::encode(&proof)
                         .map_err(|_| internal_error!("encode proof failed"))
                 }
                 _ => unreachable!(),
@@ -1286,7 +1286,7 @@ mod custom_oracle_factories {
         ) -> Result<Vec<u8>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash: Bytes32 = AirbenderCodecV0::decode(input)
+            let hash: Bytes32 = AirbenderCodecV1::decode(input)
                 .map_err(|_| internal_error!("decode hash failed"))?;
 
             let is_corrupted = self.corrupted_hashes.iter().any(|h| *h == hash);
@@ -1315,10 +1315,10 @@ mod custom_oracle_factories {
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 let len = preimage.len() as u32;
-                AirbenderCodecV0::encode(&len)
+                AirbenderCodecV1::encode(&len)
                     .map_err(|_| internal_error!("encode preimage length failed"))
             } else {
-                AirbenderCodecV0::encode(&preimage)
+                AirbenderCodecV1::encode(&preimage)
                     .map_err(|_| internal_error!("encode preimage failed"))
             }
         }
@@ -1408,7 +1408,7 @@ mod callable_oracle_tests {
     //! a TestMemorySource (BTreeMap-based RamPeek impl).
 
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
-    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+    use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV1};
     use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
 
     use rig::alloy::consensus::TxEip2930;
@@ -1518,7 +1518,7 @@ mod callable_oracle_tests {
         memory.insert_u32(m_addr, 3);
 
         // Build the input bytes as the RISC-V oracle expects: a pointer to params
-        let input_bytes = AirbenderCodecV0::encode(&params_addr).unwrap();
+        let input_bytes = AirbenderCodecV1::encode(&params_addr).unwrap();
 
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();

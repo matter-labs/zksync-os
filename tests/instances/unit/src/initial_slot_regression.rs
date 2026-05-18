@@ -20,7 +20,7 @@ use rig::forward_system::run::query_processors::{
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
-use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV0};
+use rig::oracle_provider::airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
@@ -74,7 +74,7 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key }: StorageAddress<EthereumIOTypesConfig> =
-                    AirbenderCodecV0::decode(input)
+                    AirbenderCodecV1::decode(input)
                         .map_err(|_| internal_error!("decode StorageAddress failed"))?;
                 let flat_key = derive_flat_storage_key(&address, &key);
                 let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
@@ -104,7 +104,7 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                             }
                         }
                     };
-                AirbenderCodecV0::encode(&slot_data)
+                AirbenderCodecV1::encode(&slot_data)
                     .map_err(|_| internal_error!("encode slot_data failed"))
             }
             _ => unreachable!(),

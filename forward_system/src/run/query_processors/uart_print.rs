@@ -30,13 +30,13 @@ impl OracleQueryProcessor for UARTPrintResponder {
     ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        // The input is the UART message encoded via AirbenderCodecV0.
+        // The input is the UART message encoded via AirbenderCodecV1.
         // The guest sends the message as bytes (Vec<u8>).
-        let string_bytes: Vec<u8> = AirbenderCodecV0::decode(input)
+        let string_bytes: Vec<u8> = AirbenderCodecV1::decode(input)
             .map_err(|_| internal_error!("decode UART message failed"))?;
         print!("{}", String::from_utf8_lossy(&string_bytes));
 
         // Return empty response
-        AirbenderCodecV0::encode(&()).map_err(|_| internal_error!("encode UART response failed"))
+        AirbenderCodecV1::encode(&()).map_err(|_| internal_error!("encode UART response failed"))
     }
 }

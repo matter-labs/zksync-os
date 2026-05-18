@@ -40,12 +40,12 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use airbender_codec::{AirbenderCodec, AirbenderCodecV0};
-    use airbender_guest::input::read_with;
+    use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
+    use airbender_guest::input::read_v1_with;
     use airbender_guest::transport::MockTransport;
 
     fn encode_value<T: Serialize>(v: &T) -> Vec<u8> {
-        AirbenderCodecV0::encode(v).expect("encode")
+        AirbenderCodecV1::encode(v).expect("encode")
     }
 
     struct FixedOracle {
@@ -67,7 +67,7 @@ mod tests {
         ) -> Result<O, InternalError> {
             let bytes = &self.values[self.cursor];
             self.cursor += 1;
-            AirbenderCodecV0::decode(bytes).map_err(|_| zk_ee::internal_error!("decode failed"))
+            AirbenderCodecV1::decode(bytes).map_err(|_| zk_ee::internal_error!("decode failed"))
         }
     }
 
@@ -101,10 +101,10 @@ mod tests {
         let (_, inputs) = recorder.into_inputs();
         let mut transport = MockTransport::new(inputs.words().to_vec());
 
-        let r1: u32 = read_with(&mut transport).unwrap();
-        let r2: DivRemResponse = read_with(&mut transport).unwrap();
-        let r3: ModexpResponse = read_with(&mut transport).unwrap();
-        let r4: FieldSqrtResponse = read_with(&mut transport).unwrap();
+        let r1: u32 = read_v1_with(&mut transport).unwrap();
+        let r2: DivRemResponse = read_v1_with(&mut transport).unwrap();
+        let r3: ModexpResponse = read_v1_with(&mut transport).unwrap();
+        let r4: FieldSqrtResponse = read_v1_with(&mut transport).unwrap();
 
         assert_eq!(r1, 42);
         assert_eq!(r2.quotient, [1, 2, 3, 4]);
@@ -132,9 +132,9 @@ mod tests {
         let witness_words = inputs.words().to_vec();
 
         let mut transport = MockTransport::new(witness_words);
-        let r1: u32 = read_with(&mut transport).unwrap();
-        let r2: u32 = read_with(&mut transport).unwrap();
-        let r3: u32 = read_with(&mut transport).unwrap();
+        let r1: u32 = read_v1_with(&mut transport).unwrap();
+        let r2: u32 = read_v1_with(&mut transport).unwrap();
+        let r3: u32 = read_v1_with(&mut transport).unwrap();
 
         assert_eq!((r1, r2, r3), (42, 99, 7));
     }
