@@ -7,8 +7,7 @@ populated by `FriProofTx` validation; actual proof verification
 happens upstream in server, host and proving paths. The proof bytes
 themselves are supplied off-tx via an oracle sidecar; the
 `FriProofTx` transaction type declares the list of statement hashes
-the operator claims to have proofs for and binds it to the EOA
-signature.
+the transaction sender claims to have proofs for.
 
 This page documents the design end-to-end. For the field-level
 encoding of the tx see
