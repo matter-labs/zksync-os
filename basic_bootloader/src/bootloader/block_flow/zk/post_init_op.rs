@@ -8,6 +8,7 @@ where
     S::Metadata: GatewayModeMetadata,
 {
     fn post_init_op<Config: BasicBootloaderExecutionConfig>(
+        #[cfg_attr(feature = "disable_system_contracts", allow(unused_variables))]
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, <S as SystemTypes>::Allocator>,
     ) -> Result<(), InternalError> {
