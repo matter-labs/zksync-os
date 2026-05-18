@@ -24,6 +24,8 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
+// Experimental measurement of deflate compression over the v2 pubdata blob.
+mod pubdata_compression_experiment;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;
 

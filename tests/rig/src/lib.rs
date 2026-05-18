@@ -14,6 +14,7 @@ pub mod chain;
 pub mod constants;
 pub mod evm_bytecode;
 pub mod predeployed_contracts;
+pub mod pubdata_compression;
 pub mod revm_consistency_checker;
 pub mod run_config;
 pub mod testing_utils;

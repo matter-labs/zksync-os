@@ -21,6 +21,7 @@ zksync_os_runner = { path = "../../zksync_os_runner" }
 system_hooks = { path = "../../system_hooks"}
 crypto = { workspace = true }
 cycle_marker = { path = "../../cycle_marker", optional = true }
+miniz_nostd_compression = { path = "../../supporting_crates/nostd_compression" }
 zksync_os_api = { path = "../../api" }
 zksync_os_interface = { workspace = true }
 airbender-host = { workspace = true, optional = true }

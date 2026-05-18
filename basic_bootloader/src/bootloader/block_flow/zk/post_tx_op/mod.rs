@@ -1,38 +1,53 @@
 use super::*;
+use alloc::boxed::Box;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
+use miniz_nostd_compression::deflate::core::CompressorOxideInner;
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::{IOSubsystem, Resource, Resources};
+use zk_ee::system::{IOSubsystem, NopResultKeeper, Resource, Resources};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
+
+use self::pubdata_compression::{
+    boxed_zeroed_in, streaming_compressor_flags, DeflateSink, HashBuffers, HuffmanOxide, LocalBuf,
+};
 
 pub mod da_commitment_generator;
 mod post_tx_op_proving_multiblock_batch;
 mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
+mod pubdata_compression;
 pub mod public_input;
 
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata; storage diffs
 ///            use a header + initial/repeated split, with repeated writes
-///            referenced by compact tree index.
+///            referenced by compact tree index. The body (everything after
+///            the 41-byte header of version + block_hash + timestamp) is
+///            wrapped in a DEFLATE stream — the header stays uncompressed
+///            so consumers can read block_hash / timestamp without
+///            inflating.
 pub const PUBDATA_ENCODING_VERSION: u8 = 2;
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
 ///
-/// Storage diffs are emitted in the v2 compressed format and reference
-/// per-block tree indices for repeated writes; the caller must therefore
-/// have already run `update_commitment` with the actual state commitment so
-/// `io.storage.key_to_index_cache` is populated.
+/// v2 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`
+/// where `BODY` is the storage diffs + logs + messages byte stream. The
+/// 41-byte header stays uncompressed so consumers can read block_hash /
+/// timestamp without inflating.
+///
+/// Storage diffs reference per-block tree indices for repeated writes;
+/// the caller must therefore have already run `update_commitment` with the
+/// actual state commitment so `io.storage.key_to_index_cache` is populated.
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,
@@ -59,7 +74,15 @@ fn write_pubdata<
         PROOF_ENV,
     >,
 ) {
-    // Write version byte first to enable future pubdata format upgrades
+    // Clone the live system allocator out of `io` once, before any other
+    // field borrows. Using `A::default()` here would construct a fresh
+    // allocator handle whose backing memory is undefined in the proving
+    // environment (the RISC-V allocator's state lives in `io.allocator`,
+    // not in `A::default()`).
+    let allocator = io.allocator.clone();
+
+    // Uncompressed header — keeps `pubdata[0]` the version byte and the
+    // 32-byte block hash + 8-byte timestamp inspectable without inflating.
     pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
     pubdata_dst.write(block_hash.as_u8_ref());
     pubdata_dst.write(&timestamp.to_be_bytes());
@@ -68,14 +91,41 @@ fn write_pubdata<
     result_keeper.pubdata(block_hash.as_u8_ref());
     result_keeper.pubdata(&timestamp.to_be_bytes());
 
+    // Allocate the deflate scratch on the system heap directly via
+    // `Box::new_zeroed_in` (the three structs are ~254 KB combined; a stack
+    // copy via `Box::new_in(T::default(), ...)` is not viable). Compressor
+    // borrows the scratch immutably for its lifetime.
+    //
+    // SAFETY: each scratch type's `Default` is the all-zero bit pattern, so
+    // a zero-init Box is a valid value of the type.
+    let mut huff: Box<HuffmanOxide, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let mut local_buf: Box<LocalBuf, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let mut hb: Box<HashBuffers, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let compressor = CompressorOxideInner::new(
+        streaming_compressor_flags(),
+        &mut huff,
+        &mut local_buf,
+        &mut hb,
+    );
+
+    // Stream the body bytes through deflate as the emitters produce them.
+    // The body emitters do a dual-write to (pubdata_dst, result_keeper);
+    // suppress the result_keeper mirror by passing `NopResultKeeper`, and
+    // route the body bytes into the deflate sink. The sink emits compressed
+    // bytes to both real destinations on the fly — no intermediate body or
+    // output buffer is materialised.
+    let mut nop_rk = NopResultKeeper::<()>::default();
+    let mut sink = DeflateSink::new(compressor, allocator, pubdata_dst, result_keeper);
+
     io.storage.apply_storage_diffs_pubdata(
-        result_keeper,
-        pubdata_dst,
+        &mut nop_rk,
+        &mut sink,
         &mut io.oracle,
         repeated_write_index_encoding_length,
     );
+    io.logs_storage.apply_pubdata(&mut sink, &mut nop_rk);
 
-    io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
+    sink.finish();
 }
 
 /// Helper method to create block header.

@@ -15,6 +15,12 @@ zksync_os_tests_common = { path = "../../common" }
 hex = { workspace = true }
 alloy-sol-types = { workspace = true }
 
+[dev-dependencies]
+# Host-side inflate for round-tripping the v3 deflate-wrapped pubdata in
+# `pubdata_compression_experiment` tests. The in-STF compressor lives in
+# `supporting_crates/nostd_compression` (encode-only).
+miniz_oxide = "0.7"
+
 [features]
 e2e_proving = ["rig/e2e_proving"]
 cycle_marker = ["rig/cycle_marker"]

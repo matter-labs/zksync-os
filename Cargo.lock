@@ -1919,6 +1919,7 @@ dependencies = [
  "cycle_marker",
  "evm_interpreter",
  "hex",
+ "miniz_nostd_compression",
  "paste",
  "ruint",
  "serde",
@@ -4951,6 +4952,15 @@ dependencies = [
 
 [[package]]
 name = "miniz_oxide"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
+dependencies = [
+ "adler",
+]
+
+[[package]]
+name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
@@ -6863,6 +6873,7 @@ dependencies = [
  "evm_interpreter",
  "forward_system",
  "log",
+ "miniz_nostd_compression",
  "once_cell",
  "oracle_provider",
  "ruint",
@@ -8397,6 +8408,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-sol-types",
  "hex",
+ "miniz_oxide 0.7.4",
  "rig",
  "zksync_os_tests_common",
 ]
