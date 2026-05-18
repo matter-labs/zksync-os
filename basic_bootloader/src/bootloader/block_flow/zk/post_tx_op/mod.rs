@@ -80,7 +80,12 @@ fn write_pubdata<
         PROOF_ENV,
     >,
 ) {
-    let allocator = A::default();
+    // Clone the live system allocator out of `io` once, before any other
+    // field borrows. Using `A::default()` here would construct a fresh
+    // allocator handle whose backing memory is undefined in the proving
+    // environment (the RISC-V allocator's state lives in `io.allocator`,
+    // not in `A::default()`).
+    let allocator = io.allocator.clone();
 
     // Uncompressed header — keeps `pubdata[0]` the version byte and the
     // 32-byte block hash + 8-byte timestamp inspectable without inflating.
