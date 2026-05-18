@@ -6863,6 +6863,7 @@ dependencies = [
  "evm_interpreter",
  "forward_system",
  "log",
+ "miniz_nostd_compression",
  "once_cell",
  "oracle_provider",
  "ruint",

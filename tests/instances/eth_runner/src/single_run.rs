@@ -150,6 +150,12 @@ fn run<const RANDOMIZED: bool>(
     // when MARKER_PATH is set (i.e. the caller asked for bench output), and
     // silently no-ops if the file isn't writable. Matches the parsing
     // contract in `bench_scripts/compare_pubdata.py`.
+    //
+    // Also emits the deflate-compressed sizes at levels 1 (fast) and 9
+    // (best) — a post-STF measurement to evaluate the "compressed envelope"
+    // optimization (#1 in `pubdata_optimization.md`) without changing the
+    // STF's emitted blob. The bench A/B pipeline can extend the parser later
+    // to surface these alongside the uncompressed size.
     if let Ok(path) = std::env::var("MARKER_PATH") {
         use std::io::Write;
         if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -158,6 +164,16 @@ fn run<const RANDOMIZED: bool>(
             .open(&path)
         {
             let _ = writeln!(f, "pubdata_bytes: {}", pubdata.len());
+            let _ = writeln!(
+                f,
+                "pubdata_bytes_deflate1: {}",
+                rig::pubdata_compression::deflate(&pubdata, 1).len()
+            );
+            let _ = writeln!(
+                f,
+                "pubdata_bytes_deflate9: {}",
+                rig::pubdata_compression::deflate(&pubdata, 9).len()
+            );
         }
     }
 
