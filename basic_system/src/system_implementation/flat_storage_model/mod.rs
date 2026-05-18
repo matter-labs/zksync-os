@@ -599,29 +599,31 @@ impl<
     ) {
         use zk_ee::common_structs::*;
 
-        let key_to_index_cache = self
-            .key_to_index_cache
-            .as_ref()
-            .expect("update_commitment with Some(state_commitment) must run before pubdata emission");
+        let key_to_index_cache = self.key_to_index_cache.as_ref().expect(
+            "update_commitment with Some(state_commitment) must run before pubdata emission",
+        );
 
         let mut flat_storage_key_hasher = crypto::blake2s::Blake2s256::new();
 
         // Header: total diffs / initial account / initial slot / index width.
-        let total_diffs = self.storage_cache.net_diffs_iter().count() as u32;
-        let initial_account_writes = self
-            .storage_cache
-            .net_diffs_iter()
-            .filter(|(k, v)| {
-                k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS && v.is_new_storage_slot
-            })
-            .count() as u32;
-        let initial_slot_writes = self
-            .storage_cache
-            .net_diffs_iter()
-            .filter(|(k, v)| {
-                k.address != ACCOUNT_PROPERTIES_STORAGE_ADDRESS && v.is_new_storage_slot
-            })
-            .count() as u32;
+        // Fold the three counts into one pass over `net_diffs_iter` — each
+        // pass copies ~96 B of `WarmStorageKey + WarmStorageValue` per
+        // accessed slot (reads included, since `iter_as_storage_types`
+        // yields all accesses and the filter happens at the consumer), so
+        // each saved pass is N elements of iteration + filter overhead.
+        let mut total_diffs: u32 = 0;
+        let mut initial_account_writes: u32 = 0;
+        let mut initial_slot_writes: u32 = 0;
+        for (k, v) in self.storage_cache.net_diffs_iter() {
+            total_diffs += 1;
+            if v.is_new_storage_slot {
+                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                    initial_account_writes += 1;
+                } else {
+                    initial_slot_writes += 1;
+                }
+            }
+        }
 
         let header = [
             total_diffs.to_be_bytes(),
