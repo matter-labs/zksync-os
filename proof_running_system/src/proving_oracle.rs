@@ -1,10 +1,12 @@
-use airbender_guest::input::read_v1_with;
+use airbender_codec::{AirbenderCodec, AirbenderCodecV1, CodecError};
 use airbender_guest::transport::Transport;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use zk_ee::internal_error;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
+
+const STACK_BUF_SIZE: usize = 512;
 
 pub struct ProvingOracle<T: Transport> {
     transport: T,
@@ -14,6 +16,33 @@ impl<T: Transport> ProvingOracle<T> {
     pub fn new(transport: T) -> Self {
         Self { transport }
     }
+
+    fn read_value<O: DeserializeOwned>(&mut self) -> Result<O, CodecError> {
+        let len = self.transport.read_word() as usize;
+        let words_needed = (len + 3) / 4;
+
+        if len <= STACK_BUF_SIZE {
+            let mut buf = [0u8; STACK_BUF_SIZE];
+            let mut offset = 0;
+            for _ in 0..words_needed {
+                let word_bytes = self.transport.read_word().to_le_bytes();
+                let to_copy = (len - offset).min(4);
+                buf[offset..offset + to_copy].copy_from_slice(&word_bytes[..to_copy]);
+                offset += to_copy;
+            }
+            AirbenderCodecV1::decode(&buf[..len])
+        } else {
+            let mut bytes = alloc::vec![0u8; len];
+            let mut offset = 0;
+            for _ in 0..words_needed {
+                let word_bytes = self.transport.read_word().to_le_bytes();
+                let to_copy = (len - offset).min(4);
+                bytes[offset..offset + to_copy].copy_from_slice(&word_bytes[..to_copy]);
+                offset += to_copy;
+            }
+            AirbenderCodecV1::decode(&bytes)
+        }
+    }
 }
 
 impl<T: Transport + 'static> IOOracle for ProvingOracle<T> {
@@ -22,7 +51,7 @@ impl<T: Transport + 'static> IOOracle for ProvingOracle<T> {
         _query_type: u32,
         _input: &I,
     ) -> Result<O, InternalError> {
-        read_v1_with::<O>(&mut self.transport)
+        self.read_value()
             .map_err(|_e| internal_error!("proving oracle read failed"))
     }
 }

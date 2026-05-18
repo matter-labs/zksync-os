@@ -18,6 +18,7 @@ basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 airbender-guest = { workspace = true, features = ["allocator-custom"] }
+airbender-codec = { workspace = true }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 ruint = { workspace = true, default-features = false }
 crypto = { workspace = true }
@@ -29,7 +30,6 @@ talc = { version = "4.4.3", default-features = false, features = ["allocator", "
 [dev-dependencies]
 hex = { workspace = true }
 fastrand = "2.0.2"
-airbender-codec = { workspace = true }
 airbender-core = { workspace = true }
 
 [features]

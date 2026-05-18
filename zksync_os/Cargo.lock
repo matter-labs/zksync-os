@@ -752,6 +752,7 @@ dependencies = [
 name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
+ "airbender-codec",
  "airbender-crypto",
  "airbender-guest",
  "basic_bootloader",
