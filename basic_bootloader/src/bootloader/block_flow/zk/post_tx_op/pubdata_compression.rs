@@ -1,4 +1,4 @@
-//! In-STF deflate compression for the v2 pubdata body.
+//! In-STF streaming deflate compression for the v2 pubdata body.
 //!
 //! Layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`. The
 //! 41-byte fixed header stays uncompressed (so consumers can read
@@ -6,18 +6,36 @@
 //! logs + messages) is DEFLATE-encoded. The deflate stream is
 //! self-terminating; no length prefix is emitted.
 //!
+//! Compression runs *streaming*: the body emitters call
+//! `DeflateSink::write(buf)` directly, miniz consumes the bytes and emits
+//! compressed output into a small fixed-size buffer, which is drained to
+//! both `pubdata_dst` (DA commitment) and `result_keeper` on the fly.
+//!
+//! This avoids ever materialising the full body or the full compressed
+//! output as a contiguous buffer — peak memory is `scratch (~254 KB) +
+//! out_buf (16 KB)` instead of `scratch + body (1.1 MB) + output_cap
+//! (~1.2 MB)`. The proving allocator (`proof_running_system::ProxyAllocator`)
+//! panics on `grow`, so eliminating the resizable Vecs also removes a class
+//! of bugs.
+//!
 //! Both forward and proving execution paths run this code, and miniz's
 //! deflate is fully deterministic for fixed flags, so the two paths emit
 //! identical bytes for identical inputs.
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::alloc::Allocator;
 
-use miniz_nostd_compression::deflate::core::CompressorOxideInner;
-use miniz_nostd_compression::deflate::{
-    compress_flags_default, compress_to_buffer, HashBuffers, HuffmanOxide, LocalBuf,
+use miniz_nostd_compression::deflate::compress_flags_default;
+use miniz_nostd_compression::deflate::core::{
+    compress, CompressorOxideInner, TDEFLFlush, TDEFLStatus,
 };
+use zk_ee::system::IOResultKeeper;
+use zk_ee::types_config::EthereumIOTypesConfig;
+use zk_ee::utils::write_bytes::WriteBytes;
+
+// Re-export the scratch types so `write_pubdata` can allocate them on the
+// system heap without depending on `miniz_nostd_compression` directly.
+pub use miniz_nostd_compression::deflate::{HashBuffers, HuffmanOxide, LocalBuf};
 
 /// miniz compression level used in-circuit.
 ///
@@ -28,52 +46,145 @@ use miniz_nostd_compression::deflate::{
 /// and the cycle delta dominates the byte delta.
 pub const COMPRESSION_LEVEL: u8 = 1;
 
-/// Tight upper bound on deflate output: zlib's `deflateBound` is
-/// `n + (n>>12) + (n>>14) + (n>>25) + 13`. We use `n + n/8 + 64` which is
-/// strictly larger for all n and keeps the math cheap.
-fn deflate_output_cap(input_len: usize) -> usize {
-    input_len + input_len / 8 + 64
-}
+/// Size of the streaming compressor's output buffer. Picked at 16 KiB as a
+/// balance between (a) per-call drain overhead — too small means many
+/// `compress()` invocations to make progress — and (b) memory footprint.
+/// The streaming model means total output bytes are unbounded by this;
+/// drains happen in 16 KiB chunks regardless of the final body size.
+const STREAMING_OUT_BUF_SIZE: usize = 16 * 1024;
 
 /// Allocate a zero-initialized `T` directly on the heap via `allocator`.
-/// Avoids a giant stack copy that `Box::new_in(T::default(), allocator)`
-/// would do for the 160 KB+ deflate scratch buffers.
+///
+/// Avoids a 250 KB stack copy that `Box::new_in(T::default(), allocator)`
+/// would do for the deflate scratch types.
 ///
 /// # Safety
 /// Caller must guarantee that an all-zero bit pattern is a valid value of T.
 /// All three deflate scratch types (`HuffmanOxide`, `LocalBuf`, `HashBuffers`)
 /// satisfy this: each is a record of fixed-size arrays of integer types whose
 /// `Default::default()` is the all-zero pattern.
-unsafe fn boxed_zeroed_in<T, A: Allocator>(allocator: A) -> Box<T, A> {
+pub unsafe fn boxed_zeroed_in<T, A: Allocator>(allocator: A) -> Box<T, A> {
     Box::<T, A>::new_zeroed_in(allocator).assume_init()
 }
 
-/// Deflate `input` into a freshly-allocated buffer on the given allocator.
+/// Streaming deflate sink. Implements `WriteBytes` so the existing body
+/// emitters (`apply_storage_diffs_pubdata`, `LogsStorage::apply_pubdata`)
+/// write to it as if it were the raw pubdata destination. Internally each
+/// write is fed to miniz incrementally and the emitted compressed bytes are
+/// forwarded to both real sinks (`pubdata_dst` for DA commitment,
+/// `result_keeper.pubdata` for sequencer / test capture).
 ///
-/// The returned `Vec` holds raw deflate bytes (no zlib wrapper). Panics if
-/// the compressor reports failure — under the calling convention here the
-/// output buffer is sized to `deflate_output_cap(input.len())` which is a
-/// proven upper bound on deflate output, so the failure path is unreachable
-/// in practice. Treating it as an internal invariant violation rather than
-/// a recoverable error keeps `write_pubdata`'s `()` return type intact.
-pub fn deflate_pubdata_body<A: Allocator + Clone>(input: &[u8], allocator: A) -> Vec<u8, A> {
-    // SAFETY: each of these three types has an all-zero bit pattern as its
-    // `Default`; see `boxed_zeroed_in` doc.
-    let mut huff: Box<HuffmanOxide, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
-    let mut local_buf: Box<LocalBuf, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
-    let mut hb: Box<HashBuffers, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+/// The caller owns the three scratch boxes (`HuffmanOxide`, `LocalBuf`,
+/// `HashBuffers`) and constructs the `CompressorOxideInner` borrowing them;
+/// `DeflateSink::new` takes ownership of the compressor and the destination
+/// references. `finish` must be called to flush trailing bytes — leaving the
+/// sink un-flushed produces a truncated deflate stream.
+pub struct DeflateSink<'a, A, DST, RK>
+where
+    A: Allocator,
+    DST: WriteBytes + ?Sized,
+    RK: IOResultKeeper<EthereumIOTypesConfig>,
+{
+    compressor: CompressorOxideInner<'a>,
+    out_buf: Box<[u8], A>,
+    dst: &'a mut DST,
+    rk: &'a mut RK,
+}
 
-    let flags = compress_flags_default(COMPRESSION_LEVEL);
-    let mut compressor = CompressorOxideInner::new(flags, &mut huff, &mut local_buf, &mut hb);
+impl<'a, A, DST, RK> DeflateSink<'a, A, DST, RK>
+where
+    A: Allocator,
+    DST: WriteBytes + ?Sized,
+    RK: IOResultKeeper<EthereumIOTypesConfig>,
+{
+    pub fn new(
+        compressor: CompressorOxideInner<'a>,
+        allocator: A,
+        dst: &'a mut DST,
+        rk: &'a mut RK,
+    ) -> Self {
+        // SAFETY: `[u8]` of any length is valid as all zeros.
+        let out_buf = unsafe {
+            Box::<[u8], A>::new_zeroed_slice_in(STREAMING_OUT_BUF_SIZE, allocator).assume_init()
+        };
+        Self {
+            compressor,
+            out_buf,
+            dst,
+            rk,
+        }
+    }
 
-    let mut output = Vec::with_capacity_in(deflate_output_cap(input.len()), allocator);
-    // `compress_to_buffer` writes into `&mut [u8]`, so we need the spare
-    // capacity to be addressable as a slice. Resize-to-cap with 0 bytes (no
-    // memcpy of pre-existing data; this is the first fill of the buffer).
-    output.resize(output.capacity(), 0u8);
+    /// Flush trailing compressor state and emit the deflate stream end
+    /// marker. Consumes the sink — any further write would corrupt the
+    /// stream.
+    pub fn finish(mut self) {
+        loop {
+            let (status, _bytes_in, bytes_out) = compress(
+                &mut self.compressor,
+                &[],
+                &mut self.out_buf,
+                TDEFLFlush::Finish,
+            );
+            if bytes_out > 0 {
+                self.dst.write(&self.out_buf[..bytes_out]);
+                self.rk.pubdata(&self.out_buf[..bytes_out]);
+            }
+            match status {
+                TDEFLStatus::Done => break,
+                TDEFLStatus::Okay => continue,
+                TDEFLStatus::BadParam => {
+                    panic!("deflate finish returned BadParam — compressor flags are wrong")
+                }
+                TDEFLStatus::PutBufFailed => {
+                    // Only reachable via the callback-style API; the slice
+                    // API we use cannot trigger this.
+                    panic!("deflate finish returned PutBufFailed")
+                }
+            }
+        }
+    }
+}
 
-    let used = compress_to_buffer(&mut compressor, input, &mut output)
-        .expect("deflate output buffer underestimated — deflate_output_cap is wrong");
-    output.truncate(used);
-    output
+impl<A, DST, RK> WriteBytes for DeflateSink<'_, A, DST, RK>
+where
+    A: Allocator,
+    DST: WriteBytes + ?Sized,
+    RK: IOResultKeeper<EthereumIOTypesConfig>,
+{
+    fn write(&mut self, buf: &[u8]) {
+        let mut remaining = buf;
+        while !remaining.is_empty() {
+            let (status, bytes_in, bytes_out) = compress(
+                &mut self.compressor,
+                remaining,
+                &mut self.out_buf,
+                TDEFLFlush::None,
+            );
+            if bytes_out > 0 {
+                self.dst.write(&self.out_buf[..bytes_out]);
+                self.rk.pubdata(&self.out_buf[..bytes_out]);
+            }
+            // miniz with `TDEFLFlush::None` and a drained output buffer
+            // always makes progress (either consumes input or fills the
+            // output buffer). A no-progress return is an internal bug.
+            if bytes_in == 0 && bytes_out == 0 {
+                match status {
+                    TDEFLStatus::BadParam => {
+                        panic!("deflate stream returned BadParam — compressor flags are wrong")
+                    }
+                    TDEFLStatus::PutBufFailed => panic!("deflate stream returned PutBufFailed"),
+                    TDEFLStatus::Okay | TDEFLStatus::Done => {
+                        panic!("deflate streaming compressor made no progress")
+                    }
+                }
+            }
+            remaining = &remaining[bytes_in..];
+        }
+    }
+}
+
+/// Convenience: produce the compressor flags `DeflateSink` uses.
+pub fn streaming_compressor_flags() -> u32 {
+    compress_flags_default(COMPRESSION_LEVEL)
 }

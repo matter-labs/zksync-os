@@ -1,10 +1,11 @@
 use super::*;
-use alloc::vec::Vec;
+use alloc::boxed::Box;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
+use miniz_nostd_compression::deflate::core::CompressorOxideInner;
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
@@ -15,7 +16,9 @@ use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 
-use self::da_commitment_generator::blob_commitment_generator::BUFFER_CAPACITY;
+use self::pubdata_compression::{
+    boxed_zeroed_in, streaming_compressor_flags, DeflateSink, HashBuffers, HuffmanOxide, LocalBuf,
+};
 
 pub mod da_commitment_generator;
 mod post_tx_op_proving_multiblock_batch;
@@ -34,17 +37,6 @@ pub mod public_input;
 ///            so consumers can read block_hash / timestamp without
 ///            inflating.
 pub const PUBDATA_ENCODING_VERSION: u8 = 2;
-
-/// Adapter that lets the storage / logs body emitters drive a single
-/// `Vec<u8, A>` sink through the `WriteBytes` trait. Used internally by
-/// `write_pubdata` to collect the body bytes before deflate.
-struct VecWriteBytes<'a, A: Allocator>(&'a mut Vec<u8, A>);
-
-impl<A: Allocator> WriteBytes for VecWriteBytes<'_, A> {
-    fn write(&mut self, buf: &[u8]) {
-        self.0.extend_from_slice(buf);
-    }
-}
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
 ///
@@ -99,33 +91,41 @@ fn write_pubdata<
     result_keeper.pubdata(block_hash.as_u8_ref());
     result_keeper.pubdata(&timestamp.to_be_bytes());
 
-    // Accumulate the v2 body bytes (storage diffs + logs + messages) into
-    // a buffer. The body emitters do a dual-write to (pubdata_dst,
-    // result_keeper); we suppress the result_keeper mirror here by passing
-    // a NopResultKeeper, and capture the bytes via the `pubdata_dst` arg.
-    // The compressed body is mirrored to both real sinks below.
+    // Allocate the deflate scratch on the system heap directly via
+    // `Box::new_zeroed_in` (the three structs are ~254 KB combined; a stack
+    // copy via `Box::new_in(T::default(), ...)` is not viable). Compressor
+    // borrows the scratch immutably for its lifetime.
     //
-    // Pre-allocate to the per-batch pubdata cap: in the proving environment
-    // `ProxyAllocator::grow` panics, so Vec must not be allowed to reallocate.
-    // `BUFFER_CAPACITY` is the same upper bound the v2 path already enforced
-    // via `BlobCommitmentGenerator.buffer: ArrayVec<u8, BUFFER_CAPACITY>`, so
-    // any v2 body that fit before still fits after deflate.
-    let mut body: Vec<u8, A> = Vec::with_capacity_in(BUFFER_CAPACITY, allocator.clone());
-    let mut body_sink = VecWriteBytes(&mut body);
+    // SAFETY: each scratch type's `Default` is the all-zero bit pattern, so
+    // a zero-init Box is a valid value of the type.
+    let mut huff: Box<HuffmanOxide, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let mut local_buf: Box<LocalBuf, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let mut hb: Box<HashBuffers, A> = unsafe { boxed_zeroed_in(allocator.clone()) };
+    let compressor = CompressorOxideInner::new(
+        streaming_compressor_flags(),
+        &mut huff,
+        &mut local_buf,
+        &mut hb,
+    );
+
+    // Stream the body bytes through deflate as the emitters produce them.
+    // The body emitters do a dual-write to (pubdata_dst, result_keeper);
+    // suppress the result_keeper mirror by passing `NopResultKeeper`, and
+    // route the body bytes into the deflate sink. The sink emits compressed
+    // bytes to both real destinations on the fly — no intermediate body or
+    // output buffer is materialised.
     let mut nop_rk = NopResultKeeper::<()>::default();
+    let mut sink = DeflateSink::new(compressor, allocator, pubdata_dst, result_keeper);
 
     io.storage.apply_storage_diffs_pubdata(
         &mut nop_rk,
-        &mut body_sink,
+        &mut sink,
         &mut io.oracle,
         repeated_write_index_encoding_length,
     );
-    io.logs_storage.apply_pubdata(&mut body_sink, &mut nop_rk);
-    drop(body_sink);
+    io.logs_storage.apply_pubdata(&mut sink, &mut nop_rk);
 
-    let compressed = pubdata_compression::deflate_pubdata_body(&body, allocator);
-    pubdata_dst.write(&compressed);
-    result_keeper.pubdata(&compressed);
+    sink.finish();
 }
 
 /// Helper method to create block header.
