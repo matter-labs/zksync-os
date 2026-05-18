@@ -25,7 +25,7 @@ zksync_os_interface = { workspace = true, default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-alloy = { version = "1", default-features = false, features = ["consensus"] }
+alloy = { version = "1", default-features = false, features = ["consensus", "rpc-types-trace"] }
 arrayvec = { version = "0.7.4", default-features = false }
 hex = { version = "*" }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }

@@ -1,0 +1,32 @@
+[package]
+name = "zksync_os_revm_runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+alloy = { version = "1", default-features = false, features = [
+    "serde",
+    "serde-bincode-compat",
+] }
+blake2 = "0.10.6"
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
+revm-inspectors = "0.32.0"
+log = "0.4"
+
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = "v0.0.3" }
+zksync_os_interface = { workspace = true, default-features = false }
+
+zk_ee = { path = "../../zk_ee" }
+basic_system = { path = "../../basic_system" }
+forward_system = { path = "../../forward_system" }

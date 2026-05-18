@@ -81,8 +81,9 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
 ///
 /// In memory chain state, mainly to be used in tests.
 ///
+#[derive(Clone)]
 pub struct Chain<const RANDOMIZED_TREE: bool = false> {
-    state_tree: InMemoryTree<RANDOMIZED_TREE>,
+    pub state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
     previous_block_number: Option<u64>,
@@ -132,6 +133,7 @@ pub struct RunConfig {
     // Only to be used when state-diffs-pi feature is enabled in the binary and
     // only_forward is false
     pub check_storage_diff_hashes: bool,
+    pub not_update_state_after_block_execution: bool,
 }
 
 impl Chain<false> {
@@ -194,8 +196,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.previous_block_number.map(|n| n + 1).unwrap_or(0)
     }
 
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    pub fn block_hashes(&self) -> [U256; 256] {
+        self.block_hashes
+    }
+
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
+    }
+
+    pub fn set_timestamp(&mut self, timestamp: u64) {
+        self.block_timestamp = timestamp;
     }
 
     /// TODO: duplicated from API, unify.
@@ -338,6 +352,27 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         .0
     }
 
+    pub fn run_block_with_oracle_factory_and_tracer<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+        oracle_factory: &OF,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+    ) -> BlockOutput {
+        self.run_block_with_extra_stats_with_oracle_factory(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config,
+            tracer,
+            oracle_factory,
+        )
+        .unwrap()
+        .0
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn run_block_no_panic(
         &mut self,
@@ -416,6 +451,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             app,
             only_forward,
             check_storage_diff_hashes,
+            not_update_state_after_block_execution,
         } = run_config;
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
@@ -516,27 +552,29 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             stats.computational_native_used = Some(native_used);
         }
 
-        // update state
-        self.previous_block_number = Some(self.next_block_number());
-        self.block_timestamp = block_context.timestamp;
-        for i in 0..255 {
-            self.block_hashes[i] = self.block_hashes[i + 1];
-        }
-        self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
+        if !not_update_state_after_block_execution {
+            // update state
+            self.previous_block_number = Some(self.next_block_number());
+            self.block_timestamp = block_context.timestamp;
+            for i in 0..255 {
+                self.block_hashes[i] = self.block_hashes[i + 1];
+            }
+            self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
 
-        for storage_write in block_output.storage_writes.iter() {
-            self.state_tree
-                .cold_storage
-                .insert(storage_write.key.0.into(), storage_write.value.0.into());
-            self.state_tree
-                .storage_tree
-                .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
-        }
+            for storage_write in block_output.storage_writes.iter() {
+                self.state_tree
+                    .cold_storage
+                    .insert(storage_write.key.0.into(), storage_write.value.0.into());
+                self.state_tree
+                    .storage_tree
+                    .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
+            }
 
-        for (hash, preimage) in block_output.published_preimages.iter() {
-            self.preimage_source
-                .inner
-                .insert(hash.0.into(), preimage.clone());
+            for (hash, preimage) in block_output.published_preimages.iter() {
+                self.preimage_source
+                    .inner
+                    .insert(hash.0.into(), preimage.clone());
+            }
         }
 
         let proof_input = if !only_forward {
@@ -641,26 +679,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         Ok((block_output, stats, proof_input))
     }
 
-    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
+    pub fn get_account_properties_maybe(&mut self, address: &B160) -> Option<AccountProperties> {
         use forward_system::run::PreimageSource;
         let key = address_into_special_storage_key(address);
         let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
         match self.state_tree.cold_storage.get(&flat_key) {
-            None => AccountProperties::default(),
+            None => None,
             Some(account_hash) => {
                 if account_hash.is_zero() {
                     // Empty (default) account
-                    AccountProperties::default()
+                    Some(AccountProperties::default())
                 } else {
                     // Get from preimage:
                     let encoded = self
                         .preimage_source
                         .get_preimage(*account_hash)
                         .unwrap_or_default();
-                    AccountProperties::decode(&encoded.try_into().unwrap())
+                    Some(AccountProperties::decode(&encoded.try_into().unwrap()))
                 }
             }
         }
+    }
+
+    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
+        self.get_account_properties_maybe(address)
+            .unwrap_or_default()
     }
 
     ///
