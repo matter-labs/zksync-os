@@ -1,10 +1,10 @@
-//! In-STF deflate compression for the v3 pubdata body.
+//! In-STF deflate compression for the v2 pubdata body.
 //!
-//! The v2 layout is `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][BODY...]`. v3
-//! keeps the fixed-size header uncompressed (so consumers can read block_hash
-//! and timestamp without inflating) and replaces `BODY` with its DEFLATE
-//! encoding. The deflate stream is self-terminating; no length prefix is
-//! emitted.
+//! Layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`. The
+//! 41-byte fixed header stays uncompressed (so consumers can read
+//! block_hash and timestamp without inflating); `BODY` (storage diffs +
+//! logs + messages) is DEFLATE-encoded. The deflate stream is
+//! self-terminating; no length prefix is emitted.
 //!
 //! Both forward and proving execution paths run this code, and miniz's
 //! deflate is fully deterministic for fixed flags, so the two paths emit

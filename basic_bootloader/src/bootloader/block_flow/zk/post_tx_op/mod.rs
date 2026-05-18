@@ -28,15 +28,16 @@ pub mod public_input;
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata; storage diffs
 ///            use a header + initial/repeated split, with repeated writes
-///            referenced by compact tree index.
-/// Version 3: v2 body bytes are wrapped in a DEFLATE stream. Header
-///            (version + block_hash + timestamp) stays uncompressed so
-///            consumers can read them without inflating.
-pub const PUBDATA_ENCODING_VERSION: u8 = 3;
+///            referenced by compact tree index. The body (everything after
+///            the 41-byte header of version + block_hash + timestamp) is
+///            wrapped in a DEFLATE stream — the header stays uncompressed
+///            so consumers can read block_hash / timestamp without
+///            inflating.
+pub const PUBDATA_ENCODING_VERSION: u8 = 2;
 
 /// Adapter that lets the storage / logs body emitters drive a single
 /// `Vec<u8, A>` sink through the `WriteBytes` trait. Used internally by
-/// `write_pubdata` to collect the v3 body before deflate.
+/// `write_pubdata` to collect the body bytes before deflate.
 struct VecWriteBytes<'a, A: Allocator>(&'a mut Vec<u8, A>);
 
 impl<A: Allocator> WriteBytes for VecWriteBytes<'_, A> {
@@ -47,15 +48,14 @@ impl<A: Allocator> WriteBytes for VecWriteBytes<'_, A> {
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
 ///
-/// v3 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`
-/// where `BODY` is the byte stream the v2 emitter produces (storage diffs +
-/// logs + messages). Header stays uncompressed so consumers can read
-/// block_hash / timestamp without inflating.
+/// v2 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`
+/// where `BODY` is the storage diffs + logs + messages byte stream. The
+/// 41-byte header stays uncompressed so consumers can read block_hash /
+/// timestamp without inflating.
 ///
-/// Storage diffs are emitted in the v2 compressed format and reference
-/// per-block tree indices for repeated writes; the caller must therefore
-/// have already run `update_commitment` with the actual state commitment so
-/// `io.storage.key_to_index_cache` is populated.
+/// Storage diffs reference per-block tree indices for repeated writes;
+/// the caller must therefore have already run `update_commitment` with the
+/// actual state commitment so `io.storage.key_to_index_cache` is populated.
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,

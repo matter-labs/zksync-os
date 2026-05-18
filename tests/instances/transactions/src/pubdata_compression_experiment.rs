@@ -1,15 +1,15 @@
-//! Sanity / measurement tests for the v3 deflate-wrapped pubdata.
+//! Sanity / measurement tests for the v2 deflate-wrapped pubdata body.
 //!
 //! Runs realistic workloads (mint + transfer, mixed deploy block, ERC-20
-//! sweep), captures the v3 pubdata, and prints a one-line size summary plus
-//! how much a *second* deflate pass would shave off. Once v3 is in place the
-//! second pass should add a handful of overhead bytes — that confirms the
-//! in-STF compressor is doing its job; a sudden ability to compress further
+//! sweep), captures the v2 pubdata, and prints a one-line size summary
+//! plus how much a *second* deflate pass would shave off. The second pass
+//! should add a handful of overhead bytes — that confirms the in-STF
+//! compressor is doing its job; a sudden ability to compress further
 //! would mean the STF stopped emitting deflated bytes.
 //!
-//! The `inflate_roundtrip_…` tests are the protocol-level guard: they parse
-//! the v3 header, run a host-side inflate over the body, and confirm the
-//! inflated bytes have the v2 body structure.
+//! The `inflate_roundtrip_…` tests are the protocol-level guard: they
+//! parse the 41-byte header, run a host-side inflate over the body, and
+//! confirm the inflated bytes have the v2 storage-diffs header structure.
 
 use rig::alloy;
 use rig::alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
@@ -21,24 +21,24 @@ use rig::utils::*;
 use rig::{common_target_address, testing_signer, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-/// v3 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`.
-const V3_HEADER_LEN: usize = 1 + 32 + 8;
+/// v2 layout: `[VERSION:1][BLOCK_HASH:32][TIMESTAMP:8][DEFLATE(BODY)]`.
+const PUBDATA_HEADER_LEN: usize = 1 + 32 + 8;
 
-/// Split a captured v3 pubdata blob into the uncompressed header bytes and
+/// Split a captured v2 pubdata blob into the uncompressed header bytes and
 /// the inflated body bytes. Panics if the header or deflate stream is malformed.
-fn inflate_v3(pubdata: &[u8]) -> (Vec<u8>, Vec<u8>) {
+fn inflate_pubdata(pubdata: &[u8]) -> (Vec<u8>, Vec<u8>) {
     assert!(
-        pubdata.len() >= V3_HEADER_LEN,
-        "pubdata shorter than v3 header"
+        pubdata.len() >= PUBDATA_HEADER_LEN,
+        "pubdata shorter than 41-byte header"
     );
     assert_eq!(
         pubdata[0], PUBDATA_ENCODING_VERSION,
         "version byte mismatch"
     );
-    let header = pubdata[..V3_HEADER_LEN].to_vec();
-    let deflated = &pubdata[V3_HEADER_LEN..];
+    let header = pubdata[..PUBDATA_HEADER_LEN].to_vec();
+    let deflated = &pubdata[PUBDATA_HEADER_LEN..];
     let body = miniz_oxide::inflate::decompress_to_vec(deflated)
-        .expect("v3 deflate body must inflate cleanly");
+        .expect("deflate body must inflate cleanly");
     (header, body)
 }
 
@@ -318,8 +318,8 @@ fn inflate_roundtrip_mixed_block() {
         .pubdata
         .clone();
 
-    let (header, body) = inflate_v3(&pubdata);
-    assert_eq!(header.len(), V3_HEADER_LEN);
+    let (header, body) = inflate_pubdata(&pubdata);
+    assert_eq!(header.len(), PUBDATA_HEADER_LEN);
     assert_v2_body_shape(&body);
     eprintln!(
         "[pubdata_compression] roundtrip header={}B  deflate_body={}B  inflated_body={}B",
@@ -360,7 +360,7 @@ fn inflate_roundtrip_minimal_block() {
         .pubdata
         .clone();
 
-    let (header, body) = inflate_v3(&pubdata);
+    let (header, body) = inflate_pubdata(&pubdata);
     assert_eq!(header[0], PUBDATA_ENCODING_VERSION);
     assert_v2_body_shape(&body);
 }
