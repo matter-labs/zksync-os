@@ -5,7 +5,7 @@ use crate::gas::gas_utils;
 use super::*;
 use native_resource_constants::*;
 use zk_ee::memory::U256Builder;
-use zk_ee::system::{EthereumLikeTypes, SystemFunctions};
+use zk_ee::system::{EthereumLikeTypes, IOSubsystem, SystemFunctions};
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     const EMPTY_SLICE_SHA3: U256 = U256::from_limbs([
@@ -30,28 +30,42 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
             self.resize_heap(memory_offset, len)?;
 
-            let allocator = system.get_allocator();
             let input = &self.heap[memory_offset..(memory_offset + len)];
 
-            let mut dst = U256Builder::default();
-            S::SystemFunctions::keccak256(&input, &mut dst, self.gas.resources_mut(), allocator)
+            // Check keccak cache for a precomputed result (e.g. from emit_l1_message)
+            if let Some(cached_hash) = system
+                .io
+                .check_keccak_cache(input, self.gas.resources_mut())?
+            {
+                U256::from_be_bytes(cached_hash.as_u8_array())
+            } else {
+                let allocator = system.get_allocator();
+
+                let mut dst = U256Builder::default();
+                S::SystemFunctions::keccak256(
+                    &input,
+                    &mut dst,
+                    self.gas.resources_mut(),
+                    allocator,
+                )
                 .map_err(SystemError::from)?;
 
-            let hash = dst.build();
+                let hash = dst.build();
 
-            if Self::PRINT_OPCODES {
-                use core::fmt::Write;
-                use zk_ee::logger_log;
-                use zk_ee::system::logger::Logger;
-                let mut logger = system.get_logger();
-                let input = &self.heap()[memory_offset..(memory_offset + len)];
-                let input_iter = input.iter().copied();
-                logger_log!(logger, " input: ",);
-                let _ = logger.log_data(input_iter);
-                logger_log!(logger, " -> 0x{hash:0x}");
+                if Self::PRINT_OPCODES {
+                    use core::fmt::Write;
+                    use zk_ee::logger_log;
+                    use zk_ee::system::logger::Logger;
+                    let mut logger = system.get_logger();
+                    let input = &self.heap()[memory_offset..(memory_offset + len)];
+                    let input_iter = input.iter().copied();
+                    logger_log!(logger, " input: ",);
+                    let _ = logger.log_data(input_iter);
+                    logger_log!(logger, " -> 0x{hash:0x}");
+                }
+
+                hash
             }
-
-            hash
         };
 
         self.stack.push(&hash)

@@ -56,6 +56,10 @@ pub struct FullIO<
     pub oracle: O,
     pub tx_number: u32,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
+    /// Single-entry keccak256 cache: stores (input_data, hash) from the most recent
+    /// `emit_l1_message` call so the subsequent SHA3 opcode on the same data can
+    /// skip recomputation.
+    pub keccak_cache: Option<(UsizeAlignedByteBox<A>, Bytes32)>,
 }
 
 pub struct FullIOStateSnapshot<M: StorageModel> {
@@ -221,6 +225,12 @@ impl<
         // (the L1Messenger system contract charges it before invoking the hook).
         use crypto::MiniDigest;
         let data_hash = Bytes32::from_array(crypto::sha3::Keccak256::digest(data));
+
+        // Cache (data, hash) so the subsequent SHA3 opcode on the same data can
+        // skip recomputation.
+        let cache_data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
+        self.keccak_cache = Some((cache_data, data_hash));
+
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
             .push_message(self.tx_number, address, data, data_hash)?;
@@ -462,6 +472,25 @@ impl<
     fn get_refund_counter(&'_ self) -> &'_ Self::Resources {
         self.storage.get_refund_counter()
     }
+
+    fn check_keccak_cache(
+        &mut self,
+        data: &[u8],
+        resources: &mut Self::Resources,
+    ) -> Result<Option<Bytes32>, SystemError> {
+        if let Some((ref cached_data, cached_hash)) = self.keccak_cache {
+            if cached_data.as_slice() == data {
+                let hash = cached_hash;
+                // Charge same resources as keccak256 computation would
+                let ergs_cost = evm_interpreter::keccak256_ergs_cost(data.len());
+                let native_cost = keccak256_native_cost::<Self::Resources>(data.len());
+                resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
+                self.keccak_cache = None;
+                return Ok(Some(hash));
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl<
@@ -511,6 +540,7 @@ impl<
             tx_number: 0u32,
             da_commitment_scheme,
             new_settlement_layer_chain_id_storage,
+            keccak_cache: None,
         };
 
         Ok(new)
@@ -525,6 +555,7 @@ impl<
         self.transient_storage.begin_new_tx();
         self.logs_storage.begin_new_tx();
         self.events_storage.begin_new_tx();
+        self.keccak_cache = None;
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {

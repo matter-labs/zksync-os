@@ -176,6 +176,19 @@ pub trait IOSubsystem: Sized {
 
     /// Get current gas refund counter
     fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
+
+    /// Check the keccak256 cache for a precomputed result matching `data`.
+    /// If found, charges the same resources as computing keccak256 would,
+    /// consumes the cache entry, and returns `Ok(Some(hash))`.
+    /// Returns `Ok(None)` if no cache entry matches.
+    /// Default: no caching, always returns `Ok(None)`.
+    fn check_keccak_cache(
+        &mut self,
+        _data: &[u8],
+        _resources: &mut Self::Resources,
+    ) -> Result<Option<Bytes32>, SystemError> {
+        Ok(None)
+    }
 }
 
 pub trait Maybe<T> {

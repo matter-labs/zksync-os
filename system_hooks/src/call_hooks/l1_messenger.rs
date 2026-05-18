@@ -150,8 +150,6 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     let message = &calldata[20..];
 
-    // emit L1 message (ignore returned hash)
-    // TODO(EVM-1190): hash calculation is suboptimal, to be refactored in future
     system.io.emit_l1_message(
         // Gas should be charged by the L1Messenger system contract
         ExecutionEnvironmentType::NoEE,
