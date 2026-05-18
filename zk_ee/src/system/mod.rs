@@ -231,6 +231,10 @@ where
     pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
         self.metadata.get_pubdata_price()
     }
+
+    pub fn repeated_write_index_encoding_length(&self) -> u8 {
+        self.metadata.repeated_write_index_encoding_length()
+    }
 }
 
 impl<S: SystemTypes> System<S>

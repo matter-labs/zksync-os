@@ -100,6 +100,9 @@ impl<
     fn get_pubdata_price(&self) -> U256 {
         self.block_level.get_pubdata_price()
     }
+    fn repeated_write_index_encoding_length(&self) -> u8 {
+        self.block_level.repeated_write_index_encoding_length()
+    }
 }
 
 impl<

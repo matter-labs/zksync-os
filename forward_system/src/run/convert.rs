@@ -93,6 +93,8 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,
             blob_fee: value.blob_fee,
+            // TODO: expose this in BlockContext / interface.
+            repeated_write_index_encoding_length: 5,
         }
     }
 }
