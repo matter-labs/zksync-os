@@ -162,6 +162,28 @@ lto = true
 codegen-units = 1
 debug = true
 
+# Fast-compile variant used by the bench CI for in-workspace bench
+# targets — specifically `cargo test -p precompiles --profile bench-fast`.
+# `tests/instances/eth_runner/` is excluded from this workspace (see
+# `workspace.exclude` above), so its `cargo run --manifest-path …` uses
+# the duplicate `[profile.bench-fast]` defined in
+# `tests/instances/eth_runner/Cargo.toml`; keep the two in sync.
+# Runtime perf of these driver binaries doesn't affect measurements
+# (cycle counts come from the RISC-V simulator), so disabling fat LTO
+# and parallelizing codegen cuts "Run benchmarks" compile time by a
+# large factor. The RISC-V proving binary is yet another workspace at
+# `zksync_os/Cargo.toml` and uses its own `[profile.release]` — also
+# unaffected.
+# NOTE: the literal string `bench-fast` is used as a `grep -q` fallback
+# target by `.github/workflows/bench.yml` — if this profile name is
+# changed, update the workflow too.
+[profile.bench-fast]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 16
+debug = false
+
 [patch.crates-io]
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }

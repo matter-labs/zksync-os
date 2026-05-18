@@ -73,3 +73,4 @@ evm_tester_legacy = ["basic_bootloader/resources_for_tester", "basic_bootloader/
 airbender-codec = { workspace = true }
 airbender-core = { workspace = true }
 airbender-guest = { workspace = true, features = ["allocator-custom"] }
+tempfile = "3"

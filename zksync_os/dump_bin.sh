@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -52,6 +52,17 @@ case "$TYPE" in
     ;;
   for-tests-benchmarking)
     FEATURES="$FEATURES,for_tests,benchmarking"
+    APP_NAME="for_tests"
+    ;;
+  for-tests-benchmarking-pectra)
+    # Adds `pectra` on top of `for-tests-benchmarking` so the proving binary
+    # supports BLS12-381 + BLAKE2F + P256. Required by the precompiles bench
+    # CI when it exercises `test_pectra_precompiles` (BLS12-381 + BLAKE2F)
+    # and `test_kzg_regression` (point_evaluation) in proof mode.
+    # NOTE: the literal string `for-tests-benchmarking-pectra` is used as
+    # a `grep -q` fallback target by `.github/workflows/bench.yml` — if
+    # this case label is renamed, update the workflow too.
+    FEATURES="$FEATURES,for_tests,benchmarking,pectra"
     APP_NAME="for_tests"
     ;;
   for-tests-logging-enabled)

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 716db6567d1e32db409b73df486d1bdd420d007d79f236c4dd4a705b0dffad84 # shrinks to entries = [(WarmStorageKey { address: Bits(0), key: 0x0000000000000000000000000000000000000000000000000000000000000000 }, None)]
+cc 70f2e76b934fff9e5518038c58f788a18d2c12e9629b610e2166b352e029369a # shrinks to prev_entries = [(WarmStorageKey { address: Bits(0), key: 0x0000000000000000000000000000000000000000000000000000000000000000 }, 0x0000000000000000000000000000000000000000000000000000000000000000)], new_entries = [], reads_and_updates = [(Index(0), None)]
+cc 9c41cd286d42aa27694a64451c23668099c2132fd2a5b0c48ac631f05b133878 # shrinks to prev_entries = [], new_entries = [(WarmStorageKey { address: Bits(0), key: 0x0000000000000000000000000000000000000000000000000000000000000000 }, None)]

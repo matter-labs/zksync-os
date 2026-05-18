@@ -3581,6 +3581,7 @@ dependencies = [
  "serde",
  "strum_macros",
  "system_hooks",
+ "tempfile",
  "zk_ee",
  "zksync_os_evm_errors",
  "zksync_os_interface",
@@ -5712,6 +5713,7 @@ name = "precompiles"
 version = "0.1.0"
 dependencies = [
  "cycle_marker",
+ "forward_system",
  "hex",
  "rig",
  "zksync_os_tests_common",
