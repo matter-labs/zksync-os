@@ -1586,7 +1586,7 @@ mod fri_precompile_e2e {
         B256::from(hash)
     }
 
-/// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
+    /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
     ///
     /// Simulates the submitter side: decompress the on-disk fixture, decode
     /// it, run the host-side verifier to derive `statement_versioned_hash`.
