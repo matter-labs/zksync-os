@@ -16,7 +16,7 @@ zksync_os_revm_runner = { path = "../revm_runner" }
 zksync_os_tests_common = { path = "../common" }
 alloy = { workspace = true, features = ["full"] }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
-anyhow = "1"
+anyhow = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

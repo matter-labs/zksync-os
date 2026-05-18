@@ -97,6 +97,7 @@ pub fn fetch_block_traces_batch(
 /// them in the cache. This reduces network latency by batching requests and having traces ready
 /// when needed. Only prefetches when the cache is empty and skips blocks already in the database
 /// or blocks that have already been successfully processed (when skip_successful=true).
+#[allow(clippy::too_many_arguments)]
 pub fn prefetch_next_batch(
     next_block_to_prefetch: &mut u64,
     end_block: u64,

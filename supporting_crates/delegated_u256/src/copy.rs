@@ -91,6 +91,7 @@ pub(super) unsafe fn with_ram_operand<T, F: FnMut(*const DelegatedU256) -> T>(
 /// `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
 pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut DelegatedU256 {
     #[cfg(target_arch = "riscv32")]
+    #[allow(static_mut_refs)]
     {
         if operand.addr() < ROM_BOUND {
             SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
@@ -118,6 +119,7 @@ pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut Dele
 /// `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
 pub unsafe fn copy_if_needed(operand: *const DelegatedU256) -> *const DelegatedU256 {
     #[cfg(target_arch = "riscv32")]
+    #[allow(static_mut_refs)]
     unsafe {
         if operand.addr() < ROM_BOUND {
             SCRATCH_FOR_REF.write(operand.read());

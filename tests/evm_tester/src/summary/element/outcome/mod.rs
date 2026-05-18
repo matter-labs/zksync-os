@@ -29,7 +29,7 @@ pub enum Outcome {
     },
     /// The `panicked` outcome. The test execution raised a panic.
     Panicked {
-        /// The building error description.
+        /// The panic error description.
         error: String,
     },
     /// The `ignored` outcome. The test is ignored.

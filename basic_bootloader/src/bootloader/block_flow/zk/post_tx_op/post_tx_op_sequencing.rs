@@ -73,15 +73,20 @@ where
         result_keeper.logs(io.logs_storage.messages_ref_iter());
         result_keeper.events(io.events_storage.events_ref_iter());
 
-        write_pubdata(
-            &mut NopCommitmentGenerator,
-            result_keeper,
-            block_hash,
-            metadata.block_timestamp(),
-            &mut io,
-        );
+        // Sequencing-mode post-op uses NopCommitmentGenerator (no DA work),
+        // but we still mark `da_commitment` for parity with the proving
+        // paths so the bench label set is consistent across STFs.
+        cycle_marker::wrap!("da_commitment", {
+            write_pubdata(
+                &mut NopCommitmentGenerator,
+                result_keeper,
+                block_hash,
+                metadata.block_timestamp(),
+                &mut io,
+            );
+        });
 
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        cycle_marker::wrap!("state_commitment_update", {
             io.update_commitment(None, &mut logger, result_keeper);
         });
         Ok(())

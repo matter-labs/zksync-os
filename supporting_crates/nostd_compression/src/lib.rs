@@ -1,4 +1,3 @@
-
 // Based on https://github.com/Frommi/miniz_oxide/blob/f177ab233c9e38cec03f7b35b9e642246c893312/miniz_oxide/src/lib.rs
 
 #![cfg_attr(not(test), no_std)]

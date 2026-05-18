@@ -45,16 +45,12 @@ impl FromStr for U256Parsed {
                 )))
             }
         } else {
-            let res_10 = U256::from_str_radix(value, 10);
-            if res_10.is_ok() {
-                Ok(U256Parsed::Value(res_10.unwrap()))
+            if let Ok(val) = U256::from_str_radix(value, 10) {
+                Ok(U256Parsed::Value(val))
+            } else if let Ok(val) = U256::from_str_radix(value, 16) {
+                Ok(U256Parsed::Value(val))
             } else {
-                let res_16 = U256::from_str_radix(value, 16);
-                if res_16.is_ok() {
-                    Ok(U256Parsed::Value(res_16.unwrap()))
-                } else {
-                    Err(ParseU256Error(format!("Invalid input: {}", value)))
-                }
+                Err(ParseU256Error(format!("Invalid input: {}", value)))
             }
         }
     }
@@ -179,6 +175,7 @@ impl AccountFillerStruct {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Labels {
@@ -186,6 +183,7 @@ pub enum Labels {
     Multiple(Vec<LabelValue>),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum LabelValue {
@@ -194,6 +192,7 @@ pub enum LabelValue {
 }
 
 impl LabelValue {
+    #[allow(dead_code)]
     pub fn as_isize(&self) -> isize {
         match self {
             LabelValue::String(str) => panic!("Invalid label: {str}"),
@@ -202,6 +201,7 @@ impl LabelValue {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExpectedIndexesStructure {
     pub data: Labels,
@@ -223,6 +223,7 @@ pub enum AccountFillerStructMaybe {
     Comment(String),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpectStructure {
@@ -309,11 +310,7 @@ impl<'de> Deserialize<'de> for GenericSerializedSimpleValue {
 
 impl GenericSerializedSimpleValue {
     pub fn is_string(&self) -> bool {
-        if let GenericSerializedSimpleValue::String(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, GenericSerializedSimpleValue::String(_))
     }
 
     pub fn as_string(&self) -> String {
@@ -324,6 +321,7 @@ impl GenericSerializedSimpleValue {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 pub struct FillerStructure {
     pub expect: Vec<ExpectStructure>,

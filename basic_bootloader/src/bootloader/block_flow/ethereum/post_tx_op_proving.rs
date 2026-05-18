@@ -117,9 +117,9 @@ where
             &initial_state_commitment
         );
 
-        // // 3. Verify/apply reads and writes
+        // 3. Verify/apply reads and writes — state-tree merkle commit.
         let mut updated_state_commitment = initial_state_commitment;
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        cycle_marker::wrap!("state_commitment_update", {
             io.update_commitment(
                 Some(&mut updated_state_commitment),
                 &mut logger,
