@@ -11,6 +11,7 @@ pub struct PostStateIndexes {
     pub value: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PostState {

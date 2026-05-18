@@ -97,14 +97,7 @@ impl FSEntity {
     ///
     pub fn into_enabled_list(self, initial: &Path) -> Vec<EnabledTest> {
         let mut accumulator = Vec::with_capacity(16384);
-        self.into_enabled_list_recursive(
-            initial,
-            &mut accumulator,
-            &vec![],
-            &vec![],
-            &vec![],
-            &None,
-        );
+        self.into_enabled_list_recursive(initial, &mut accumulator, &[], &[], &[], &None);
         accumulator.sort_by_key(|test| test.path.to_owned());
         accumulator
     }
@@ -138,13 +131,9 @@ impl FSEntity {
                         hardfork_override = Some(hardfork);
                     }
 
-                    current_entity = match directory
+                    current_entity = directory
                         .entries
-                        .remove(path_part.to_string_lossy().as_ref())
-                    {
-                        Some(entity) => entity,
-                        None => return None,
-                    }
+                        .remove(path_part.to_string_lossy().as_ref())?
                 }
                 FSEntity::File(_) => return None,
             }
@@ -264,14 +253,14 @@ impl FSEntity {
         self,
         current: &Path,
         accumulator: &mut Vec<EnabledTest>,
-        skipped_calldatas: &Vec<Bytes>,
-        skipped_cases: &Vec<String>,
-        skipped_names: &Vec<String>,
+        skipped_calldatas: &[Bytes],
+        skipped_cases: &[String],
+        skipped_names: &[String],
         hardfork_override: &Option<String>,
     ) {
-        let mut skipped_calldatas_new = skipped_calldatas.clone();
-        let mut skipped_cases_new = skipped_cases.clone();
-        let mut skipped_names_new = skipped_names.clone();
+        let mut skipped_calldatas_new = skipped_calldatas.to_vec();
+        let mut skipped_cases_new = skipped_cases.to_vec();
+        let mut skipped_names_new = skipped_names.to_vec();
         let mut hardfork_override = hardfork_override.clone();
 
         let entries = match self {

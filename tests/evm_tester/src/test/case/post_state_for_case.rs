@@ -1,6 +1,7 @@
 use alloy::primitives::*;
 use serde::Deserialize;
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostStateForCase {

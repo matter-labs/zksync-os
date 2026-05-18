@@ -3,6 +3,7 @@ use alloy::primitives::*;
 ///
 /// The compiler test outcome event.
 ///
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Event {
     /// The event address.
@@ -17,6 +18,7 @@ impl Event {
     ///
     /// A shortcut constructor.
     ///
+    #[allow(dead_code)]
     pub fn new(address: Option<Address>, topics: Vec<U256>, values: Vec<U256>) -> Self {
         Self {
             address,

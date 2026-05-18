@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-anyhow = "1"
+anyhow = { workspace = true }
 alloy = { workspace = true, default-features = false, features = [
     "eips",
     "rpc",

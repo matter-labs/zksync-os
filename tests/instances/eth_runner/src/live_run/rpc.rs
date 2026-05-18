@@ -239,7 +239,7 @@ fn decompress_response(
             .context("Failed to decompress zstd response")?;
         let decompress_time = decompress_start.elapsed();
 
-        let space_saved = if decompressed.len() > 0 {
+        let space_saved = if !decompressed.is_empty() {
             (1.0 - compressed_size as f64 / decompressed.len() as f64) * 100.0
         } else {
             0.0
@@ -386,6 +386,7 @@ pub fn get_all_block_traces(
 ///
 /// Returns a HashMap mapping block_number -> (Block, PrestateTrace, DiffTrace, BlockReceipts, CallTrace).
 /// Only includes successfully fetched blocks in the result (failed blocks are skipped with a warning).
+#[allow(clippy::type_complexity)]
 pub fn get_all_block_traces_batch(
     endpoint: &str,
     block_numbers: &[u64],
@@ -412,7 +413,7 @@ pub fn get_all_block_traces_batch(
         batch.push(json!({
             "method": "eth_getBlockByNumber",
             "params": [block_hex.clone(), true],
-            "id": base_id + 0,
+            "id": base_id,
             "jsonrpc": "2.0"
         }));
 
@@ -495,8 +496,7 @@ pub fn get_all_block_traces_batch(
     let group_start = std::time::Instant::now();
     let mut results = std::collections::HashMap::new();
 
-    for block_idx in 0..block_numbers.len() {
-        let block_number = block_numbers[block_idx];
+    for (block_idx, &block_number) in block_numbers.iter().enumerate() {
         let base_id = block_idx * 5;
 
         // Extract results for this block
