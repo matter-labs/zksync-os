@@ -37,6 +37,11 @@ impl<'de> serde::Deserialize<'de> for Bytes32 {
 unsafe impl<C: ConfigCore> wincode::SchemaWrite<C> for Bytes32 {
     type Src = Self;
 
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: 32,
+        zero_copy: true,
+    };
+
     fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
         Ok(32)
     }
@@ -49,17 +54,23 @@ unsafe impl<C: ConfigCore> wincode::SchemaWrite<C> for Bytes32 {
 unsafe impl<'de, C: ConfigCore> wincode::SchemaRead<'de, C> for Bytes32 {
     type Dst = Self;
 
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: 32,
+        zero_copy: true,
+    };
+
     fn read(
         mut reader: impl wincode::io::Reader<'de>,
         dst: &mut core::mem::MaybeUninit<Self>,
     ) -> wincode::ReadResult<()> {
-        let mut arr = core::mem::MaybeUninit::<[u8; 32]>::uninit();
-        <[u8; 32] as wincode::SchemaRead<'de, C>>::read(&mut reader, &mut arr)?;
-        let arr = unsafe { arr.assume_init() };
-        dst.write(Bytes32::from_array(arr));
-        Ok(())
+        // SAFETY: Bytes32 is 32 bytes, LE layout matches [u8; 32] on LE targets.
+        // Zero-copy: read directly into destination, no intermediate buffer.
+        unsafe { reader.copy_into_t(dst).map_err(wincode::ReadError::Io) }
     }
 }
+
+// SAFETY: Bytes32 is 32 bytes, repr(align(8)), LE layout matches wire format.
+unsafe impl crate::oracle::RawWordReadable for Bytes32 {}
 
 const _: () = const {
     assert!(core::mem::size_of::<Bytes32>() == 32);

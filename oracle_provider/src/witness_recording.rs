@@ -46,13 +46,21 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use airbender_guest::input::read_v1_with;
     use airbender_guest::transport::MockTransport;
+    use airbender_guest::word_reader::WordReader;
 
     fn encode_value<T: wincode::SchemaWrite<wincode::config::DefaultConfig, Src = T>>(
         v: &T,
     ) -> Vec<u8> {
         wincode::serialize(v).expect("encode")
+    }
+
+    fn read_wincode<T: zk_ee::oracle::WincodeDeserialize>(
+        transport: &mut MockTransport,
+    ) -> Result<T, InternalError> {
+        let reader = WordReader::new(transport);
+        wincode::deserialize_from(reader)
+            .map_err(|_| zk_ee::internal_error!("wincode decode failed"))
     }
 
     struct FixedOracle {
@@ -108,13 +116,13 @@ mod tests {
         let _: ModexpResponse = recorder.query(0x40050010, &0u32).unwrap();
         let _: FieldSqrtResponse = recorder.query(0x40050011, &0u32).unwrap();
 
-        let (_, inputs) = recorder.into_inputs();
-        let mut transport = MockTransport::new(inputs.words().to_vec());
+        let (_, witness_words) = recorder.into_witness();
+        let mut transport = MockTransport::new(witness_words);
 
-        let r1: u32 = read_v1_with(&mut transport).unwrap();
-        let r2: DivRemResponse = read_v1_with(&mut transport).unwrap();
-        let r3: ModexpResponse = read_v1_with(&mut transport).unwrap();
-        let r4: FieldSqrtResponse = read_v1_with(&mut transport).unwrap();
+        let r1: u32 = read_wincode(&mut transport).unwrap();
+        let r2: DivRemResponse = read_wincode(&mut transport).unwrap();
+        let r3: ModexpResponse = read_wincode(&mut transport).unwrap();
+        let r4: FieldSqrtResponse = read_wincode(&mut transport).unwrap();
 
         assert_eq!(r1, 42);
         assert_eq!(r2.quotient, [1, 2, 3, 4]);
@@ -138,13 +146,12 @@ mod tests {
 
         assert_eq!((v1, v2, v3), (42, 99, 7));
 
-        let (_inner, inputs) = recorder.into_inputs();
-        let witness_words = inputs.words().to_vec();
+        let (_inner, witness_words) = recorder.into_witness();
 
         let mut transport = MockTransport::new(witness_words);
-        let r1: u32 = read_v1_with(&mut transport).unwrap();
-        let r2: u32 = read_v1_with(&mut transport).unwrap();
-        let r3: u32 = read_v1_with(&mut transport).unwrap();
+        let r1: u32 = read_wincode(&mut transport).unwrap();
+        let r2: u32 = read_wincode(&mut transport).unwrap();
+        let r3: u32 = read_wincode(&mut transport).unwrap();
 
         assert_eq!((r1, r2, r3), (42, 99, 7));
     }

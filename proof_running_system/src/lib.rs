@@ -5,6 +5,7 @@
 #![feature(slice_ptr_get)]
 #![feature(const_trait_impl)]
 #![feature(unsafe_cell_access)]
+#![feature(min_specialization)]
 
 extern crate alloc;
 

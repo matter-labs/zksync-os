@@ -11,6 +11,8 @@
 #![feature(iter_array_chunks)]
 #![feature(pointer_is_aligned_to)]
 #![feature(const_trait_impl)]
+#![feature(min_specialization)]
+#![feature(rustc_attrs)]
 #![feature(btree_cursors)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::result_unit_err)]

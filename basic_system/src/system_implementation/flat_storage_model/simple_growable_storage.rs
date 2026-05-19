@@ -2388,34 +2388,36 @@ mod test {
     }
 
     impl<const R: bool> IOOracle for TestingTree<R> {
-        fn query<I: serde::Serialize, O: serde::de::DeserializeOwned + serde::Serialize>(
+        fn query<
+            I: zk_ee::oracle::WincodeSerialize,
+            O: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+        >(
             &mut self,
             query_type: u32,
             input: &I,
         ) -> Result<O, InternalError> {
-            // Deserialize the input to determine the query type
-            let input_bytes = serde_json::to_vec(input).unwrap();
+            let input_bytes = wincode::serialize(input).unwrap();
             match query_type {
                 ExactIndexQuery::QUERY_ID => {
-                    let flat_key: Bytes32 = serde_json::from_slice(&input_bytes).unwrap();
+                    let flat_key: Bytes32 = wincode::deserialize(&input_bytes).unwrap();
                     let existing = self.get_index_for_existing(&flat_key);
-                    let result_bytes = serde_json::to_vec(&existing).unwrap();
-                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                    let result_bytes = wincode::serialize(&existing).unwrap();
+                    Ok(wincode::deserialize(&result_bytes).unwrap())
                 }
                 PreviousIndexQuery::QUERY_ID => {
-                    let flat_key: Bytes32 = serde_json::from_slice(&input_bytes).unwrap();
+                    let flat_key: Bytes32 = wincode::deserialize(&input_bytes).unwrap();
                     let existing = self.get_prev_index(&flat_key);
-                    let result_bytes = serde_json::to_vec(&existing).unwrap();
-                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                    let result_bytes = wincode::serialize(&existing).unwrap();
+                    Ok(wincode::deserialize(&result_bytes).unwrap())
                 }
                 PROOF_FOR_INDEX_QUERY_ID => {
-                    let position: u64 = serde_json::from_slice(&input_bytes).unwrap();
+                    let position: u64 = wincode::deserialize(&input_bytes).unwrap();
                     let existing = self.get_proof_for_position(position);
                     let proof = ValueAtIndexProof::<TESTING_TREE_HEIGHT, Blake2sStorageHasher> {
                         proof: ExistingReadProof { existing },
                     };
-                    let result_bytes = serde_json::to_vec(&proof).unwrap();
-                    Ok(serde_json::from_slice(&result_bytes).unwrap())
+                    let result_bytes = wincode::serialize(&proof).unwrap();
+                    Ok(wincode::deserialize(&result_bytes).unwrap())
                 }
                 _ => {
                     panic!("unsupported query type 0x{:08x}", query_type);

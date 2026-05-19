@@ -10,6 +10,8 @@
 #![feature(btree_cursors)]
 #![feature(slice_from_ptr_range)]
 #![feature(const_trait_impl)]
+#![feature(min_specialization)]
+#![feature(rustc_attrs)]
 #![feature(likely_unlikely)]
 #![feature(iter_array_chunks)]
 #![allow(clippy::new_without_default)]

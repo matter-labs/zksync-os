@@ -957,7 +957,6 @@ mod tests {
     use std::alloc::Global;
 
     use super::*;
-    use serde::{de::DeserializeOwned, Serialize};
     use zk_ee::system::errors::internal::InternalError;
 
     /// Oracle that returns a fixed ModexpResponse for any query
@@ -966,15 +965,17 @@ mod tests {
     }
 
     impl IOOracle for FixedResponseOracle {
-        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+        fn query<
+            I: zk_ee::oracle::WincodeSerialize,
+            O: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+        >(
             &mut self,
             query_type: u32,
             _input: &I,
         ) -> Result<O, InternalError> {
             assert_eq!(query_type, MODEXP_ADVICE_QUERY_ID);
-            // Serialize response to bytes, then deserialize as O
-            let bytes = serde_json::to_vec(&self.response).unwrap();
-            Ok(serde_json::from_slice(&bytes).unwrap())
+            let bytes = wincode::serialize(&self.response).unwrap();
+            Ok(wincode::deserialize(&bytes).unwrap())
         }
     }
 

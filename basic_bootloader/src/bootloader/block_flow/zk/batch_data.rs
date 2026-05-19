@@ -309,13 +309,13 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
 mod tests {
     use super::*;
     use alloc::alloc::Global;
-    use serde::{de::DeserializeOwned, Serialize};
+    use zk_ee::oracle::{WincodeDeserialize, WincodeSerialize};
     use zk_ee::system::errors::internal::InternalError;
 
     struct DummyOracle;
 
     impl IOOracle for DummyOracle {
-        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+        fn query<I: WincodeSerialize, O: WincodeDeserialize + WincodeSerialize>(
             &mut self,
             _query_type: u32,
             _input: &I,

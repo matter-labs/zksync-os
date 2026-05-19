@@ -40,6 +40,17 @@ impl<T: for<'de> wincode::SchemaRead<'de, wincode::config::DefaultConfig, Dst = 
 {
 }
 
+/// Marker for types whose LE wire encoding is identical to their in-memory
+/// representation. ProvingOracle reads these by writing raw u32 words directly
+/// into `MaybeUninit<Self>`, bypassing wincode entirely.
+///
+/// # Safety
+/// The type must be `repr(C)` (or transparent), have no padding, its size
+/// must be a multiple of 4, and its byte layout on LE must match the wincode
+/// encoding exactly.
+#[rustc_specialization_trait]
+pub unsafe trait RawWordReadable: Sized {}
+
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
 /// an abstraction boundary on how ZKsync OS (system) gets IO information and eventually
 /// updates state and/or sends messages to one more layer above.

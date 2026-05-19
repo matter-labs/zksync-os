@@ -10,6 +10,8 @@
 #![feature(ptr_metadata)]
 #![feature(slice_from_ptr_range)]
 #![feature(split_array)]
+#![feature(min_specialization)]
+#![feature(rustc_attrs)]
 #![feature(int_roundings)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::new_without_default)]

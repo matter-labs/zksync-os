@@ -475,7 +475,10 @@ mod tests {
     struct TestOracle;
 
     impl IOOracle for TestOracle {
-        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+        fn query<
+            I: zk_ee::oracle::WincodeSerialize,
+            O: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+        >(
             &mut self,
             _query_type: u32,
             _input: &I,
