@@ -106,9 +106,13 @@ impl UsizeDeserializable for BlockHashes {
 unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for BlockHashes {
     type Src = Self;
 
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: BLOCK_HASHES_WINDOW_SIZE * 32,
+        zero_copy: true,
+    };
+
     fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
-        // Each U256 = 4 u64 limbs = 32 bytes. Total = 256 * 32 = 8192 bytes
-        Ok(BLOCK_HASHES_WINDOW_SIZE * 4 * 8)
+        Ok(BLOCK_HASHES_WINDOW_SIZE * 32)
     }
 
     fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
@@ -122,18 +126,18 @@ unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for BlockHas
 unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C> for BlockHashes {
     type Dst = Self;
 
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: BLOCK_HASHES_WINDOW_SIZE * 32,
+        zero_copy: true,
+    };
+
     fn read(
         mut reader: impl wincode::io::Reader<'de>,
         dst: &mut core::mem::MaybeUninit<Self>,
     ) -> wincode::ReadResult<()> {
-        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
-        for hash in &mut hashes {
-            let mut limbs = core::mem::MaybeUninit::<[u64; 4]>::uninit();
-            <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs)?;
-            *hash = U256::from_limbs(unsafe { limbs.assume_init() });
-        }
-        dst.write(BlockHashes(hashes));
-        Ok(())
+        // SAFETY: U256 is #[repr(transparent)] over [u64; 4], so [U256; 256]
+        // has the same layout as [u8; 8192] on LE. Bulk-read all 8192 bytes.
+        unsafe { reader.copy_into_t(dst).map_err(wincode::ReadError::Io) }
     }
 }
 

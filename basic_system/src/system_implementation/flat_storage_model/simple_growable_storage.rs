@@ -46,6 +46,7 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
@@ -87,12 +88,13 @@ unsafe impl<C: wincode::config::ConfigCore, const N: usize> wincode::SchemaWrite
 {
     type Src = Self;
 
-    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
-        let mut total = 0usize;
-        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.key)?;
-        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.value)?;
-        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.next)?;
-        Ok(total)
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: core::mem::size_of::<Self>(),
+        zero_copy: true,
+    };
+
+    fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
+        Ok(core::mem::size_of::<Self>())
     }
 
     fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
@@ -108,15 +110,18 @@ unsafe impl<'de, C: wincode::config::ConfigCore, const N: usize> wincode::Schema
 {
     type Dst = Self;
 
+    const TYPE_META: wincode::TypeMeta = wincode::TypeMeta::Static {
+        size: core::mem::size_of::<Self>(),
+        zero_copy: true,
+    };
+
     fn read(
         mut reader: impl wincode::io::Reader<'de>,
         dst: &mut core::mem::MaybeUninit<Self>,
     ) -> wincode::ReadResult<()> {
-        let key = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
-        let value = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
-        let next = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
-        dst.write(Self { key, value, next });
-        Ok(())
+        // SAFETY: FlatStorageLeaf is repr(C) with {Bytes32, Bytes32, u64},
+        // all LE-compatible. Bulk-read the entire struct.
+        unsafe { reader.copy_into_t(dst).map_err(wincode::ReadError::Io) }
     }
 }
 
@@ -1239,8 +1244,13 @@ unsafe impl<
         let index = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
         let leaf = <FlatStorageLeaf<N> as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
         let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
-        for item in path.iter_mut() {
-            *item = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        // SAFETY: [Bytes32; N] is N×32 contiguous bytes on LE. Bulk-read
+        // instead of element-by-element to avoid per-Bytes32 wincode overhead.
+        unsafe {
+            let ptr = path.as_mut_ptr() as *mut core::mem::MaybeUninit<[Bytes32; N]>;
+            reader
+                .copy_into_t(&mut *ptr)
+                .map_err(wincode::ReadError::Io)?;
         }
         dst.write(Self {
             index,
