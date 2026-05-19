@@ -12,6 +12,7 @@ use std::path::Path;
 
 use evm_interpreter::precompile_addresses::PRECOMPILE_ADDRESSES_LOWS;
 use evm_interpreter::ERGS_PER_GAS;
+use system_hooks::addresses_constants::FRI_PRECOMPILE_ADDRESS_LOW;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -112,6 +113,7 @@ pub fn precompile_name(low: u16) -> &'static str {
         0x0010 => "bls12_map_fp_to_g1",
         0x0011 => "bls12_map_fp2_to_g2",
         0x0100 => "p256_verify",
+        0x0101 => "fri_proof",
         _ => {
             debug_assert!(false, "precompile_name: unexpected low-address {low:#06x}");
             "unknown"
@@ -169,7 +171,7 @@ fn precompile_id_from_address(addr_bytes: &[u8]) -> Option<u16> {
         return None;
     }
     let low = u16::from_be_bytes([addr_bytes[18], addr_bytes[19]]);
-    if PRECOMPILE_ADDRESSES_LOWS.contains(&low) {
+    if PRECOMPILE_ADDRESSES_LOWS.contains(&low) || low == FRI_PRECOMPILE_ADDRESS_LOW {
         Some(low)
     } else {
         None

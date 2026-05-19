@@ -1416,6 +1416,9 @@ mod fri_precompile_e2e {
     use flate2::read::GzDecoder;
     use full_statement_verifier::verifier_common::SecurityModel;
     use rig::forward_system::run::FriVerifierArtifacts;
+    use rig::forward_system::system::system_types::ForwardRunningSystem;
+    use rig::forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
+    use rig::zk_ee::system::validator::NopTxValidator;
     use riscv_transpiler::cycle::IWithoutByteAccessIsaConfigWithDelegation;
     use std::io::Read;
     use std::path::PathBuf;
@@ -1424,6 +1427,7 @@ mod fri_precompile_e2e {
     // Address 0x0101 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
     const FRI_VERIFIER_CONTRACT: Address = address!("000000000000000000000000000000000000f101");
+    const MESSAGE_ROOT_CONTRACT: Address = address!("0000000000000000000000000000000000010005");
     // Runtime bytecode compiled from
     // contracts/l1-contracts/contracts/state-transition/verifiers/ZKsyncOSVerifierFri.sol
     // in zksync-era-clean-latest.
@@ -1584,6 +1588,32 @@ mod fri_precompile_e2e {
         let mut hash = keccak256(&buf).0;
         hash[0] = FRI_STATEMENT_HASH_VERSION;
         B256::from(hash)
+    }
+
+    fn message_root_multichain_root_slot(tree_height: U256) -> U256 {
+        // keccak256(uint256(6)) + height is the Solidity slot of
+        // `_nodes[height]`; hashing it gives `_nodes[height][0]`.
+        const NODES_FIRST_ELEMENT_SLOT: [u8; 32] = [
+            0xf6, 0x52, 0x22, 0x23, 0x13, 0xe2, 0x84, 0x59, 0x52, 0x8d, 0x92, 0x0b, 0x65, 0x11,
+            0x5c, 0x16, 0xc0, 0x4f, 0x3e, 0xfc, 0x82, 0xaa, 0xed, 0xc9, 0x7b, 0xe5, 0x9f, 0x3f,
+            0x37, 0x7c, 0x0d, 0x3f,
+        ];
+
+        let nodes_height_array_slot =
+            U256::from_be_bytes(NODES_FIRST_ELEMENT_SLOT).saturating_add(tree_height);
+        let hash = rig::alloy::primitives::keccak256(nodes_height_array_slot.to_be_bytes::<32>());
+        U256::from_be_slice(hash.as_slice())
+    }
+
+    fn seed_gateway_message_root_storage(tester: &mut TestingFramework) {
+        let zero = rig::ruint::aliases::B256::from(U256::ZERO);
+        // L2MessageRoot._height is read from slot 4 in Gateway post-tx proving.
+        tester.set_storage_slot(MESSAGE_ROOT_CONTRACT, U256::from(4), zero);
+        tester.set_storage_slot(
+            MESSAGE_ROOT_CONTRACT,
+            message_root_multichain_root_slot(U256::ZERO),
+            zero,
+        );
     }
 
     /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
@@ -1748,6 +1778,7 @@ mod fri_precompile_e2e {
                 compiled_layouts,
             }),
         );
+        seed_gateway_message_root_storage(&mut tester);
         let wallet = tester.prefunded_random_signer();
 
         // ----- 6. Submit FRI_PROOF_TX that calls the FRI precompile -------------
@@ -1806,15 +1837,16 @@ mod fri_precompile_e2e {
     /// statement hash from the proof arguments and reaches the FRI precompile
     /// at 0x0101. A `true` return proves the contract bytecode, ABI shape,
     /// tx-scoped verified-statement state, and precompile all line up.
-    #[test]
-    fn fri_verifier_contract_returns_true_for_verified_proof() {
+    fn execute_fri_verifier_contract_tx(
+        precompile_stats: Option<&mut PrecompileStatsTracer<ForwardRunningSystem>>,
+    ) -> Option<rig::zksync_os_interface::types::BlockOutput> {
         let (setup_path, layout_path) = default_setup_and_layout_paths();
         let verifier_bytecode = hex::decode(FRI_VERIFIER_DEPLOYED_BYTECODE.trim())
             .expect("decode FRI verifier bytecode");
         let Some((proof_bytes, verifier_output)) =
             load_proof_fixture_with_output(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
         else {
-            return;
+            return None;
         };
 
         let stmt_hash = statement_versioned_hash(&verifier_output);
@@ -1823,11 +1855,10 @@ mod fri_precompile_e2e {
             AlloyU256::from_be_slice(&bytes)
         };
         let public_input_hash = words_to_u256(&verifier_output[..8]);
-        let recursion_chain_hash = words_to_u256(&verifier_output[8..]);
 
         let call = ZKsyncOSVerifierFri::verifyCall {
             _publicInputs: vec![public_input_hash >> 32],
-            _proof: vec![public_input_hash, recursion_chain_hash],
+            _proof: vec![public_input_hash],
         };
 
         let artifacts = load_verifier_artifacts(&setup_path, &layout_path)
@@ -1835,6 +1866,7 @@ mod fri_precompile_e2e {
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
         let (mut tester, _counter) = TestingFramework::new()
             .with_mock_fri_sidecars([(stmt_bytes32, proof_bytes)], Some(artifacts));
+        seed_gateway_message_root_storage(&mut tester);
         tester.set_evm_contract(FRI_VERIFIER_CONTRACT, &verifier_bytecode);
         let wallet = tester.prefunded_random_signer();
 
@@ -1853,10 +1885,16 @@ mod fri_precompile_e2e {
         let signed = unsigned.sign(wallet);
         let fri_tx = ZKsyncTxEnvelope::FriProof(signed);
 
-        let output = tester.execute_block(vec![fri_tx]);
+        Some(if let Some(tracer) = precompile_stats {
+            tester.execute_block_with_tracing(vec![fri_tx], tracer, &mut NopTxValidator)
+        } else {
+            tester.execute_block(vec![fri_tx])
+        })
+    }
 
+    fn assert_fri_verifier_contract_output(output: &rig::zksync_os_interface::types::BlockOutput) {
         assert!(
-            tx_succeeded(&output, 0),
+            tx_succeeded(output, 0),
             "FRI verifier contract call must succeed, got: {:?}",
             output.tx_results[0]
         );
@@ -1877,7 +1915,44 @@ mod fri_precompile_e2e {
         }
     }
 
-    /// E2E: a single `FRI_PROOF_TX` that carries two distinct verified
+    fn precompile_stats_enabled() -> bool {
+        std::env::var("PRECOMPILE_STATS_PATH").is_ok()
+            || std::env::var("PRECOMPILE_SAMPLES_DIR").is_ok()
+    }
+
+    fn dump_precompile_stats(precompile_stats: &PrecompileStatsTracer<ForwardRunningSystem>) {
+        precompile_stats.print_stats();
+
+        if let Ok(path) = std::env::var("PRECOMPILE_STATS_PATH") {
+            precompile_stats
+                .write_csv(std::path::Path::new(&path))
+                .expect("write precompile stats");
+        }
+        if let Ok(dir) = std::env::var("PRECOMPILE_SAMPLES_DIR") {
+            precompile_stats
+                .dump_samples(std::path::Path::new(&dir))
+                .expect("dump precompile samples");
+        }
+    }
+
+    #[test]
+    fn fri_verifier_contract_returns_true_for_verified_proof() {
+        let mut precompile_stats = PrecompileStatsTracer::<ForwardRunningSystem>::default();
+        let output = if precompile_stats_enabled() {
+            execute_fri_verifier_contract_tx(Some(&mut precompile_stats))
+        } else {
+            execute_fri_verifier_contract_tx(None)
+        };
+        let Some(output) = output else {
+            return;
+        };
+        assert_fri_verifier_contract_output(&output);
+        if precompile_stats_enabled() {
+            dump_precompile_stats(&precompile_stats);
+        }
+    }
+
+/// E2E: a single `FRI_PROOF_TX` that carries two distinct verified
     /// statement hashes. Both must verify, both must land on the
     /// tx-level metadata, and the precompile must find both when
     /// queried. We query the second hash (not the first) as calldata to

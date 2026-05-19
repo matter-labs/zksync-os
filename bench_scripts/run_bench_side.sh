@@ -52,6 +52,7 @@ else
 fi
 
 EVM_FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
 
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
@@ -106,3 +107,17 @@ PRECOMPILE_SAMPLES_DIR="$(pwd)/${SIDE}_precompile_samples" \
 LABEL_CYCLE_SAMPLES_DIR="$(pwd)/${SIDE}_precompile_cycles" \
   cargo test $PROFILE --features "$PRECOMPILES_FEATURES" -p precompiles \
     -- --test-threads=1 $PRECOMPILES_TESTS
+
+# FRI precompile workload. This is separate from `precompiles` because a raw
+# call to 0x0101 is not meaningful: the transaction must be a real FriProofTx
+# with a sidecar proof so the oracle decode/flatten path and tx-scoped verified
+# statement state are exercised before the contract calls the precompile.
+if grep -q "fri_verifier_contract_returns_true_for_verified_proof" tests/instances/system_hooks/src/lib.rs \
+   && grep -q "cycle_marker" tests/instances/system_hooks/Cargo.toml; then
+  MARKER_PATH="$(pwd)/${SIDE}_fri_precompile.bench" \
+  PRECOMPILE_STATS_PATH="$(pwd)/${SIDE}_fri_precompile_stats.csv" \
+  PRECOMPILE_SAMPLES_DIR="$(pwd)/${SIDE}_fri_precompile_samples" \
+  LABEL_CYCLE_SAMPLES_DIR="$(pwd)/${SIDE}_fri_precompile_cycles" \
+    cargo test $PROFILE --features "$FRI_PRECOMPILE_FEATURES" -p system_hooks_tests \
+      -- --test-threads=1 fri_verifier_contract_returns_true_for_verified_proof
+fi
