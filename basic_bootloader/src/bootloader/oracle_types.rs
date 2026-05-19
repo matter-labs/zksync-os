@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use zk_ee::utils::Bytes32;
 
+#[repr(C)]
 #[derive(
     Clone, Debug, PartialEq, Serialize, Deserialize, wincode::SchemaRead, wincode::SchemaWrite,
 )]
@@ -40,3 +41,4 @@ pub struct FieldInverseResponse {
 // SAFETY: All these types are repr(C) with LE-native fields, no padding.
 unsafe impl zk_ee::oracle::RawWordReadable for DivRemResponse {}
 unsafe impl zk_ee::oracle::RawWordReadable for WideDivRemResponse {}
+unsafe impl zk_ee::oracle::RawWordReadable for FieldInverseResponse {}

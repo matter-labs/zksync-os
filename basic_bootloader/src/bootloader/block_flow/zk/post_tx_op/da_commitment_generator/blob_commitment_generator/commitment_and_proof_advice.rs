@@ -47,6 +47,9 @@ unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C>
     }
 }
 
+// SAFETY: KZGCommitmentAndProof is repr(C, align(8)) with {[u8;48],[u8;48]} = 96 bytes, no padding.
+unsafe impl zk_ee::oracle::RawWordReadable for KZGCommitmentAndProof {}
+
 pub trait BlobCommitmentAndProofAdvisor {
     fn get_blob_commitment_and_proof_advice(&mut self, data: &[u8]) -> KZGCommitmentAndProof;
 }
