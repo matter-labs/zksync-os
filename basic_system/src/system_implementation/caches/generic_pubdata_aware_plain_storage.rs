@@ -22,6 +22,45 @@ use zk_ee::{
 };
 
 use zk_ee::common_structs::history_map::*;
+use zk_ee::storage_types::InitialStorageSlotData;
+
+/// Read `InitialStorageSlotData` from the oracle. On riscv32 (proving path),
+/// reads the wire format as raw u32 words and reconstructs the struct manually,
+/// bypassing wincode and the unaligned byte-by-byte path that the 1-byte bool
+/// causes. On 64-bit (host), uses the standard typed query.
+fn read_initial_storage_slot(
+    oracle: &mut impl IOOracle,
+    input: &StorageAddress<EthereumIOTypesConfig>,
+) -> Result<InitialStorageSlotData<EthereumIOTypesConfig>, InternalError> {
+    #[cfg(target_pointer_width = "32")]
+    {
+        use zk_ee::utils::Bytes32;
+        // Wire format: [bool(1 byte)][Bytes32(32 bytes)] = 33 bytes = 9 u32 words.
+        // ProvingOracle ignores query_type/input, just reads sequential words.
+        // Each u32 query hits RawWordReadable (1 CSR read + 1 store).
+        let mut words = [0u32; 9];
+        for w in words.iter_mut() {
+            *w = oracle.query(0, &())?;
+        }
+        let is_new_storage_slot = (words[0] & 0xFF) != 0;
+        // Reconstruct Bytes32 from words[0] byte 1..3 + words[1..8] + words[8] byte 0.
+        // On LE riscv32, Bytes32 inner is [u32; 8].
+        let mut b32 = [0u32; 8];
+        for i in 0..8 {
+            b32[i] = (words[i] >> 8) | (words[i + 1] << 24);
+        }
+        let initial_value = Bytes32::from_array(unsafe { core::mem::transmute(b32) });
+        Ok(InitialStorageSlotData {
+            is_new_storage_slot,
+            initial_value,
+        })
+    }
+    #[cfg(target_pointer_width = "64")]
+    {
+        InitialStorageSlotQuery::get(oracle, input)
+            .map_err(|_| internal_error!("Must get initial slot value from oracle"))
+    }
+}
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -159,8 +198,7 @@ impl<
                 initialized_element = true;
 
                 let query_input = (*key).into();
-                let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
-                    .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
+                let data_from_oracle = read_initial_storage_slot(oracle, &query_input)?;
 
                 resources_policy.charge_cold_storage_read_extra(
                     ee_type,
