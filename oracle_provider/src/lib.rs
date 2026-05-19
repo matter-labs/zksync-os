@@ -12,9 +12,6 @@ compile_error!("oracle_provider requires a 64-bit little-endian host target");
 
 use std::collections::BTreeMap;
 
-use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
@@ -60,7 +57,10 @@ impl ZkEENonDeterminismSource {
 }
 
 impl IOOracle for ZkEENonDeterminismSource {
-    fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+    fn query<
+        I: zk_ee::oracle::WincodeSerialize,
+        O: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+    >(
         &mut self,
         query_type: u32,
         input: &I,
@@ -70,15 +70,13 @@ impl IOOracle for ZkEENonDeterminismSource {
         }
         if query_type == DISCONNECT_ORACLE_QUERY_ID {
             self.is_connected_to_external_oracle = false;
-            // Encode a dummy response of the expected output type.
-            // DisconnectOracleQuery expects `()` as output.
-            let encoded = AirbenderCodecV1::encode(&())
+            let encoded = wincode::serialize(&())
                 .map_err(|_| internal_error!("encode disconnect response failed"))?;
-            return AirbenderCodecV1::decode(&encoded)
+            return wincode::deserialize(&encoded)
                 .map_err(|_| internal_error!("decode disconnect response failed"));
         }
         let input_bytes =
-            AirbenderCodecV1::encode(input).map_err(|_| internal_error!("encode input failed"))?;
+            wincode::serialize(input).map_err(|_| internal_error!("encode input failed"))?;
         let Some(processor_id) = self.ranges.get(&query_type).copied() else {
             return Err(internal_error!(
                 "Can not process query with ID = 0x{query_type:08x}"
@@ -86,8 +84,7 @@ impl IOOracle for ZkEENonDeterminismSource {
         };
         let processor = &mut self.processors[processor_id];
         let response_bytes = processor.process(query_type, &input_bytes, &DummyMemorySource)?;
-        AirbenderCodecV1::decode(&response_bytes)
-            .map_err(|_| internal_error!("decode response failed"))
+        wincode::deserialize(&response_bytes).map_err(|_| internal_error!("decode response failed"))
     }
 }
 
@@ -127,15 +124,15 @@ mod tests {
         ) -> Result<Vec<u8>, InternalError> {
             assert_eq!(query_id, TEST_QUERY_ID);
             let decoded: u64 =
-                AirbenderCodecV1::decode(input).map_err(|_| internal_error!("decode failed"))?;
+                wincode::deserialize(input).map_err(|_| internal_error!("decode failed"))?;
             assert_eq!(decoded, 7u64);
             let response: Vec<u32> = vec![0x55667788, 0x11223344, 0xDDEEFF00, 0x99AABBCC];
-            AirbenderCodecV1::encode(&response).map_err(|_| internal_error!("encode failed"))
+            wincode::serialize(&response).map_err(|_| internal_error!("encode failed"))
         }
     }
 
     #[test]
-    fn serde_oracle_roundtrip() {
+    fn wincode_oracle_roundtrip() {
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(FixedResponseProcessor);
 

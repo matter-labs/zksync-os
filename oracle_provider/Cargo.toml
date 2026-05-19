@@ -15,6 +15,7 @@ riscv_transpiler = { workspace = true }
 airbender-host = { workspace = true, default-features = false }
 airbender-codec = { workspace = true }
 serde = { workspace = true, default-features = false, features = ["derive"] }
+wincode = { workspace = true }
 
 [dev-dependencies]
 airbender-guest = { workspace = true, features = ["allocator-custom"] }

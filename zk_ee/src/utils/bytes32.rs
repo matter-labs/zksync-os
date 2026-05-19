@@ -3,6 +3,7 @@ use crate::system::errors::internal::InternalError;
 use crate::{internal_error, oracle::usize_serialization::UsizeSerializable};
 use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
+use wincode::config::ConfigCore;
 
 #[cfg(target_pointer_width = "32")]
 pub const BYTES32_USIZE_SIZE: usize = 8;
@@ -30,6 +31,33 @@ impl<'de> serde::Deserialize<'de> for Bytes32 {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let arr = <[u8; 32] as serde::Deserialize>::deserialize(deserializer)?;
         Ok(Bytes32::from_array(arr))
+    }
+}
+
+unsafe impl<C: ConfigCore> wincode::SchemaWrite<C> for Bytes32 {
+    type Src = Self;
+
+    fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
+        Ok(32)
+    }
+
+    fn write(writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <[u8; 32] as wincode::SchemaWrite<C>>::write(writer, src.as_u8_array_ref())
+    }
+}
+
+unsafe impl<'de, C: ConfigCore> wincode::SchemaRead<'de, C> for Bytes32 {
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let mut arr = core::mem::MaybeUninit::<[u8; 32]>::uninit();
+        <[u8; 32] as wincode::SchemaRead<'de, C>>::read(&mut reader, &mut arr)?;
+        let arr = unsafe { arr.assume_init() };
+        dst.write(Bytes32::from_array(arr));
+        Ok(())
     }
 }
 

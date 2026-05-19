@@ -3,10 +3,8 @@
 use crate::oracle_types::{FieldInverseResponse, FieldSqrtResponse};
 use crypto::secp256k1::field::FieldElement;
 use crypto::secp256k1::scalars::Scalar;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use zk_ee::{
-    oracle::{query_ids::ADVICE_SUBSPACE_MASK, IOOracle},
+    oracle::{query_ids::ADVICE_SUBSPACE_MASK, IOOracle, WincodeDeserialize, WincodeSerialize},
     utils::Bytes32,
 };
 
@@ -143,7 +141,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 }
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
-    fn query_field_op<R: DeserializeOwned + Serialize>(
+    fn query_field_op<R: WincodeDeserialize + WincodeSerialize>(
         &mut self,
         op: FieldHintOp,
         input: &Bytes32,

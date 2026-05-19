@@ -2,7 +2,7 @@ use crate::system_implementation::ethereum_storage_model::caches::EMPTY_STRING_K
 use crate::system_implementation::ethereum_storage_model::mpt::RLPSlice;
 use crate::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH;
 use core::mem::MaybeUninit;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::U256;
 use zk_ee::{
     oracle::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
@@ -22,6 +22,52 @@ pub struct EthereumAccountProperties {
     pub balance: U256,
     pub storage_root: Bytes32,
     pub bytecode_hash: Bytes32,
+}
+
+unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for EthereumAccountProperties {
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.nonce)?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.balance.as_limbs())?;
+        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.storage_root)?;
+        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.bytecode_hash)?;
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.nonce)?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(writer.by_ref(), src.balance.as_limbs())?;
+        <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.storage_root)?;
+        <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.bytecode_hash)?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C>
+    for EthereumAccountProperties
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let nonce = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let mut limbs = MaybeUninit::<[u64; 4]>::uninit();
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs)?;
+        let balance = U256::from_limbs(unsafe { limbs.assume_init() });
+        let storage_root = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let bytecode_hash = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        dst.write(Self {
+            nonce,
+            balance,
+            storage_root,
+            bytecode_hash,
+        });
+        Ok(())
+    }
 }
 
 impl Default for EthereumAccountProperties {
@@ -79,7 +125,9 @@ pub const ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID: u32 = ACCOUNT_AND_STORAGE_SUB
 
 impl SimpleOracleQuery for EthereumAccountPropertiesQuery {
     const QUERY_ID: u32 = ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
-    type Input = B160;
+    /// B160 cannot implement wincode directly (orphan rule), so we serialize
+    /// as its limb representation `[u64; 3]`.
+    type Input = [u64; 3];
     type Output = EthereumAccountProperties;
 }
 

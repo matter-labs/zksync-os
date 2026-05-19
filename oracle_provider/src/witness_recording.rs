@@ -1,6 +1,4 @@
 use airbender_host::Inputs;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use zk_ee::internal_error;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
@@ -24,14 +22,19 @@ impl<O: IOOracle> WitnessRecordingOracle<O> {
 }
 
 impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
-    fn query<I: Serialize, R: DeserializeOwned + Serialize>(
+    fn query<
+        I: zk_ee::oracle::WincodeSerialize,
+        R: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+    >(
         &mut self,
         query_type: u32,
         input: &I,
     ) -> Result<R, InternalError> {
         let response: R = self.inner.query(query_type, input)?;
+        let response_bytes = wincode::serialize(&response)
+            .map_err(|_| internal_error!("witness recording: wincode serialize failed"))?;
         self.inputs
-            .push(&response)
+            .push_bytes(&response_bytes)
             .map_err(|_| internal_error!("witness recording failed"))?;
         Ok(response)
     }
@@ -40,12 +43,13 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
     use airbender_guest::input::read_v1_with;
     use airbender_guest::transport::MockTransport;
 
-    fn encode_value<T: Serialize>(v: &T) -> Vec<u8> {
-        AirbenderCodecV1::encode(v).expect("encode")
+    fn encode_value<T: wincode::SchemaWrite<wincode::config::DefaultConfig, Src = T>>(
+        v: &T,
+    ) -> Vec<u8> {
+        wincode::serialize(v).expect("encode")
     }
 
     struct FixedOracle {
@@ -60,14 +64,17 @@ mod tests {
     }
 
     impl IOOracle for FixedOracle {
-        fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+        fn query<
+            I: zk_ee::oracle::WincodeSerialize,
+            O: zk_ee::oracle::WincodeDeserialize + zk_ee::oracle::WincodeSerialize,
+        >(
             &mut self,
             _query_type: u32,
             _input: &I,
         ) -> Result<O, InternalError> {
             let bytes = &self.values[self.cursor];
             self.cursor += 1;
-            AirbenderCodecV1::decode(bytes).map_err(|_| zk_ee::internal_error!("decode failed"))
+            wincode::deserialize(bytes).map_err(|_| zk_ee::internal_error!("decode failed"))
         }
     }
 
@@ -94,9 +101,9 @@ mod tests {
         let mut recorder = WitnessRecordingOracle::new(inner);
 
         let _: u32 = recorder.query(0x40070000, &()).unwrap();
-        let _: DivRemResponse = recorder.query(0x40050030, &(0u32,)).unwrap();
-        let _: ModexpResponse = recorder.query(0x40050010, &(0u32,)).unwrap();
-        let _: FieldSqrtResponse = recorder.query(0x40050011, &(0u32,)).unwrap();
+        let _: DivRemResponse = recorder.query(0x40050030, &0u32).unwrap();
+        let _: ModexpResponse = recorder.query(0x40050010, &0u32).unwrap();
+        let _: FieldSqrtResponse = recorder.query(0x40050011, &0u32).unwrap();
 
         let (_, inputs) = recorder.into_inputs();
         let mut transport = MockTransport::new(inputs.words().to_vec());

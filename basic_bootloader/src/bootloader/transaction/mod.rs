@@ -78,7 +78,8 @@ impl<A: Allocator> Transaction<A> {
             TxEncodingFormat::Rlp => {
                 // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
                 // This is so that sequencer can skip ecrecover (for simulation, for example).
-                let from = TxFromQuery::get(system.io.oracle(), &())?;
+                let from_limbs: [u64; 3] = TxFromQuery::get(system.io.oracle(), &())?;
+                let from = B160::from_limbs(from_limbs);
                 let tx = RlpEncodedTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
                 Ok(Self::Rlp(tx))
             }
@@ -316,7 +317,15 @@ pub fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), 
         .map_err(TxError::oon_as_validation)
 }
 
-#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    serde::Serialize,
+    serde::Deserialize,
+    wincode::SchemaRead,
+    wincode::SchemaWrite,
+)]
 #[repr(u8)]
 pub enum TxEncodingFormat {
     Abi = 0,
@@ -336,7 +345,9 @@ pub struct TxFromQuery;
 
 impl SimpleOracleQuery for TxFromQuery {
     type Input = ();
-    type Output = B160;
+    /// B160 cannot implement wincode directly (orphan rule), so we serialize
+    /// as its limb representation `[u64; 3]`.
+    type Output = [u64; 3];
 
     const QUERY_ID: u32 = TX_FROM_QUERY_ID;
 }

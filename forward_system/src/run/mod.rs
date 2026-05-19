@@ -28,7 +28,6 @@ use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
 use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
-use airbender_host::Inputs;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,

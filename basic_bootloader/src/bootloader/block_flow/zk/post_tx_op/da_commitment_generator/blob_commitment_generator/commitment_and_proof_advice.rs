@@ -12,6 +12,41 @@ pub struct KZGCommitmentAndProof {
     pub proof: [u8; 48],
 }
 
+unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for KZGCommitmentAndProof {
+    type Src = Self;
+
+    fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
+        Ok(48 + 48)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <[u8; 48] as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.commitment)?;
+        <[u8; 48] as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.proof)?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C>
+    for KZGCommitmentAndProof
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let mut commitment = core::mem::MaybeUninit::<[u8; 48]>::uninit();
+        <[u8; 48] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut commitment)?;
+        let mut proof = core::mem::MaybeUninit::<[u8; 48]>::uninit();
+        <[u8; 48] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut proof)?;
+        dst.write(Self {
+            commitment: unsafe { commitment.assume_init() },
+            proof: unsafe { proof.assume_init() },
+        });
+        Ok(())
+    }
+}
+
 pub trait BlobCommitmentAndProofAdvisor {
     fn get_blob_commitment_and_proof_advice(&mut self, data: &[u8]) -> KZGCommitmentAndProof;
 }

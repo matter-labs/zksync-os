@@ -20,6 +20,7 @@ basic_bootloader = { path = "../basic_bootloader", default-features = false }
 airbender-guest = { workspace = true, features = ["allocator-custom"] }
 airbender-codec = { workspace = true }
 serde = { workspace = true, default-features = false, features = ["derive"] }
+wincode = { workspace = true }
 ruint = { workspace = true, default-features = false }
 crypto = { workspace = true }
 u256 = { path = "../supporting_crates/u256", default-features = false }

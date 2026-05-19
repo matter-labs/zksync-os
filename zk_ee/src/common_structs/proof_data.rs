@@ -2,6 +2,7 @@ use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
 use crate::utils::exact_size_chain::ExactSizeChain;
+use wincode::config::ConfigCore;
 
 use super::state_root_view::StateRootView;
 
@@ -40,5 +41,47 @@ impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeDeserializable for ProofData
         };
 
         Ok(new)
+    }
+}
+
+unsafe impl<C: ConfigCore, SR: StateRootView<EthereumIOTypesConfig>> wincode::SchemaWrite<C>
+    for ProofData<SR>
+where
+    SR: wincode::SchemaWrite<C, Src = SR>,
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <SR as wincode::SchemaWrite<C>>::size_of(&src.state_root_view)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.last_block_timestamp)?;
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <SR as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.state_root_view)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.last_block_timestamp)?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: ConfigCore, SR: StateRootView<EthereumIOTypesConfig>>
+    wincode::SchemaRead<'de, C> for ProofData<SR>
+where
+    SR: wincode::SchemaRead<'de, C, Dst = SR>,
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let state_root_view = <SR as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let last_block_timestamp = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        dst.write(Self {
+            state_root_view,
+            last_block_timestamp,
+        });
+        Ok(())
     }
 }

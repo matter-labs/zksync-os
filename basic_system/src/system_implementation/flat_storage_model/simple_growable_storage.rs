@@ -82,6 +82,44 @@ impl<const N: usize> UsizeDeserializable for FlatStorageLeaf<N> {
     }
 }
 
+unsafe impl<C: wincode::config::ConfigCore, const N: usize> wincode::SchemaWrite<C>
+    for FlatStorageLeaf<N>
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.key)?;
+        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.value)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.next)?;
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.key)?;
+        <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.value)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.next)?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore, const N: usize> wincode::SchemaRead<'de, C>
+    for FlatStorageLeaf<N>
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let key = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let value = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let next = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        dst.write(Self { key, value, next });
+        Ok(())
+    }
+}
+
 impl<const N: usize> FlatStorageLeaf<N> {
     pub fn empty() -> Self {
         Self {
@@ -135,6 +173,44 @@ impl FlatStorageHasher for Blake2sStorageHasher {
 pub struct FlatStorageCommitment<const N: usize> {
     pub root: Bytes32,
     pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes
+}
+
+unsafe impl<C: wincode::config::ConfigCore, const N: usize> wincode::SchemaWrite<C>
+    for FlatStorageCommitment<N>
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(&src.root)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.next_free_slot)?;
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.root)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.next_free_slot)?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore, const N: usize> wincode::SchemaRead<'de, C>
+    for FlatStorageCommitment<N>
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let root = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let next_free_slot = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        dst.write(Self {
+            root,
+            next_free_slot,
+        });
+        Ok(())
+    }
 }
 
 impl<const N: usize> UsizeSerializable for FlatStorageCommitment<N> {
@@ -1121,6 +1197,61 @@ impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::D
     }
 }
 
+unsafe impl<C: wincode::config::ConfigCore, const N: usize, H: FlatStorageHasher, A: Allocator>
+    wincode::SchemaWrite<C> for LeafProof<N, H, A>
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.index)?;
+        total += <FlatStorageLeaf<N> as wincode::SchemaWrite<C>>::size_of(&src.leaf)?;
+        for item in src.path.as_slice() {
+            total += <Bytes32 as wincode::SchemaWrite<C>>::size_of(item)?;
+        }
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.index)?;
+        <FlatStorageLeaf<N> as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.leaf)?;
+        for item in src.path.as_slice() {
+            <Bytes32 as wincode::SchemaWrite<C>>::write(writer.by_ref(), item)?;
+        }
+        Ok(())
+    }
+}
+
+unsafe impl<
+        'de,
+        C: wincode::config::ConfigCore,
+        const N: usize,
+        H: FlatStorageHasher,
+        A: Allocator + Default,
+    > wincode::SchemaRead<'de, C> for LeafProof<N, H, A>
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let index = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let leaf = <FlatStorageLeaf<N> as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
+        for item in path.iter_mut() {
+            *item = <Bytes32 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        }
+        dst.write(Self {
+            index,
+            leaf,
+            path,
+            _marker: core::marker::PhantomData,
+        });
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExistingReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub existing: LeafProof<N, H, A>,
@@ -1214,6 +1345,40 @@ impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::D
             FIELDS,
             Visitor::<N, H, A>(core::marker::PhantomData),
         )
+    }
+}
+
+unsafe impl<C: wincode::config::ConfigCore, const N: usize, H: FlatStorageHasher, A: Allocator>
+    wincode::SchemaWrite<C> for ExistingReadProof<N, H, A>
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        <LeafProof<N, H, A> as wincode::SchemaWrite<C>>::size_of(&src.existing)
+    }
+
+    fn write(writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <LeafProof<N, H, A> as wincode::SchemaWrite<C>>::write(writer, &src.existing)
+    }
+}
+
+unsafe impl<
+        'de,
+        C: wincode::config::ConfigCore,
+        const N: usize,
+        H: FlatStorageHasher,
+        A: Allocator + Default,
+    > wincode::SchemaRead<'de, C> for ExistingReadProof<N, H, A>
+{
+    type Dst = Self;
+
+    fn read(
+        reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let existing = <LeafProof<N, H, A> as wincode::SchemaRead<'de, C>>::get(reader)?;
+        dst.write(Self { existing });
+        Ok(())
     }
 }
 
@@ -1535,6 +1700,40 @@ impl<'de, const N: usize, H: FlatStorageHasher, A: Allocator + Default> serde::D
             FIELDS,
             Visitor::<N, H, A>(core::marker::PhantomData),
         )
+    }
+}
+
+unsafe impl<C: wincode::config::ConfigCore, const N: usize, H: FlatStorageHasher, A: Allocator>
+    wincode::SchemaWrite<C> for ValueAtIndexProof<N, H, A>
+{
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        <ExistingReadProof<N, H, A> as wincode::SchemaWrite<C>>::size_of(&src.proof)
+    }
+
+    fn write(writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <ExistingReadProof<N, H, A> as wincode::SchemaWrite<C>>::write(writer, &src.proof)
+    }
+}
+
+unsafe impl<
+        'de,
+        C: wincode::config::ConfigCore,
+        const N: usize,
+        H: FlatStorageHasher,
+        A: Allocator + Default,
+    > wincode::SchemaRead<'de, C> for ValueAtIndexProof<N, H, A>
+{
+    type Dst = Self;
+
+    fn read(
+        reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let proof = <ExistingReadProof<N, H, A> as wincode::SchemaRead<'de, C>>::get(reader)?;
+        dst.write(Self { proof });
+        Ok(())
     }
 }
 

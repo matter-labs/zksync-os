@@ -22,7 +22,23 @@ pub mod usize_serialization;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
 use crate::system::errors::internal::InternalError;
 use core::num::NonZeroU32;
-use serde::{de::DeserializeOwned, Serialize};
+
+/// Wincode-serializable type with `Src = Self`, allowing use with `wincode::serialize`.
+pub trait WincodeSerialize:
+    wincode::SchemaWrite<wincode::config::DefaultConfig, Src = Self>
+{
+}
+impl<T: wincode::SchemaWrite<wincode::config::DefaultConfig, Src = T>> WincodeSerialize for T {}
+
+/// Wincode-deserializable type with `Dst = Self`, allowing use with `wincode::deserialize`.
+pub trait WincodeDeserialize:
+    for<'de> wincode::SchemaRead<'de, wincode::config::DefaultConfig, Dst = Self>
+{
+}
+impl<T: for<'de> wincode::SchemaRead<'de, wincode::config::DefaultConfig, Dst = T>>
+    WincodeDeserialize for T
+{
+}
 
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
 /// an abstraction boundary on how ZKsync OS (system) gets IO information and eventually
@@ -30,7 +46,7 @@ use serde::{de::DeserializeOwned, Serialize};
 ///
 /// This trait abstracts access to external state like storage, preimages, and transaction data.
 /// Implementations provide the data without validating its correctness - validation occurs
-/// at higher system layers. All data exchange uses serde serialization/deserialization.
+/// at higher system layers. All data exchange uses wincode serialization/deserialization.
 ///
 /// # Design Notes
 /// - Query types are identified by `u32` IDs organized in namespaced ranges
@@ -42,14 +58,14 @@ use serde::{de::DeserializeOwned, Serialize};
 ///   should ensure data correctness
 pub trait IOOracle: 'static + Sized {
     /// Main method to query oracle with typed input and typed output.
-    fn query<I: Serialize, O: DeserializeOwned + Serialize>(
+    fn query<I: WincodeSerialize, O: WincodeDeserialize + WincodeSerialize>(
         &mut self,
         query_type: u32,
         input: &I,
     ) -> Result<O, InternalError>;
 
     /// Convenience method to query oracle with no input.
-    fn query_with_empty_input<O: DeserializeOwned + Serialize>(
+    fn query_with_empty_input<O: WincodeDeserialize + WincodeSerialize>(
         &mut self,
         query_type: u32,
     ) -> Result<O, InternalError> {
@@ -66,7 +82,7 @@ pub trait IOOracle: 'static + Sized {
     }
 
     /// Query oracle and return raw bytes.
-    fn query_bytes<I: Serialize>(
+    fn query_bytes<I: WincodeSerialize>(
         &mut self,
         query_type: u32,
         input: &I,

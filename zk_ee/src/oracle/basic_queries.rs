@@ -4,9 +4,9 @@ use crate::oracle::query_ids::{
     DISCONNECT_ORACLE_QUERY_ID, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID, ZK_PROOF_DATA_INIT_QUERY_ID,
 };
 use crate::oracle::simple_oracle_query::SimpleOracleQuery;
+use crate::oracle::{WincodeDeserialize, WincodeSerialize};
 use crate::storage_types::{InitialStorageSlotData, StorageAddress};
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
-use serde::{de::DeserializeOwned, Serialize};
 
 pub struct InitialStorageSlotQuery<IOTypes: SystemIOTypesConfig> {
     _marker: core::marker::PhantomData<IOTypes>,
@@ -14,8 +14,8 @@ pub struct InitialStorageSlotQuery<IOTypes: SystemIOTypesConfig> {
 
 impl<IOTypes: SystemIOTypesConfig> SimpleOracleQuery for InitialStorageSlotQuery<IOTypes>
 where
-    StorageAddress<IOTypes>: Serialize,
-    InitialStorageSlotData<IOTypes>: DeserializeOwned + Serialize,
+    StorageAddress<IOTypes>: WincodeSerialize,
+    InitialStorageSlotData<IOTypes>: WincodeDeserialize + WincodeSerialize,
 {
     const QUERY_ID: u32 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     type Input = StorageAddress<IOTypes>;
@@ -34,8 +34,10 @@ pub struct ZKProofDataQuery<IOTypes: SystemIOTypesConfig, SR: StateRootView<IOTy
     _marker: core::marker::PhantomData<(IOTypes, SR)>,
 }
 
-impl<SR: StateRootView<EthereumIOTypesConfig> + Serialize + DeserializeOwned> SimpleOracleQuery
-    for ZKProofDataQuery<EthereumIOTypesConfig, SR>
+impl<SR> SimpleOracleQuery for ZKProofDataQuery<EthereumIOTypesConfig, SR>
+where
+    SR: StateRootView<EthereumIOTypesConfig> + WincodeSerialize + WincodeDeserialize,
+    ProofData<SR>: WincodeDeserialize + WincodeSerialize,
 {
     const QUERY_ID: u32 = ZK_PROOF_DATA_INIT_QUERY_ID;
     type Input = ();

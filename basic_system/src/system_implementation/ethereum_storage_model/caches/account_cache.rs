@@ -140,7 +140,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                 }
 
                 // we just ask the oracle for properties
-                let acc_data = EthereumAccountPropertiesQuery::get(oracle, address)?;
+                let acc_data = EthereumAccountPropertiesQuery::get(oracle, address.as_limbs())?;
                 let empty_account = acc_data.is_empty();
 
                 // Note: we initialize it as cold, should be warmed up separately

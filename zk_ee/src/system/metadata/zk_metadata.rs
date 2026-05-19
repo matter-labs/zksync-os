@@ -103,6 +103,138 @@ impl UsizeDeserializable for BlockHashes {
     }
 }
 
+unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for BlockHashes {
+    type Src = Self;
+
+    fn size_of(_src: &Self) -> wincode::WriteResult<usize> {
+        // Each U256 = 4 u64 limbs = 32 bytes. Total = 256 * 32 = 8192 bytes
+        Ok(BLOCK_HASHES_WINDOW_SIZE * 4 * 8)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        for item in &src.0 {
+            <[u64; 4] as wincode::SchemaWrite<C>>::write(writer.by_ref(), item.as_limbs())?;
+        }
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C> for BlockHashes {
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
+        for hash in &mut hashes {
+            let mut limbs = core::mem::MaybeUninit::<[u64; 4]>::uninit();
+            <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs)?;
+            *hash = U256::from_limbs(unsafe { limbs.assume_init() });
+        }
+        dst.write(BlockHashes(hashes));
+        Ok(())
+    }
+}
+
+unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for BlockMetadataFromOracle {
+    type Src = Self;
+
+    fn size_of(src: &Self) -> wincode::WriteResult<usize> {
+        let mut total = 0usize;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.chain_id)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.block_number)?;
+        total += <BlockHashes as wincode::SchemaWrite<C>>::size_of(&src.block_hashes)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.timestamp)?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.eip1559_basefee.as_limbs())?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.pubdata_price.as_limbs())?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.native_price.as_limbs())?;
+        total += <[u64; 3] as wincode::SchemaWrite<C>>::size_of(src.coinbase.as_limbs())?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.gas_limit)?;
+        total += <u64 as wincode::SchemaWrite<C>>::size_of(&src.pubdata_limit)?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.mix_hash.as_limbs())?;
+        total += <[u64; 4] as wincode::SchemaWrite<C>>::size_of(src.blob_fee.as_limbs())?;
+        Ok(total)
+    }
+
+    fn write(mut writer: impl wincode::io::Writer, src: &Self) -> wincode::WriteResult<()> {
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.chain_id)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.block_number)?;
+        <BlockHashes as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.block_hashes)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.timestamp)?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(
+            writer.by_ref(),
+            src.eip1559_basefee.as_limbs(),
+        )?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(
+            writer.by_ref(),
+            src.pubdata_price.as_limbs(),
+        )?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(writer.by_ref(), src.native_price.as_limbs())?;
+        <[u64; 3] as wincode::SchemaWrite<C>>::write(writer.by_ref(), src.coinbase.as_limbs())?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.gas_limit)?;
+        <u64 as wincode::SchemaWrite<C>>::write(writer.by_ref(), &src.pubdata_limit)?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(writer.by_ref(), src.mix_hash.as_limbs())?;
+        <[u64; 4] as wincode::SchemaWrite<C>>::write(writer.by_ref(), src.blob_fee.as_limbs())?;
+        Ok(())
+    }
+}
+
+unsafe impl<'de, C: wincode::config::ConfigCore> wincode::SchemaRead<'de, C>
+    for BlockMetadataFromOracle
+{
+    type Dst = Self;
+
+    fn read(
+        mut reader: impl wincode::io::Reader<'de>,
+        dst: &mut core::mem::MaybeUninit<Self>,
+    ) -> wincode::ReadResult<()> {
+        let chain_id = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let block_number = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let block_hashes = <BlockHashes as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let timestamp = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+
+        let mut limbs4 = core::mem::MaybeUninit::<[u64; 4]>::uninit();
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs4)?;
+        let eip1559_basefee = U256::from_limbs(unsafe { limbs4.assume_init() });
+
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs4)?;
+        let pubdata_price = U256::from_limbs(unsafe { limbs4.assume_init() });
+
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs4)?;
+        let native_price = U256::from_limbs(unsafe { limbs4.assume_init() });
+
+        let mut limbs3 = core::mem::MaybeUninit::<[u64; 3]>::uninit();
+        <[u64; 3] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs3)?;
+        let coinbase = B160::from_limbs(unsafe { limbs3.assume_init() });
+
+        let gas_limit = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+        let pubdata_limit = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
+
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs4)?;
+        let mix_hash = U256::from_limbs(unsafe { limbs4.assume_init() });
+
+        <[u64; 4] as wincode::SchemaRead<'de, C>>::read(reader.by_ref(), &mut limbs4)?;
+        let blob_fee = U256::from_limbs(unsafe { limbs4.assume_init() });
+
+        dst.write(Self {
+            chain_id,
+            block_number,
+            block_hashes,
+            timestamp,
+            eip1559_basefee,
+            pubdata_price,
+            native_price,
+            coinbase,
+            gas_limit,
+            pubdata_limit,
+            mix_hash,
+            blob_fee,
+        });
+        Ok(())
+    }
+}
+
 // we only need to know limited set of parameters here,
 // those that define "block", like uniform fee for block,
 // block number, etc

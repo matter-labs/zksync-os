@@ -1,13 +1,13 @@
-use crate::{oracle::IOOracle, system::errors::internal::InternalError};
-use serde::{de::DeserializeOwned, Serialize};
+use crate::oracle::{IOOracle, WincodeDeserialize, WincodeSerialize};
+use crate::system::errors::internal::InternalError;
 
 ///
 /// Convenience trait to define all expected types under one umbrella.
 ///
 pub trait SimpleOracleQuery: Sized {
     const QUERY_ID: u32;
-    type Input: Serialize;
-    type Output: DeserializeOwned + Serialize;
+    type Input: WincodeSerialize;
+    type Output: WincodeDeserialize + WincodeSerialize;
 
     fn get<O: IOOracle>(
         oracle: &mut O,

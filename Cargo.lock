@@ -77,16 +77,17 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "bincode 2.0.1",
  "serde",
+ "wincode",
 ]
 
 [[package]]
 name = "airbender-core"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -96,7 +97,7 @@ dependencies = [
 [[package]]
 name = "airbender-crypto"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -126,18 +127,19 @@ dependencies = [
 [[package]]
 name = "airbender-guest"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "airbender-codec",
  "airbender-core",
  "airbender-rt",
  "serde",
+ "wincode",
 ]
 
 [[package]]
 name = "airbender-host"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -156,7 +158,7 @@ dependencies = [
 [[package]]
 name = "airbender-rt"
 version = "0.1.0"
-source = "git+https://github.com/vibelyova/airbender-platform?rev=db7ddd1d#db7ddd1d556d9a6c1b1b3ae2ce9bda48ae62730b"
+source = "git+https://github.com/vibelyova/airbender-platform?rev=24be0954#24be095493894d87be3c1994ad34a7b622b7e66b"
 dependencies = [
  "getrandom 0.2.17",
  "riscv_common",
@@ -1945,6 +1947,7 @@ dependencies = [
  "serde-big-array",
  "strum_macros",
  "system_hooks",
+ "wincode",
  "zk_ee",
 ]
 
@@ -1982,6 +1985,7 @@ dependencies = [
  "storage_models",
  "strum_macros",
  "u256",
+ "wincode",
  "zk_ee",
 ]
 
@@ -2836,6 +2840,16 @@ dependencies = [
 
 [[package]]
 name = "darling"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
+dependencies = [
+ "darling_core 0.21.3",
+ "darling_macro 0.21.3",
+]
+
+[[package]]
+name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
@@ -2849,6 +2863,20 @@ name = "darling_core"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1247195ecd7e3c85f83c8d2a366e4210d588e802133e1e355180a9870b517ea4"
 dependencies = [
  "fnv",
  "ident_case",
@@ -2879,6 +2907,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
  "darling_core 0.20.11",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
+dependencies = [
+ "darling_core 0.21.3",
  "quote",
  "syn 2.0.117",
 ]
@@ -5388,6 +5427,7 @@ dependencies = [
  "basic_bootloader",
  "riscv_transpiler",
  "serde",
+ "wincode",
  "zk_ee",
 ]
 
@@ -5490,6 +5530,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pastey"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5a797f0e07bdf071d15742978fc3128ec6c22891c31a3a931513263904c982a"
 
 [[package]]
 name = "pem"
@@ -5832,6 +5878,7 @@ dependencies = [
  "system_hooks",
  "talc",
  "u256",
+ "wincode",
  "zk_ee",
 ]
 
@@ -9106,6 +9153,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
+name = "wincode"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37095eb18dd6254c66217edc61a29d83d51f8818de8a2ffe88e4584ad73fb5f9"
+dependencies = [
+ "pastey",
+ "proc-macro2",
+ "quote",
+ "thiserror 2.0.18",
+ "wincode-derive",
+]
+
+[[package]]
+name = "wincode-derive"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e262d55d1261f31e2cfe49cc6385a421d14d99faa0526bbe3cc1bda0d3005c62"
+dependencies = [
+ "darling 0.21.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "windows"
 version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9685,6 +9757,7 @@ dependencies = [
  "serde",
  "strum_macros",
  "u256",
+ "wincode",
 ]
 
 [[package]]
