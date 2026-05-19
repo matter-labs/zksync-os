@@ -23,16 +23,12 @@ pub struct WideDivRemResponse {
     pub quotient_hi: [u64; 4],
 }
 
-/// Inline capacity covers moduli up to 2304 bits (9 DelegatedU256 digits)
-/// without heap allocation. Falls back to heap for larger inputs.
-pub type ModexpLimbs = smallvec::SmallVec<[u64; 64]>;
-
 #[derive(
     Clone, Debug, PartialEq, Serialize, Deserialize, wincode::SchemaRead, wincode::SchemaWrite,
 )]
 pub struct ModexpResponse {
-    pub quotient: ModexpLimbs,
-    pub remainder: ModexpLimbs,
+    pub quotient: Vec<u64>,
+    pub remainder: Vec<u64>,
 }
 
 #[derive(

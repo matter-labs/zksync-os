@@ -81,8 +81,8 @@ fn process_modexp_riscv(arg_ptr: u32, memory: &dyn RamPeek) -> ModexpResponse {
     strip_trailing_zeros(&mut d);
 
     ModexpResponse {
-        quotient: n.into(),
-        remainder: d.into(),
+        quotient: n,
+        remainder: d,
     }
 }
 
@@ -111,8 +111,8 @@ fn process_modexp_native(arg_ptr: u64) -> ModexpResponse {
     strip_trailing_zeros(&mut d);
 
     ModexpResponse {
-        quotient: n.into(),
-        remainder: d.into(),
+        quotient: n,
+        remainder: d,
     }
 }
 
