@@ -12,7 +12,13 @@ pub struct HistoryRecord<V> {
 }
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
-pub struct ElementWithHistory<V, A: Allocator + Clone, EP = ()> {
+///
+/// `key` is embedded so that the pending-updates list can store a stable pointer
+/// to an `ElementWithHistory` and still surface the key on iteration without
+/// going back through the BTreeMap.
+pub struct ElementWithHistory<K, V, A: Allocator + Clone, EP = ()> {
+    /// Key owned by this element (separate from the BTreeMap key copy).
+    pub key: K,
     /// Additional properties associated with the element globally.
     /// These properties persist across rollbacks/commits and don't participate in snapshots
     pub element_properties: EP,
@@ -27,9 +33,10 @@ pub struct ElementWithHistory<V, A: Allocator + Clone, EP = ()> {
     marker: PhantomData<A>,
 }
 
-impl<V, A: Allocator + Clone, KP> ElementWithHistory<V, A, KP> {
+impl<K, V, A: Allocator + Clone, KP> ElementWithHistory<K, V, A, KP> {
     #[inline(always)]
     pub fn new(
+        key: K,
         key_properties: KP,
         initial_value: V,
         records_memory_pool: &mut ElementPool<V, A>,
@@ -38,6 +45,7 @@ impl<V, A: Allocator + Clone, KP> ElementWithHistory<V, A, KP> {
         let elem = records_memory_pool.create_element(initial_value, None, CacheSnapshotId(0));
 
         Self {
+            key,
             element_properties: key_properties,
             head: elem,
             initial: elem,
@@ -159,7 +167,7 @@ mod tests {
 
     fn check_that_head_is_initial_element(
         expected_value: usize,
-        element_with_history: &ElementWithHistory<usize, Global>,
+        element_with_history: &ElementWithHistory<(), usize, Global>,
     ) {
         assert_eq!(element_with_history.head, element_with_history.initial);
         assert_eq!(element_with_history.head, element_with_history.first);
@@ -177,8 +185,8 @@ mod tests {
     #[test]
     fn initializes_correctly() {
         let mut element_pool = ElementPool::new(Global);
-        let element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         check_that_head_is_initial_element(1, &element_with_history);
 
@@ -188,8 +196,8 @@ mod tests {
     #[test]
     fn adds_new_records_and_rollbacks_them() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         let first_element =
             element_pool.create_element(2, Some(element_with_history.head), CacheSnapshotId(1));
@@ -219,8 +227,8 @@ mod tests {
     #[test]
     fn rollbacks_to_initial_as_head() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         element_with_history.rollback(&mut element_pool, CacheSnapshotId(0));
         check_that_head_is_initial_element(1, &element_with_history);
@@ -230,8 +238,8 @@ mod tests {
     #[test]
     fn rollbacks() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         element_with_history.add_new_record(element_pool.create_element(
             2,
@@ -247,8 +255,8 @@ mod tests {
     #[test]
     fn commits_with_initial_value() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         element_with_history.commit(&mut element_pool);
         check_that_head_is_initial_element(1, &element_with_history);
@@ -258,8 +266,8 @@ mod tests {
     #[test]
     fn commits_one_record() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         let new_element =
             element_pool.create_element(2, Some(element_with_history.head), CacheSnapshotId(1));
@@ -275,8 +283,8 @@ mod tests {
     #[test]
     fn commits_two_records() {
         let mut element_pool = ElementPool::new(Global);
-        let mut element_with_history: ElementWithHistory<usize, Global> =
-            ElementWithHistory::new((), 1, &mut element_pool);
+        let mut element_with_history: ElementWithHistory<(), usize, Global> =
+            ElementWithHistory::new((), (), 1, &mut element_pool);
 
         let new_element =
             element_pool.create_element(2, Some(element_with_history.head), CacheSnapshotId(1));
