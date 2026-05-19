@@ -853,6 +853,40 @@ fn write_bigint_from_u64_digits(digits: &[u64], dst: &mut BigintRepr<impl Alloca
     }
 }
 
+/// Read a wincode-encoded Vec<u64> (u64 length prefix + u64 elements) directly
+/// from the oracle into a BigintRepr, one u64 at a time. On the proving path
+/// each u64 read hits the RawWordReadable fast path (2 raw u32 stores).
+/// Zero heap allocation, zero intermediate copies.
+fn read_u64_seq_into_bigint<O: IOOracle, A: Allocator + Clone>(
+    oracle: &mut O,
+    dst: &mut BigintRepr<A>,
+) -> Result<usize, zk_ee::system::errors::internal::InternalError> {
+    let len: u64 = oracle.query(0, &())?;
+    let len = len as usize;
+    unsafe {
+        let num_digits = len.next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
+        let dst_capacity = dst.clear_as_capacity_mut();
+        let mut remaining = len;
+        for dst_slot in dst_capacity[..num_digits].iter_mut() {
+            let dst_ptr: *mut u64 = dst_slot
+                .as_mut_ptr()
+                .cast::<[u64; BIGINT_DIGIT_U64_SIZE]>()
+                .cast();
+            for i in 0..BIGINT_DIGIT_U64_SIZE {
+                if remaining > 0 {
+                    let val: u64 = oracle.query(0, &()).unwrap();
+                    dst_ptr.add(i).write(val);
+                    remaining -= 1;
+                } else {
+                    dst_ptr.add(i).write(0);
+                }
+            }
+        }
+        dst.set_num_digits(num_digits);
+    }
+    Ok(len)
+}
+
 impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
     fn get_reduction_op_advice<A: Allocator + Clone>(
         &mut self,
@@ -861,67 +895,6 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         quotient_dst: &mut BigintRepr<A>,
         remainder_dst: &mut BigintRepr<A>,
     ) {
-        // We use different advice params depending on architecture
-        // Both are mostly the same, main difference is the width of pointers
-        #[cfg(target_pointer_width = "32")]
-        let response: ModexpResponse = {
-            use crate::system_functions::modexp::ModExpAdviceParams;
-            let arg: ModExpAdviceParams = {
-                let a_len = a.digits;
-                let a_ptr = a.backing.as_ptr();
-
-                let modulus_len = m.digits;
-                let modulus_ptr = m.backing.as_ptr();
-
-                assert!(modulus_len > 0);
-
-                ModExpAdviceParams {
-                    op: 0,
-                    a_ptr: a_ptr.addr() as u32,
-                    a_len: a_len as u32,
-                    b_ptr: 0,
-                    b_len: 0,
-                    modulus_ptr: modulus_ptr.addr() as u32,
-                    modulus_len: modulus_len as u32,
-                }
-            };
-            self.inner
-                .query(
-                    MODEXP_ADVICE_QUERY_ID,
-                    &((&arg as *const ModExpAdviceParams).addr() as u32),
-                )
-                .unwrap()
-        };
-
-        #[cfg(target_pointer_width = "64")]
-        let response: ModexpResponse = {
-            let arg: ModExpAdviceParams64 = {
-                let a_len = a.digits;
-                let a_ptr = a.backing.as_ptr();
-
-                let modulus_len = m.digits;
-                let modulus_ptr = m.backing.as_ptr();
-
-                assert!(modulus_len > 0);
-
-                ModExpAdviceParams64 {
-                    op: 0,
-                    a_ptr: a_ptr.addr() as u64,
-                    a_len: a_len as u64,
-                    b_ptr: 0,
-                    b_len: 0,
-                    modulus_ptr: modulus_ptr.addr() as u64,
-                    modulus_len: modulus_len as u64,
-                }
-            };
-            self.inner
-                .query(
-                    MODEXP_ADVICE_QUERY_ID,
-                    &((&arg as *const ModExpAdviceParams64).addr() as u64),
-                )
-                .unwrap()
-        };
-
         let max_quotient_digits = if a.digits < m.digits {
             0
         } else if a.digits == m.digits {
@@ -929,26 +902,75 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         } else {
             a.digits + 1 - m.digits
         };
-
         let max_remainder_digits = m.digits;
 
-        // check that hint is "sane" in upper bound
-        let q_num_digits = response
-            .quotient
-            .len()
-            .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
-            / BIGINT_DIGIT_U64_SIZE;
-        let r_num_digits = response
-            .remainder
-            .len()
-            .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
-            / BIGINT_DIGIT_U64_SIZE;
+        // On riscv32 (proving path): read the ModexpResponse wire format
+        // directly as individual u64 values. ProvingOracle ignores query_type
+        // and input — it just reads sequential words from the witness. Each
+        // u64 read uses RawWordReadable (2 raw u32 stores, no wincode).
+        #[cfg(target_pointer_width = "32")]
+        {
+            let q_len = read_u64_seq_into_bigint(self.inner, quotient_dst).unwrap();
+            let q_num_digits =
+                q_len.next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
+            assert!(q_num_digits <= max_quotient_digits);
 
-        assert!(q_num_digits <= max_quotient_digits);
-        assert!(r_num_digits <= max_remainder_digits);
+            let r_len = read_u64_seq_into_bigint(self.inner, remainder_dst).unwrap();
+            let r_num_digits =
+                r_len.next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
+            assert!(r_num_digits <= max_remainder_digits);
+        }
 
-        write_bigint_from_u64_digits(&response.quotient, quotient_dst);
-        write_bigint_from_u64_digits(&response.remainder, remainder_dst);
+        // On 64-bit (forward/recording path): use standard query with
+        // ModexpResponse. Input params include host pointers for the query
+        // processor to read operands from process memory.
+        #[cfg(target_pointer_width = "64")]
+        {
+            let response: ModexpResponse = {
+                let arg: ModExpAdviceParams64 = {
+                    let a_len = a.digits;
+                    let a_ptr = a.backing.as_ptr();
+
+                    let modulus_len = m.digits;
+                    let modulus_ptr = m.backing.as_ptr();
+
+                    assert!(modulus_len > 0);
+
+                    ModExpAdviceParams64 {
+                        op: 0,
+                        a_ptr: a_ptr.addr() as u64,
+                        a_len: a_len as u64,
+                        b_ptr: 0,
+                        b_len: 0,
+                        modulus_ptr: modulus_ptr.addr() as u64,
+                        modulus_len: modulus_len as u64,
+                    }
+                };
+                self.inner
+                    .query(
+                        MODEXP_ADVICE_QUERY_ID,
+                        &((&arg as *const ModExpAdviceParams64).addr() as u64),
+                    )
+                    .unwrap()
+            };
+
+            let q_num_digits = response
+                .quotient
+                .len()
+                .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
+                / BIGINT_DIGIT_U64_SIZE;
+            let r_num_digits = response
+                .remainder
+                .len()
+                .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
+                / BIGINT_DIGIT_U64_SIZE;
+
+            assert!(q_num_digits <= max_quotient_digits);
+            assert!(r_num_digits <= max_remainder_digits);
+
+            write_bigint_from_u64_digits(&response.quotient, quotient_dst);
+            write_bigint_from_u64_digits(&response.remainder, remainder_dst);
+        }
     }
 }
 
