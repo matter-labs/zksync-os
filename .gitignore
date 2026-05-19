@@ -24,3 +24,4 @@ bench_scripts/__pycache__/
 .idea
 .claude
 docs/superpowers/
+docs/transport_migration_remaining_work.md
