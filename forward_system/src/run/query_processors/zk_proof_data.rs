@@ -44,6 +44,6 @@ impl OracleQueryProcessor for ZKProofDataResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        AirbenderCodecV1::encode(&data).map_err(|_| internal_error!("encode proof data failed"))
+        wincode::serialize(&data).map_err(|_| internal_error!("encode proof data failed"))
     }
 }

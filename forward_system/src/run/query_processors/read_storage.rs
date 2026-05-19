@@ -40,7 +40,7 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let storage_address: StorageAddress<EthereumIOTypesConfig> =
-                    AirbenderCodecV1::decode(input)
+                    wincode::deserialize(input)
                         .map_err(|_| internal_error!("decode StorageAddress failed"))?;
                 let flat_key =
                     derive_flat_storage_key(&storage_address.address, &storage_address.key);
@@ -57,7 +57,7 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
                             is_new_storage_slot: true,
                         }
                     };
-                AirbenderCodecV1::encode(&slot_data)
+                wincode::serialize(&slot_data)
                     .map_err(|_| internal_error!("encode slot_data failed"))
             }
             _ => unreachable!(),

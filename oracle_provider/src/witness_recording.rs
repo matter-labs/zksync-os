@@ -1,23 +1,22 @@
-use airbender_host::Inputs;
 use zk_ee::internal_error;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 
 pub struct WitnessRecordingOracle<O: IOOracle> {
     inner: O,
-    inputs: Inputs,
+    witness_words: Vec<u32>,
 }
 
 impl<O: IOOracle> WitnessRecordingOracle<O> {
     pub fn new(inner: O) -> Self {
         Self {
             inner,
-            inputs: Inputs::new(),
+            witness_words: Vec::new(),
         }
     }
 
-    pub fn into_inputs(self) -> (O, Inputs) {
-        (self.inner, self.inputs)
+    pub fn into_witness(self) -> (O, Vec<u32>) {
+        (self.inner, self.witness_words)
     }
 }
 
@@ -33,9 +32,13 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
         let response: R = self.inner.query(query_type, input)?;
         let response_bytes = wincode::serialize(&response)
             .map_err(|_| internal_error!("witness recording: wincode serialize failed"))?;
-        self.inputs
-            .push_bytes(&response_bytes)
-            .map_err(|_| internal_error!("witness recording failed"))?;
+        // Push raw LE u32 words — no framing. WordReader on the guest reads
+        // these directly without expecting a length prefix.
+        for chunk in response_bytes.chunks(4) {
+            let mut buf = [0u8; 4];
+            buf[..chunk.len()].copy_from_slice(chunk);
+            self.witness_words.push(u32::from_le_bytes(buf));
+        }
         Ok(response)
     }
 }

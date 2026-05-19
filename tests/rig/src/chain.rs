@@ -919,7 +919,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 );
                 result?
             };
-            let prover_input_forward = inputs.words().to_vec();
+            let prover_input_forward = inputs;
 
             if let Some(path) = witness_output_file {
                 let mut file = File::create(&path).expect("should create file");
@@ -1337,8 +1337,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 "storage writes mismatch between forward and prover-input runs"
             );
 
-            let (_inner, inputs) = returned_oracle.into_inputs();
-            let prover_input_words: Vec<u32> = inputs.words().to_vec();
+            let (_inner, inputs) = returned_oracle.into_witness();
+            let prover_input_words: Vec<u32> = inputs;
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);

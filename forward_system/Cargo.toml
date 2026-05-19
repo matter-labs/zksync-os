@@ -24,6 +24,7 @@ zksync_os_interface = { workspace = true }
 system_hooks = { path = "../system_hooks", default-features = false }
 crypto = { workspace = true }
 airbender-codec = { workspace = true }
+wincode = { workspace = true }
 
 
 ruint = { workspace = true, default-features = false }

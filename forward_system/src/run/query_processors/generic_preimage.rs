@@ -44,7 +44,7 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let hash: Bytes32 =
-            AirbenderCodecV1::decode(input).map_err(|_| internal_error!("decode hash failed"))?;
+            wincode::deserialize(input).map_err(|_| internal_error!("decode hash failed"))?;
 
         let preimage = if hash.is_zero() {
             vec![]
@@ -61,12 +61,10 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
             || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
         {
             let len = preimage.len() as u32;
-            AirbenderCodecV1::encode(&len)
-                .map_err(|_| internal_error!("encode preimage length failed"))
+            wincode::serialize(&len).map_err(|_| internal_error!("encode preimage length failed"))
         } else {
             // Return raw bytes as Vec<u8>
-            AirbenderCodecV1::encode(&preimage)
-                .map_err(|_| internal_error!("encode preimage failed"))
+            wincode::serialize(&preimage).map_err(|_| internal_error!("encode preimage failed"))
         }
     }
 }

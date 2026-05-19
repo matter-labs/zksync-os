@@ -166,7 +166,7 @@ pub fn generate_proof_input<
     .map_err(|e| wrap_error!(e))?;
     // Take pubdata, as it's not part of BlockOutput
     let pubdata = std::mem::take(&mut result_keeper.pubdata);
-    let prover_input = inputs.words().to_vec();
+    let prover_input = inputs;
 
     Ok((prover_input, result_keeper.into(), pubdata))
 }

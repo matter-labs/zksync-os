@@ -54,10 +54,10 @@ pub fn run_prover_input_no_panic<Config: BasicBootloaderExecutionConfig>(
     >,
     tracer: &mut impl Tracer<ProverInputSystem>,
     validator: &mut impl TxValidator<ProverInputSystem>,
-) -> Result<airbender_host::Inputs, BootloaderSubsystemError> {
+) -> Result<Vec<u32>, BootloaderSubsystemError> {
     ProverInputBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
         .map(|o| {
-            let (_inner, inputs) = o.0.into_inputs();
-            inputs
+            let (_inner, witness_words) = o.0.into_witness();
+            witness_words
         })
 }

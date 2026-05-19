@@ -18,6 +18,7 @@ basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 airbender-codec = { workspace = true }
+wincode = { workspace = true }
 
 c-kzg = "2.1.5"
 

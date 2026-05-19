@@ -62,7 +62,7 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
     ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address: StorageAddress<EthereumIOTypesConfig> = AirbenderCodecV1::decode(input)
+        let address: StorageAddress<EthereumIOTypesConfig> = wincode::deserialize(input)
             .map_err(|_| internal_error!("decode storage address failed"))?;
 
         let data = self
@@ -106,7 +106,7 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        AirbenderCodecV1::encode(&initial_value)
+        wincode::serialize(&initial_value)
             .map_err(|_| internal_error!("encode initial value failed"))
     }
 }

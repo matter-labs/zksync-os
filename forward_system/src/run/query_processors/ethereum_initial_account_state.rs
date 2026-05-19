@@ -56,8 +56,9 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
     ) -> Result<Vec<u8>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address: B160 = AirbenderCodecV1::decode(input)
-            .map_err(|_| internal_error!("decode address failed"))?;
+        let limbs: [u64; 3] =
+            wincode::deserialize(input).map_err(|_| internal_error!("decode address failed"))?;
+        let address = B160::from_limbs(limbs);
 
         let account = if let Some(data) = self.source.get(&address).copied() {
             data
@@ -90,6 +91,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
             }
         };
 
-        AirbenderCodecV1::encode(&account).map_err(|_| internal_error!("encode account failed"))
+        wincode::serialize(&account).map_err(|_| internal_error!("encode account failed"))
     }
 }

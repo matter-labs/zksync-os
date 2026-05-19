@@ -1,4 +1,3 @@
-use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use crate::utils::evaluate::read_memory_as_u8;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::blob_commitment_generator::ENCODABLE_BYTES_PER_BLOB;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof;
@@ -38,7 +37,7 @@ impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
         const { assert!(8 == core::mem::size_of::<usize>()) };
 
         // Decode (data_ptr, data_len) from the input - RISC-V sends these as two u32 values
-        let (data_ptr, data_len): (u32, u32) = AirbenderCodecV1::decode(input)
+        let (data_ptr, data_len): (u32, u32) = wincode::deserialize(input)
             .map_err(|_| internal_error!("decode blob ptr/len failed"))?;
 
         assert!(data_ptr.is_multiple_of(4));
@@ -46,8 +45,7 @@ impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
         let data = read_memory_as_u8(memory, data_ptr, data_len).unwrap();
         let result = blob_kzg_commitment_and_proof(&data);
 
-        AirbenderCodecV1::encode(&result)
-            .map_err(|_| internal_error!("encode blob commitment failed"))
+        wincode::serialize(&result).map_err(|_| internal_error!("encode blob commitment failed"))
     }
 }
 
@@ -78,15 +76,14 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
         const { assert!(8 == core::mem::size_of::<usize>()) };
 
         // Decode (data_ptr, data_len) from the input - native sends these as two u64 values
-        let (data_ptr, data_len): (u64, u64) = AirbenderCodecV1::decode(input)
+        let (data_ptr, data_len): (u64, u64) = wincode::deserialize(input)
             .map_err(|_| internal_error!("decode blob ptr/len failed"))?;
 
         assert!(data_len <= ENCODABLE_BYTES_PER_BLOB as u64);
         let data = read_u8_words(data_ptr, data_len);
         let result = blob_kzg_commitment_and_proof(&data);
 
-        AirbenderCodecV1::encode(&result)
-            .map_err(|_| internal_error!("encode blob commitment failed"))
+        wincode::serialize(&result).map_err(|_| internal_error!("encode blob commitment failed"))
     }
 }
 
@@ -136,8 +133,7 @@ mod tests {
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
-        let input =
-            AirbenderCodecV1::encode(&(data.as_ptr().addr() as u64, data.len() as u64)).unwrap();
+        let input = wincode::serialize(&(data.as_ptr().addr() as u64, data.len() as u64)).unwrap();
         let result_bytes = NativeBlobCommitmentAndProofQuery
             .process(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
@@ -145,7 +141,7 @@ mod tests {
                 &DummyMemorySource,
             )
             .unwrap();
-        let result: KZGCommitmentAndProof = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let result: KZGCommitmentAndProof = wincode::deserialize(&result_bytes).unwrap();
 
         assert_eq!(result.commitment.len(), 48);
         assert_eq!(result.proof.len(), 48);
@@ -184,11 +180,11 @@ mod tests {
         let mut memory = TestMemorySource::default();
         memory.write_bytes(data_addr, data);
 
-        let input = AirbenderCodecV1::encode(&(data_addr, data.len() as u32)).unwrap();
+        let input = wincode::serialize(&(data_addr, data.len() as u32)).unwrap();
         let result_bytes = BlobCommitmentAndProofQuery
             .process(BLOB_COMMITMENT_AND_PROOF_QUERY_ID, &input, &memory)
             .unwrap();
-        let result: KZGCommitmentAndProof = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let result: KZGCommitmentAndProof = wincode::deserialize(&result_bytes).unwrap();
 
         let expected = blob_kzg_commitment_and_proof(data);
         assert_eq!(result.commitment, expected.commitment);
@@ -198,7 +194,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let input = AirbenderCodecV1::encode(&(0u64, 1u64)).unwrap();
+        let input = wincode::serialize(&(0u64, 1u64)).unwrap();
         let _ = NativeBlobCommitmentAndProofQuery.process(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
             &input,
@@ -210,7 +206,7 @@ mod tests {
     #[should_panic]
     fn blob_kzg_oracle_panics_on_misaligned_pointer() {
         let memory = TestMemorySource::default();
-        let input = AirbenderCodecV1::encode(&(0x101u32, 10u32)).unwrap();
+        let input = wincode::serialize(&(0x101u32, 10u32)).unwrap();
         let _ = BlobCommitmentAndProofQuery.process(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
             &input,

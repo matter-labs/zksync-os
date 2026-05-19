@@ -38,11 +38,10 @@ impl OracleQueryProcessor for EthereumTargetBlockHeaderResponder {
         match query_id {
             ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID => {
                 let len = self.target_header_encoding.len() as u32;
-                AirbenderCodecV1::encode(&len)
-                    .map_err(|_| internal_error!("encode header len failed"))
+                wincode::serialize(&len).map_err(|_| internal_error!("encode header len failed"))
             }
             ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID => {
-                AirbenderCodecV1::encode(&self.target_header_encoding)
+                wincode::serialize(&self.target_header_encoding)
                     .map_err(|_| internal_error!("encode header data failed"))
             }
             _ => {

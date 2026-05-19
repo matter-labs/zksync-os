@@ -2320,6 +2320,7 @@ dependencies = [
  "oracle_provider",
  "ruint",
  "serde",
+ "wincode",
  "zk_ee",
 ]
 
@@ -3621,6 +3622,7 @@ dependencies = [
  "strum_macros",
  "system_hooks",
  "tempfile",
+ "wincode",
  "zk_ee",
  "zksync_os_evm_errors",
  "zksync_os_interface",

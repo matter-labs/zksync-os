@@ -1,4 +1,3 @@
-use airbender_codec::{AirbenderCodec, AirbenderCodecV1};
 use basic_bootloader::bootloader::oracle_types::{
     DivRemResponse, ModexpResponse, WideDivRemResponse,
 };
@@ -138,7 +137,7 @@ impl OracleQueryProcessor for ArithmeticQuery {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr: u32 = AirbenderCodecV1::decode(input)
+            let arg_ptr: u32 = wincode::deserialize(input)
                 .map_err(|_| internal_error!("decode u256 div_rem ptr failed"))?;
             assert!(arg_ptr.is_multiple_of(4));
             const { assert!(core::mem::align_of::<U256DivRemAdviceParams>() <= 4) }
@@ -147,12 +146,12 @@ impl OracleQueryProcessor for ArithmeticQuery {
             let dividend = read_u256_from_guest(memory, params.dividend_ptr);
             let divisor = read_u256_from_guest(memory, params.divisor_ptr);
             let response = u256_div_rem(dividend, divisor);
-            return AirbenderCodecV1::encode(&response)
+            return wincode::serialize(&response)
                 .map_err(|_| internal_error!("encode div_rem response failed"));
         }
 
         if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr: u32 = AirbenderCodecV1::decode(input)
+            let arg_ptr: u32 = wincode::deserialize(input)
                 .map_err(|_| internal_error!("decode u256 wide div_rem ptr failed"))?;
             assert!(arg_ptr.is_multiple_of(4));
             const { assert!(core::mem::align_of::<U256WideDivRemAdviceParams>() <= 4) }
@@ -163,15 +162,14 @@ impl OracleQueryProcessor for ArithmeticQuery {
             let dividend_hi = read_u256_from_guest(memory, params.dividend_hi_ptr);
             let divisor = read_u256_from_guest(memory, params.divisor_ptr);
             let response = u256_wide_div_rem(dividend_lo, dividend_hi, divisor);
-            return AirbenderCodecV1::encode(&response)
+            return wincode::serialize(&response)
                 .map_err(|_| internal_error!("encode wide div_rem response failed"));
         }
 
-        let arg_ptr: u32 = AirbenderCodecV1::decode(input)
-            .map_err(|_| internal_error!("decode modexp ptr failed"))?;
+        let arg_ptr: u32 =
+            wincode::deserialize(input).map_err(|_| internal_error!("decode modexp ptr failed"))?;
         let response = process_modexp_riscv(arg_ptr, memory);
-        AirbenderCodecV1::encode(&response)
-            .map_err(|_| internal_error!("encode modexp response failed"))
+        wincode::serialize(&response).map_err(|_| internal_error!("encode modexp response failed"))
     }
 }
 
@@ -200,33 +198,32 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         debug_assert!(self.supports_query_id(query_id));
 
         if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr: u64 = AirbenderCodecV1::decode(input)
+            let arg_ptr: u64 = wincode::deserialize(input)
                 .map_err(|_| internal_error!("decode u256 div_rem ptr failed"))?;
             let params: U256DivRemAdviceParams64 = read_host_struct(arg_ptr);
             let dividend = read_u256_from_host(params.dividend_ptr);
             let divisor = read_u256_from_host(params.divisor_ptr);
             let response = u256_div_rem(dividend, divisor);
-            return AirbenderCodecV1::encode(&response)
+            return wincode::serialize(&response)
                 .map_err(|_| internal_error!("encode div_rem response failed"));
         }
 
         if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr: u64 = AirbenderCodecV1::decode(input)
+            let arg_ptr: u64 = wincode::deserialize(input)
                 .map_err(|_| internal_error!("decode u256 wide div_rem ptr failed"))?;
             let params: U256WideDivRemAdviceParams64 = read_host_struct(arg_ptr);
             let dividend_lo = read_u256_from_host(params.dividend_lo_ptr);
             let dividend_hi = read_u256_from_host(params.dividend_hi_ptr);
             let divisor = read_u256_from_host(params.divisor_ptr);
             let response = u256_wide_div_rem(dividend_lo, dividend_hi, divisor);
-            return AirbenderCodecV1::encode(&response)
+            return wincode::serialize(&response)
                 .map_err(|_| internal_error!("encode wide div_rem response failed"));
         }
 
-        let arg_ptr: u64 = AirbenderCodecV1::decode(input)
-            .map_err(|_| internal_error!("decode modexp ptr failed"))?;
+        let arg_ptr: u64 =
+            wincode::deserialize(input).map_err(|_| internal_error!("decode modexp ptr failed"))?;
         let response = process_modexp_native(arg_ptr);
-        AirbenderCodecV1::encode(&response)
-            .map_err(|_| internal_error!("encode modexp response failed"))
+        wincode::serialize(&response).map_err(|_| internal_error!("encode modexp response failed"))
     }
 }
 
@@ -313,11 +310,11 @@ mod tests {
         memory.insert_u64_words(A_ADDR, dividend_u64);
         memory.insert_u64_words(m_addr, modulus_u64);
 
-        let input = AirbenderCodecV1::encode(&(PARAMS_ADDR as u32)).unwrap();
+        let input = wincode::serialize(&(PARAMS_ADDR as u32)).unwrap();
         let result_bytes = ArithmeticQuery
             .process(MODEXP_ADVICE_QUERY_ID, &input, &memory)
             .unwrap();
-        let response: ModexpResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let response: ModexpResponse = wincode::deserialize(&result_bytes).unwrap();
         (response.quotient, response.remainder)
     }
 
@@ -383,12 +380,11 @@ mod tests {
         };
 
         let input =
-            AirbenderCodecV1::encode(&((&arg as *const ModExpAdviceParams64).addr() as u64))
-                .unwrap();
+            wincode::serialize(&((&arg as *const ModExpAdviceParams64).addr() as u64)).unwrap();
         let result_bytes = NativeArithmeticQuery
             .process(MODEXP_ADVICE_QUERY_ID, &input, &DummyMemorySource)
             .unwrap();
-        let response: ModexpResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let response: ModexpResponse = wincode::deserialize(&result_bytes).unwrap();
 
         assert_eq!(response.quotient, vec![3]);
         assert_eq!(response.remainder, vec![1]);
@@ -403,12 +399,12 @@ mod tests {
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
         let input =
-            AirbenderCodecV1::encode(&((&params as *const U256DivRemAdviceParams64).addr() as u64))
+            wincode::serialize(&((&params as *const U256DivRemAdviceParams64).addr() as u64))
                 .unwrap();
         let result_bytes = NativeArithmeticQuery
             .process(U256_DIV_REM_ADVICE_QUERY_ID, &input, &DummyMemorySource)
             .unwrap();
-        let response: DivRemResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let response: DivRemResponse = wincode::deserialize(&result_bytes).unwrap();
         // Quotient only: 4 limbs
         assert_eq!(response.quotient, [3, 0, 0, 0]);
     }
@@ -424,10 +420,9 @@ mod tests {
             dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
-        let input = AirbenderCodecV1::encode(
-            &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
-        )
-        .unwrap();
+        let input =
+            wincode::serialize(&((&params as *const U256WideDivRemAdviceParams64).addr() as u64))
+                .unwrap();
         let result_bytes = NativeArithmeticQuery
             .process(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
@@ -435,7 +430,7 @@ mod tests {
                 &DummyMemorySource,
             )
             .unwrap();
-        let response: WideDivRemResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let response: WideDivRemResponse = wincode::deserialize(&result_bytes).unwrap();
         // Quotient only: lo=5, hi=0
         assert_eq!(response.quotient_lo[0], 5);
         assert_eq!(response.quotient_lo[1..], [0, 0, 0]);
@@ -453,10 +448,9 @@ mod tests {
             dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
             divisor_ptr: divisor.as_ptr().addr() as u64,
         };
-        let input = AirbenderCodecV1::encode(
-            &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
-        )
-        .unwrap();
+        let input =
+            wincode::serialize(&((&params as *const U256WideDivRemAdviceParams64).addr() as u64))
+                .unwrap();
         let result_bytes = NativeArithmeticQuery
             .process(
                 U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
@@ -464,7 +458,7 @@ mod tests {
                 &DummyMemorySource,
             )
             .unwrap();
-        let response: WideDivRemResponse = AirbenderCodecV1::decode(&result_bytes).unwrap();
+        let response: WideDivRemResponse = wincode::deserialize(&result_bytes).unwrap();
         assert_eq!(response.quotient_lo[0], u64::MAX);
         assert_eq!(response.quotient_lo[1], u64::MAX);
         assert_eq!(response.quotient_lo[2..], [0, 0]);
@@ -498,11 +492,11 @@ mod tests {
         memory.insert_u64_words(GUEST_DIVIDEND_ADDR, &dividend);
         memory.insert_u64_words(GUEST_MODULUS_ADDR, &modulus);
 
-        let riscv_input = AirbenderCodecV1::encode(&(GUEST_ARG_ADDR as u32)).unwrap();
+        let riscv_input = wincode::serialize(&(GUEST_ARG_ADDR as u32)).unwrap();
         let riscv_result_bytes = ArithmeticQuery
             .process(MODEXP_ADVICE_QUERY_ID, &riscv_input, &memory)
             .unwrap();
-        let riscv_response: ModexpResponse = AirbenderCodecV1::decode(&riscv_result_bytes).unwrap();
+        let riscv_response: ModexpResponse = wincode::deserialize(&riscv_result_bytes).unwrap();
 
         let host_arg = ModExpAdviceParams64 {
             op: 0,
@@ -514,13 +508,12 @@ mod tests {
             modulus_len: MODULUS_DIGITS as u64,
         };
         let native_input =
-            AirbenderCodecV1::encode(&((&host_arg as *const ModExpAdviceParams64).addr() as u64))
+            wincode::serialize(&((&host_arg as *const ModExpAdviceParams64).addr() as u64))
                 .unwrap();
         let native_result_bytes = NativeArithmeticQuery
             .process(MODEXP_ADVICE_QUERY_ID, &native_input, &DummyMemorySource)
             .unwrap();
-        let native_response: ModexpResponse =
-            AirbenderCodecV1::decode(&native_result_bytes).unwrap();
+        let native_response: ModexpResponse = wincode::deserialize(&native_result_bytes).unwrap();
 
         assert_eq!(native_response.quotient, riscv_response.quotient);
         assert_eq!(native_response.remainder, riscv_response.remainder);
@@ -538,14 +531,14 @@ mod tests {
     #[should_panic]
     fn arithmetic_query_panics_on_misaligned_pointer() {
         let memory = TestMemorySource::default();
-        let input = AirbenderCodecV1::encode(&(0x101u32)).unwrap();
+        let input = wincode::serialize(&(0x101u32)).unwrap();
         let _ = ArithmeticQuery.process(MODEXP_ADVICE_QUERY_ID, &input, &memory);
     }
 
     #[test]
     #[should_panic]
     fn native_arithmetic_query_rejects_null_query_pointer() {
-        let input = AirbenderCodecV1::encode(&(0u64)).unwrap();
+        let input = wincode::serialize(&(0u64)).unwrap();
         let _ = NativeArithmeticQuery.process(MODEXP_ADVICE_QUERY_ID, &input, &DummyMemorySource);
     }
 }

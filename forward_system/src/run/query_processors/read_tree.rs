@@ -53,26 +53,26 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
         match query_id {
             PreviousIndexQuery::QUERY_ID => {
                 let key: <PreviousIndexQuery as SimpleOracleQuery>::Input =
-                    AirbenderCodecV1::decode(input)
+                    wincode::deserialize(input)
                         .map_err(|_| internal_error!("decode PreviousIndexQuery input failed"))?;
                 let prev_index = self.tree.prev_tree_index(key);
-                AirbenderCodecV1::encode(&prev_index)
+                wincode::serialize(&prev_index)
                     .map_err(|_| internal_error!("encode prev_index failed"))
             }
             ExactIndexQuery::QUERY_ID => {
                 let key: <ExactIndexQuery as SimpleOracleQuery>::Input =
-                    AirbenderCodecV1::decode(input)
+                    wincode::deserialize(input)
                         .map_err(|_| internal_error!("decode ExactIndexQuery input failed"))?;
                 let existing = self
                     .tree
                     .tree_index(key)
                     .expect("Reading index for key that is not in the tree");
-                AirbenderCodecV1::encode(&existing)
+                wincode::serialize(&existing)
                     .map_err(|_| internal_error!("encode tree index failed"))
             }
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let storage_address: StorageAddress<EthereumIOTypesConfig> =
-                    AirbenderCodecV1::decode(input)
+                    wincode::deserialize(input)
                         .map_err(|_| internal_error!("decode StorageAddress failed"))?;
                 let flat_key =
                     derive_flat_storage_key(&storage_address.address, &storage_address.key);
@@ -88,17 +88,17 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
                             is_new_storage_slot: true,
                         }
                     };
-                AirbenderCodecV1::encode(&slot_data)
+                wincode::serialize(&slot_data)
                     .map_err(|_| internal_error!("encode slot_data failed"))
             }
             PROOF_FOR_INDEX_QUERY_ID => {
-                let index: u64 = AirbenderCodecV1::decode(input)
+                let index: u64 = wincode::deserialize(input)
                     .map_err(|_| internal_error!("decode proof index failed"))?;
                 let existing = self.tree.merkle_proof(index);
                 let proof = ValueAtIndexProof {
                     proof: ExistingReadProof { existing },
                 };
-                AirbenderCodecV1::encode(&proof).map_err(|_| internal_error!("encode proof failed"))
+                wincode::serialize(&proof).map_err(|_| internal_error!("encode proof failed"))
             }
             _ => unreachable!(),
         }
