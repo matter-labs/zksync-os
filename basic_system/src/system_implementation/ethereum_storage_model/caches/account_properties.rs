@@ -14,6 +14,7 @@ use zk_ee::{
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
+#[repr(C)]
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -23,6 +24,15 @@ pub struct EthereumAccountProperties {
     pub storage_root: Bytes32,
     pub bytecode_hash: Bytes32,
 }
+
+const _: () = const {
+    assert!(core::mem::size_of::<EthereumAccountProperties>() == 104);
+    assert!(core::mem::size_of::<EthereumAccountProperties>() % 4 == 0);
+};
+
+// SAFETY: repr(C) with {u64, U256([u64;4]), Bytes32, Bytes32} = 104 bytes,
+// no padding. LE wire encoding matches in-memory layout.
+unsafe impl zk_ee::oracle::RawWordReadable for EthereumAccountProperties {}
 
 unsafe impl<C: wincode::config::ConfigCore> wincode::SchemaWrite<C> for EthereumAccountProperties {
     type Src = Self;
