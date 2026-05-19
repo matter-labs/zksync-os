@@ -92,7 +92,7 @@ impl<
             key: *key,
         };
 
-        let (old_value, _) = self
+        let old_value = self
             .slot_values
             .apply_write_impl(ee_type, &key, new_value, oracle, resources)?;
 
