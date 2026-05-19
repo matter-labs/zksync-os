@@ -12,33 +12,30 @@ const INLINE_JUMPDEST: bool = cfg!(target_arch = "riscv32");
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn jump(&mut self) -> InstructionResult {
-        let (gas_cost, native_cost) = if INLINE_JUMPDEST {
-            (
-                gas_constants::MID + gas_constants::JUMPDEST,
-                JUMP_NATIVE_COST + JUMPDEST_NATIVE_COST,
-            )
-        } else {
-            (gas_constants::MID, JUMP_NATIVE_COST)
-        };
-        self.gas.spend_gas_and_native(gas_cost, native_cost)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::MID, JUMP_NATIVE_COST)?;
         let dest = self.stack.pop_1()?;
         let dest = Self::cast_to_usize(dest, EvmError::InvalidJump.into())?;
         if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
-            // Advance past the JUMPDEST byte on RISC-V so the dispatcher
-            // doesn't run it again; on host builds, land on `dest` so the
-            // standard JUMPDEST handler fires and the opcode-stats tracer
-            // observes a real JUMPDEST event.
-            self.instruction_pointer = if INLINE_JUMPDEST { dest + 1 } else { dest };
             if INLINE_JUMPDEST {
-                // Emit a synthetic cycle_marker pair so the proving-side
-                // marker count balances the host-side LABELS Vec, which
-                // still pushes a JUMPDEST entry from the (unoptimized)
-                // forward dispatch. Per-opcode cycle attribution between
-                // JUMP and JUMPDEST gets scrambled because this pair is
-                // nested inside the dispatcher's JUMP bracket, but the
-                // block-level effective-cycle total is unaffected.
+                // Charged separately from the JUMP base so an invalid
+                // destination doesn't pay JUMPDEST gas/native — preserves
+                // host parity on the OOG boundary for marginal-gas frames
+                // and on native resources returned after InvalidJump.
+                self.gas
+                    .spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
+                self.instruction_pointer = dest + 1;
+                // Synthetic cycle_marker pair so the proving-side marker
+                // count balances the host-side LABELS Vec, which still
+                // pushes a JUMPDEST entry from the (unoptimized) forward
+                // dispatch. Per-opcode cycle attribution between JUMP and
+                // JUMPDEST gets scrambled because this pair nests inside
+                // the dispatcher's JUMP bracket, but the block-level
+                // effective-cycle total is unaffected.
                 cycle_marker::opcode_start!();
                 cycle_marker::opcode_end!("JUMPDEST");
+            } else {
+                self.instruction_pointer = dest;
             }
             Ok(())
         } else {
