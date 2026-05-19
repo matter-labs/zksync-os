@@ -12,9 +12,9 @@ categories = ["cryptography"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-airbender = { package = "airbender-sdk", git = "https://github.com/vibelyova/airbender-platform", rev = "09759586", default-features = false, features = ["allocator-custom"] }
+airbender = { package = "airbender-sdk", git = "https://github.com/vibelyova/airbender-platform", rev = "5b014337", default-features = false, features = ["allocator-custom"] }
 proof_running_system = { path = "../proof_running_system", default-features = false }
-crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "09759586", package = "airbender-crypto", default-features = false, optional = true }
+crypto = { git = "https://github.com/vibelyova/airbender-platform", rev = "5b014337", package = "airbender-crypto", default-features = false, optional = true }
 
 [profile.dev]
 opt-level = 0
