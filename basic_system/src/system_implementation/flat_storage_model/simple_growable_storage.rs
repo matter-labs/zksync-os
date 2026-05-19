@@ -1243,15 +1243,14 @@ unsafe impl<
     ) -> wincode::ReadResult<()> {
         let index = <u64 as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
         let leaf = <FlatStorageLeaf<N> as wincode::SchemaRead<'de, C>>::get(reader.by_ref())?;
-        let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
-        // SAFETY: [Bytes32; N] is N×32 contiguous bytes on LE. Bulk-read
-        // instead of element-by-element to avoid per-Bytes32 wincode overhead.
+        // Allocate uninitialized and bulk-read directly — avoids zeroing 2KB.
+        let mut path = Box::new_uninit_in(A::default());
         unsafe {
-            let ptr = path.as_mut_ptr() as *mut core::mem::MaybeUninit<[Bytes32; N]>;
             reader
-                .copy_into_t(&mut *ptr)
+                .copy_into_t(&mut path)
                 .map_err(wincode::ReadError::Io)?;
         }
+        let path = unsafe { path.assume_init() };
         dst.write(Self {
             index,
             leaf,
@@ -1741,8 +1740,14 @@ unsafe impl<
         reader: impl wincode::io::Reader<'de>,
         dst: &mut core::mem::MaybeUninit<Self>,
     ) -> wincode::ReadResult<()> {
-        let proof = <ExistingReadProof<N, H, A> as wincode::SchemaRead<'de, C>>::get(reader)?;
-        dst.write(Self { proof });
+        // Flatten through ExistingReadProof → LeafProof to avoid
+        // intermediate MaybeUninit allocations at each wrapper layer.
+        let leaf_proof = <LeafProof<N, H, A> as wincode::SchemaRead<'de, C>>::get(reader)?;
+        dst.write(Self {
+            proof: ExistingReadProof {
+                existing: leaf_proof,
+            },
+        });
         Ok(())
     }
 }

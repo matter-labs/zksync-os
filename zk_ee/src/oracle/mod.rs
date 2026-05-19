@@ -51,6 +51,11 @@ impl<T: for<'de> wincode::SchemaRead<'de, wincode::config::DefaultConfig, Dst = 
 #[rustc_specialization_trait]
 pub unsafe trait RawWordReadable: Sized {}
 
+// SAFETY: u32 is 4 bytes (1 word), LE wire encoding matches in-memory layout.
+unsafe impl RawWordReadable for u32 {}
+// SAFETY: u64 is 8 bytes (2 words), LE wire encoding matches in-memory layout.
+unsafe impl RawWordReadable for u64 {}
+
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
 /// an abstraction boundary on how ZKsync OS (system) gets IO information and eventually
 /// updates state and/or sends messages to one more layer above.
