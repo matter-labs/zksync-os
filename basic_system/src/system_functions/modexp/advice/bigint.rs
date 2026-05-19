@@ -991,8 +991,8 @@ mod tests {
         // Provide a quotient that has too many u64 limbs (exceeds max_quotient_digits * 4)
         let mut oracle = FixedResponseOracle {
             response: ModexpResponse {
-                quotient: vec![1u64; 20], // way too large
-                remainder: vec![0u64; 4],
+                quotient: smallvec::smallvec![1u64; 20], // way too large
+                remainder: smallvec::smallvec![0u64; 4],
             },
         };
         let mut advisor = OracleAdvisor { inner: &mut oracle };
@@ -1012,8 +1012,8 @@ mod tests {
         // Provide a remainder that has too many u64 limbs (exceeds max_remainder_digits * 4)
         let mut oracle = FixedResponseOracle {
             response: ModexpResponse {
-                quotient: vec![0u64; 4],
-                remainder: vec![1u64; 20], // way too large
+                quotient: smallvec::smallvec![0u64; 4],
+                remainder: smallvec::smallvec![1u64; 20], // way too large
             },
         };
         let mut advisor = OracleAdvisor { inner: &mut oracle };

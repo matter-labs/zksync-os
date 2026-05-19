@@ -17,6 +17,7 @@ ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 wincode = { workspace = true }
+smallvec = { workspace = true }
 crypto = { workspace = true, features = ["secp256k1-static-context"] }
 either = { workspace = true, default-features = false }
 storage_models = { path = "../storage_models", default-features = false }

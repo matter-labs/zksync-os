@@ -101,8 +101,8 @@ mod tests {
                 quotient: [1, 2, 3, 4],
             }),
             encode_value(&ModexpResponse {
-                quotient: vec![0xAA, 0xBB],
-                remainder: vec![0xCC],
+                quotient: smallvec::smallvec![0xAA, 0xBB],
+                remainder: smallvec::smallvec![0xCC],
             }),
             encode_value(&FieldSqrtResponse {
                 result: zk_ee::utils::Bytes32::zero(),

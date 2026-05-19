@@ -15,12 +15,14 @@ pub struct WideDivRemResponse {
     pub quotient_hi: [u64; 4],
 }
 
+pub type ModexpLimbs = smallvec::SmallVec<[u64; 64]>;
+
 #[derive(
     Clone, Debug, PartialEq, Serialize, Deserialize, wincode::SchemaRead, wincode::SchemaWrite,
 )]
 pub struct ModexpResponse {
-    pub quotient: alloc::vec::Vec<u64>,
-    pub remainder: alloc::vec::Vec<u64>,
+    pub quotient: ModexpLimbs,
+    pub remainder: ModexpLimbs,
 }
 
 #[derive(

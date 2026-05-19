@@ -1945,6 +1945,7 @@ dependencies = [
  "ruint",
  "serde",
  "serde-big-array",
+ "smallvec",
  "strum_macros",
  "system_hooks",
  "wincode",
@@ -1982,6 +1983,7 @@ dependencies = [
  "ruint",
  "serde",
  "serde_json",
+ "smallvec",
  "storage_models",
  "strum_macros",
  "u256",
@@ -2320,6 +2322,7 @@ dependencies = [
  "oracle_provider",
  "ruint",
  "serde",
+ "smallvec",
  "wincode",
  "zk_ee",
 ]
@@ -5429,6 +5432,7 @@ dependencies = [
  "basic_bootloader",
  "riscv_transpiler",
  "serde",
+ "smallvec",
  "wincode",
  "zk_ee",
 ]
@@ -9163,6 +9167,7 @@ dependencies = [
  "pastey",
  "proc-macro2",
  "quote",
+ "smallvec",
  "thiserror 2.0.18",
  "wincode-derive",
 ]

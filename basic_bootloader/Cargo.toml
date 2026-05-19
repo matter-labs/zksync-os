@@ -19,6 +19,7 @@ ruint = { workspace = true, default-features = false }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 wincode = { workspace = true }
+smallvec = { workspace = true }
 crypto = { workspace = true }
 hex = { workspace = true, optional = true }
 strum_macros = { workspace = true }
