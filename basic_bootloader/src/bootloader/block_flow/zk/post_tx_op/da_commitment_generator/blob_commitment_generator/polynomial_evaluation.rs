@@ -37,8 +37,8 @@ pub fn evaluate_blob_polynomial(data: &[u8], x: &crypto::bls12_381::Fr) -> crypt
     // Based on https://github.com/ethereum/c-kzg-4844/blob/8b59c2922d78ae792889452ece33a4054c60aab1/src/eip4844/eip4844.c#L192
 
     let mut inverses_in: ArrayVec<crypto::bls12_381::Fr, ELEMENTS_PER_4844_BLOB> = ArrayVec::new();
-    for i in 0..k {
-        inverses_in.push(*x - BRP_ROOTS_OF_UNITY[i]);
+    for &root in &BRP_ROOTS_OF_UNITY[..k] {
+        inverses_in.push(*x - root);
     }
 
     // Batch-invert the K denominators.
