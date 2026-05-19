@@ -41,6 +41,10 @@ impl Bytes32 {
     /// the alternative is `compiler-builtins`' generic byte-by-byte `memcmp`.
     /// Observable ordering is identical to `as_u8_array_ref().cmp(...)` on
     /// either endianness.
+    // Compiled on every target so the equivalence tests can validate it on the
+    // host, but only wired into `Ord` on RV32 — non-test host builds see no
+    // callers, hence the `dead_code` allow.
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
     #[inline]
     fn cmp_word_chunked(&self, other: &Self) -> core::cmp::Ordering {
         for i in 0..BYTES32_USIZE_SIZE {
