@@ -6,9 +6,10 @@ pub mod element_with_history;
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
+use alloc::boxed::Box;
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
-use core::{alloc::Allocator, fmt::Debug, ops::Bound};
+use core::{alloc::Allocator, fmt::Debug, ops::Bound, ptr::NonNull};
 pub(crate) use element_pool::ElementPool;
 use element_with_history::ElementWithHistory;
 
@@ -35,31 +36,40 @@ impl CacheSnapshotId {
     }
 }
 
+/// Stable pointer to an `ElementWithHistory` owned by the `HistoryMap`.
+/// Stability comes from the `Box` wrapper around the value in the `BTreeMap`:
+/// node splits relocate the `Box` itself but never the heap-allocated payload.
+type ElementPtr<K, V, A, KP> = NonNull<ElementWithHistory<K, V, A, KP>>;
+
 /// A key-value map with history. State can be reverted to snapshots.
 /// The snapshots are created using `Self::snapshot(...)` method.
+///
+/// Each `ElementWithHistory` is `Box`-allocated so its address is stable across
+/// BTreeMap node splits; the pending-updates list stores raw pointers to these
+/// elements, avoiding a `BTreeMap::get(&K)` lookup on rollback/commit/iter paths.
 ///
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
 pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
-    /// Map from key to history of an element
-    btree: BTreeMap<K, ElementWithHistory<V, A, KP>, A>,
-    state: HistoryMapState<K, A>,
+    /// Map from key to history of an element (boxed for address stability).
+    btree: BTreeMap<K, Box<ElementWithHistory<K, V, A, KP>, A>, A>,
+    state: HistoryMapState<K, V, A, KP>,
     /// Manages memory allocations for history records, reuses old allocations for optimization
     records_memory_pool: ElementPool<V, A>,
 }
 
-struct HistoryMapState<K, A: Allocator + Clone> {
+struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
     next_snapshot_id: CacheSnapshotId,
     /// State can't be rolled back further than frozen snapshot id. Useful for transactions boundaries
     frozen_snapshot_id: CacheSnapshotId,
-    /// List of updated elements that were not yet "frozen"
-    pending_updated_elements: StackLinkedList<(K, CacheSnapshotId), A>,
+    /// Chronological list of pointers to elements updated since the last commit.
+    pending_updated_elements: StackLinkedList<(ElementPtr<K, V, A, KP>, CacheSnapshotId), A>,
     alloc: A,
 }
 
 impl<K, V, A, KP> HistoryMap<K, V, A, KP>
 where
-    K: Ord + Clone + Debug,
+    K: Ord + Clone,
     A: Allocator + Clone,
 {
     pub fn new(alloc: A) -> Self {
@@ -92,14 +102,13 @@ where
     pub fn get<'s>(&'s self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A, KP>> {
         self.btree
             .get(key)
-            .map(|ec| HistoryMapItemRef { key, history: ec })
+            .map(|ec| HistoryMapItemRef { history: &**ec })
     }
 
     /// Get history of an element by key, mutable
     pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A, KP>> {
         self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
-            key,
-            history: ec,
+            history: &mut **ec,
             cache_state: &mut self.state,
             records_memory_pool: &mut self.records_memory_pool,
         })
@@ -117,17 +126,20 @@ where
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(vacant_entry) => {
                 let (v, properties) = spawn_v()?;
-                vacant_entry.insert(ElementWithHistory::new(
-                    properties,
-                    v,
-                    &mut self.records_memory_pool,
+                vacant_entry.insert(Box::new_in(
+                    ElementWithHistory::new(
+                        key.clone(),
+                        properties,
+                        v,
+                        &mut self.records_memory_pool,
+                    ),
+                    self.state.alloc.clone(),
                 ))
             }
         };
 
         Ok(HistoryMapItemRefMut {
-            key,
-            history: v,
+            history: &mut **v,
             cache_state: &mut self.state,
             records_memory_pool: &mut self.records_memory_pool,
         })
@@ -160,19 +172,19 @@ where
         loop {
             match node {
                 None => break,
-                Some((key, update_snapshot_id)) => {
+                Some((mut element_ptr, update_snapshot_id)) => {
                     // The items in the address_snapshot_updates are ordered chronologically.
                     if update_snapshot_id <= snapshot_id {
                         self.state
                             .pending_updated_elements
-                            .push((key, update_snapshot_id));
+                            .push((element_ptr, update_snapshot_id));
                         break;
                     }
 
-                    let item = self
-                        .btree
-                        .get_mut(&key)
-                        .expect("We've updated this, so it must be present.");
+                    // Safety: pointer is stable for the lifetime of the entry in the
+                    // BTreeMap. The Box pins the inner ElementWithHistory; only `clear()`
+                    // can drop it, and `clear()` also drops the pending list.
+                    let item = unsafe { element_ptr.as_mut() };
 
                     item.rollback(&mut self.records_memory_pool, snapshot_id);
 
@@ -190,12 +202,9 @@ where
         self.state.frozen_snapshot_id = self.snapshot();
 
         // Go over all elements changed since last `commit` and `commit` their history
-        for (key, _) in self.state.pending_updated_elements.iter() {
-            let item = self
-                .btree
-                .get_mut(key)
-                .expect("We've updated this, so it must be present.");
-
+        for (element_ptr, _) in self.state.pending_updated_elements.iter() {
+            // Safety: pointer is stable; no live &mut to the element exists.
+            let item = unsafe { &mut *element_ptr.as_ptr() };
             item.commit(&mut self.records_memory_pool);
         }
 
@@ -226,10 +235,9 @@ where
     where
         F: FnMut(HistoryMapItemRefMut<K, V, A, KP>) -> Result<(), InternalError>,
     {
-        for (k, v) in self.btree.range_mut(range) {
+        for (_k, v) in self.btree.range_mut(range) {
             do_fn(HistoryMapItemRefMut {
-                key: &k,
-                history: v,
+                history: &mut **v,
                 cache_state: &mut self.state,
                 records_memory_pool: &mut self.records_memory_pool,
             })?
@@ -244,7 +252,7 @@ where
     ) -> impl ExactSizeIterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> + Clone {
         self.btree
             .iter()
-            .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
+            .map(|(_k, v)| HistoryMapItemRef { history: &**v })
     }
 
     /// Iterate over all elements that changed since last commit
@@ -254,12 +262,10 @@ where
         self.state
             .pending_updated_elements
             .iter()
-            .map(|(k, _)| HistoryMapItemRef {
-                key: k,
-                history: self
-                    .btree
-                    .get(k)
-                    .expect("We've updated this, so it must be present."),
+            .map(|(ptr, _)| HistoryMapItemRef {
+                // Safety: pointer derived from a Box-owned ElementWithHistory which is
+                // alive for the duration of `&self`.
+                history: unsafe { ptr.as_ref() },
             })
     }
 
@@ -275,12 +281,14 @@ where
             &mut KP,
         ) -> Result<(), InternalError>,
     {
-        for (k, _v) in self.state.pending_updated_elements.iter() {
-            let record = self.btree.get_mut(&k).unwrap();
+        for (ptr, _) in self.state.pending_updated_elements.iter() {
+            // Safety: stable pointer to the Box-owned ElementWithHistory.
+            let record = unsafe { &mut *ptr.as_ptr() };
+            let key = &record.key;
             let initial = unsafe { record.initial.as_ref() };
             let current = unsafe { record.head.as_mut() };
             let cache_appearance = &mut record.element_properties;
-            do_fn(k, (initial, current), cache_appearance)?
+            do_fn(key, (initial, current), cache_appearance)?
         }
 
         Ok(())
@@ -288,21 +296,19 @@ where
 }
 
 /// External reference to element's history
-pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone, KP = ()> {
-    key: &'a K,
-    history: &'a ElementWithHistory<V, A, KP>,
+pub struct HistoryMapItemRef<'a, K, V, A: Allocator + Clone, KP = ()> {
+    history: &'a ElementWithHistory<K, V, A, KP>,
 }
 
 impl<'a, K, V, A, KP> HistoryMapItemRef<'a, K, V, A, KP>
 where
-    K: Clone,
     A: Allocator + Clone,
 {
     pub fn key(&self) -> &'a K {
-        self.key
+        &self.history.key
     }
 
-    pub fn key_properties(&self) -> &KP {
+    pub fn key_properties(&self) -> &'a KP {
         &self.history.element_properties
     }
 
@@ -325,16 +331,14 @@ where
 }
 
 /// External mutable reference to element's history
-pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone, KP = ()> {
-    history: &'a mut ElementWithHistory<V, A, KP>,
-    cache_state: &'a mut HistoryMapState<K, A>,
+pub struct HistoryMapItemRefMut<'a, K, V, A: Allocator + Clone, KP = ()> {
+    history: &'a mut ElementWithHistory<K, V, A, KP>,
+    cache_state: &'a mut HistoryMapState<K, V, A, KP>,
     records_memory_pool: &'a mut ElementPool<V, A>,
-    key: &'a K,
 }
 
 impl<'a, K, V, A, KP> HistoryMapItemRefMut<'a, K, V, A, KP>
 where
-    K: Clone + Debug,
     V: Clone,
     A: Allocator + Clone,
 {
@@ -390,9 +394,14 @@ where
 
             self.history.add_new_record(new);
 
+            // Capture a stable pointer to this element for the pending-updates list.
+            // The pointer remains valid because the underlying box is only freed by
+            // HistoryMap::clear(), which also resets the pending list.
+            let element_ptr = NonNull::from(&mut *self.history);
+
             self.cache_state
                 .pending_updated_elements
-                .push((self.key.clone(), self.cache_state.next_snapshot_id));
+                .push((element_ptr, self.cache_state.next_snapshot_id));
 
             Ok(())
         }
