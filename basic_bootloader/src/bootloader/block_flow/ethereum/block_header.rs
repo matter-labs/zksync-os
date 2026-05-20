@@ -192,7 +192,7 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
 impl HeaderAndHistory {
     pub fn new(
         oracle: &mut impl IOOracle,
-        allocator: impl core::alloc::Allocator,
+        _allocator: impl core::alloc::Allocator,
     ) -> Result<Self, InternalError> {
         let chain_id = 1u64;
         // get buffer
@@ -336,7 +336,7 @@ impl ChainChecker for PectraForkHeader {
         verification_depth: usize,
         oracle: &mut impl IOOracle,
         extra_data: &Self::ExtraData,
-        allocator: A,
+        _allocator: A,
     ) -> Result<Self::Output, BootloaderSubsystemError> {
         use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID;
 
