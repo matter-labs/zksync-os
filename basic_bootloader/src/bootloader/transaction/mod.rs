@@ -75,7 +75,7 @@ impl<A: Allocator> Transaction<A> {
         // query the transaction encoding format from the oracle
         let format_raw: u32 = system.io.oracle().query(TX_ENCODING_FORMAT_QUERY_ID, &())?;
         let format = TxEncodingFormat::try_from(format_raw)
-            .map_err(|v| internal_error!("Unsupported tx encoding format: {v}"))?;
+            .map_err(|_| internal_error!("Unsupported tx encoding format"))?;
 
         match format {
             TxEncodingFormat::Rlp => {

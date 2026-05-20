@@ -46,6 +46,7 @@ pub const BLOCK_HASHES_WINDOW_SIZE: usize = 256;
 /// (most recent will be at the end) if N is one of the most recent
 /// BLOCK_HASHES_WINDOW_SIZE blocks.
 #[derive(Clone, Copy, Debug, PartialEq, WordLayout)]
+#[repr(C)]
 pub struct BlockHashes(pub [U256; BLOCK_HASHES_WINDOW_SIZE]);
 
 impl Default for BlockHashes {

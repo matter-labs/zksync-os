@@ -490,7 +490,6 @@ impl<A: Allocator + Default> crate::oracle::word_layout::WordLayout for UsizeAli
     }
 
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        use crate::oracle::word_layout::WordLayout;
         let byte_len = u32::read_words(r) as usize;
         let u32_word_count = byte_len.div_ceil(4);
         let mut result = Self::preallocated_in(byte_len, A::default());
