@@ -1,8 +1,6 @@
 use arrayvec::ArrayVec;
 use common_structs::system_hooks::HooksStorage;
 use types_config::TryIntoLowAddress;
-use utils::num_usize_words_for_u8_capacity;
-use utils::usize_rw::AsUsizeWritable;
 use utils::UsizeAlignedByteBox;
 
 use super::*;
@@ -292,11 +290,11 @@ where
     /// Returns None when there are no more transactions to process.
     /// Returns Some(Err(_)) if there's an encoding or oracle error.
     ///
-    pub fn try_begin_next_tx<B: AsUsizeWritable>(
+    #[inline(always)]
+    pub fn try_begin_next_tx(
         &mut self,
-        buffer_constructor: impl FnOnce(usize) -> B,
-    ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
+        buffer_constructor: impl FnOnce(usize) -> UsizeAlignedByteBox<S::Allocator>,
+    ) -> Option<Result<(usize, UsizeAlignedByteBox<S::Allocator>), NextTxSubsystemError>> {
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,
@@ -315,33 +313,20 @@ where
             )));
         }
 
-        // create buffer
         let mut buffer = (buffer_constructor)(next_tx_len_bytes);
-        let tx_bytes: alloc::vec::Vec<u8> =
-            match self.io.oracle().query_bytes(TX_DATA_WORDS_QUERY_ID, &()) {
-                Ok(bytes) => bytes,
-                Err(e) => return Some(Err(e.into())),
-            };
-        if tx_bytes.len() < next_tx_len_bytes {
+        match self
+            .io
+            .oracle()
+            .query_into(TX_DATA_WORDS_QUERY_ID, &(), &mut buffer)
+        {
+            Ok(()) => {}
+            Err(e) => return Some(Err(e.into())),
+        }
+        if buffer.len() < next_tx_len_bytes {
             return Some(Err(interface_error!(
                 crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
             )));
         }
-        let mut as_writable = buffer.as_writable();
-        let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
-        if as_writable.len() < next_tx_len_usize_words {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::DestinationBufferInsufficient
-            )));
-        }
-        for chunk in tx_bytes[..next_tx_len_bytes].chunks(core::mem::size_of::<usize>()) {
-            let mut word_bytes = [0u8; core::mem::size_of::<usize>()];
-            word_bytes[..chunk.len()].copy_from_slice(chunk);
-            unsafe {
-                as_writable.write_usize(usize::from_le_bytes(word_bytes));
-            }
-        }
-        drop(as_writable);
 
         self.io.begin_next_tx();
 

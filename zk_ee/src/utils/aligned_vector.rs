@@ -515,4 +515,35 @@ impl<A: Allocator + Default> crate::oracle::word_layout::WordLayout for UsizeAli
         result.mark_initialized(byte_len);
         result
     }
+
+    fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+        let byte_len = r() as usize;
+        let u32_word_count = byte_len.div_ceil(4);
+        let needed_usize_words = num_usize_words_for_u8_capacity(byte_len);
+        if self.inner.len() < needed_usize_words {
+            *self = Self::read_words(&mut || {
+                // Replay: we already consumed the length word, so prepend it
+                unreachable!("pre-allocated buffer should be large enough")
+            });
+            return;
+        }
+        self.byte_capacity = byte_len;
+        let dst = self.inner_mut_ptr();
+        cfg_if::cfg_if! {
+            if #[cfg(target_pointer_width = "32")] {
+                for i in 0..u32_word_count {
+                    unsafe { (dst as *mut u32).add(i).write(r()); }
+                }
+            } else {
+                let mut i = 0;
+                while i < u32_word_count {
+                    let lo = r() as u64;
+                    let hi = if i + 1 < u32_word_count { r() as u64 } else { 0 };
+                    unsafe { (dst as *mut u64).add(i / 2).write(lo | (hi << 32)); }
+                    i += 2;
+                }
+            }
+        }
+        self.mark_initialized(byte_len);
+    }
 }
