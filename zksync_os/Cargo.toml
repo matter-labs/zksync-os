@@ -47,7 +47,7 @@ debug = true
 [features]
 scalloc = ["proof_running_system/scalloc"]
 print_debug_info = ["proof_running_system/error_origins", "proof_running_system/global-alloc"]
-proving = ["crypto/proving", "proof_running_system/proving", "proof_running_system/global-alloc"]
+proving = ["crypto/proving", "proof_running_system/proving"]
 benchmarking = ["proof_running_system/benchmarking"]
 production = ["proof_running_system/production"]
 for_tests = ["proof_running_system/for_tests"]
