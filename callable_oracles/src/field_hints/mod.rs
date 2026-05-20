@@ -25,9 +25,9 @@ fn decode_input<T: WordLayout>(input: &[u32]) -> T {
 /// Unified field operations query processor. Handles both RISC-V and native queries
 /// since inputs arrive WordLayout-encoded.
 #[derive(Default)]
-pub struct NativeFieldOpsQuery;
+pub struct FieldOpsQuery;
 
-impl OracleQueryProcessor for NativeFieldOpsQuery {
+impl OracleQueryProcessor for FieldOpsQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![FIELD_OPS_ADVISE_QUERY_ID]
     }
@@ -74,24 +74,7 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
     }
 }
 
-/// Backward-compatible alias for RISC-V mode.
-#[derive(Default)]
-pub struct FieldOpsQuery;
-
-impl OracleQueryProcessor for FieldOpsQuery {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        NativeFieldOpsQuery.supported_query_ids()
-    }
-
-    fn process(
-        &mut self,
-        query_id: u32,
-        input: &[u32],
-        memory: &dyn RamPeek,
-    ) -> Result<Vec<u32>, InternalError> {
-        NativeFieldOpsQuery.process(query_id, input, memory)
-    }
-}
+pub use FieldOpsQuery as NativeFieldOpsQuery;
 
 #[cfg(test)]
 mod tests {

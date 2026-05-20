@@ -15,9 +15,9 @@ use zk_ee::system::errors::internal::InternalError;
 /// process memory pointer and len is the byte count.
 ///
 #[derive(Default)]
-pub struct NativeBlobCommitmentAndProofQuery;
+pub struct BlobCommitmentAndProofQuery;
 
-impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
+impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
         vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
     }
@@ -53,24 +53,7 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
     }
 }
 
-/// Backward-compatible alias for RISC-V mode.
-#[derive(Default)]
-pub struct BlobCommitmentAndProofQuery;
-
-impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        NativeBlobCommitmentAndProofQuery.supported_query_ids()
-    }
-
-    fn process(
-        &mut self,
-        query_id: u32,
-        input: &[u32],
-        memory: &dyn RamPeek,
-    ) -> Result<Vec<u32>, InternalError> {
-        NativeBlobCommitmentAndProofQuery.process(query_id, input, memory)
-    }
-}
+pub use BlobCommitmentAndProofQuery as NativeBlobCommitmentAndProofQuery;
 
 ///
 /// Calculate kzg commitment and proof at the point `blake2s(versioned_hash & data)` for blob created from passed data.
@@ -120,7 +103,7 @@ mod tests {
         let input = (data.as_ptr() as u64, data.len() as u64);
         let mut input_words = Vec::new();
         input.write_words(&mut |w| input_words.push(w));
-        let output = NativeBlobCommitmentAndProofQuery
+        let output = BlobCommitmentAndProofQuery
             .process(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
                 &input_words,
@@ -160,7 +143,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let _ = NativeBlobCommitmentAndProofQuery.process(
+        let _ = BlobCommitmentAndProofQuery.process(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
             &[0, 1],
             &DummyMemorySource,

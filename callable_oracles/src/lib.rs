@@ -19,7 +19,6 @@
 pub mod arithmetic;
 pub mod blob_kzg_commitment;
 pub mod field_hints;
-pub mod utils;
 
 /// Shared test utilities for callable oracle unit tests.
 #[cfg(any(test, feature = "testing"))]

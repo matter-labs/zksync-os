@@ -132,25 +132,7 @@ impl OracleQueryProcessor for ArithmeticQuery {
     }
 }
 
-/// Backward-compatible alias. Since inputs now arrive WordLayout-encoded,
-/// there is no distinction between RISC-V and native processing.
-#[derive(Default)]
-pub struct NativeArithmeticQuery;
-
-impl OracleQueryProcessor for NativeArithmeticQuery {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        ArithmeticQuery.supported_query_ids()
-    }
-
-    fn process(
-        &mut self,
-        query_id: u32,
-        input: &[u32],
-        memory: &dyn RamPeek,
-    ) -> Result<Vec<u32>, InternalError> {
-        ArithmeticQuery.process(query_id, input, memory)
-    }
-}
+pub use ArithmeticQuery as NativeArithmeticQuery;
 
 #[cfg(test)]
 mod tests {
