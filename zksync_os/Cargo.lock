@@ -86,6 +86,7 @@ source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72c
 dependencies = [
  "getrandom",
  "riscv_common",
+ "talc",
 ]
 
 [[package]]
@@ -751,6 +752,7 @@ name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
+ "airbender-guest",
  "basic_bootloader",
  "basic_system",
  "cfg-if",
