@@ -315,14 +315,15 @@ mod tests {
     struct DummyOracle;
 
     impl IOOracle for DummyOracle {
-        type RawIterator<'a> = core::iter::Empty<usize>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<
+            I: zk_ee::oracle::word_layout::WordLayout,
+            O: zk_ee::oracle::word_layout::WordLayout,
+        >(
+            &mut self,
             _query_type: u32,
             _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            Ok(core::iter::empty())
+        ) -> Result<O, InternalError> {
+            panic!("DummyOracle::query not implemented")
         }
     }
 

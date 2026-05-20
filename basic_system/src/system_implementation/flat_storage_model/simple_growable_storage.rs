@@ -2065,48 +2065,52 @@ mod test {
     }
 
     impl<const R: bool> IOOracle for TestingTree<R> {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<
+            I: zk_ee::oracle::word_layout::WordLayout,
+            O: zk_ee::oracle::word_layout::WordLayout,
+        >(
+            &mut self,
             query_type: u32,
             input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            unsafe {
-                match query_type {
-                    ExactIndexQuery::QUERY_ID => {
-                        let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_index_for_existing(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PreviousIndexQuery::QUERY_ID => {
-                        let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_prev_index(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PROOF_FOR_INDEX_QUERY_ID => {
-                        let position = ProofForIndexQuery::<
-                            TESTING_TREE_HEIGHT,
-                            Blake2sStorageHasher,
-                            Global,
-                        >::transmute_input_ref_unchecked(
-                            input
-                        );
-                        let existing = self.get_proof_for_position(*position);
-                        let proof = ValueAtIndexProof {
-                            proof: ExistingReadProof { existing },
-                        };
-                        Ok(DynUsizeIterator::from_constructor(proof, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    _ => {
-                        panic!("unsupported query type 0x{:08x}", query_type);
-                    }
+        ) -> Result<O, InternalError> {
+            use zk_ee::oracle::word_layout::WordLayout;
+            // Encode input to words, decode as the expected type
+            let mut input_words = alloc::vec::Vec::new();
+            input.write_words(&mut |w| input_words.push(w));
+
+            match query_type {
+                ExactIndexQuery::QUERY_ID => {
+                    let mut iter = input_words.iter().copied();
+                    let flat_key = Bytes32::read_words(&mut || iter.next().unwrap());
+                    let existing = self.get_index_for_existing(&flat_key);
+                    let mut result_words = alloc::vec::Vec::new();
+                    existing.write_words(&mut |w| result_words.push(w));
+                    let mut iter = result_words.iter().copied();
+                    Ok(O::read_words(&mut || iter.next().unwrap()))
+                }
+                PreviousIndexQuery::QUERY_ID => {
+                    let mut iter = input_words.iter().copied();
+                    let flat_key = Bytes32::read_words(&mut || iter.next().unwrap());
+                    let existing = self.get_prev_index(&flat_key);
+                    let mut result_words = alloc::vec::Vec::new();
+                    existing.write_words(&mut |w| result_words.push(w));
+                    let mut iter = result_words.iter().copied();
+                    Ok(O::read_words(&mut || iter.next().unwrap()))
+                }
+                PROOF_FOR_INDEX_QUERY_ID => {
+                    let mut iter = input_words.iter().copied();
+                    let position = u64::read_words(&mut || iter.next().unwrap());
+                    let existing = self.get_proof_for_position(position);
+                    let proof = ValueAtIndexProof::<TESTING_TREE_HEIGHT, Blake2sStorageHasher> {
+                        proof: ExistingReadProof { existing },
+                    };
+                    let mut result_words = alloc::vec::Vec::new();
+                    proof.write_words(&mut |w| result_words.push(w));
+                    let mut iter = result_words.iter().copied();
+                    Ok(O::read_words(&mut || iter.next().unwrap()))
+                }
+                _ => {
+                    panic!("unsupported query type 0x{:08x}", query_type);
                 }
             }
         }

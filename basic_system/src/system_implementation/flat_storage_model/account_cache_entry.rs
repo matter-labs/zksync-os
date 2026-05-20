@@ -474,13 +474,14 @@ mod tests {
     struct TestOracle;
 
     impl IOOracle for TestOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
+        fn query<
+            I: zk_ee::oracle::word_layout::WordLayout,
+            O: zk_ee::oracle::word_layout::WordLayout,
+        >(
+            &mut self,
             _query_type: u32,
             _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
+        ) -> Result<O, InternalError> {
             unimplemented!()
         }
     }
