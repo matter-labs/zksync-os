@@ -101,6 +101,33 @@ fn byte_array_exact_word_boundary() {
 }
 
 #[test]
+fn bytes32_roundtrip() {
+    use crate::utils::Bytes32;
+    let val = Bytes32::from_array(core::array::from_fn(|i| i as u8));
+    let result = roundtrip(&val);
+    assert_eq!(val.as_u8_array_ref(), result.as_u8_array_ref());
+    let mut words = Vec::new();
+    val.write_words(&mut |w| words.push(w));
+    assert_eq!(words.len(), 8);
+}
+
+#[test]
+fn u256_roundtrip() {
+    use ruint::aliases::U256;
+    let val = U256::from(0xDEADBEEF_CAFEBABEu64);
+    assert_eq!(roundtrip(&val), val);
+    assert_eq!(<U256 as WordLayout>::WORD_COUNT, Some(8));
+}
+
+#[test]
+fn b160_roundtrip() {
+    use ruint::aliases::B160;
+    let val = B160::from(ruint::Uint::<160, 3>::from(0x1234567890ABCDEFu64));
+    assert_eq!(roundtrip(&val), val);
+    assert_eq!(<B160 as WordLayout>::WORD_COUNT, Some(6));
+}
+
+#[test]
 fn u64_max() {
     assert_eq!(roundtrip(&u64::MAX), u64::MAX);
 }

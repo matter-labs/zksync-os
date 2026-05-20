@@ -1,6 +1,7 @@
 extern crate alloc;
 
 mod arrays;
+mod foreign_types;
 mod primitives;
 mod vec;
 

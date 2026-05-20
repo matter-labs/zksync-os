@@ -330,3 +330,25 @@ impl UsizeDeserializable for Bytes32 {
         Ok(())
     }
 }
+
+impl crate::oracle::word_layout::WordLayout for Bytes32 {
+    const WORD_COUNT: Option<usize> = Some(8);
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        let mut result = core::mem::MaybeUninit::<Self>::uninit();
+        let dst = result.as_mut_ptr() as *mut u32;
+        for i in 0..8 {
+            unsafe {
+                dst.add(i).write(r());
+            }
+        }
+        unsafe { result.assume_init() }
+    }
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        let src = self as *const Self as *const u32;
+        for i in 0..8 {
+            w(unsafe { src.add(i).read() });
+        }
+    }
+}
