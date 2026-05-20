@@ -18,12 +18,10 @@ use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSour
 use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use rig::zk_ee::oracle::word_layout::WordLayout;
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
-use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_api;
 use rig::zksync_os_interface::traits::TxListSource;
@@ -106,21 +104,20 @@ impl OracleQueryProcessor for RpcStorageResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, rig::zk_ee::system::errors::internal::InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                    EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter()
-                )
-                .expect("must deserialize the address/slot");
+                let mut iter = input.iter().copied();
+                let StorageAddress { address, key } =
+                    StorageAddress::<EthereumIOTypesConfig>::read_words(&mut || {
+                        iter.next().expect("not enough input words")
+                    });
 
                 let mut cached_value = self
                     .cache
@@ -201,13 +198,16 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         }
                     };
 
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                let mut result = Vec::new();
+                slot_data.write_words(&mut |w| result.push(w));
+                Ok(result)
             }
             FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
-                let hash = Bytes32::from_iter(&mut query.into_iter())
-                    .expect("must deserialize hash value");
+                let mut iter = input.iter().copied();
+                let hash =
+                    Bytes32::read_words(&mut || iter.next().expect("not enough input words"));
 
-                let preimage = self
+                let preimage: Vec<u8> = self
                     .preimages
                     .lock()
                     .expect("Failed to lock preimages cache")
@@ -221,9 +221,9 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         )
                     });
 
-                DynUsizeIterator::from_constructor(preimage, |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                let mut result = Vec::new();
+                preimage.write_words(&mut |w| result.push(w));
+                Ok(result)
             }
             _ => unreachable!(),
         }

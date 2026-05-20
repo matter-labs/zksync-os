@@ -37,7 +37,7 @@ use forward_system::system::system_types::ethereum::{
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::{WitnessRecordingOracle, ZkEENonDeterminismSource};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
@@ -901,7 +901,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 false,
                 true,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let copy_source = WitnessRecordingOracle::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
             let mut validator = NopTxValidator;
             let prover_input_forward = {
@@ -1313,7 +1313,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 block_header,
                 withdrawals,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let copy_source = WitnessRecordingOracle::new(prover_input_oracle);
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
@@ -1335,7 +1335,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 "storage writes mismatch between forward and prover-input runs"
             );
 
-            let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
+            let (_inner, prover_input_words) = returned_oracle.into_witness();
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
