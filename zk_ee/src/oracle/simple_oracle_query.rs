@@ -1,24 +1,17 @@
-use crate::{
-    oracle::{
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
-        IOOracle,
-    },
-    system::errors::internal::InternalError,
-};
+use crate::{oracle::IOOracle, system::errors::internal::InternalError};
 
-///
-/// Convenience trait to define all expected types under one umbrella.
-///
+use super::word_layout::WordLayout;
+
 pub trait SimpleOracleQuery: Sized {
     const QUERY_ID: u32;
-    type Input: UsizeSerializable + UsizeDeserializable;
-    type Output: UsizeDeserializable;
+    type Input: WordLayout;
+    type Output: WordLayout;
 
     fn get<O: IOOracle>(
         oracle: &mut O,
         input: &Self::Input,
     ) -> Result<Self::Output, InternalError> {
-        oracle.query_serializable(Self::QUERY_ID, input)
+        oracle.query(Self::QUERY_ID, input)
     }
 
     /// # Safety
@@ -43,7 +36,6 @@ pub trait SimpleOracleQuery: Sized {
         core::mem::transmute(val)
     }
 
-    // Copy == no Drop for now
     /// # Safety
     /// Callee must have apriori way to assume type equality. Will check type IDs inside just in case
     unsafe fn transmute_input<T: 'static + Sized + Copy>(val: T) -> Self::Input
