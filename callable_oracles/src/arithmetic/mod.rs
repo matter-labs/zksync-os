@@ -1,3 +1,4 @@
+use basic_system::system_functions::modexp::advice::bigint::ModexpResponse;
 use basic_system::system_functions::modexp::MODEXP_ADVICE_QUERY_ID;
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
@@ -41,6 +42,12 @@ fn u256_wide_div_rem_output(
     result
 }
 
+fn strip_trailing_zeros_u64(v: &mut Vec<u64>) {
+    while v.last() == Some(&0) {
+        v.pop();
+    }
+}
+
 fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
     let mut digits = input.len();
     for el in input.iter().rev() {
@@ -54,8 +61,6 @@ fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
 }
 
 fn process_modexp_query(input: &[u32]) -> Vec<u32> {
-    // Input is ModexpReductionInput WordLayout-encoded:
-    //   op: u32 (1 word), a_words: Vec<u32> (len + data), modulus_words: Vec<u32> (len + data)
     let mut cursor = 0;
     let mut read = || {
         let w = input.get(cursor).copied().unwrap_or(0);
@@ -66,7 +71,6 @@ fn process_modexp_query(input: &[u32]) -> Vec<u32> {
     let a_words: Vec<u32> = WordLayout::read_words(&mut read);
     let modulus_words: Vec<u32> = WordLayout::read_words(&mut read);
 
-    // Convert u32 words to u64 limbs for ruint::algorithms::div
     let mut n: Vec<u64> = a_words
         .chunks(2)
         .map(|c| {
@@ -87,24 +91,15 @@ fn process_modexp_query(input: &[u32]) -> Vec<u32> {
     assert!(!d.is_empty());
     ruint::algorithms::div(&mut n, &mut d);
 
-    let quotient = strip_leading_zeroes(&n);
-    let remainder = strip_leading_zeroes(&d);
+    strip_trailing_zeros_u64(&mut n);
+    strip_trailing_zeros_u64(&mut d);
 
-    let q_len_in_u32_words = quotient.len() * 2;
-    let r_len_in_u32_words = remainder.len() * 2;
-
-    let mut result = Vec::with_capacity(2 + q_len_in_u32_words + r_len_in_u32_words);
-    result.push(q_len_in_u32_words as u32);
-    result.push(r_len_in_u32_words as u32);
-    for &limb in quotient {
-        result.push(limb as u32);
-        result.push((limb >> 32) as u32);
-    }
-    for &limb in remainder {
-        result.push(limb as u32);
-        result.push((limb >> 32) as u32);
-    }
-
+    let response = ModexpResponse {
+        quotient: n,
+        remainder: d,
+    };
+    let mut result = Vec::new();
+    response.write_words(&mut |w| result.push(w));
     result
 }
 

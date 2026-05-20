@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use bigint::ModexpAdvisor;
 use core::alloc::Allocator;
 
-mod bigint;
+pub mod bigint;
 mod u256;
 
 use self::bigint::BigintRepr;
