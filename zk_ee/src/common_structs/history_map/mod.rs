@@ -251,8 +251,8 @@ where
         &'_ self,
     ) -> impl ExactSizeIterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> + Clone {
         self.btree
-            .iter()
-            .map(|(_k, v)| HistoryMapItemRef { history: &**v })
+            .values()
+            .map(|v| HistoryMapItemRef { history: &**v })
     }
 
     /// Iterate over all elements that changed since last commit
