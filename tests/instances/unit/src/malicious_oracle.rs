@@ -1559,42 +1559,18 @@ mod callable_oracle_tests {
     /// (i.e., it corrupts the output).
     #[test]
     fn test_malicious_arithmetic_query_corrupts_output() {
-        // Build input words for a modexp division: 10 / 3
-        // ModExpAdviceParams layout (WordLayout-encoded):
-        //   op: u32, a_ptr/a_len/b_ptr/b_len/modulus_ptr/modulus_len are now
-        //   inline data since ArithmeticQuery reads from the input words directly.
-        //
-        // The ArithmeticQuery for MODEXP reads the input as memory pointers,
-        // so we need to set up a memory source with the data.
-        let mut input_words = Vec::new();
+        // Build inline WordLayout-encoded input for modexp division: 10 / 3
+        // Format: [u32 op][Vec<u32> a_words][Vec<u32> modulus_words]
+        // Vec<u32> wire format: [u32 len][u32 elements...]
+        let input_words: Vec<u32> = vec![
+            0,  // op = 0 (division)
+            1,  // a_words length = 1
+            10, // a_words[0] = 10 (dividend)
+            1,  // modulus_words length = 1
+            3,  // modulus_words[0] = 3 (divisor)
+        ];
 
-        // The modexp query input is a single u32 pointer to params in memory.
-        // We need to use the actual memory-based approach.
-        let params_addr: u32 = 0x100;
-        let a_addr: u32 = 0x200;
-        let m_addr: u32 = 0x400;
-
-        // Build memory with the params struct and data
-        use rig::callable_oracles::test_utils::TestMemorySource;
-        let mut memory = TestMemorySource::default();
-
-        // ModExpAdviceParams: 10 / 3
-        memory.insert_u32(params_addr, 0); // op
-        memory.insert_u32(params_addr + 4, a_addr); // a_ptr
-        memory.insert_u32(params_addr + 8, 1); // a_len (1 digit)
-        memory.insert_u32(params_addr + 12, 0); // b_ptr
-        memory.insert_u32(params_addr + 16, 0); // b_len
-        memory.insert_u32(params_addr + 20, m_addr); // modulus_ptr
-        memory.insert_u32(params_addr + 24, 1); // modulus_len
-
-        // dividend = 10
-        memory.insert_u32(a_addr, 10);
-        // modulus = 3
-        memory.insert_u32(m_addr, 3);
-
-        // Input for the query: the params address
-        input_words.clear();
-        (params_addr).write_words(&mut |w| input_words.push(w));
+        let memory = DummyMemorySource;
 
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();

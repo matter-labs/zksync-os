@@ -332,13 +332,13 @@ impl zk_ee::oracle::word_layout::WordLayout for TxEncodingFormat {
     }
 
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        let byte = r() as u8;
-        if byte == TxEncodingFormat::Abi as u8 {
+        let word = r();
+        if word == TxEncodingFormat::Abi as u32 {
             TxEncodingFormat::Abi
-        } else if byte == TxEncodingFormat::Rlp as u8 {
+        } else if word == TxEncodingFormat::Rlp as u32 {
             TxEncodingFormat::Rlp
         } else {
-            panic!("Unsupported tx encoding format: {byte}")
+            panic!("Unsupported tx encoding format: {word}")
         }
     }
 }
