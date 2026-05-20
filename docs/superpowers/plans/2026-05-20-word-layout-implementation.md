@@ -12,7 +12,21 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-20-word-layout-io-design.md`
 
-**Key reference:** On draft-0.4.0, the IOOracle trait already uses wincode bounds (WincodeSerialize/WincodeDeserialize). OracleQueryProcessor::process takes `&[u8]` / returns `Vec<u8>` (wincode-encoded). UsizeSerializable is a separate abstraction used by the old CsrBasedIOOracle and for ZK layout computation. The new WordLayout replaces BOTH wincode and UsizeSerializable in the oracle path.
+**Key reference — draft-0.4.0 IOOracle architecture:**
+- `IOOracle` trait has `type RawIterator<'a>: ExactSizeIterator<Item = usize>` and methods:
+  `raw_query`, `query_serializable`, `query_with_empty_input`, `try_begin_next_tx`,
+  `expose_preimage`, `get_bytes_from_query`. All use `UsizeSerializable`/`UsizeDeserializable`.
+- `IOResponder` trait exists for query processor side.
+- `OracleQueryProcessor::process_buffered_query` takes `Vec<usize>`, returns
+  `Box<dyn ExactSizeIterator<Item = usize>>`.
+- `ZkEENonDeterminismSource` implements `IOOracle` by buffering u32 CSR words into usizes,
+  dispatching to processors, and serving response usizes back as u32 words.
+- `ReadWitnessSource` (witness recording) wraps `ZkEENonDeterminismSource`, records all
+  u32 reads into `Vec<u32>`.
+- On riscv32 guest: `CsrBasedIOOracle` reads usizes from CSR transport.
+- `SimpleOracleQuery` trait wraps `query_serializable` with typed query IDs.
+- The new WordLayout replaces UsizeSerializable/UsizeDeserializable, the usize iterator
+  model, SimpleOracleQuery, IOResponder, and CsrBasedIOOracle.
 
 **Build/test commands:**
 ```bash
@@ -846,20 +860,26 @@ git commit -m "feat: add WordLayout to all system and storage types"
 
 ---
 
-### Task 7: Update IOOracle trait and oracle infrastructure
+### Task 7: Rewrite IOOracle trait and oracle infrastructure
+
+**Context:** On draft-0.4.0, the IOOracle trait uses a `RawIterator<'a>: ExactSizeIterator<Item = usize>` GAT model with methods `raw_query`, `query_serializable`, `expose_preimage`, `get_bytes_from_query`. `OracleQueryProcessor::process_buffered_query` takes `Vec<usize>` and returns `Box<dyn ExactSizeIterator<Item = usize>>`. `ZkEENonDeterminismSource` buffers u32 CSR words into usizes. `ReadWitnessSource` records raw u32 reads. All of this gets replaced.
 
 **Files:**
-- Modify: `zk_ee/src/oracle/mod.rs` (IOOracle trait bounds)
-- Modify: `proof_running_system/src/proving_oracle.rs` (rewrite ProvingOracle)
+- Modify: `zk_ee/src/oracle/mod.rs` (rewrite IOOracle trait — remove RawIterator GAT, usize methods, IOResponder)
+- Modify: `proof_running_system/src/proving_oracle.rs` (rewrite — replace CsrBasedIOOracle usize iterator with trivial WordLayout read)
 - Modify: `oracle_provider/src/witness_recording.rs` (rewrite WitnessRecordingOracle)
-- Modify: `oracle_provider/src/lib.rs` (update ZkEENonDeterminismSource, OracleQueryProcessor)
+- Modify: `oracle_provider/src/lib.rs` (rewrite ZkEENonDeterminismSource, OracleQueryProcessor, delete ReadWitnessSource/QueryBuffer/IOResponder)
+- Create: `oracle_provider/src/witness_recording.rs` (new WitnessRecordingOracle)
 - Modify: `proof_running_system/src/lib.rs` (remove feature flags for specialization)
 
 This is the breaking change. After this task, all downstream code must use WordLayout.
 
-- [ ] **Step 1: Update IOOracle trait**
+- [ ] **Step 1: Rewrite IOOracle trait**
 
-In `zk_ee/src/oracle/mod.rs`, change the trait bounds:
+In `zk_ee/src/oracle/mod.rs`, replace the entire trait. Delete: `RawIterator` GAT,
+`raw_query`, `raw_query_with_empty_input`, `query_serializable`, `expose_preimage`,
+`get_bytes_from_query`, `IOResponder` trait. Remove imports for `UsizeSerializable`,
+`UsizeDeserializable`, `UsizeAlignedByteBox`. Replace with:
 
 ```rust
 pub trait IOOracle: 'static + Sized {
@@ -891,7 +911,11 @@ pub trait IOOracle: 'static + Sized {
 }
 ```
 
-Remove `WincodeSerialize`, `WincodeDeserialize` trait aliases and the `RawWordReadable` trait.
+Consumers of the deleted methods must be migrated in Task 8:
+- `expose_preimage` callers → use `query_bytes` instead
+- `get_bytes_from_query` callers → use `query_bytes` (single query instead of length+body pair)
+- `raw_query` callers → use `query` with typed output
+- `query_serializable` callers → use `query`
 
 - [ ] **Step 2: Rewrite ProvingOracle**
 
@@ -924,13 +948,13 @@ impl<T: Transport + 'static> zk_ee::oracle::IOOracle for ProvingOracle<T> {
 }
 ```
 
-Delete: `ReadDispatch` trait, `RawWordReadable` imports, `read_raw`, `read_wincode`, `WordReader` usage.
+Delete the old CsrBasedIOOracle (or current ProvingOracle) and its usize iterator implementation.
 
-Remove from `proof_running_system/src/lib.rs`: `#![feature(min_specialization)]`, `#![feature(rustc_attrs)]`.
+- [ ] **Step 3: Create WitnessRecordingOracle (replaces ReadWitnessSource)**
 
-- [ ] **Step 3: Rewrite WitnessRecordingOracle**
-
-In `oracle_provider/src/witness_recording.rs`:
+The old `ReadWitnessSource` in `oracle_provider/src/lib.rs` recorded raw u32 CSR reads.
+The new `WitnessRecordingOracle` wraps any `IOOracle` and records response words via
+`write_words`. Create in `oracle_provider/src/witness_recording.rs`:
 
 ```rust
 use zk_ee::oracle::word_layout::WordLayout;
@@ -965,11 +989,11 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
 }
 ```
 
-- [ ] **Step 4: Update OracleQueryProcessor and ZkEENonDeterminismSource**
+- [ ] **Step 4: Rewrite OracleQueryProcessor and ZkEENonDeterminismSource**
 
 In `oracle_provider/src/lib.rs`:
 
-Change `OracleQueryProcessor::process` to work with u32 words:
+Replace `OracleQueryProcessor::process_buffered_query(query_id, Vec<usize>, &dyn RamPeek) → Box<dyn ExactSizeIterator<Item = usize>>` with u32 word interface:
 
 ```rust
 pub trait OracleQueryProcessor {
@@ -984,7 +1008,12 @@ pub trait OracleQueryProcessor {
 }
 ```
 
-Update `ZkEENonDeterminismSource::query` to encode input via `WordLayout::write_words` into `Vec<u32>`, pass to processor, decode response via `WordLayout::read_words` from the returned `Vec<u32>`.
+Rewrite `ZkEENonDeterminismSource` to implement the new `IOOracle` trait:
+- `query()` encodes input via `I::write_words` into `Vec<u32>`
+- Dispatches to query processor by `query_type`
+- Processor returns `Vec<u32>`
+- Decode response via `O::read_words` from the returned words
+- Delete: `QueryBuffer`, u32↔usize packing/unpacking, `ReadWitnessSource`, `IOResponder`
 
 - [ ] **Step 5: Verify (expect many downstream errors)**
 
@@ -995,7 +1024,7 @@ Expected: these crates compile. Downstream crates will have errors (fixed in Tas
 
 ```bash
 git add zk_ee/ proof_running_system/ oracle_provider/
-git commit -m "feat: update IOOracle to use WordLayout bounds, rewrite oracle implementations"
+git commit -m "feat: replace IOOracle usize iterator model with WordLayout query/response"
 ```
 
 ---
@@ -1009,14 +1038,19 @@ git commit -m "feat: update IOOracle to use WordLayout bounds, rewrite oracle im
 - Modify: All 13 query processors in `forward_system/src/run/query_processors/`
 - Modify: All query call sites (see list from exploration)
 
-Each query processor currently uses `wincode::serialize` / `wincode::deserialize` internally. Change to `WordLayout::write_words` / `WordLayout::read_words` with `Vec<u32>`.
+Each query processor currently implements `process_buffered_query(query_id, Vec<usize>, &dyn RamPeek) → Box<dyn ExactSizeIterator<Item = usize>>`. Change to `process(query_id, &[u32], &dyn RamPeek) → Result<Vec<u32>, InternalError>` with `WordLayout::write_words` / `WordLayout::read_words`.
 
-Each call site that uses `SimpleOracleQuery::get()` changes to direct `oracle.query(QUERY_ID, &input)` calls. The `SimpleOracleQuery` trait is deleted.
+Each call site that uses `SimpleOracleQuery::get()` changes to direct `oracle.query(QUERY_ID, &input)` calls. Callers of `expose_preimage` and `get_bytes_from_query` change to `query_bytes`. The `SimpleOracleQuery` trait is deleted.
 
 This is the largest task — it touches many files but each change is mechanical:
-- Replace `wincode::serialize(&val)` with `let mut words = Vec::new(); val.write_words(&mut |w| words.push(w));`
-- Replace `wincode::deserialize(&bytes)` with building a word iterator and calling `T::read_words`
+- Replace `process_buffered_query` impls: decode input from `&[u32]` via `T::read_words`, encode output via `T::write_words` into `Vec<u32>`
 - Replace `SomeQuery::get(oracle, &input)` with `oracle.query(SOME_QUERY_ID, &input)`
+- Replace `oracle.expose_preimage(query_id, hash, dst)` with `oracle.query_bytes(query_id, hash)`
+- Replace `oracle.get_bytes_from_query(len_id, body_id, input, alloc)` with `oracle.query_bytes(body_id, input)`
+  (the two-query length+body pattern collapses to a single `query_bytes` call since `Vec<u8>`
+  WordLayout encodes the length internally)
+- Replace `oracle.query_serializable(id, input)` with `oracle.query(id, input)`
+- Replace `oracle.raw_query(id, input)` with `oracle.query(id, input)` with typed output
 
 - [ ] **Step 1: Update callable_oracles**
 
