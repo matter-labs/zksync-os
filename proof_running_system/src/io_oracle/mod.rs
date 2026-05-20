@@ -21,4 +21,15 @@ impl<S: WordSource> IOOracle for ProvingOracle<S> {
     ) -> Result<O, InternalError> {
         Ok(O::read_words(&mut || self.source.read_word()))
     }
+
+    #[inline(always)]
+    fn query_into<I: WordLayout, O: WordLayout>(
+        &mut self,
+        _query_type: u32,
+        _input: &I,
+        output: &mut O,
+    ) -> Result<(), InternalError> {
+        output.read_words_into(&mut || self.source.read_word());
+        Ok(())
+    }
 }

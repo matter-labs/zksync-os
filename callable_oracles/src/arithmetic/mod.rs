@@ -94,10 +94,7 @@ fn process_modexp_query(input: &[u32]) -> Vec<u32> {
     strip_trailing_zeros_u64(&mut n);
     strip_trailing_zeros_u64(&mut d);
 
-    let response = ModexpResponse {
-        quotient: n,
-        remainder: d,
-    };
+    let response = ModexpResponse::from_u64_slices(&n, &d);
     let mut result = Vec::new();
     response.write_words(&mut |w| result.push(w));
     result
@@ -278,14 +275,18 @@ mod tests {
             .process(MODEXP_ADVICE_QUERY_ID, &input_words, &DummyMemorySource)
             .unwrap();
 
+        // Decode by constructing an empty response and using read_words_into
+        let mut response = ModexpResponse::from_u64_slices(&[], &[]);
         let mut cursor = 0;
-        let response = ModexpResponse::read_words(&mut || {
+        response.read_words_into(&mut || {
             let w = output[cursor];
             cursor += 1;
             w
         });
-        assert_eq!(response.quotient, vec![3u64]);
-        assert_eq!(response.remainder, vec![1u64]);
+        // BigintRepr stores in DelegatedU256 chunks (4 u64s each), so
+        // a single-digit result is padded with zeros.
+        assert_eq!(response.quotient_u64s()[0], 3u64);
+        assert_eq!(response.remainder_u64s()[0], 1u64);
     }
 
     #[test]

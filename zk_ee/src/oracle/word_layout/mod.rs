@@ -24,6 +24,13 @@ pub trait WordLayout: Sized {
 
     /// Deserialize from a sequence of u32 LE words.
     fn read_words(read: &mut impl FnMut() -> u32) -> Self;
+
+    /// Read into an existing value, reusing heap allocations where possible.
+    /// The default constructs a new value and assigns. Types with heap fields
+    /// (like Vec) override to clear + refill, avoiding alloc/dealloc cycles.
+    fn read_words_into(&mut self, read: &mut impl FnMut() -> u32) {
+        *self = Self::read_words(read);
+    }
 }
 
 /// Word transport for the proving oracle. The guest binary implements

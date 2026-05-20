@@ -49,4 +49,26 @@ impl<T: WordLayout> WordLayout for Vec<T> {
             (0..len).map(|_| T::read_words(r)).collect()
         }
     }
+
+    fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+        let len = r() as usize;
+        self.clear();
+        self.reserve(len);
+        if core::mem::size_of::<T>() == 1 {
+            // Byte-packed path: reuse backing as &mut [u8]
+            let bytes: &mut Vec<u8> = unsafe { &mut *(self as *mut Vec<T> as *mut Vec<u8>) };
+            bytes.resize(len, 0);
+            let mut i = 0;
+            while i < len {
+                let word = r().to_le_bytes();
+                let take = core::cmp::min(4, len - i);
+                bytes[i..i + take].copy_from_slice(&word[..take]);
+                i += 4;
+            }
+        } else {
+            for _ in 0..len {
+                self.push(T::read_words(r));
+            }
+        }
+    }
 }

@@ -180,7 +180,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         self,
         exp: &[u8],
         modulus: Self,
-        advisor: &mut impl ModexpAdvisor,
+        advisor: &mut impl ModexpAdvisor<Alloc = A>,
         allocator: A,
     ) -> Self {
         assert!(modulus.digits > 0);
@@ -318,7 +318,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor,
+        advisor: &mut impl ModexpAdvisor<Alloc = A>,
     ) -> (Self, (Self, Self, Self)) {
         advisor.get_reduction_op_advice(&current, modulus, &mut scratch_0, &mut scratch_1);
         // now we should enforce everything backwards
@@ -364,7 +364,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor,
+        advisor: &mut impl ModexpAdvisor<Alloc = A>,
     ) -> (Self, (Self, Self, Self, Self)) {
         assert!(current.digits > 0); // case if it is 0 is handled by outer loop
         debug_assert!(other.digits <= modulus.digits); // we multiply accumulator by base, and base if fully reduced
@@ -434,7 +434,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor,
+        advisor: &mut impl ModexpAdvisor<Alloc = A>,
     ) -> (Self, (Self, Self, Self, Self)) {
         assert!(a.digits > 0); // case if it is 0 is handled by outer loop
         assert!(scratch_0.capacity() > modulus.digits);
@@ -747,13 +747,14 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 }
 
 pub(crate) trait ModexpAdvisor {
-    // get advice for let (q,r) = div_rem(a, m)
-    fn get_reduction_op_advice<A: Allocator + Clone>(
+    type Alloc: Allocator + Clone;
+
+    fn get_reduction_op_advice(
         &mut self,
-        a: &BigintRepr<A>,
-        m: &BigintRepr<A>,
-        quotient_dst: &mut BigintRepr<A>,
-        remainder_dst: &mut BigintRepr<A>,
+        a: &BigintRepr<Self::Alloc>,
+        m: &BigintRepr<Self::Alloc>,
+        quotient_dst: &mut BigintRepr<Self::Alloc>,
+        remainder_dst: &mut BigintRepr<Self::Alloc>,
     );
 }
 
@@ -795,12 +796,14 @@ pub(crate) mod naive_advisor {
     pub(crate) struct NaiveAdvisor;
 
     impl ModexpAdvisor for NaiveAdvisor {
-        fn get_reduction_op_advice<A: Allocator + Clone>(
+        type Alloc = Global;
+
+        fn get_reduction_op_advice(
             &mut self,
-            a: &BigintRepr<A>,
-            m: &BigintRepr<A>,
-            quotient_dst: &mut BigintRepr<A>,
-            remainder_dst: &mut BigintRepr<A>,
+            a: &BigintRepr<Global>,
+            m: &BigintRepr<Global>,
+            quotient_dst: &mut BigintRepr<Global>,
+            remainder_dst: &mut BigintRepr<Global>,
         ) {
             let a = a.to_big_endian(Global);
             let a = BigUint::from_bytes_be(&a);
@@ -818,8 +821,18 @@ pub(crate) mod naive_advisor {
     }
 }
 
-pub(crate) struct OracleAdvisor<'a, O: IOOracle> {
-    pub(crate) inner: &'a mut O,
+pub(crate) struct OracleAdvisor<'a, O: IOOracle, A: Allocator + Clone> {
+    inner: &'a mut O,
+    response_buf: ModexpResponse<A>,
+}
+
+impl<'a, O: IOOracle, A: Allocator + Clone> OracleAdvisor<'a, O, A> {
+    pub(crate) fn new(oracle: &'a mut O, allocator: A) -> Self {
+        Self {
+            inner: oracle,
+            response_buf: ModexpResponse::new(allocator),
+        }
+    }
 }
 
 /// Number of u32 words per DelegatedU256 digit (256 bits / 32 bits = 8).
@@ -827,11 +840,102 @@ const BIGINT_DIGIT_U32_SIZE: usize = U256::BYTES / core::mem::size_of::<u32>();
 /// Number of u64 limbs per DelegatedU256 digit (256 bits / 64 bits = 4).
 const BIGINT_DIGIT_U64_SIZE: usize = 4;
 
-/// Modexp oracle response: quotient and remainder as u64 limb vectors.
-#[derive(Clone, Debug, WordLayout)]
-pub struct ModexpResponse {
-    pub quotient: Vec<u64>,
-    pub remainder: Vec<u64>,
+/// WordLayout for BigintRepr: same wire format as Vec<u64> (u32 length + u64 elements).
+/// read_words_into writes directly into the pre-allocated backing — zero copy.
+impl<A: Allocator + Clone> WordLayout for BigintRepr<A> {
+    const WORD_COUNT: Option<usize> = None;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        let u64s = self.u64_digits_ref();
+        (u64s.len() as u32).write_words(w);
+        for &limb in u64s {
+            limb.write_words(w);
+        }
+    }
+
+    fn read_words(_r: &mut impl FnMut() -> u32) -> Self {
+        panic!(
+            "BigintRepr::read_words requires a pre-allocated instance; use read_words_into instead"
+        )
+    }
+
+    fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+        let len = u32::read_words(r) as usize;
+        Self::read_u64_limbs_into(r, len, self);
+    }
+}
+
+impl<A: Allocator + Clone> BigintRepr<A> {
+    fn read_u64_limbs_into(r: &mut impl FnMut() -> u32, len: usize, dst: &mut Self) {
+        let num_digits = len.next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
+        dst.backing.clear();
+        dst.backing.reserve(num_digits);
+        unsafe {
+            let dst_capacity = dst.backing.spare_capacity_mut();
+            let mut remaining = len;
+            for dst_slot in dst_capacity[..num_digits].iter_mut() {
+                let dst_ptr: *mut u64 = dst_slot
+                    .as_mut_ptr()
+                    .cast::<[u64; BIGINT_DIGIT_U64_SIZE]>()
+                    .cast();
+                for i in 0..BIGINT_DIGIT_U64_SIZE {
+                    if remaining > 0 {
+                        dst_ptr.add(i).write(u64::read_words(r));
+                        remaining -= 1;
+                    } else {
+                        dst_ptr.add(i).write(0);
+                    }
+                }
+            }
+            dst.set_num_digits(num_digits);
+        }
+    }
+}
+
+/// Modexp oracle response holding BigintReprs directly. Wire-compatible with
+/// the processor's Vec<u64> encoding (both use u32 length + u64 elements).
+/// Modexp oracle response. Holds BigintReprs for zero-copy read_words_into.
+/// Use `from_u64_slices` on the host to construct from division results.
+pub struct ModexpResponse<A: Allocator + Clone = alloc::alloc::Global> {
+    quotient: BigintRepr<A>,
+    remainder: BigintRepr<A>,
+}
+
+impl<A: Allocator + Clone> ModexpResponse<A> {
+    pub(crate) fn new(allocator: A) -> Self {
+        Self {
+            quotient: BigintRepr::with_capacity_in(0, allocator.clone()),
+            remainder: BigintRepr::with_capacity_in(0, allocator),
+        }
+    }
+
+    pub fn quotient_u64s(&self) -> &[u64] {
+        self.quotient.u64_digits_ref()
+    }
+
+    pub fn remainder_u64s(&self) -> &[u64] {
+        self.remainder.u64_digits_ref()
+    }
+}
+
+impl ModexpResponse<alloc::alloc::Global> {
+    /// Construct from u64 slices (host/processor side, after ruint division).
+    pub fn from_u64_slices(quotient: &[u64], remainder: &[u64]) -> Self {
+        let mut q = BigintRepr::with_capacity_in(
+            quotient.len().div_ceil(BIGINT_DIGIT_U64_SIZE),
+            alloc::alloc::Global,
+        );
+        write_bigint_from_u64_digits(quotient, &mut q);
+        let mut r = BigintRepr::with_capacity_in(
+            remainder.len().div_ceil(BIGINT_DIGIT_U64_SIZE),
+            alloc::alloc::Global,
+        );
+        write_bigint_from_u64_digits(remainder, &mut r);
+        Self {
+            quotient: q,
+            remainder: r,
+        }
+    }
 }
 
 fn write_bigint_from_u64_digits(digits: &[u64], dst: &mut BigintRepr<impl Allocator + Clone>) {
@@ -855,6 +959,38 @@ fn write_bigint_from_u64_digits(digits: &[u64], dst: &mut BigintRepr<impl Alloca
             }
         }
         dst.set_num_digits(num_digits);
+    }
+}
+
+impl<A: Allocator + Clone> WordLayout for ModexpResponse<A> {
+    const WORD_COUNT: Option<usize> = None;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.quotient.write_words(w);
+        self.remainder.write_words(w);
+    }
+
+    fn read_words(_r: &mut impl FnMut() -> u32) -> Self {
+        panic!("ModexpResponse::read_words requires pre-allocated instance; use read_words_into")
+    }
+
+    fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+        self.quotient.read_words_into(r);
+        self.remainder.read_words_into(r);
+    }
+}
+
+/// Copy BigintRepr data from src into dst's pre-allocated backing.
+fn copy_bigint_into<A1: Allocator + Clone, A2: Allocator + Clone>(
+    src: &BigintRepr<A1>,
+    dst: &mut BigintRepr<A2>,
+) {
+    unsafe {
+        let dst_capacity = dst.clear_as_capacity_mut();
+        for (d, s) in dst_capacity[..src.digits].iter_mut().zip(src.digits_ref()) {
+            write_into_ptr_unchecked(d.as_mut_ptr(), s);
+        }
+        dst.set_num_digits(src.digits);
     }
 }
 
@@ -908,8 +1044,10 @@ struct ModexpReductionInput {
     modulus_words: Vec<u32>,
 }
 
-impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
-    fn get_reduction_op_advice<A: Allocator + Clone>(
+impl<'a, O: IOOracle, A: Allocator + Clone> ModexpAdvisor for OracleAdvisor<'a, O, A> {
+    type Alloc = A;
+
+    fn get_reduction_op_advice(
         &mut self,
         a: &BigintRepr<A>,
         m: &BigintRepr<A>,
@@ -924,7 +1062,12 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
             modulus_words: bigint_to_u32_words(m),
         };
 
-        let response: ModexpResponse = self.inner.query(MODEXP_ADVICE_QUERY_ID, &input).unwrap();
+        // query_into reads directly into BigintRepr backing via read_words_into.
+        // No intermediate Vec — u64 limbs go straight into DelegatedU256 slots.
+        // Allocations in response_buf are reused across the ~384 calls.
+        self.inner
+            .query_into(MODEXP_ADVICE_QUERY_ID, &input, &mut self.response_buf)
+            .unwrap();
 
         let max_quotient_digits = if a.digits < m.digits {
             0
@@ -936,25 +1079,13 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
 
         let max_remainder_digits = m.digits;
 
-        assert!(
-            response
-                .quotient
-                .len()
-                .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
-                / BIGINT_DIGIT_U64_SIZE
-                <= max_quotient_digits
-        );
-        assert!(
-            response
-                .remainder
-                .len()
-                .next_multiple_of(BIGINT_DIGIT_U64_SIZE)
-                / BIGINT_DIGIT_U64_SIZE
-                <= max_remainder_digits
-        );
+        assert!(self.response_buf.quotient.digits <= max_quotient_digits);
+        assert!(self.response_buf.remainder.digits <= max_remainder_digits);
 
-        write_bigint_from_u64_digits(&response.quotient, quotient_dst);
-        write_bigint_from_u64_digits(&response.remainder, remainder_dst);
+        // Swap: destinations get fresh data, response_buf gets old scratch
+        // data (capacity preserved for next call's read_words_into). Zero copy.
+        core::mem::swap(&mut self.response_buf.quotient, quotient_dst);
+        core::mem::swap(&mut self.response_buf.remainder, remainder_dst);
     }
 }
 
@@ -979,10 +1110,7 @@ mod tests {
             _input: &I,
         ) -> Result<O, InternalError> {
             assert_eq!(query_type, MODEXP_ADVICE_QUERY_ID);
-            let response = ModexpResponse {
-                quotient: self.quotient.clone(),
-                remainder: self.remainder.clone(),
-            };
+            let response = ModexpResponse::from_u64_slices(&self.quotient, &self.remainder);
             let mut words = Vec::new();
             response.write_words(&mut |w| words.push(w));
             let mut idx = 0;
@@ -1005,7 +1133,10 @@ mod tests {
             quotient: q_limbs,
             remainder: r_limbs,
         };
-        let mut advisor = OracleAdvisor { inner: &mut oracle };
+        let mut advisor = OracleAdvisor {
+            inner: &mut oracle,
+            response_buf: Default::default(),
+        };
 
         advisor.get_reduction_op_advice(&dividend, &modulus, &mut quotient, &mut remainder);
     }

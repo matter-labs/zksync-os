@@ -146,6 +146,26 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
         }
     };
 
+    // read_words_into: for field-by-field path, delegate to each field's read_words_into
+    // For bulk path, the default (*self = read_words) is optimal
+    let read_into_body = if qualifies_for_bulk && repr_c {
+        // Bulk: default is fine (full overwrite)
+        None
+    } else {
+        // Field-by-field: delegate to each field's read_words_into
+        Some(quote! {
+            #( zk_ee::oracle::word_layout::WordLayout::read_words_into(&mut self.#field_names, r); )*
+        })
+    };
+
+    let read_into_method = read_into_body.map(|body| {
+        quote! {
+            fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+                #body
+            }
+        }
+    });
+
     let expanded = quote! {
         impl #impl_generics zk_ee::oracle::word_layout::WordLayout for #name #ty_generics #where_clause {
             const WORD_COUNT: Option<usize> = #word_count;
@@ -157,6 +177,8 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
             fn read_words(r: &mut impl FnMut() -> u32) -> Self {
                 #read_body
             }
+
+            #read_into_method
         }
     };
 

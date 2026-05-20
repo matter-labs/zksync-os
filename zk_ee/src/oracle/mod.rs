@@ -55,4 +55,16 @@ pub trait IOOracle: 'static + Sized {
     ) -> Result<alloc::vec::Vec<u8>, InternalError> {
         self.query::<I, alloc::vec::Vec<u8>>(query_type, input)
     }
+
+    /// Query oracle, reading the response into an existing value.
+    /// Reuses heap allocations in the output where possible (e.g. Vec fields).
+    fn query_into<I: WordLayout, O: WordLayout>(
+        &mut self,
+        query_type: u32,
+        input: &I,
+        output: &mut O,
+    ) -> Result<(), InternalError> {
+        *output = self.query(query_type, input)?;
+        Ok(())
+    }
 }
