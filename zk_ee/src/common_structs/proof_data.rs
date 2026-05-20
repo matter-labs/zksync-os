@@ -43,3 +43,27 @@ impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeDeserializable for ProofData
         Ok(new)
     }
 }
+
+impl<SR: StateRootView<EthereumIOTypesConfig> + crate::oracle::word_layout::WordLayout>
+    crate::oracle::word_layout::WordLayout for ProofData<SR>
+{
+    const WORD_COUNT: Option<usize> = match (
+        <SR as crate::oracle::word_layout::WordLayout>::WORD_COUNT,
+        <u64 as crate::oracle::word_layout::WordLayout>::WORD_COUNT,
+    ) {
+        (Some(a), Some(b)) => Some(a + b),
+        _ => None,
+    };
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.state_root_view.write_words(w);
+        self.last_block_timestamp.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        Self {
+            state_root_view: crate::oracle::word_layout::WordLayout::read_words(r),
+            last_block_timestamp: crate::oracle::word_layout::WordLayout::read_words(r),
+        }
+    }
+}

@@ -317,6 +317,16 @@ where
 
         // create buffer
         let mut buffer = (buffer_constructor)(next_tx_len_bytes);
+        let tx_bytes: alloc::vec::Vec<u8> =
+            match self.io.oracle().query_bytes(TX_DATA_WORDS_QUERY_ID, &()) {
+                Ok(bytes) => bytes,
+                Err(e) => return Some(Err(e.into())),
+            };
+        if tx_bytes.len() < next_tx_len_bytes {
+            return Some(Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+            )));
+        }
         let mut as_writable = buffer.as_writable();
         let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
         if as_writable.len() < next_tx_len_usize_words {
@@ -324,38 +334,11 @@ where
                 crate::system::NextTxInterfaceError::DestinationBufferInsufficient
             )));
         }
-        let tx_iterator = match self
-            .io
-            .oracle()
-            .raw_query_with_empty_input(TX_DATA_WORDS_QUERY_ID)
-        {
-            Ok(it) => it,
-            Err(e) => return Some(Err(e.into())),
-        };
-        if tx_iterator.len() > as_writable.len() {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
-            )));
-        }
-        // We preallocate uninitialized memory; if oracle returns too few words for the declared
-        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
-        let tx_iterator_num_bytes =
-            match tx_iterator.len().checked_mul(core::mem::size_of::<usize>()) {
-                Some(num_bytes) => num_bytes,
-                None => {
-                    return Some(Err(interface_error!(
-                        crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-                    )))
-                }
-            };
-        if tx_iterator_num_bytes < next_tx_len_bytes {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-            )));
-        }
-        for word in tx_iterator {
+        for chunk in tx_bytes[..next_tx_len_bytes].chunks(core::mem::size_of::<usize>()) {
+            let mut word_bytes = [0u8; core::mem::size_of::<usize>()];
+            word_bytes[..chunk.len()].copy_from_slice(chunk);
             unsafe {
-                as_writable.write_usize(word);
+                as_writable.write_usize(usize::from_le_bytes(word_bytes));
             }
         }
         drop(as_writable);
@@ -367,13 +350,29 @@ where
 
     pub fn get_bytes_from_query(
         &mut self,
-        length_query_id: u32, // must return number of bytes
-        body_query_id: u32,   // must return
+        _length_query_id: u32,
+        body_query_id: u32,
     ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
         let allocator = self.get_allocator();
-        self.io
-            .oracle()
-            .get_bytes_from_query(length_query_id, body_query_id, &(), allocator)
+        let bytes: alloc::vec::Vec<u8> = self.io.oracle().query_bytes(body_query_id, &())?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        let byte_len = bytes.len();
+        let usize_words = byte_len.div_ceil(core::mem::size_of::<usize>());
+        let usize_words = usize_words.next_multiple_of(2);
+        let mut words = alloc::vec::Vec::with_capacity_in(usize_words, allocator.clone());
+        for chunk in bytes.chunks(core::mem::size_of::<usize>()) {
+            let mut word_bytes = [0u8; core::mem::size_of::<usize>()];
+            word_bytes[..chunk.len()].copy_from_slice(chunk);
+            words.push(usize::from_le_bytes(word_bytes));
+        }
+        while words.len() < usize_words {
+            words.push(0);
+        }
+        let mut buffer = UsizeAlignedByteBox::from_usize_iterator_in(words.into_iter(), allocator);
+        buffer.truncated_to_byte_length(byte_len);
+        Ok(Some(buffer))
     }
 
     pub fn deploy_bytecode(
