@@ -19,7 +19,7 @@ pub(super) fn modexp<O: zk_ee::oracle::IOOracle, L: Logger, A: Allocator + Clone
     _logger: &mut L,
     allocator: A,
 ) -> Vec<u8, A> {
-    let mut advisor = self::bigint::OracleAdvisor::new(oracle, allocator.clone());
+    let mut advisor = self::bigint::OracleAdvisor { inner: oracle };
 
     modexp_inner::<L, A>(base, exp, modulus, _logger, &mut advisor, allocator)
 }
@@ -39,7 +39,7 @@ fn modexp_inner<L: Logger, A: Allocator + Clone>(
     exp: &[u8],
     modulus: &[u8],
     _logger: &mut L,
-    advisor: &mut impl ModexpAdvisor<Alloc = A>,
+    advisor: &mut impl ModexpAdvisor,
     allocator: A,
 ) -> Vec<u8, A> {
     self::u256::init();

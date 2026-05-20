@@ -180,7 +180,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         self,
         exp: &[u8],
         modulus: Self,
-        advisor: &mut impl ModexpAdvisor<Alloc = A>,
+        advisor: &mut impl ModexpAdvisor,
         allocator: A,
     ) -> Self {
         assert!(modulus.digits > 0);
@@ -318,7 +318,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor<Alloc = A>,
+        advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self)) {
         advisor.get_reduction_op_advice(&current, modulus, &mut scratch_0, &mut scratch_1);
         // now we should enforce everything backwards
@@ -364,7 +364,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor<Alloc = A>,
+        advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
         assert!(current.digits > 0); // case if it is 0 is handled by outer loop
         debug_assert!(other.digits <= modulus.digits); // we multiply accumulator by base, and base if fully reduced
@@ -434,7 +434,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_scratch_1: &mut DelegatedU256,
         digit_scratch_2: &mut DelegatedU256,
         digit_carry_propagation_scratch: &mut DelegatedU256,
-        advisor: &mut impl ModexpAdvisor<Alloc = A>,
+        advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
         assert!(a.digits > 0); // case if it is 0 is handled by outer loop
         assert!(scratch_0.capacity() > modulus.digits);
@@ -747,14 +747,12 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 }
 
 pub(crate) trait ModexpAdvisor {
-    type Alloc: Allocator + Clone;
-
-    fn get_reduction_op_advice(
+    fn get_reduction_op_advice<A: Allocator + Clone>(
         &mut self,
-        a: &BigintRepr<Self::Alloc>,
-        m: &BigintRepr<Self::Alloc>,
-        quotient_dst: &mut BigintRepr<Self::Alloc>,
-        remainder_dst: &mut BigintRepr<Self::Alloc>,
+        a: &BigintRepr<A>,
+        m: &BigintRepr<A>,
+        quotient_dst: &mut BigintRepr<A>,
+        remainder_dst: &mut BigintRepr<A>,
     );
 }
 
@@ -796,14 +794,12 @@ pub(crate) mod naive_advisor {
     pub(crate) struct NaiveAdvisor;
 
     impl ModexpAdvisor for NaiveAdvisor {
-        type Alloc = Global;
-
-        fn get_reduction_op_advice(
+        fn get_reduction_op_advice<A: Allocator + Clone>(
             &mut self,
-            a: &BigintRepr<Global>,
-            m: &BigintRepr<Global>,
-            quotient_dst: &mut BigintRepr<Global>,
-            remainder_dst: &mut BigintRepr<Global>,
+            a: &BigintRepr<A>,
+            m: &BigintRepr<A>,
+            quotient_dst: &mut BigintRepr<A>,
+            remainder_dst: &mut BigintRepr<A>,
         ) {
             let a = a.to_big_endian(Global);
             let a = BigUint::from_bytes_be(&a);
@@ -821,17 +817,32 @@ pub(crate) mod naive_advisor {
     }
 }
 
-pub(crate) struct OracleAdvisor<'a, O: IOOracle, A: Allocator + Clone> {
-    inner: &'a mut O,
-    response_buf: ModexpResponse<A>,
+pub(crate) struct OracleAdvisor<'a, O: IOOracle> {
+    pub(crate) inner: &'a mut O,
 }
 
-impl<'a, O: IOOracle, A: Allocator + Clone> OracleAdvisor<'a, O, A> {
-    pub(crate) fn new(oracle: &'a mut O, allocator: A) -> Self {
-        Self {
-            inner: oracle,
-            response_buf: ModexpResponse::new(allocator),
-        }
+/// View into two BigintRepr destinations. Implements WordLayout so query_into
+/// can read the modexp response directly into the caller's scratch buffers.
+struct ModexpResponseView<'a, A: Allocator + Clone> {
+    quotient: &'a mut BigintRepr<A>,
+    remainder: &'a mut BigintRepr<A>,
+}
+
+impl<A: Allocator + Clone> WordLayout for ModexpResponseView<'_, A> {
+    const WORD_COUNT: Option<usize> = None;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.quotient.write_words(w);
+        self.remainder.write_words(w);
+    }
+
+    fn read_words(_r: &mut impl FnMut() -> u32) -> Self {
+        panic!("ModexpResponseView::read_words not supported; use read_words_into")
+    }
+
+    fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
+        self.quotient.read_words_into(r);
+        self.remainder.read_words_into(r);
     }
 }
 
@@ -1006,10 +1017,8 @@ struct ModexpReductionInput {
     modulus_words: Vec<u32>,
 }
 
-impl<'a, O: IOOracle, A: Allocator + Clone> ModexpAdvisor for OracleAdvisor<'a, O, A> {
-    type Alloc = A;
-
-    fn get_reduction_op_advice(
+impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
+    fn get_reduction_op_advice<A: Allocator + Clone>(
         &mut self,
         a: &BigintRepr<A>,
         m: &BigintRepr<A>,
@@ -1024,11 +1033,14 @@ impl<'a, O: IOOracle, A: Allocator + Clone> ModexpAdvisor for OracleAdvisor<'a, 
             modulus_words: bigint_to_u32_words(m),
         };
 
-        // query_into reads directly into BigintRepr backing via read_words_into.
-        // No intermediate Vec — u64 limbs go straight into DelegatedU256 slots.
-        // Allocations in response_buf are reused across the ~384 calls.
+        // query_into reads directly into the destination BigintReprs via the
+        // view — no intermediate buffer, no swap, no copy.
+        let mut view = ModexpResponseView {
+            quotient: quotient_dst,
+            remainder: remainder_dst,
+        };
         self.inner
-            .query_into(MODEXP_ADVICE_QUERY_ID, &input, &mut self.response_buf)
+            .query_into(MODEXP_ADVICE_QUERY_ID, &input, &mut view)
             .unwrap();
 
         let max_quotient_digits = if a.digits < m.digits {
@@ -1041,13 +1053,8 @@ impl<'a, O: IOOracle, A: Allocator + Clone> ModexpAdvisor for OracleAdvisor<'a, 
 
         let max_remainder_digits = m.digits;
 
-        assert!(self.response_buf.quotient.digits <= max_quotient_digits);
-        assert!(self.response_buf.remainder.digits <= max_remainder_digits);
-
-        // Swap: destinations get fresh data, response_buf gets old scratch
-        // data (capacity preserved for next call's read_words_into). Zero copy.
-        core::mem::swap(&mut self.response_buf.quotient, quotient_dst);
-        core::mem::swap(&mut self.response_buf.remainder, remainder_dst);
+        assert!(quotient_dst.digits <= max_quotient_digits);
+        assert!(remainder_dst.digits <= max_remainder_digits);
     }
 }
 
@@ -1095,10 +1102,7 @@ mod tests {
             quotient: q_limbs,
             remainder: r_limbs,
         };
-        let mut advisor = OracleAdvisor {
-            inner: &mut oracle,
-            response_buf: Default::default(),
-        };
+        let mut advisor = OracleAdvisor { inner: &mut oracle };
 
         advisor.get_reduction_op_advice(&dividend, &modulus, &mut quotient, &mut remainder);
     }
