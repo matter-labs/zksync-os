@@ -273,14 +273,23 @@ mod custom_oracle_factories {
         TX_FROM_QUERY_ID,
     };
     use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-    use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-    use rig::zk_ee::oracle::usize_serialization::UsizeSerializable;
+    use rig::zk_ee::oracle::word_layout::WordLayout;
+    use rig::zk_ee::system::errors::internal::InternalError;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
-    use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
     use rig::zk_ee::utils::Bytes32;
     use rig::zksync_os_interface::traits::{EncodedTx, TxListSource, TxSource};
     use rig::{common_target_address, TestingFramework};
     use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+    /// Decode WordLayout-encoded u32 words back into a typed value.
+    fn decode_input<T: WordLayout>(input: &[u32]) -> T {
+        let mut cursor = 0;
+        T::read_words(&mut || {
+            let w = input.get(cursor).copied().unwrap_or(0);
+            cursor += 1;
+            w
+        })
+    }
 
     /// Generic oracle factory that delegates oracle construction to a closure.
     pub(super) struct CustomOracleFactory<F>(pub F)
@@ -394,11 +403,11 @@ mod custom_oracle_factories {
         tx_source: TxListSource,
         next_tx: Option<Vec<u8>>,
         next_tx_from: Option<B160>,
-        malicious_format_value: usize,
+        malicious_format_value: u32,
     }
 
     impl MaliciousTxFormatResponder {
-        fn new(tx_source: TxListSource, malicious_format_value: usize) -> Self {
+        fn new(tx_source: TxListSource, malicious_format_value: u32) -> Self {
             Self {
                 tx_source,
                 next_tx: None,
@@ -424,14 +433,15 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
+            _input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u32>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
+            let mut result = Vec::new();
             match query_id {
                 NEXT_TX_SIZE_QUERY_ID => {
                     let len = match &self.next_tx {
@@ -454,34 +464,33 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    len.write_words(&mut |w| result.push(w));
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    tx.write_words(&mut |w| result.push(w));
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // MALICIOUS: return an invalid encoding format value
-                    Box::new(core::iter::once(self.malicious_format_value))
+                    result.push(self.malicious_format_value);
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    from.write_words(&mut |w| result.push(w));
                 }
                 _ => unreachable!(),
             }
+            Ok(result)
         }
     }
 
     /// Helper: builds a CustomOracleFactory that injects a MaliciousTxFormatResponder.
     fn malicious_tx_format_factory(
-        malicious_format_value: usize,
+        malicious_format_value: u32,
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
@@ -575,7 +584,7 @@ mod custom_oracle_factories {
         );
     }
 
-    /// Verifies that the system rejects a large TX encoding format value (usize::MAX)
+    /// Verifies that the system rejects a large TX encoding format value (u32::MAX)
     /// from a malicious oracle via a custom oracle factory. Tests the u8 overflow path.
     #[test]
     fn test_malicious_oracle_tx_encoding_format_overflow() {
@@ -597,8 +606,8 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // Malicious oracle returns usize::MAX — overflows u8 deserialization
-        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(usize::MAX));
+        // Malicious oracle returns u32::MAX — overflows u8 deserialization
+        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(u32::MAX));
 
         let result = tester.execute_block_no_panic(vec![tx]);
         assert!(
@@ -645,18 +654,15 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-
+        ) -> Result<Vec<u32>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+            let hash: Bytes32 = decode_input(input);
 
             let preimage = if hash.is_zero() {
                 vec![]
@@ -682,6 +688,7 @@ mod custom_oracle_factories {
                 })
             };
 
+            let mut result = Vec::new();
             use rig::basic_system::system_implementation::ethereum_storage_model::{
                 ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
                 ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
@@ -689,13 +696,11 @@ mod custom_oracle_factories {
             if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
-                let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                (preimage.len() as u32).write_words(&mut |w| result.push(w));
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                preimage.write_words(&mut |w| result.push(w));
             }
+            Ok(result)
         }
     }
 
@@ -815,24 +820,20 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u32>, InternalError> {
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
             use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
             use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let StorageAddress { address, key } =
-                <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter(),
-                )
-                .expect("must deserialize the address/slot");
+                decode_input::<<InitialStorageSlotQuery<EthereumIOTypesConfig> as rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery>::Input>(input);
 
             use rig::basic_system::system_implementation::flat_storage_model::storage_cache::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 
@@ -859,7 +860,9 @@ mod custom_oracle_factories {
                     }
                 };
 
-            DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+            let mut result = Vec::new();
+            slot_data.write_words(&mut |w| result.push(w));
+            Ok(result)
         }
     }
 
@@ -964,14 +967,15 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
+            _input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u32>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
+            let mut result = Vec::new();
             match query_id {
                 NEXT_TX_SIZE_QUERY_ID => {
                     let len = match &self.next_tx {
@@ -996,28 +1000,27 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    len.write_words(&mut |w| result.push(w));
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    tx.write_words(&mut |w| result.push(w));
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // Return valid RLP format so parsing is attempted on garbage data
-                    Box::new(core::iter::once(1usize)) // 1 = Rlp
+                    result.push(1u32); // 1 = Rlp
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    from.write_words(&mut |w| result.push(w));
                 }
                 _ => unreachable!(),
             }
+            Ok(result)
         }
     }
 
@@ -1132,30 +1135,28 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u32>, InternalError> {
             use rig::basic_system::system_implementation::flat_storage_model::{
-                ExactIndexQuery, PreviousIndexQuery, PROOF_FOR_INDEX_QUERY_ID,
+                ExactIndexQuery, ExistingReadProof, PreviousIndexQuery, ValueAtIndexProof,
+                PROOF_FOR_INDEX_QUERY_ID,
             };
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+            use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
             use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
             use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
+            let mut result = Vec::new();
             match query_id {
                 _ if query_id == InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                    let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                        EthereumIOTypesConfig,
-                    > as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter()
-                    )
-                    .expect("must deserialize the address/slot");
+                    let StorageAddress { address, key } =
+                        decode_input::<<InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input>(input);
 
                     let flat_key =
                         rig::zk_ee::common_structs::derive_flat_storage_key(&address, &key);
@@ -1174,42 +1175,33 @@ mod custom_oracle_factories {
                             }
                         };
 
-                    DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                    slot_data.write_words(&mut |w| result.push(w));
                 }
                 _ if query_id == PreviousIndexQuery::QUERY_ID => {
-                    let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter(),
-                    )
-                    .expect("must deserialize key");
+                    let key: <PreviousIndexQuery as SimpleOracleQuery>::Input = decode_input(input);
                     let prev_index = self.storage.prev_tree_index(key);
-                    DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
+                    prev_index.write_words(&mut |w| result.push(w));
                 }
                 _ if query_id == ExactIndexQuery::QUERY_ID => {
-                    let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
-                        &mut query.into_iter(),
-                    )
-                    .expect("must deserialize key");
+                    let key: <ExactIndexQuery as SimpleOracleQuery>::Input = decode_input(input);
                     let index = self
                         .storage
                         .tree_index(key)
                         .expect("Reading index for key that is not in the tree");
-                    DynUsizeIterator::from_constructor(index, UsizeSerializable::iter)
+                    index.write_words(&mut |w| result.push(w));
                 }
                 _ if query_id == PROOF_FOR_INDEX_QUERY_ID => {
-                    use rig::basic_system::system_implementation::flat_storage_model::{
-                        ExistingReadProof, ValueAtIndexProof,
-                    };
-                    let index =
-                        u64::from_iter(&mut query.into_iter()).expect("must deserialize index");
+                    let index: u64 = decode_input(input);
                     let proof = ValueAtIndexProof {
                         proof: ExistingReadProof {
                             existing: self.storage.merkle_proof(index),
                         },
                     };
-                    DynUsizeIterator::from_constructor(proof, UsizeSerializable::iter)
+                    proof.write_words(&mut |w| result.push(w));
                 }
                 _ => unreachable!(),
             }
+            Ok(result)
         }
     }
 
@@ -1335,18 +1327,15 @@ mod custom_oracle_factories {
             Self::SUPPORTED_QUERY_IDS.contains(&query_id)
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
-
+        ) -> Result<Vec<u32>, InternalError> {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+            let hash: Bytes32 = decode_input(input);
 
             let is_corrupted = self.corrupted_hashes.iter().any(|h| *h == hash);
 
@@ -1368,6 +1357,7 @@ mod custom_oracle_factories {
                 data
             };
 
+            let mut result = Vec::new();
             use rig::basic_system::system_implementation::ethereum_storage_model::{
                 ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
                 ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
@@ -1377,13 +1367,11 @@ mod custom_oracle_factories {
             {
                 // Length queries return the correct length even for corrupted preimages.
                 // The corruption is in the content, not the metadata.
-                let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                (preimage.len() as u32).write_words(&mut |w| result.push(w));
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                preimage.write_words(&mut |w| result.push(w));
             }
+            Ok(result)
         }
     }
 
@@ -1485,15 +1473,14 @@ mod callable_oracle_tests {
     //! operations directly without querying callable oracles.
     //!
     //! These tests validate the callable oracle processors themselves using
-    //! a TestMemorySource (BTreeMap-based RamPeek impl), which allows testing
+    //! a DummyMemorySource (provided by oracle_provider), which allows testing
     //! the full oracle query path (memory read, computation, response serialization)
     //! without RISC-V simulation. A malicious oracle factory integration test is
     //! included to demonstrate the custom factory pattern for callable oracle testing.
 
     use rig::callable_oracles::arithmetic::ArithmeticQuery;
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
-    use rig::callable_oracles::test_utils::TestMemorySource;
-    use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
+    use rig::oracle_provider::{DummyMemorySource, OracleQueryProcessor};
 
     use rig::alloy::consensus::TxEip2930;
     use rig::alloy::primitives::{TxKind, U256};
@@ -1504,6 +1491,8 @@ mod callable_oracle_tests {
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::oracle_provider::ZkEENonDeterminismSource;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+    use rig::zk_ee::oracle::word_layout::WordLayout;
+    use rig::zk_ee::system::errors::internal::InternalError;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zksync_os_interface::traits::TxListSource;
     use rig::{common_target_address, TestingFramework};
@@ -1522,25 +1511,21 @@ mod callable_oracle_tests {
             self.inner.supported_query_ids()
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
-            memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            input: &[u32],
+            memory: &dyn rig::oracle_provider::RamPeek,
+        ) -> Result<Vec<u32>, InternalError> {
             // Get the correct result first
-            let correct: Vec<usize> = self
-                .inner
-                .process_buffered_query(query_id, query, memory)
-                .collect();
+            let mut corrupted = self.inner.process(query_id, input, memory)?;
 
             // Corrupt the quotient: add 1 to the first quotient word (index 1, after header)
-            let mut corrupted = correct;
             if corrupted.len() > 1 {
                 corrupted[1] = corrupted[1].wrapping_add(1);
             }
 
-            Box::new(corrupted.into_iter())
+            Ok(corrupted)
         }
     }
 
@@ -1587,10 +1572,23 @@ mod callable_oracle_tests {
     /// (i.e., it corrupts the output).
     #[test]
     fn test_malicious_arithmetic_query_corrupts_output() {
+        // Build input words for a modexp division: 10 / 3
+        // ModExpAdviceParams layout (WordLayout-encoded):
+        //   op: u32, a_ptr/a_len/b_ptr/b_len/modulus_ptr/modulus_len are now
+        //   inline data since ArithmeticQuery reads from the input words directly.
+        //
+        // The ArithmeticQuery for MODEXP reads the input as memory pointers,
+        // so we need to set up a memory source with the data.
+        let mut input_words = Vec::new();
+
+        // The modexp query input is a single u32 pointer to params in memory.
+        // We need to use the actual memory-based approach.
         let params_addr: u32 = 0x100;
         let a_addr: u32 = 0x200;
         let m_addr: u32 = 0x400;
 
+        // Build memory with the params struct and data
+        use rig::callable_oracles::test_utils::TestMemorySource;
         let mut memory = TestMemorySource::default();
 
         // ModExpAdviceParams: 10 / 3
@@ -1607,17 +1605,21 @@ mod callable_oracle_tests {
         // modulus = 3
         memory.insert_u32(m_addr, 3);
 
+        // Input for the query: the params address
+        input_words.clear();
+        (params_addr).write_words(&mut |w| input_words.push(w));
+
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();
-        let correct: Vec<usize> = correct_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let correct = correct_oracle
+            .process(MODEXP_ADVICE_QUERY_ID, &input_words, &memory)
+            .expect("correct oracle should succeed");
 
         // Get malicious result
         let mut malicious_oracle = MaliciousArithmeticQuery::default();
-        let malicious: Vec<usize> = malicious_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let malicious = malicious_oracle
+            .process(MODEXP_ADVICE_QUERY_ID, &input_words, &memory)
+            .expect("malicious oracle should succeed");
 
         // Verify the malicious oracle corrupted the output
         assert_ne!(

@@ -27,15 +27,25 @@ use rig::zk_ee::common_structs::{
 };
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use rig::zk_ee::oracle::word_layout::WordLayout;
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::system::errors::internal::InternalError;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::traits::TxListSource;
 use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+/// Decode WordLayout-encoded u32 words back into a typed value.
+fn decode_input<T: WordLayout>(input: &[u32]) -> T {
+    let mut cursor = 0;
+    T::read_words(&mut || {
+        let w = input.get(cursor).copied().unwrap_or(0);
+        cursor += 1;
+        w
+    })
+}
 
 /// Malicious storage responder that returns non-zero initial values for new storage slots
 #[derive(Clone, Debug)]
@@ -62,22 +72,19 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                    EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter()
-                )
-                .expect("must deserialize the address/slot");
+                let StorageAddress { address, key } = decode_input::<
+                    <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input,
+                >(input);
                 let flat_key = derive_flat_storage_key(&address, &key);
                 let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                     if let Some(cold) = self.storage.read(flat_key) {
@@ -106,7 +113,9 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                             }
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                let mut result = Vec::new();
+                slot_data.write_words(&mut |w| result.push(w));
+                Ok(result)
             }
             _ => unreachable!(),
         }
