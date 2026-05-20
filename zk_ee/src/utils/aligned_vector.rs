@@ -469,3 +469,50 @@ mod tests {
         assert!(panicked);
     }
 }
+
+/// WordLayout for UsizeAlignedByteBox: same wire format as Vec<u8>
+/// (u32 byte length + byte-packed u32 words). Reads directly into the
+/// usize-aligned backing — one allocation, zero copies.
+impl<A: Allocator + Default> crate::oracle::word_layout::WordLayout for UsizeAlignedByteBox<A> {
+    const WORD_COUNT: Option<usize> = None;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        (self.byte_capacity as u32).write_words(w);
+        let bytes = self.as_slice();
+        let mut i = 0;
+        while i < bytes.len() {
+            let mut buf = [0u8; 4];
+            let take = core::cmp::min(4, bytes.len() - i);
+            buf[..take].copy_from_slice(&bytes[i..i + take]);
+            w(u32::from_le_bytes(buf));
+            i += 4;
+        }
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        use crate::oracle::word_layout::WordLayout;
+        let byte_len = u32::read_words(r) as usize;
+        let u32_word_count = byte_len.div_ceil(4);
+        let mut result = Self::preallocated_in(byte_len, A::default());
+        let dst = result.inner_mut_ptr();
+        cfg_if::cfg_if! {
+            if #[cfg(target_pointer_width = "32")] {
+                // usize = u32: direct 1:1 mapping
+                for i in 0..u32_word_count {
+                    unsafe { (dst as *mut u32).add(i).write(r()); }
+                }
+            } else {
+                // usize = u64: pack two u32 words per usize
+                let mut i = 0;
+                while i < u32_word_count {
+                    let lo = r() as u64;
+                    let hi = if i + 1 < u32_word_count { r() as u64 } else { 0 };
+                    unsafe { (dst as *mut u64).add(i / 2).write(lo | (hi << 32)); }
+                    i += 2;
+                }
+            }
+        }
+        result.mark_initialized(byte_len);
+        result
+    }
+}

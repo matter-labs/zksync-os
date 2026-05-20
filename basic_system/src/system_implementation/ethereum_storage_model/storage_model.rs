@@ -37,7 +37,7 @@ use zk_ee::{
 use super::vec_trait::BiVecCtor;
 
 pub struct EthereumStorageModel<
-    A: Allocator + Clone,
+    A: Allocator + Clone + Default,
     R: Resources,
     P: StorageAccessPolicy<R, Bytes32>,
     SF: StackFactory<N>,

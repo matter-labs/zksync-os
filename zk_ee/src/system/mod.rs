@@ -353,11 +353,8 @@ where
         _length_query_id: u32,
         body_query_id: u32,
     ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
-        let allocator = self.get_allocator();
-        let buffer = self
-            .io
-            .oracle()
-            .query_byte_box(body_query_id, &(), allocator)?;
+        let buffer: UsizeAlignedByteBox<S::Allocator> =
+            self.io.oracle().query(body_query_id, &())?;
         if buffer.len() == 0 {
             return Ok(None);
         }

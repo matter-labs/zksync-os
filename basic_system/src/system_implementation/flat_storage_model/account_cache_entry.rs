@@ -309,7 +309,7 @@ impl AccountProperties {
     pub fn diff_compression<
         const PROOF_ENV: bool,
         R: Resources,
-        A: Allocator + Clone,
+        A: Allocator + Clone + Default,
         T: WriteBytes + ?Sized,
     >(
         initial: &Self,

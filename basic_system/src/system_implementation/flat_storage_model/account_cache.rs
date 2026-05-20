@@ -76,7 +76,7 @@ type AddressItem<'a, A> = HistoryMapItemRefMut<
 >;
 
 pub struct NewModelAccountCache<
-    A: Allocator + Clone, // = Global,
+    A: Allocator + Clone + Default, // = Global,
     R: Resources,
     P: StorageAccessPolicy<R, Bytes32>,
     SF: StackFactory<M>,
@@ -95,7 +95,7 @@ pub struct NewModelAccountCache<
 }
 
 impl<
-        A: Allocator + Clone,
+        A: Allocator + Clone + Default,
         R: Resources,
         P: StorageAccessPolicy<R, Bytes32>,
         SF: StackFactory<M>,

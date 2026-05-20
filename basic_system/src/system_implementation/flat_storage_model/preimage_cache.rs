@@ -30,14 +30,17 @@ pub struct PreimageRequest {
     pub preimage_type: PreimageType,
 }
 
-pub struct BytecodeAndAccountDataPreimagesStorage<R: Resources, A: Allocator + Clone = Global> {
+pub struct BytecodeAndAccountDataPreimagesStorage<
+    R: Resources,
+    A: Allocator + Clone + Default = Global,
+> {
     pub(crate) storage: BTreeMap<Bytes32, UsizeAlignedByteBox<A>, A>,
     pub(crate) publication_storage: NewPreimagesPublicationStorage<A>,
     pub(crate) allocator: A,
     _marker: PhantomData<R>,
 }
 
-impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<R, A> {
+impl<R: Resources, A: Allocator + Clone + Default> BytecodeAndAccountDataPreimagesStorage<R, A> {
     pub fn new_from_parts(allocator: A) -> Self {
         let publication_storage = NewPreimagesPublicationStorage::new_from_parts(allocator.clone());
         Self {
@@ -108,12 +111,8 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // We do not charge for gas in this concrete implementation and
             // expect higher-level model to do so.
             // We charge for native.
-            let mut buffered = oracle
-                .query_byte_box(
-                    FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID,
-                    hash,
-                    self.allocator.clone(),
-                )
+            let mut buffered: UsizeAlignedByteBox<_> = oracle
+                .query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
                 .expect("must get preimage bytes");
 
             if buffered.len() > expected_preimage_len_in_bytes {
@@ -199,7 +198,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
     }
 }
 
-impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
+impl<R: Resources, A: Allocator + Clone + Default> PreimageCacheModel
     for BytecodeAndAccountDataPreimagesStorage<R, A>
 {
     type Resources = R;
@@ -259,7 +258,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
     }
 }
 
-impl<R: Resources, A: Allocator + Clone> SnapshottableIo
+impl<R: Resources, A: Allocator + Clone + Default> SnapshottableIo
     for BytecodeAndAccountDataPreimagesStorage<R, A>
 {
     type StateSnapshot = CacheSnapshotId;

@@ -60,7 +60,7 @@ pub type AddressItem<'a, A> = HistoryMapItemRefMut<
 >;
 
 pub struct EthereumAccountCache<
-    A: Allocator + Clone, // = Global,
+    A: Allocator + Clone + Default, // = Global,
     R: Resources,
     SF: StackFactory<N>,
     const N: usize,
@@ -77,7 +77,7 @@ pub struct EthereumAccountCache<
     phantom: PhantomData<(R, SF)>,
 }
 
-impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
+impl<A: Allocator + Clone + Default, R: Resources, SF: StackFactory<N>, const N: usize>
     EthereumAccountCache<A, R, SF, N>
 {
     pub fn new_from_parts(allocator: A) -> Self {

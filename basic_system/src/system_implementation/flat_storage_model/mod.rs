@@ -62,7 +62,7 @@ pub const FLAT_STORAGE_SUBSPACE_MASK: u32 = 0x00_00_f0_00;
 // by "signals" in theory, but we do not expect that in practice
 
 pub struct FlatTreeWithAccountsUnderHashesStorageModel<
-    A: Allocator + Clone,
+    A: Allocator + Clone + Default,
     R: Resources,
     P: StorageAccessPolicy<R, Bytes32>,
     SF: StackFactory<M>,

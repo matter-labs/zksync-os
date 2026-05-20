@@ -56,22 +56,6 @@ pub trait IOOracle: 'static + Sized {
         self.query::<I, alloc::vec::Vec<u8>>(query_type, input)
     }
 
-    /// Query oracle, returning bytes directly in a UsizeAlignedByteBox.
-    /// Default impl goes through query_bytes + copy. ProvingOracle overrides
-    /// to read the Vec<u8> wire format directly into the box — one allocation,
-    /// zero copies.
-    fn query_byte_box<I: WordLayout, A: core::alloc::Allocator>(
-        &mut self,
-        query_type: u32,
-        input: &I,
-        allocator: A,
-    ) -> Result<crate::utils::UsizeAlignedByteBox<A>, InternalError> {
-        let bytes = self.query_bytes(query_type, input)?;
-        Ok(crate::utils::UsizeAlignedByteBox::from_slice_in(
-            &bytes, allocator,
-        ))
-    }
-
     /// Query oracle, reading the response into an existing value.
     /// Reuses heap allocations in the output where possible (e.g. Vec fields).
     fn query_into<I: WordLayout, O: WordLayout>(

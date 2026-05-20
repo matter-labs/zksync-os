@@ -41,13 +41,13 @@ pub struct PreimageRequestForUnknownLength {
     pub preimage_type: PreimageType,
 }
 
-pub struct BytecodeKeccakPreimagesStorage<R: Resources, A: Allocator + Clone = Global> {
+pub struct BytecodeKeccakPreimagesStorage<R: Resources, A: Allocator + Clone + Default = Global> {
     pub storage: BTreeMap<Bytes32, UsizeAlignedByteBox<A>, A>,
     pub(crate) allocator: A,
     _marker: PhantomData<R>,
 }
 
-impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
+impl<R: Resources, A: Allocator + Clone + Default> BytecodeKeccakPreimagesStorage<R, A> {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             storage: BTreeMap::new_in(allocator.clone()),
@@ -81,12 +81,8 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
             let expected_length_in_bytes =
                 PreimageLengthQuery::get(oracle, hash).expect("must get preimage length") as usize;
             // NOTE: we leave some slack for 64/32 bit arch mismatches
-            let mut buffered = oracle
-                .query_byte_box(
-                    ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
-                    hash,
-                    self.allocator.clone(),
-                )
+            let mut buffered: UsizeAlignedByteBox<_> = oracle
+                .query(ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID, hash)
                 .expect("must get preimage");
             // truncate
             buffered.truncated_to_byte_length(expected_length_in_bytes);
@@ -139,7 +135,9 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
     }
 }
 
-impl<R: Resources, A: Allocator + Clone> SnapshottableIo for BytecodeKeccakPreimagesStorage<R, A> {
+impl<R: Resources, A: Allocator + Clone + Default> SnapshottableIo
+    for BytecodeKeccakPreimagesStorage<R, A>
+{
     type StateSnapshot = NopSnapshotId;
 
     fn begin_new_tx(&mut self) {}
@@ -160,7 +158,7 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo for BytecodeKeccakPreim
     }
 }
 
-impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
+impl<R: Resources, A: Allocator + Clone + Default> PreimageCacheModel
     for BytecodeKeccakPreimagesStorage<R, A>
 {
     type Resources = R;
