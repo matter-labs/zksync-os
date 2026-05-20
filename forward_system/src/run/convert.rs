@@ -6,7 +6,8 @@ use zk_ee::common_structs::GenericEventContent;
 use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zksync_os_interface::error::InvalidTransaction;
-use zksync_os_interface::types::{BlockContext, L2ToL1Log};
+use zksync_os_interface::traits::AnyBlockContext;
+use zksync_os_interface::types::L2ToL1Log;
 
 pub trait FromInterface<T> {
     fn from_interface(value: T) -> Self;
@@ -16,20 +17,20 @@ pub trait IntoInterface<T> {
     fn into_interface(self) -> T;
 }
 
-impl FromInterface<BlockContext> for BlockMetadataFromOracle {
-    fn from_interface(value: BlockContext) -> Self {
+impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
+    fn from_interface(value: B) -> Self {
         BlockMetadataFromOracle {
-            chain_id: value.chain_id,
-            block_number: value.block_number,
-            block_hashes: BlockHashes(value.block_hashes.0),
-            timestamp: value.timestamp,
-            eip1559_basefee: value.eip1559_basefee,
-            pubdata_price: value.pubdata_price,
-            native_price: value.native_price,
-            coinbase: B160::from_be_bytes(value.coinbase.0 .0),
-            gas_limit: value.gas_limit,
-            pubdata_limit: value.pubdata_limit,
-            mix_hash: value.mix_hash,
+            chain_id: value.chain_id(),
+            block_number: value.block_number(),
+            block_hashes: BlockHashes(value.block_hashes().clone()),
+            timestamp: value.timestamp(),
+            eip1559_basefee: value.eip1559_basefee(),
+            pubdata_price: value.pubdata_price(),
+            native_price: value.native_price(),
+            coinbase: B160::from_be_bytes(value.coinbase().0 .0),
+            gas_limit: value.gas_limit(),
+            pubdata_limit: value.pubdata_limit(),
+            mix_hash: value.mix_hash(),
         }
     }
 }
