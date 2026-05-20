@@ -27,43 +27,21 @@ impl<T: WordLayout> WordLayout for Vec<T> {
 
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
         let len = r() as usize;
-        // Always use the generic element-by-element path for read.
-        // For T=u8, each element reads one u32 word and truncates — this
-        // matches the byte-packed write format because [u8; N]::read_words
-        // is NOT used here (Vec uses per-element reads). To keep the wire
-        // format consistent, the write side also uses per-element writes
-        // when size_of::<T>() != 1.
-        //
-        // Note: the size_of==1 byte-packing in write_words means Vec<u8>
-        // write packs 4 bytes/word, but this read reads 1 word/element.
-        // These MUST match — so we use byte-pack for read too, but avoid
-        // transmute by constructing T from the bytes safely.
         if core::mem::size_of::<T>() == 1 {
-            // Read byte-packed words, construct each T via read_words.
-            // This reads ceil(len/4) words total.
-            let word_count = len.div_ceil(4);
-            let mut all_words: alloc::vec::Vec<u32> = alloc::vec::Vec::with_capacity(word_count);
-            for _ in 0..word_count {
-                all_words.push(r());
+            let mut bytes = alloc::vec![0u8; len];
+            let mut i = 0;
+            while i < len {
+                let word = r().to_le_bytes();
+                let take = core::cmp::min(4, len - i);
+                bytes[i..i + take].copy_from_slice(&word[..take]);
+                i += 4;
             }
-            // Feed one word per T::read_words call by creating a sub-iterator
-            // that yields words one at a time for each byte.
-            let mut byte_idx = 0;
-            let mut result = alloc::vec::Vec::with_capacity(len);
-            for _ in 0..len {
-                let word_idx = byte_idx / 4;
-                let byte_in_word = byte_idx % 4;
-                let byte_val = (all_words[word_idx] >> (byte_in_word * 8)) as u8;
-                // SAFETY: T has size 1. We construct it from a single byte.
-                // For T=u8, this is trivially safe. For T=bool, the write side
-                // only writes 0 or 1, so this is safe on roundtrip. External
-                // (untrusted) data could produce invalid bool — same risk as
-                // all oracle responses (validated at consumer level).
-                let val = T::read_words(&mut || byte_val as u32);
-                result.push(val);
-                byte_idx += 1;
-            }
-            result
+            // SAFETY: This path only triggers for size_of::<T>() == 1.
+            // For T=u8 (the only intended use), this is a no-op transmute.
+            // Vec<bool> is not used in this codebase; if it were, oracle
+            // data >1 would produce invalid bools (same UB risk as any
+            // untrusted oracle response — validated at consumer level).
+            unsafe { core::mem::transmute(bytes) }
         } else {
             (0..len).map(|_| T::read_words(r)).collect()
         }
