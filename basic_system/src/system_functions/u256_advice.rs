@@ -106,13 +106,23 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor_or_remainder.is_zero());
 
-    // Query oracle: input is (dividend, divisor) as 8 u64 limbs, output is quotient limbs [u64; 4]
-    let mut input = [0u64; 8];
-    input[..4].copy_from_slice(dividend_or_quotient.as_limbs());
-    input[4..].copy_from_slice(divisor_or_remainder.as_limbs());
-    let q_limbs: [u64; 4] = oracle
-        .query(U256_DIV_REM_ADVICE_QUERY_ID, &input)
-        .expect("div_rem oracle query failed");
+    let q_limbs: [u64; 4] = {
+        #[cfg(target_arch = "riscv32")]
+        {
+            oracle
+                .query(U256_DIV_REM_ADVICE_QUERY_ID, &())
+                .expect("div_rem oracle query failed")
+        }
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            let mut input = [0u64; 8];
+            input[..4].copy_from_slice(dividend_or_quotient.as_limbs());
+            input[4..].copy_from_slice(divisor_or_remainder.as_limbs());
+            oracle
+                .query(U256_DIV_REM_ADVICE_QUERY_ID, &input)
+                .expect("div_rem oracle query failed")
+        }
+    };
 
     // verify modifies dividend_or_quotient in-place to hold the remainder
     assert!(verify_div_rem_hint(
@@ -145,14 +155,24 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor.is_zero());
 
-    // Query oracle: input is (dividend_lo, dividend_hi, divisor) as 12 u64 limbs, output is (q_lo, q_hi) as [u64; 8]
-    let mut input = [0u64; 12];
-    input[..4].copy_from_slice(dividend_lo.as_limbs());
-    input[4..8].copy_from_slice(dividend_hi.as_limbs());
-    input[8..].copy_from_slice(divisor.as_limbs());
-    let q_limbs: [u64; 8] = oracle
-        .query(U256_WIDE_DIV_REM_ADVICE_QUERY_ID, &input)
-        .expect("wide_div_rem oracle query failed");
+    let q_limbs: [u64; 8] = {
+        #[cfg(target_arch = "riscv32")]
+        {
+            oracle
+                .query(U256_WIDE_DIV_REM_ADVICE_QUERY_ID, &())
+                .expect("wide_div_rem oracle query failed")
+        }
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            let mut input = [0u64; 12];
+            input[..4].copy_from_slice(dividend_lo.as_limbs());
+            input[4..8].copy_from_slice(dividend_hi.as_limbs());
+            input[8..].copy_from_slice(divisor.as_limbs());
+            oracle
+                .query(U256_WIDE_DIV_REM_ADVICE_QUERY_ID, &input)
+                .expect("wide_div_rem oracle query failed")
+        }
+    };
 
     let q_lo_limbs: [u64; 4] = q_limbs[..4].try_into().unwrap();
     let q_hi_limbs: [u64; 4] = q_limbs[4..].try_into().unwrap();

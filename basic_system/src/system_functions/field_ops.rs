@@ -146,13 +146,21 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
     fn query_field_op<R: WordLayout>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
-        let query_input = FieldOpsInput {
-            op: op as u32,
-            src: *input,
-        };
-        self.oracle
-            .query(FIELD_OPS_ADVISE_QUERY_ID, &query_input)
-            .unwrap()
+        #[cfg(target_arch = "riscv32")]
+        {
+            let _ = (op, input);
+            self.oracle.query(FIELD_OPS_ADVISE_QUERY_ID, &()).unwrap()
+        }
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            let query_input = FieldOpsInput {
+                op: op as u32,
+                src: *input,
+            };
+            self.oracle
+                .query(FIELD_OPS_ADVISE_QUERY_ID, &query_input)
+                .unwrap()
+        }
     }
 }
 
