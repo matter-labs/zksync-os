@@ -15,6 +15,28 @@ pub(crate) fn init() {
 #[repr(align(32))]
 pub(crate) struct DelegatedU256([u64; 4]);
 
+impl zk_ee::oracle::word_layout::WordLayout for DelegatedU256 {
+    const WORD_COUNT: Option<usize> = Some(8); // 4 u64s = 8 u32 words
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        let src = self as *const Self as *const u32;
+        for i in 0..8 {
+            w(unsafe { src.add(i).read() });
+        }
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        let mut result = core::mem::MaybeUninit::<Self>::uninit();
+        let dst = result.as_mut_ptr() as *mut u32;
+        for i in 0..8 {
+            unsafe {
+                dst.add(i).write(r());
+            }
+        }
+        unsafe { result.assume_init() }
+    }
+}
+
 impl core::fmt::Debug for DelegatedU256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "0x")?;

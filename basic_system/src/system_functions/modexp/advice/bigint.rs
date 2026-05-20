@@ -840,55 +840,31 @@ const BIGINT_DIGIT_U32_SIZE: usize = U256::BYTES / core::mem::size_of::<u32>();
 /// Number of u64 limbs per DelegatedU256 digit (256 bits / 64 bits = 4).
 const BIGINT_DIGIT_U64_SIZE: usize = 4;
 
-/// WordLayout for BigintRepr: same wire format as Vec<u64> (u32 length + u64 elements).
-/// read_words_into writes directly into the pre-allocated backing — zero copy.
+/// WordLayout for BigintRepr: wire format is Vec<DelegatedU256>
+/// (u32 digit count + DelegatedU256 elements, each 8 u32 words).
+/// read_words_into writes DelegatedU256 values directly into the backing.
 impl<A: Allocator + Clone> WordLayout for BigintRepr<A> {
     const WORD_COUNT: Option<usize> = None;
 
     fn write_words(&self, w: &mut impl FnMut(u32)) {
-        let u64s = self.u64_digits_ref();
-        (u64s.len() as u32).write_words(w);
-        for &limb in u64s {
-            limb.write_words(w);
+        (self.digits as u32).write_words(w);
+        for digit in self.digits_ref() {
+            digit.write_words(w);
         }
     }
 
     fn read_words(_r: &mut impl FnMut() -> u32) -> Self {
-        panic!(
-            "BigintRepr::read_words requires a pre-allocated instance; use read_words_into instead"
-        )
+        panic!("BigintRepr::read_words requires a pre-allocated instance; use read_words_into")
     }
 
     fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
-        let len = u32::read_words(r) as usize;
-        Self::read_u64_limbs_into(r, len, self);
-    }
-}
-
-impl<A: Allocator + Clone> BigintRepr<A> {
-    fn read_u64_limbs_into(r: &mut impl FnMut() -> u32, len: usize, dst: &mut Self) {
-        let num_digits = len.next_multiple_of(BIGINT_DIGIT_U64_SIZE) / BIGINT_DIGIT_U64_SIZE;
-        dst.backing.clear();
-        dst.backing.reserve(num_digits);
-        unsafe {
-            let dst_capacity = dst.backing.spare_capacity_mut();
-            let mut remaining = len;
-            for dst_slot in dst_capacity[..num_digits].iter_mut() {
-                let dst_ptr: *mut u64 = dst_slot
-                    .as_mut_ptr()
-                    .cast::<[u64; BIGINT_DIGIT_U64_SIZE]>()
-                    .cast();
-                for i in 0..BIGINT_DIGIT_U64_SIZE {
-                    if remaining > 0 {
-                        dst_ptr.add(i).write(u64::read_words(r));
-                        remaining -= 1;
-                    } else {
-                        dst_ptr.add(i).write(0);
-                    }
-                }
-            }
-            dst.set_num_digits(num_digits);
+        let num_digits = u32::read_words(r) as usize;
+        self.backing.clear();
+        self.backing.reserve(num_digits);
+        for _ in 0..num_digits {
+            self.backing.push(DelegatedU256::read_words(r));
         }
+        self.digits = num_digits;
     }
 }
 
@@ -977,20 +953,6 @@ impl<A: Allocator + Clone> WordLayout for ModexpResponse<A> {
     fn read_words_into(&mut self, r: &mut impl FnMut() -> u32) {
         self.quotient.read_words_into(r);
         self.remainder.read_words_into(r);
-    }
-}
-
-/// Copy BigintRepr data from src into dst's pre-allocated backing.
-fn copy_bigint_into<A1: Allocator + Clone, A2: Allocator + Clone>(
-    src: &BigintRepr<A1>,
-    dst: &mut BigintRepr<A2>,
-) {
-    unsafe {
-        let dst_capacity = dst.clear_as_capacity_mut();
-        for (d, s) in dst_capacity[..src.digits].iter_mut().zip(src.digits_ref()) {
-            write_into_ptr_unchecked(d.as_mut_ptr(), s);
-        }
-        dst.set_num_digits(src.digits);
     }
 }
 
