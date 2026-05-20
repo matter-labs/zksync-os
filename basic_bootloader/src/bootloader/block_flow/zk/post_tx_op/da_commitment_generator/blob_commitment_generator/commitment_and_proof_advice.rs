@@ -1,27 +1,11 @@
 pub const BLOB_COMMITMENT_AND_PROOF_QUERY_ID: u32 =
     zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK | 0x20;
 
+#[derive(zk_ee::oracle::word_layout::WordLayout)]
 #[repr(C, align(8))]
 pub struct KZGCommitmentAndProof {
     pub commitment: [u8; 48],
     pub proof: [u8; 48],
-}
-
-impl zk_ee::oracle::word_layout::WordLayout for KZGCommitmentAndProof {
-    // 48 bytes each = 12 u32 words each = 24 total
-    const WORD_COUNT: Option<usize> = Some(24);
-
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        <[u8; 48] as zk_ee::oracle::word_layout::WordLayout>::write_words(&self.commitment, w);
-        <[u8; 48] as zk_ee::oracle::word_layout::WordLayout>::write_words(&self.proof, w);
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        Self {
-            commitment: <[u8; 48] as zk_ee::oracle::word_layout::WordLayout>::read_words(r),
-            proof: <[u8; 48] as zk_ee::oracle::word_layout::WordLayout>::read_words(r),
-        }
-    }
 }
 
 pub trait BlobCommitmentAndProofAdvisor {

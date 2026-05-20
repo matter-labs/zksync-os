@@ -5,6 +5,7 @@ use super::basic_metadata::{
     BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
 };
 use super::system_metadata::SystemMetadata;
+use crate::oracle::word_layout::WordLayout;
 use crate::system::constants::*;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
@@ -44,7 +45,7 @@ pub const BLOCK_HASHES_WINDOW_SIZE: usize = 256;
 /// Hash for block number N will be at index [BLOCK_HASHES_WINDOW_SIZE - (current_block_number - N)]
 /// (most recent will be at the end) if N is one of the most recent
 /// BLOCK_HASHES_WINDOW_SIZE blocks.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, WordLayout)]
 pub struct BlockHashes(pub [U256; BLOCK_HASHES_WINDOW_SIZE]);
 
 impl Default for BlockHashes {
@@ -191,26 +192,6 @@ impl BlockMetadataFromOracle {
             mix_hash: U256::ONE,
             blob_fee: U256::ZERO,
         }
-    }
-}
-
-use crate::oracle::word_layout::WordLayout;
-
-impl WordLayout for BlockHashes {
-    const WORD_COUNT: Option<usize> = Some(BLOCK_HASHES_WINDOW_SIZE * 8); // each U256 = 8 words
-
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        for hash in &self.0 {
-            hash.write_words(w);
-        }
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
-        for hash in &mut hashes {
-            *hash = U256::read_words(r);
-        }
-        Self(hashes)
     }
 }
 

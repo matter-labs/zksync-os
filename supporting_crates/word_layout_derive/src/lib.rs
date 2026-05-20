@@ -51,13 +51,35 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
 
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(f) => &f.named,
-            _ => panic!("WordLayout derive only supports structs with named fields"),
+            Fields::Named(f) => f.named.iter().collect::<Vec<_>>(),
+            Fields::Unnamed(f) => f.unnamed.iter().collect::<Vec<_>>(),
+            Fields::Unit => panic!("WordLayout derive does not support unit structs"),
         },
         _ => panic!("WordLayout derive only supports structs"),
     };
 
-    let field_names: Vec<_> = fields.iter().map(|f| &f.ident).collect();
+    let is_tuple = matches!(
+        &input.data,
+        Data::Struct(data) if matches!(&data.fields, Fields::Unnamed(_))
+    );
+
+    let field_accessors: Vec<TokenStream2> = if is_tuple {
+        (0..fields.len())
+            .map(|i| {
+                let idx = syn::Index::from(i);
+                quote! { #idx }
+            })
+            .collect()
+    } else {
+        fields
+            .iter()
+            .map(|f| {
+                let name = f.ident.as_ref().unwrap();
+                quote! { #name }
+            })
+            .collect()
+    };
+
     let field_types: Vec<_> = fields.iter().map(|f| &f.ty).collect();
 
     let has_sub_word = fields.iter().any(|f| is_sub_word_type(&f.ty));
@@ -105,11 +127,26 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
 
     // write_words: always field-by-field
     let write_body = quote! {
-        #( zk_ee::oracle::word_layout::WordLayout::write_words(&self.#field_names, w); )*
+        #( zk_ee::oracle::word_layout::WordLayout::write_words(&self.#field_accessors, w); )*
     };
 
     // read_words: bulk or field-by-field
     let qualifies_for_bulk = !has_sub_word && !has_dynamic && !field_types.is_empty();
+
+    let field_by_field_construct = if is_tuple {
+        quote! {
+            Self(
+                #( <#field_types as zk_ee::oracle::word_layout::WordLayout>::read_words(r), )*
+            )
+        }
+    } else {
+        let names = field_accessors.iter().collect::<Vec<_>>();
+        quote! {
+            Self {
+                #( #names: <#field_types as zk_ee::oracle::word_layout::WordLayout>::read_words(r), )*
+            }
+        }
+    };
 
     let read_body = if qualifies_for_bulk && repr_c {
         // Bulk path: direct u32 store loop.
@@ -128,22 +165,8 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
             }
             unsafe { result.assume_init() }
         }
-    } else if qualifies_for_bulk && !repr_c {
-        // Eligible for bulk but missing repr(C) — fall back to field-by-field.
-        // This avoids forcing users to add repr(C), while still producing
-        // correct (though slightly slower) code.
-        quote! {
-            Self {
-                #( #field_names: <#field_types as zk_ee::oracle::word_layout::WordLayout>::read_words(r), )*
-            }
-        }
     } else {
-        // Field-by-field path
-        quote! {
-            Self {
-                #( #field_names: <#field_types as zk_ee::oracle::word_layout::WordLayout>::read_words(r), )*
-            }
-        }
+        field_by_field_construct
     };
 
     // read_words_into: for field-by-field path, delegate to each field's read_words_into
@@ -154,7 +177,7 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
     } else {
         // Field-by-field: delegate to each field's read_words_into
         Some(quote! {
-            #( zk_ee::oracle::word_layout::WordLayout::read_words_into(&mut self.#field_names, r); )*
+            #( zk_ee::oracle::word_layout::WordLayout::read_words_into(&mut self.#field_accessors, r); )*
         })
     };
 

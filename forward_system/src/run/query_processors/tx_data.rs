@@ -105,7 +105,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                format.write_words(&mut |w| result.push(w));
+                (format as u32).write_words(&mut |w| result.push(w));
             }
             TX_FROM_QUERY_ID => {
                 let Some(from) = self.next_tx_from.take() else {

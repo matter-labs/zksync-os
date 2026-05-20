@@ -27,6 +27,10 @@ impl WordLayout for B160 {
 
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
         let limbs: [u64; 3] = core::array::from_fn(|_| u64::read_words(r));
+        assert!(
+            limbs[2] >> 32 == 0,
+            "B160 value has non-zero bits above 160"
+        );
         Self::from_limbs(limbs)
     }
 }

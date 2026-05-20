@@ -153,41 +153,40 @@ mod block_metadata {
 mod tx_encoding_format {
     //! Unit tests for transaction encoding format oracle validation.
     //!
-    //! TxEncodingFormat::from_iter validates the oracle-provided encoding format byte.
-    //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected
-    //! with an internal error rather than panicking.
+    //! TxEncodingFormat::try_from validates the oracle-provided encoding format.
+    //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected.
 
     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-    use rig::zk_ee::oracle::word_layout::WordLayout;
 
     #[test]
     fn test_tx_encoding_format_accepts_abi() {
-        let result = TxEncodingFormat::read_words(&mut || 0u32);
-        assert!(matches!(result, TxEncodingFormat::Abi));
+        assert!(matches!(
+            TxEncodingFormat::try_from(0u32),
+            Ok(TxEncodingFormat::Abi)
+        ));
     }
 
     #[test]
     fn test_tx_encoding_format_accepts_rlp() {
-        let result = TxEncodingFormat::read_words(&mut || 1u32);
-        assert!(matches!(result, TxEncodingFormat::Rlp));
+        assert!(matches!(
+            TxEncodingFormat::try_from(1u32),
+            Ok(TxEncodingFormat::Rlp)
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported tx encoding format")]
     fn test_tx_encoding_format_rejects_invalid_value_2() {
-        let _ = TxEncodingFormat::read_words(&mut || 2u32);
+        assert!(TxEncodingFormat::try_from(2u32).is_err());
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported tx encoding format")]
     fn test_tx_encoding_format_rejects_invalid_value_255() {
-        let _ = TxEncodingFormat::read_words(&mut || 255u32);
+        assert!(TxEncodingFormat::try_from(255u32).is_err());
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported tx encoding format")]
     fn test_tx_encoding_format_rejects_large_value() {
-        let _ = TxEncodingFormat::read_words(&mut || 256u32);
+        assert!(TxEncodingFormat::try_from(256u32).is_err());
     }
 }
 

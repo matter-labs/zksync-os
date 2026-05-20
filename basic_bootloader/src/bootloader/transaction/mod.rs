@@ -21,6 +21,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::system::SystemError;
@@ -72,7 +73,9 @@ impl<A: Allocator> Transaction<A> {
         let expected_chain_id = system.get_chain_id();
 
         // query the transaction encoding format from the oracle
-        let format: TxEncodingFormat = TxEncodingFormatQuery::get(system.io.oracle(), &())?;
+        let format_raw: u32 = system.io.oracle().query(TX_ENCODING_FORMAT_QUERY_ID, &())?;
+        let format = TxEncodingFormat::try_from(format_raw)
+            .map_err(|v| internal_error!("Unsupported tx encoding format: {v}"))?;
 
         match format {
             TxEncodingFormat::Rlp => {
@@ -324,32 +327,16 @@ pub enum TxEncodingFormat {
     Rlp = 1,
 }
 
-impl zk_ee::oracle::word_layout::WordLayout for TxEncodingFormat {
-    const WORD_COUNT: Option<usize> = Some(1);
+impl TryFrom<u32> for TxEncodingFormat {
+    type Error = u32;
 
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        w(*self as u32);
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        let word = r();
-        if word == TxEncodingFormat::Abi as u32 {
-            TxEncodingFormat::Abi
-        } else if word == TxEncodingFormat::Rlp as u32 {
-            TxEncodingFormat::Rlp
-        } else {
-            panic!("Unsupported tx encoding format: {word}")
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(TxEncodingFormat::Abi),
+            1 => Ok(TxEncodingFormat::Rlp),
+            other => Err(other),
         }
     }
-}
-
-pub struct TxEncodingFormatQuery;
-
-impl SimpleOracleQuery for TxEncodingFormatQuery {
-    type Input = ();
-    type Output = TxEncodingFormat;
-
-    const QUERY_ID: u32 = TX_ENCODING_FORMAT_QUERY_ID;
 }
 
 pub struct TxFromQuery;
