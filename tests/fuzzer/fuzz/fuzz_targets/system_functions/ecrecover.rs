@@ -15,17 +15,14 @@ const ECRECOVER_SRC_REQUIRED_LENGTH: usize = 128;
 struct DummyOracle;
 
 impl zk_ee::oracle::IOOracle for DummyOracle {
-    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-    fn raw_query<
-        'a,
-        I: zk_ee::oracle::usize_serialization::UsizeSerializable
-            + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+    fn query<
+        I: zk_ee::oracle::word_layout::WordLayout,
+        O: zk_ee::oracle::word_layout::WordLayout,
     >(
-        &'a mut self,
+        &mut self,
         _query_type: u32,
         _input: &I,
-    ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+    ) -> Result<O, zk_ee::system::errors::internal::InternalError> {
         unreachable!("oracle should not be consulted on native targets");
     }
 }

@@ -61,7 +61,6 @@ use crate::run::test_impl::NoopTxCallback;
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
 use zksync_os_interface::traits::TxListSource;
 

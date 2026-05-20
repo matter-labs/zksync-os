@@ -1,7 +1,5 @@
-use crate::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
-    utils::Bytes32,
-};
+use crate::oracle::word_layout::WordLayout;
+use crate::utils::Bytes32;
 
 /// Trait to get the low u32 component
 /// of an address, if this address fits into u32.
@@ -13,45 +11,21 @@ pub trait TryIntoLowAddress {
 pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
     // We want to define some associated types for addresses, storage keys, etc.
     // mainly for sizes. We also want to have those interpretable as byte sequences in general.
-    type Address: UsizeSerializable
-        + UsizeDeserializable
+    type Address: WordLayout
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default
         + TryIntoLowAddress;
-    type StorageKey: UsizeSerializable
-        + UsizeDeserializable
-        + Clone
-        + Copy
-        + core::fmt::Debug
-        + core::default::Default;
-    type StorageValue: UsizeSerializable
-        + UsizeDeserializable
-        + Clone
-        + Copy
-        + core::fmt::Debug
-        + core::default::Default;
-    type NominalTokenValue: UsizeSerializable
-        + UsizeDeserializable
-        + Clone
-        + Copy
-        + core::fmt::Debug
-        + core::default::Default;
-    type BytecodeHashValue: UsizeSerializable
-        + UsizeDeserializable
-        + Clone
-        + Copy
-        + core::fmt::Debug
-        + core::default::Default;
+    type StorageKey: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type StorageValue: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type NominalTokenValue: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type BytecodeHashValue: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
     // Events are something to be consumed only in the system itself, and it'll never get passed
     // to the outside environment
-    type EventKey: UsizeSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type EventKey: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
     // Signals can be passed to outside environments (like L2 to L1 messages)
-    type SignalingKey: UsizeSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
-
-    // // and in general under address info we want to have some data
-    // type AddressSpecificInfo: UsizeSerializable + UsizeDeserializable;
+    type SignalingKey: WordLayout + Clone + Copy + core::fmt::Debug + core::default::Default;
 
     fn static_default_event_key() -> &'static Self::EventKey;
     fn static_default_signaling_key() -> &'static Self::SignalingKey;

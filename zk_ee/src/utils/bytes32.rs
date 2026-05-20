@@ -1,6 +1,3 @@
-use crate::oracle::usize_serialization::UsizeDeserializable;
-use crate::system::errors::internal::InternalError;
-use crate::{internal_error, oracle::usize_serialization::UsizeSerializable};
 use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 
@@ -145,10 +142,6 @@ impl Bytes32 {
         self.inner.iter().all(|el| *el == 0)
     }
 
-    fn as_usize_array_mut(&mut self) -> &mut [usize; BYTES32_USIZE_SIZE] {
-        &mut self.inner
-    }
-
     #[cfg(target_pointer_width = "32")]
     fn as_u32_array_ref(&self) -> &[u32; 8] {
         unsafe { &*(&self.inner as *const usize).cast::<[u32; 8]>() }
@@ -264,70 +257,6 @@ impl From<B160> for Bytes32 {
 impl From<[u8; 32]> for Bytes32 {
     fn from(value: [u8; 32]) -> Self {
         Self::from_array(value)
-    }
-}
-
-impl UsizeSerializable for Bytes32 {
-    const USIZE_LEN: usize = const {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let size = 8;
-            } else if #[cfg(target_pointer_width = "64")] {
-                let size = 4;
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-        #[allow(clippy::let_and_return)]
-        size
-    };
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                return self.as_u32_array_ref().into_iter().map(|el| *el as usize);
-            } else if #[cfg(target_pointer_width = "64")] {
-                return self.as_u64_array_ref().map(|el| el as usize).into_iter();
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
-}
-
-impl UsizeDeserializable for Bytes32 {
-    const USIZE_LEN: usize = <Bytes32 as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("Bytes32 deserialization failed: too short"));
-        }
-        let mut new = Bytes32::ZERO;
-        for dst in new.as_usize_array_mut().iter_mut() {
-            *dst = unsafe { src.next().unwrap_unchecked() };
-        }
-
-        Ok(new)
-    }
-
-    unsafe fn init_from_iter(
-        this: &mut MaybeUninit<Self>,
-        src: &mut impl ExactSizeIterator<Item = usize>,
-    ) -> Result<(), InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("Bytes32 deserialization failed: too short"));
-        }
-        // Initialize
-        let value: &mut Self = this.write(Self::ZERO);
-        for dst in value.as_usize_array_mut().iter_mut() {
-            *dst = src.next().unwrap_unchecked()
-        }
-
-        Ok(())
     }
 }
 

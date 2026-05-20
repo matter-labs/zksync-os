@@ -15,7 +15,6 @@
 pub mod basic_queries;
 pub mod query_ids;
 pub mod simple_oracle_query;
-pub mod usize_serialization;
 pub mod word_layout;
 
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;

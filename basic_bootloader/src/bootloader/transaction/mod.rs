@@ -21,8 +21,6 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::system::SystemError;
@@ -324,42 +322,6 @@ pub fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), 
 pub enum TxEncodingFormat {
     Abi = 0,
     Rlp = 1,
-}
-
-impl UsizeDeserializable for TxEncodingFormat {
-    const USIZE_LEN: usize = <u8 as UsizeDeserializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
-        if byte == TxEncodingFormat::Abi as u8 {
-            Ok(TxEncodingFormat::Abi)
-        } else if byte == TxEncodingFormat::Rlp as u8 {
-            Ok(TxEncodingFormat::Rlp)
-        } else {
-            Err(internal_error!("Unsupported tx encoding format"))
-        }
-    }
-}
-
-impl UsizeSerializable for TxEncodingFormat {
-    const USIZE_LEN: usize = <Self as UsizeDeserializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let low = *self as usize;
-                let high = 0;
-                return [low, high].into_iter();
-            } else if #[cfg(target_pointer_width = "64")] {
-                #[allow(clippy::needless_return)]
-                return core::iter::once(*self as usize);
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
 }
 
 impl zk_ee::oracle::word_layout::WordLayout for TxEncodingFormat {
