@@ -38,6 +38,48 @@ cd zksync_os && ./dump_bin.sh --type for-tests   # RISC-V binary
 
 **Pre-existing build error:** `crypto::bigint_op_delegation_raw` in basic_system is unrelated to this work — ignore it.
 
+### Errata (corrections to plan body based on draft-0.4.0 review)
+
+These corrections override the corresponding plan sections below:
+
+1. **Task 7 Step 2 — file path**: The proving oracle is at `proof_running_system/src/io_oracle/mod.rs`
+   (NOT `proving_oracle.rs`). It contains `CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation>`,
+   `CsrBasedIOOracleIterator`, and `NonDeterminismCSRSourceImplementation` trait. All get replaced.
+
+2. **Task 7 Step 2 — Transport trait**: draft-0.4.0 does NOT have airbender-guest's `Transport` trait.
+   Define a new `WordSource` trait in `proof_running_system/src/io_oracle/mod.rs`:
+   ```
+   pub trait WordSource: 'static { fn read_word(&mut self) -> u32; }
+   ```
+   `ProvingOracle<S: WordSource>` replaces `CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation>`.
+
+3. **Task 7 Step 2 — guest binary**: `zksync_os/src/main.rs` must be updated. The current
+   `CSRBasedNonDeterminismSource` implements `NonDeterminismCSRSourceImplementation` (read/write usizes).
+   Replace with a `WordSource` impl that just calls `airbender::rt::sys::read_word()`.
+   Also update `proof_running_system/src/system/bootloader.rs` (`run_proving` generic param).
+
+4. **Task 7 Step 4 — OracleQueryProcessor**: The current trait has
+   `process_buffered_query(query_id: u32, query: Vec<usize>, memory: &dyn RamPeek) → Box<dyn ExactSizeIterator<Item = usize>>`.
+   Change to `process(query_id: u32, input: &[u32], memory: &dyn RamPeek) → Result<Vec<u32>, InternalError>`.
+
+5. **Task 8 Step 1 — callable_oracles**: These use usize serialization (`UsizeSliceIteratorOwned`,
+   `DynUsizeIterator`), NOT wincode. The migration is from usize iterators to `Vec<u32>`/WordLayout.
+
+6. **Task 8 — expose_preimage migration**: `expose_preimage` writes into a pre-allocated
+   `&mut [MaybeUninit<usize>]` buffer (avoids heap alloc). Replacing with `query_bytes()` → `Vec<u8>`
+   adds a heap allocation per call. Acceptable — these are not hot-path on riscv32 (called for preimage
+   lookups which are cached). The `get_bytes_from_query` two-query pattern (length + body) collapses
+   to a single `query_bytes` call since `Vec<u8>` WordLayout includes the length.
+
+7. **Task 8 — UsizeAlignedByteBox**: Used in 57+ places (tx buffers, events, logs, preimage caches).
+   It is NOT deleted — it stays as a general-purpose byte buffer utility. Only its construction from
+   usize iterators (`from_usize_iterator_in`) changes to construction from `Vec<u8>`.
+
+8. **Task 9 — test mocks**: Three IOOracle test mocks need updating (not mentioned in plan):
+   - `TestOracle` in `basic_system/.../account_cache_entry.rs`
+   - `PackedLengthOracle` in `basic_system/.../modexp/advice/bigint.rs`
+   - `DummyOracle` in `basic_bootloader/.../batch_data.rs`
+
 ---
 
 ### Task 1: Create word_layout_derive proc-macro crate
@@ -866,11 +908,11 @@ git commit -m "feat: add WordLayout to all system and storage types"
 
 **Files:**
 - Modify: `zk_ee/src/oracle/mod.rs` (rewrite IOOracle trait — remove RawIterator GAT, usize methods, IOResponder)
-- Modify: `proof_running_system/src/proving_oracle.rs` (rewrite — replace CsrBasedIOOracle usize iterator with trivial WordLayout read)
-- Modify: `oracle_provider/src/witness_recording.rs` (rewrite WitnessRecordingOracle)
-- Modify: `oracle_provider/src/lib.rs` (rewrite ZkEENonDeterminismSource, OracleQueryProcessor, delete ReadWitnessSource/QueryBuffer/IOResponder)
+- Modify: `proof_running_system/src/io_oracle/mod.rs` (rewrite — replace `CsrBasedIOOracle` + `NonDeterminismCSRSourceImplementation` + `CsrBasedIOOracleIterator` with trivial `ProvingOracle` that takes a `FnMut() -> u32` or simple trait)
+- Modify: `proof_running_system/src/system/bootloader.rs` (update `run_proving` generic param from `NonDeterminismCSRSourceImplementation` to new oracle type)
+- Modify: `zksync_os/src/main.rs` (simplify — new oracle just wraps `read_word() -> u32`, no usize conversion or write protocol)
+- Modify: `oracle_provider/src/lib.rs` (rewrite `ZkEENonDeterminismSource`, `OracleQueryProcessor`, delete `ReadWitnessSource`/`QueryBuffer`/`IOResponder`)
 - Create: `oracle_provider/src/witness_recording.rs` (new WitnessRecordingOracle)
-- Modify: `proof_running_system/src/lib.rs` (remove feature flags for specialization)
 
 This is the breaking change. After this task, all downstream code must use WordLayout.
 
