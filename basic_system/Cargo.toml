@@ -16,7 +16,7 @@ evm_interpreter = { path = "../evm_interpreter"  }
 ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
-crypto = { workspace = true, features = ["secp256k1-static-context", "proving"] }
+crypto = { workspace = true, features = ["secp256k1-static-context"] }
 either = { workspace = true, default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
 modexp = { path = "../supporting_crates/modexp" }
