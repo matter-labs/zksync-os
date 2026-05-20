@@ -41,7 +41,10 @@ impl<T: WordLayout> WordLayout for Vec<T> {
             // Vec<bool> is not used in this codebase; if it were, oracle
             // data >1 would produce invalid bools (same UB risk as any
             // untrusted oracle response — validated at consumer level).
-            unsafe { core::mem::transmute(bytes) }
+            #[allow(clippy::missing_transmute_annotations)]
+            unsafe {
+                core::mem::transmute(bytes)
+            }
         } else {
             (0..len).map(|_| T::read_words(r)).collect()
         }

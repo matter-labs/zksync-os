@@ -124,17 +124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "airbender-guest"
-version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
-dependencies = [
- "airbender-codec",
- "airbender-core",
- "airbender-rt",
- "serde",
-]
-
-[[package]]
 name = "airbender-host"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
@@ -151,15 +140,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "verifier_common",
-]
-
-[[package]]
-name = "airbender-rt"
-version = "0.1.0"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72cce091dbaa13a9ce1f4a8df2bd90baede03cfe"
-dependencies = [
- "getrandom 0.2.17",
- "riscv_common",
 ]
 
 [[package]]
@@ -5805,7 +5785,6 @@ name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
- "airbender-guest",
  "basic_bootloader",
  "basic_system",
  "cfg-if",

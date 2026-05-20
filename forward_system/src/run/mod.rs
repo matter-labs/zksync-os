@@ -217,18 +217,8 @@ pub fn generate_batch_proof_input(
             for blob_data in blobs_data.chunks(31 * 4096) {
                 let advice =
                     callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof(blob_data);
-                blobs_advice.push(24);
-                for word in advice.iter() {
-                    #[cfg(target_pointer_width = "32")]
-                    blobs_advice.push(word as u32);
-                    #[cfg(target_pointer_width = "64")]
-                    {
-                        let low = word as u32;
-                        let high = (word >> 32) as u32;
-                        blobs_advice.push(low);
-                        blobs_advice.push(high);
-                    }
-                }
+                use zk_ee::oracle::word_layout::WordLayout;
+                advice.write_words(&mut |w| blobs_advice.push(w));
             }
             blobs_advice
         }

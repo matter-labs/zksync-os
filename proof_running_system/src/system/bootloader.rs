@@ -1,11 +1,11 @@
 use super::*;
-use airbender_guest::transport::Transport;
 use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
+use zk_ee::oracle::word_layout::WordSource;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
@@ -146,14 +146,14 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 /// Returns public input.
 ///
 #[inline(never)]
-pub fn run_proving<T: Transport + 'static, L: Logger + Default>(transport: T) -> [u32; 8] {
+pub fn run_proving<S: WordSource, L: Logger + Default>(source: S) -> [u32; 8] {
     logger_log!(L::default(), "Enter proving bootloader");
 
     logger_log!(L::default(), "Allocator init is complete");
 
     u256::init();
 
-    let oracle = crate::io_oracle::ProvingOracle::new(transport);
+    let oracle = crate::io_oracle::ProvingOracle::new(source);
 
     logger_log!(L::default(), "Oracle init is complete");
 

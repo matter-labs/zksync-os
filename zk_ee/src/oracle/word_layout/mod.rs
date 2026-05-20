@@ -25,3 +25,9 @@ pub trait WordLayout: Sized {
     /// Deserialize from a sequence of u32 LE words.
     fn read_words(read: &mut impl FnMut() -> u32) -> Self;
 }
+
+/// Word transport for the proving oracle. The guest binary implements
+/// this for its CSR-based transport.
+pub trait WordSource: 'static {
+    fn read_word(&mut self) -> u32;
+}

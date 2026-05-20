@@ -751,7 +751,6 @@ name = "proof_running_system"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
- "airbender-guest",
  "basic_bootloader",
  "basic_system",
  "cfg-if",
