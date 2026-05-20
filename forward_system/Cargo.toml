@@ -41,7 +41,6 @@ testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "
 default = ["testing"]
 error_origins = ["zk_ee/error_origins"]
 no_print = []
-unlimited_native = ["basic_bootloader/unlimited_native"]
 
 # A feature for every specific use case
 
@@ -51,8 +50,12 @@ production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
 # Features used for tests.
 for_tests = ["production", "basic_bootloader/eip-4844"]
 
-# Features used for eth_runner
-eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "unlimited_native","basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
+# Features used for eth_runner.
+# Test profiles that previously enabled `unlimited_native` / `resources_for_tester`
+# should now configure `native_price = 0` in the block metadata, which makes the
+# native budget effectively unlimited (subject to the `MAX_NATIVE_COMPUTATIONAL`
+# per-tx cap and the block-level limits).
+eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
 # Additional features used for eth_stf in eth_runner
 eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip-7623", "system_hooks/bls12_381", "system_hooks/blake2f", "evm_interpreter/bls12_381", "evm_interpreter/blake2f"]
@@ -67,7 +70,7 @@ fusaka = ["pectra", "basic_bootloader/fusaka", "evm_interpreter/clz"]
 fusaka-blobs = ["basic_bootloader/fusaka-blobs"]
 
 # Features used for evm_tester
-evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
+evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "basic_bootloader/eip-4844"]
 
 # Features used for evm_tester with Pectra hardfork
 evm_tester_pectra = ["evm_tester", "pectra"]
@@ -77,7 +80,7 @@ evm_tester_fusaka = ["evm_tester", "fusaka"]
 
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.
-evm_tester_legacy = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]
+evm_tester_legacy = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles"]
 
 [dev-dependencies]
 tempfile = "3"

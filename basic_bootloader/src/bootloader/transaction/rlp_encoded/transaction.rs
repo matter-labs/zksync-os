@@ -26,7 +26,9 @@ pub struct RlpEncodedTransaction<A: Allocator> {
     // time.
     tx_hash: Option<Bytes32>,
     // Note: this field is not the recovered signer, but rather an address
-    // passed by oracle. Needs to be checked to be equal to recovered address.
+    // passed by oracle. Needs to be checked to be equal to recovered address
+    // (only in untrusted environments, e.g. proving mode; trusted forward/
+    // sequencer paths may skip ecrecover and rely on the oracle hint).
     from: B160,
 }
 

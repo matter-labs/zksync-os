@@ -65,24 +65,19 @@ where
             "Block blob gas limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockBlobGasLimitReached)
-    } else if !cfg!(feature = "resources_for_tester")
-        && computational_native_used > MAX_NATIVE_COMPUTATIONAL
-    {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if computational_native_used > MAX_NATIVE_COMPUTATIONAL {
         system_log!(
             system,
             "Block native limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockNativeLimitReached)
-    } else if !cfg!(feature = "resources_for_tester") && pubdata_used > system.get_pubdata_limit() {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if pubdata_used > system.get_pubdata_limit() {
         system_log!(
             system,
             "Block pubdata limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockPubdataLimitReached)
-    } else if !cfg!(feature = "resources_for_tester") && logs_used > MAX_NUMBER_OF_LOGS {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if logs_used > MAX_NUMBER_OF_LOGS {
         system_log!(
             system,
             "Block logs limit reached, invalidating transaction\n"

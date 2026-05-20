@@ -71,8 +71,6 @@ pub enum InvalidTransaction {
     AccessListNotSupported,
     /// Unacceptable pubdata price.
     PubdataPriceTooHigh,
-    /// Block gas limit is too high.
-    BlockGasLimitTooHigh,
     /// Protocol upgrade tx should be first in the block.
     UpgradeTxNotFirst,
     /// Bootloader received insufficient fees

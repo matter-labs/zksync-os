@@ -228,7 +228,8 @@ pub struct RunConfig {
     // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
     pub check_revm_consistency: bool,
     /// When true, REVM computes gas independently instead of using
-    /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
+    /// ZKsync OS's `gas_used` override. Best combined with `native_price = 0`
+    /// in the block metadata.
     pub revm_independent_gas: bool,
     pub update_state_after_block_execution: bool,
 }

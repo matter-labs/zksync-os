@@ -8,8 +8,9 @@ use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
+    charge_intrinsic_computational_native, charge_intrinsic_gas, charge_intrinsic_pubdata,
     check_enough_resources_for_pubdata, create_resources_for_tx,
-    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
+    get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
@@ -106,11 +107,11 @@ where
             ResourcesForTx {
                 main_resources: mut resources,
                 withheld: withheld_resources,
-                intrinsic_computational_native_charged,
             },
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
+        intrinsic_computational_native,
     } = prepare_and_check_resources::<S>(
         system,
         transaction,
@@ -377,7 +378,7 @@ where
         let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
         let inf_remaining = inf_resources.native().as_u64();
         let actual_used = inf_initial.saturating_sub(inf_remaining);
-        let formula = intrinsic_computational_native_charged;
+        let formula = intrinsic_computational_native;
         system_log!(
             system,
             "L1 intrinsic native verification: formula={}, actually_used={}\n",
@@ -393,13 +394,13 @@ where
         );
     }
 
-    // Add back the intrinsic native charged in get_resources_for_tx,
-    // as initial_resources doesn't include them.
+    // Add back the intrinsic native charged in `prepare_and_check_resources`,
+    // as `initial_resources` is snapshotted after that precharge.
     let computational_native_used = resources_before_refund
         .diff(initial_resources)
         .native()
         .as_u64()
-        + intrinsic_computational_native_charged;
+        + intrinsic_computational_native;
 
     // Restore the saved returndata into the return buffer so that the
     // ExecutionResult can borrow it with the correct lifetime.
@@ -440,6 +441,11 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
     native_per_pubdata: u64,
     native_per_gas: u64,
     minimal_gas_used: u64,
+    /// Intrinsic computational native that was precharged during resource
+    /// preparation. Hoisted out so callers can add it back to the total
+    /// `computational_native_used` reported at end-of-tx (since
+    /// `initial_resources` is captured after the precharge).
+    intrinsic_computational_native: u64,
 }
 
 ///
@@ -509,18 +515,42 @@ where
     let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
         transaction.calldata().len() as u64,
     );
-    // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
-    // Validation errors are type-safe impossible - they're logged and saturated instead
-    let resources = create_resources_for_tx::<S, L1ResourcesPolicy>(
-        system,
+
+    // Materialize the gross resource budget for the tx, then charge the
+    // intrinsic overheads. L1 transactions cannot be invalidated (the
+    // priority queue requires the tx to be processed), so underflow on any
+    // of the charges is logged and absorbed — the user ends up with a
+    // zero-saturated resource and `gas_used == gas_limit` downstream.
+    let mut resources = create_resources_for_tx::<S>(
         gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
-        native_per_pubdata,
-        intrinsic_gas,
+    );
+    if charge_intrinsic_pubdata(&mut resources, intrinsic_pubdata, native_per_pubdata).is_err() {
+        system_log!(
+            system,
+            "L1 tx: native budget below intrinsic pubdata cost, saturating to 0\n"
+        );
+    }
+    if charge_intrinsic_computational_native::<S>(
+        &mut resources.main_resources,
         intrinsic_computational_native,
-        intrinsic_pubdata,
-    )?;
+    )
+    .is_err()
+    {
+        system_log!(
+            system,
+            "L1 tx: native budget below intrinsic computational native cost, saturating to 0\n"
+        );
+    }
+    if charge_intrinsic_gas::<S>(&mut resources.main_resources, intrinsic_gas).is_err() {
+        system_log!(
+            system,
+            "L1 tx: gas limit {} below intrinsic gas {}, saturating to 0\n",
+            gas_limit,
+            intrinsic_gas
+        );
+    }
 
     // L1 transactions might have a gas limit < minimal_gas_used. This should be
     // prevented by L1 validation, but we log and saturate if it happens.
@@ -538,6 +568,7 @@ where
         native_per_pubdata,
         native_per_gas,
         minimal_gas_used,
+        intrinsic_computational_native,
     })
 }
 

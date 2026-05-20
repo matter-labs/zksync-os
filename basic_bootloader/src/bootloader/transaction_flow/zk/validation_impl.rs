@@ -7,7 +7,8 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+    calculate_tx_intrinsic_gas, charge_intrinsic_computational_native, charge_intrinsic_gas,
+    charge_intrinsic_pubdata, create_resources_for_tx, get_gas_price,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -36,11 +37,10 @@ use zk_ee::{internal_error, out_of_native_resources};
 use zk_ee::{utils::*, wrap_error};
 
 ///
-/// Will perform basic validation, namely - checking signature, minimal resource requirements for transaction validity,
-/// and will pre-charge sender to cover worst case cost. It may perform IO if needed to e.g. warm up some storage slots,
+/// Will perform basic validation, namely - checking signature, minimal resource requirements for transaction validity.
+/// It may perform IO if needed to e.g. warm up some storage slots,
 /// or mark delegation
 ///
-/// NOTE: This function will open and close IO frame
 pub(crate) fn validate_and_compute_fee_for_transaction<
     S: EthereumLikeTypes,
     Config: BasicBootloaderExecutionConfig,
@@ -72,25 +72,14 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate block-level invariants (for non-service transactions)
+    // Validate that the transaction's gas limit is not larger than max gas limit
     if !transaction.is_service() {
-        {
-            // Validate that the transaction's gas limit is not larger than
-            // the block's gas limit.
-            let block_gas_limit = system.get_gas_limit();
-            // First, check block gas limit can be represented as ergs.
-            require!(
-                block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
-                InvalidTransaction::BlockGasLimitTooHigh,
-                system
-            )?;
-            let individual_limit = system.get_individual_tx_gas_limit();
-            require!(
-                tx_gas_limit <= individual_limit,
-                InvalidTransaction::CallerGasLimitMoreThanTxLimit,
-                system
-            )?;
-        }
+        let individual_limit = system.get_individual_tx_gas_limit();
+        require!(
+            tx_gas_limit <= individual_limit,
+            InvalidTransaction::CallerGasLimitMoreThanTxLimit,
+            system
+        )?;
     }
 
     // EIP-7623
@@ -117,16 +106,18 @@ where
         )?
     };
 
-    let native_per_gas = {
-        if native_price.is_zero() {
-            return Err(internal_error!("Native price cannot be 0").into());
-        }
-
-        if cfg!(feature = "resources_for_tester") {
-            crate::bootloader::constants::TESTER_NATIVE_PER_GAS
-        } else if Config::SIMULATION && gas_price.is_zero() {
+    // `native_price == 0` means the chain doesn't price native. Downstream
+    // treats `native_per_gas == 0` as "unlimited native budget" (see
+    // `create_resources_for_tx` and `compute_gas_refund`), so we propagate the
+    // zero directly without doing any division. This replaces the historical
+    // `resources_for_tester` / `unlimited_native` compile-time features.
+    let (native_per_gas, native_per_pubdata) = if native_price.is_zero() {
+        (0u64, 0u64)
+    } else {
+        let native_per_gas = if Config::SIMULATION && gas_price.is_zero() {
             // For simulation, if gas price isn't set, we use base fee
             // for native calculation
+            // TODO: wrong error
             u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
                 TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
             )?
@@ -134,12 +125,11 @@ where
             u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
                 InvalidTransaction::NativeResourcesAreTooExpensive,
             ))?
-        }
+        };
+        let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
+            .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
+        (native_per_gas, native_per_pubdata)
     };
-
-    // We checked native_price != 0 above
-    let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
-        .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
     let statement_versioned_hashes_num = transaction
         .statement_versioned_hashes()
@@ -194,17 +184,27 @@ where
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 
-    // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
-    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
-        system,
+    // Materialize the gross resource budget for the tx, then charge the
+    // intrinsic overheads. Underflow on any of the charges surfaces as a
+    // validation error so the whole tx is dropped without state changes.
+    let mut tx_resources = create_resources_for_tx::<S>(
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
-        native_per_pubdata,
-        intrinsic_gas,
+    );
+    charge_intrinsic_pubdata(&mut tx_resources, intrinsic_pubdata, native_per_pubdata)
+        .map_err(|()| {
+            TxError::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+        })?;
+    charge_intrinsic_computational_native::<S>(
+        &mut tx_resources.main_resources,
         intrinsic_computational_native,
-        intrinsic_pubdata,
-    )?;
+    )
+    .map_err(|()| {
+        TxError::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+    })?;
+    charge_intrinsic_gas::<S>(&mut tx_resources.main_resources, intrinsic_gas)
+        .map_err(|()| TxError::Validation(InvalidTransaction::OutOfGasDuringValidation))?;
 
     system_log!(
         system,
@@ -535,6 +535,7 @@ where
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
         intrinsic_resources,
+        intrinsic_computational_native,
         authorization_list_num,
         statement_versioned_hashes_num,
     })
@@ -558,9 +559,9 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     #[cfg(feature = "eip-7623")]
     {
         let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+        let floor_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
-        (num_tokens, intrinsic_gas)
+        (num_tokens, floor_gas)
     }
 
     #[cfg(not(feature = "eip-7623"))]
