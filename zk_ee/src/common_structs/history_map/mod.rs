@@ -268,7 +268,7 @@ where
     pub fn iter(
         &'_ self,
     ) -> impl ExactSizeIterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> + Clone {
-        self.btree.iter().map(|(_k, ptr)| HistoryMapItemRef {
+        self.btree.values().map(|ptr| HistoryMapItemRef {
             // Safety: pointer is valid for the lifetime of `&self`.
             history: unsafe { ptr.as_ref() },
         })
