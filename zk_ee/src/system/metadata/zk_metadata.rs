@@ -110,7 +110,7 @@ impl UsizeDeserializable for BlockHashes {
 // block number, etc
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, WordLayout)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle
@@ -318,58 +318,6 @@ impl WordLayout for BlockHashes {
             *hash = U256::read_words(r);
         }
         Self(hashes)
-    }
-}
-
-impl WordLayout for BlockMetadataFromOracle {
-    const WORD_COUNT: Option<usize> = {
-        // Match the serialization order from UsizeSerializable
-        // 5 U256 (8 words each) + 5 u64 (2 words each) + 1 B160 (6 words)
-        // + BlockHashes (256 * 8 words)
-        match (
-            <U256 as WordLayout>::WORD_COUNT,
-            <u64 as WordLayout>::WORD_COUNT,
-            <B160 as WordLayout>::WORD_COUNT,
-            <BlockHashes as WordLayout>::WORD_COUNT,
-        ) {
-            (Some(u256_wc), Some(u64_wc), Some(b160_wc), Some(bh_wc)) => {
-                Some(u256_wc * 5 + u64_wc * 5 + b160_wc + bh_wc)
-            }
-            _ => None,
-        }
-    };
-
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        // Order must match UsizeSerializable/UsizeDeserializable
-        self.eip1559_basefee.write_words(w);
-        self.pubdata_price.write_words(w);
-        self.native_price.write_words(w);
-        self.block_number.write_words(w);
-        self.timestamp.write_words(w);
-        self.chain_id.write_words(w);
-        self.gas_limit.write_words(w);
-        self.pubdata_limit.write_words(w);
-        self.coinbase.write_words(w);
-        self.block_hashes.write_words(w);
-        self.mix_hash.write_words(w);
-        self.blob_fee.write_words(w);
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        Self {
-            eip1559_basefee: WordLayout::read_words(r),
-            pubdata_price: WordLayout::read_words(r),
-            native_price: WordLayout::read_words(r),
-            block_number: WordLayout::read_words(r),
-            timestamp: WordLayout::read_words(r),
-            chain_id: WordLayout::read_words(r),
-            gas_limit: WordLayout::read_words(r),
-            pubdata_limit: WordLayout::read_words(r),
-            coinbase: WordLayout::read_words(r),
-            block_hashes: WordLayout::read_words(r),
-            mix_hash: WordLayout::read_words(r),
-            blob_fee: WordLayout::read_words(r),
-        }
     }
 }
 

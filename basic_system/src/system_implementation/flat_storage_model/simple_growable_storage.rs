@@ -48,7 +48,7 @@ pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, WordLayout)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
@@ -82,30 +82,6 @@ impl<const N: usize> UsizeDeserializable for FlatStorageLeaf<N> {
         let new = Self { key, value, next };
 
         Ok(new)
-    }
-}
-
-impl<const N: usize> WordLayout for FlatStorageLeaf<N> {
-    const WORD_COUNT: Option<usize> = match (
-        <Bytes32 as WordLayout>::WORD_COUNT,
-        <u64 as WordLayout>::WORD_COUNT,
-    ) {
-        (Some(b32), Some(u)) => Some(b32 * 2 + u),
-        _ => None,
-    };
-
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        self.key.write_words(w);
-        self.value.write_words(w);
-        self.next.write_words(w);
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        Self {
-            key: Bytes32::read_words(r),
-            value: Bytes32::read_words(r),
-            next: u64::read_words(r),
-        }
     }
 }
 
@@ -159,33 +135,11 @@ impl FlatStorageHasher for Blake2sStorageHasher {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, WordLayout)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageCommitment<const N: usize> {
     pub root: Bytes32,
-    pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes
-}
-
-impl<const N: usize> WordLayout for FlatStorageCommitment<N> {
-    const WORD_COUNT: Option<usize> = match (
-        <Bytes32 as WordLayout>::WORD_COUNT,
-        <u64 as WordLayout>::WORD_COUNT,
-    ) {
-        (Some(b32), Some(u)) => Some(b32 + u),
-        _ => None,
-    };
-
-    fn write_words(&self, w: &mut impl FnMut(u32)) {
-        self.root.write_words(w);
-        self.next_free_slot.write_words(w);
-    }
-
-    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
-        Self {
-            root: Bytes32::read_words(r),
-            next_free_slot: u64::read_words(r),
-        }
-    }
+    pub next_free_slot: u64,
 }
 
 impl<const N: usize> UsizeSerializable for FlatStorageCommitment<N> {
