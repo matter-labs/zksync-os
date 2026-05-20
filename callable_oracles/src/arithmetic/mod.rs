@@ -48,18 +48,6 @@ fn strip_trailing_zeros_u64(v: &mut Vec<u64>) {
     }
 }
 
-fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
-    let mut digits = input.len();
-    for el in input.iter().rev() {
-        if *el == 0 {
-            digits -= 1;
-        } else {
-            break;
-        }
-    }
-    &input[..digits]
-}
-
 fn process_modexp_query(input: &[u32]) -> Vec<u32> {
     let mut cursor = 0;
     let mut read = || {
