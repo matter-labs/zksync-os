@@ -1,5 +1,6 @@
 use crate::run::convert::FromInterface;
 use crate::run::errors::ForwardSubsystemError;
+use crate::run::output::BlockOutput;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::validator_impl::ValidatorWrapped;
@@ -7,10 +8,9 @@ use crate::run::{run_block, simulate_tx};
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zksync_os_interface::tracing::{AnyTracer, AnyTxValidator};
 use zksync_os_interface::traits::{
-    EncodedTx, FriProofSidecarSource, PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
+    AnyBlockContext, EncodedTx, FriProofSidecarSource, PreimageSource, ReadStorage, RunBlock,
+    SimulateTx, TxResultCallback, TxSource,
 };
-use zksync_os_interface::types::BlockContext;
-use crate::run::output::BlockOutput;
 
 pub struct RunBlockForward {
     // Empty struct for now, but it can contain some configuration in the future.
@@ -31,6 +31,7 @@ impl RunBlock for RunBlockForward {
         TrCallback: TxResultCallback,
         Tracer: AnyTracer,
         Validator: AnyTxValidator,
+        BlockContext: AnyBlockContext,
     >(
         &self,
         _config: (),
@@ -68,6 +69,7 @@ impl SimulateTx for RunBlockForward {
         PreimgSrc: PreimageSource,
         Tracer: AnyTracer,
         Validator: AnyTxValidator,
+        BlockContext: AnyBlockContext,
     >(
         &self,
         _config: (),
