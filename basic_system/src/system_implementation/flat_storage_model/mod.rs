@@ -17,6 +17,7 @@ pub use self::preimage_cache::*;
 pub use self::simple_growable_storage::*;
 pub use self::storage_cache::*;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
+use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
@@ -73,6 +74,11 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModel<
     pub(crate) preimages_cache: BytecodeAndAccountDataPreimagesStorage<R, A>,
     pub(crate) account_data_cache: NewModelAccountCache<A, R, P, SF, M>,
     pub(crate) allocator: A,
+    /// Map of derived flat storage key -> tree index, populated by
+    /// `update_commitment` (only when a state commitment is being updated)
+    /// and consumed by `apply_storage_diffs_pubdata` to encode repeated
+    /// writes as compact indices.
+    pub(crate) key_to_index_cache: Option<BTreeMap<Bytes32, u64, A>>,
 }
 
 pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
@@ -112,12 +118,16 @@ impl<
             preimages_cache,
             account_data_cache,
             allocator,
+            key_to_index_cache: None,
         }
     }
 
-    fn pubdata_used_by_tx(&self) -> u32 {
-        self.account_data_cache.calculate_pubdata_used_by_tx()
-            + self.storage_cache.calculate_pubdata_used_by_tx()
+    fn pubdata_used_by_tx(&self, repeated_write_index_encoding_length: u8) -> u32 {
+        self.account_data_cache
+            .calculate_pubdata_used_by_tx(repeated_write_index_encoding_length)
+            + self
+                .storage_cache
+                .calculate_pubdata_used_by_tx(repeated_write_index_encoding_length)
     }
 
     fn storage_read(
@@ -494,9 +504,13 @@ impl<
         if let Some(state_commitment) = state_commitment {
             use zk_ee::common_structs::state_root_view::StateRootView;
             let it = self.storage_cache.net_accesses_iter();
-            state_commitment
+            let key_to_index_cache = state_commitment
                 .verify_and_apply_batch(oracle, it, self.allocator.clone(), logger)
                 .expect("must persist changes to state");
+            // Cache the derived_key -> tree-index map so the subsequent
+            // pubdata emission can reference repeated writes by their
+            // compact tree index.
+            self.key_to_index_cache = Some(key_to_index_cache);
         }
     }
 }
@@ -560,69 +574,194 @@ impl<
         const PROOF_ENV: bool,
     > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>
 {
+    /// Emit storage diffs to `pubdata_dst` (and mirror to `result_keeper`)
+    /// in the v2 compressed format:
+    ///
+    /// - 4 bytes BE total number of diffs
+    /// - 4 bytes BE number of initial account writes
+    /// - 4 bytes BE number of initial slot writes
+    /// - 1 byte repeated-write index encoding length
+    /// - for each initial account write: 20-byte address + diff-compressed account
+    /// - for each initial slot write: 32-byte derived key + value diff
+    /// - for each repeated write: `index_len`-byte tree index + diff
+    ///
+    /// Repeated writes reference the tree index built by
+    /// `verify_and_apply_batch` (cached on `self.key_to_index_cache` by
+    /// `update_commitment`). Callers must therefore invoke
+    /// `update_commitment` with a non-`None` state commitment before calling
+    /// this method.
     pub fn apply_storage_diffs_pubdata<T: WriteBytes + ?Sized>(
         &mut self,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         pubdata_dst: &mut T,
         oracle: &mut impl IOOracle,
+        repeated_write_index_encoding_length: u8,
     ) {
         use zk_ee::common_structs::*;
 
+        let key_to_index_cache = self.key_to_index_cache.as_ref().expect(
+            "update_commitment with Some(state_commitment) must run before pubdata emission",
+        );
+
         let mut flat_storage_key_hasher = crypto::blake2s::Blake2s256::new();
 
-        let encoded_state_diffs_count =
-            (self.storage_cache.net_diffs_iter().count() as u32).to_be_bytes();
-        pubdata_dst.write(&encoded_state_diffs_count);
-        result_keeper.pubdata(&encoded_state_diffs_count);
-
-        self.storage_cache
-            .0
-            .cache
-            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // Skip on empty diff
-                if l.value() == r.value() {
-                    return Ok(());
-                }
-                // TODO(EVM-1074): use tree index instead of key for repeated writes
-                let derived_key = derive_flat_storage_key_with_hasher(
-                    &k.address,
-                    &k.key,
-                    &mut flat_storage_key_hasher,
-                );
-                pubdata_dst.write(derived_key.as_u8_ref());
-                result_keeper.pubdata(derived_key.as_u8_ref());
-
-                // we publish preimages for account details
+        // Header: total diffs / initial account / initial slot / index width.
+        // Fold the three counts into one pass over `net_diffs_iter` — each
+        // pass copies ~96 B of `WarmStorageKey + WarmStorageValue` per
+        // accessed slot (reads included, since `iter_as_storage_types`
+        // yields all accesses and the filter happens at the consumer), so
+        // each saved pass is N elements of iteration + filter overhead.
+        let mut total_diffs: u32 = 0;
+        let mut initial_account_writes: u32 = 0;
+        let mut initial_slot_writes: u32 = 0;
+        for (k, v) in self.storage_cache.net_diffs_iter() {
+            total_diffs += 1;
+            if v.is_new_storage_slot {
                 if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
-                    let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
-                        .unwrap()
-                        .into();
-                    let cache_item = self
-                        .account_data_cache
-                        .cache
-                        .get(&account_address)
-                        .ok_or(())?;
-                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
-                    AccountProperties::diff_compression::<PROOF_ENV, _, _, _>(
-                        l.value(),
-                        r.value(),
-                        r.metadata().not_publish_bytecode,
-                        pubdata_dst,
-                        result_keeper,
-                        &mut self.preimages_cache,
-                        oracle,
-                    )
-                    .map_err(|_| ())?;
+                    initial_account_writes += 1;
                 } else {
-                    ValueDiffCompressionStrategy::optimal_compression(
-                        l.value(),
-                        r.value(),
-                        pubdata_dst,
-                        result_keeper,
-                    );
+                    initial_slot_writes += 1;
                 }
-                Ok(())
-            })
-            .expect("must compute pubdata");
+            }
+        }
+
+        let header = [
+            total_diffs.to_be_bytes(),
+            initial_account_writes.to_be_bytes(),
+            initial_slot_writes.to_be_bytes(),
+        ];
+        for word in &header {
+            pubdata_dst.write(word);
+            result_keeper.pubdata(word);
+        }
+        pubdata_dst.write(&[repeated_write_index_encoding_length]);
+        result_keeper.pubdata(&[repeated_write_index_encoding_length]);
+
+        // 1. Initial account writes — keyed by address (20 bytes).
+        for (k, v) in self.storage_cache.net_diffs_iter() {
+            if k.address != ACCOUNT_PROPERTIES_STORAGE_ADDRESS || !v.is_new_storage_slot {
+                continue;
+            }
+            let address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..]).unwrap();
+            let address_bytes = address.to_be_bytes::<{ B160::BYTES }>();
+            pubdata_dst.write(&address_bytes);
+            result_keeper.pubdata(&address_bytes);
+
+            let account_address = address.into();
+            let cache_item = self
+                .account_data_cache
+                .cache
+                .get(&account_address)
+                .expect("account data must be cached for initial write");
+            let (l, r) = cache_item
+                .get_initial_and_last_values()
+                .expect("account must have initial and last values");
+            AccountProperties::diff_compression::<PROOF_ENV, _, _, _>(
+                l.value(),
+                r.value(),
+                r.metadata().not_publish_bytecode,
+                pubdata_dst,
+                result_keeper,
+                &mut self.preimages_cache,
+                oracle,
+            )
+            .expect("must compute account pubdata");
+        }
+
+        // 2. Initial slot writes — keyed by full 32-byte derived key.
+        for (k, v) in self.storage_cache.net_diffs_iter() {
+            if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS || !v.is_new_storage_slot {
+                continue;
+            }
+            let derived_key = derive_flat_storage_key_with_hasher(
+                &k.address,
+                &k.key,
+                &mut flat_storage_key_hasher,
+            );
+            pubdata_dst.write(derived_key.as_u8_ref());
+            result_keeper.pubdata(derived_key.as_u8_ref());
+            ValueDiffCompressionStrategy::optimal_compression(
+                &v.initial_value,
+                &v.current_value,
+                pubdata_dst,
+                result_keeper,
+            );
+        }
+
+        // 3. Repeated writes — keyed by compact tree index.
+        for (k, v) in self.storage_cache.net_diffs_iter() {
+            if v.is_new_storage_slot {
+                continue;
+            }
+            let derived_key = derive_flat_storage_key_with_hasher(
+                &k.address,
+                &k.key,
+                &mut flat_storage_key_hasher,
+            );
+            let index = key_to_index_cache
+                .get(&derived_key)
+                .copied()
+                .expect("repeated write must have tree index from verify_and_apply_batch");
+            write_index_fixed_width(
+                index,
+                repeated_write_index_encoding_length,
+                pubdata_dst,
+                result_keeper,
+            )
+            .expect("repeated_write_index_encoding_length too small to encode index");
+
+            if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
+                    .unwrap()
+                    .into();
+                let cache_item = self
+                    .account_data_cache
+                    .cache
+                    .get(&account_address)
+                    .expect("account data must be cached for repeated write");
+                let (l, r) = cache_item
+                    .get_initial_and_last_values()
+                    .expect("account must have initial and last values");
+                AccountProperties::diff_compression::<PROOF_ENV, _, _, _>(
+                    l.value(),
+                    r.value(),
+                    r.metadata().not_publish_bytecode,
+                    pubdata_dst,
+                    result_keeper,
+                    &mut self.preimages_cache,
+                    oracle,
+                )
+                .expect("must compute account pubdata");
+            } else {
+                ValueDiffCompressionStrategy::optimal_compression(
+                    &v.initial_value,
+                    &v.current_value,
+                    pubdata_dst,
+                    result_keeper,
+                );
+            }
+        }
     }
+}
+
+/// Write a single u64 tree index as a fixed-width big-endian integer.
+/// Fails if `width` would truncate the high bits of `index`.
+fn write_index_fixed_width<T: WriteBytes + ?Sized>(
+    index: u64,
+    width: u8,
+    pubdata_dst: &mut T,
+    result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+) -> Result<(), ()> {
+    if width > 8 {
+        return Err(());
+    }
+    let required = ((64 - index.leading_zeros() + 7) / 8) as u8;
+    if required > width {
+        return Err(());
+    }
+    let be = index.to_be_bytes();
+    let tail = &be[(8 - width as usize)..];
+    pubdata_dst.write(tail);
+    result_keeper.pubdata(tail);
+    Ok(())
 }

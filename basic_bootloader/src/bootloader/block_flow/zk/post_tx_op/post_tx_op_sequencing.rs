@@ -1,5 +1,4 @@
 use super::*;
-use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::NopCommitmentGenerator;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
@@ -8,7 +7,6 @@ use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::{IOTeardown, Resources};
 
 impl<
@@ -73,18 +71,14 @@ where
         result_keeper.logs(io.logs_storage.messages_ref_iter());
         result_keeper.events(io.events_storage.events_ref_iter());
 
-        // Sequencing-mode post-op uses NopCommitmentGenerator (no DA work),
-        // but we still mark `da_commitment` for parity with the proving
-        // paths so the bench label set is consistent across STFs.
-        cycle_marker::wrap!("da_commitment", {
-            write_pubdata(
-                &mut NopCommitmentGenerator,
-                result_keeper,
-                block_hash,
-                metadata.block_timestamp(),
-                &mut io,
-            );
-        });
+        // Sequencing-mode post-op does no DA work and does not emit pubdata.
+        // The v2 compressed pubdata format references repeated writes by
+        // their tree index, which is only available on the proving path
+        // (computed inside `verify_and_apply_batch`). The block hash and
+        // timestamp are still part of the sealed block header that the
+        // sequencer surfaces above.
+        let _ = block_hash;
+        let _ = metadata;
 
         cycle_marker::wrap!("state_commitment_update", {
             io.update_commitment(None, &mut logger, result_keeper);

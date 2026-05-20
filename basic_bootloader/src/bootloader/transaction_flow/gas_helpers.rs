@@ -423,9 +423,13 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
     native_per_pubdata: u64,
     base_pubdata: Option<u64>,
-) -> Result<(u64, S::Resources), SystemError> {
+) -> Result<(u64, S::Resources), SystemError>
+where
+    S::Metadata: zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata,
+{
+    let repeated_write_index_encoding_length = system.repeated_write_index_encoding_length();
     let current_pubdata_spent = system
-        .net_pubdata_used()?
+        .net_pubdata_used(repeated_write_index_encoding_length)?
         .saturating_sub(base_pubdata.unwrap_or(0));
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)
@@ -447,7 +451,10 @@ pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     native_per_pubdata: u64,
     resources: &S::Resources,
     base_pubdata: Option<u64>,
-) -> Result<(bool, S::Resources, u64), SystemError> {
+) -> Result<(bool, S::Resources, u64), SystemError>
+where
+    S::Metadata: zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata,
+{
     let (pubdata_used, resources_for_pubdata) =
         get_resources_to_charge_for_pubdata(system, native_per_pubdata, base_pubdata)?;
     system_log!(system, "Checking gas for pubdata, resources_for_pubdata: {resources_for_pubdata:?}, resources: {resources:?}\n");

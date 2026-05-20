@@ -183,8 +183,12 @@ impl<S: SystemTypes> System<S> {
         self.metadata.set_transaction_metadata(tx_level_metadata);
     }
 
-    pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
-        self.io.net_pubdata_used()
+    pub fn net_pubdata_used(
+        &self,
+        repeated_write_index_encoding_length: u8,
+    ) -> Result<u64, InternalError> {
+        self.io
+            .net_pubdata_used(repeated_write_index_encoding_length)
     }
 
     /// Emit an event, potentially capturing some using an event hook.
@@ -230,6 +234,10 @@ where
 
     pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
         self.metadata.get_pubdata_price()
+    }
+
+    pub fn repeated_write_index_encoding_length(&self) -> u8 {
+        self.metadata.repeated_write_index_encoding_length()
     }
 }
 

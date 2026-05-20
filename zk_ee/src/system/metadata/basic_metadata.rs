@@ -66,6 +66,9 @@ pub trait ZkSpecificPricingMetadata {
 
     /// Price in base token of 1 byte of pubdata.
     fn get_pubdata_price(&self) -> U256;
+
+    /// Length in bytes of the encoding of repeated write indices in storage diffs.
+    fn repeated_write_index_encoding_length(&self) -> u8;
 }
 
 /// Convenience super-trait for environments that expose both block- and tx-level

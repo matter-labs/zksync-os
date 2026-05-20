@@ -1,7 +1,9 @@
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::system::logger::Logger;
+use crate::utils::Bytes32;
 use crate::{oracle::IOOracle, types_config::SystemIOTypesConfig};
+use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
 #[derive(Clone, Copy, Debug)]
@@ -24,11 +26,14 @@ use crate::common_structs::{WarmStorageKey, WarmStorageValue};
 pub trait StateRootView<IOTypes: SystemIOTypesConfig>:
     Clone + UsizeSerializable + UsizeDeserializable + core::fmt::Debug
 {
+    /// Returns a `BTreeMap` mapping derived flat storage keys to their tree indices.
+    /// Pubdata encoding uses this to write a compact index for repeated writes
+    /// instead of the full 32-byte derived key.
     fn verify_and_apply_batch<O: IOOracle, A: Allocator + Clone + Default>(
         &mut self,
         oracle: &mut O,
         source: impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone,
         allocator: A,
         logger: &mut impl Logger,
-    ) -> Result<(), InternalError>;
+    ) -> Result<BTreeMap<Bytes32, u64, A>, InternalError>;
 }

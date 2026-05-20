@@ -144,7 +144,10 @@ pub trait IOSubsystem: Sized {
         DeconstructionSubsystemError,
     >;
 
-    fn net_pubdata_used(&self) -> Result<u64, InternalError>;
+    fn net_pubdata_used(
+        &self,
+        repeated_write_index_encoding_length: u8,
+    ) -> Result<u64, InternalError>;
 
     /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.

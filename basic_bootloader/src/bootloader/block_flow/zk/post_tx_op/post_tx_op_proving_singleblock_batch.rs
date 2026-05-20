@@ -88,22 +88,6 @@ where
         let mut da_commitment_generator =
             da_commitment_generator_from_scheme(io.da_commitment_scheme.unwrap(), A::default())
                 .unwrap();
-        // For keccak DA (`BlobsAndPubdataKeccak256`), `write_pubdata` streams
-        // bytes through `Keccak256CommitmentGenerator`, which absorbs them
-        // into the keccak state — this is where the bulk of keccak
-        // delegations fire on the DA-commit path. For blob DA
-        // (`BlobsZKsyncOS`) the same call just appends to a buffer (no
-        // hashing yet); the actual blob KZG work happens in `.finalize()`
-        // below and is already captured by the `blob_versioned_hash` marker.
-        cycle_marker::wrap!("da_commitment", {
-            write_pubdata(
-                da_commitment_generator.as_mut(),
-                result_keeper,
-                block_hash,
-                metadata.block_timestamp(),
-                &mut io,
-            );
-        });
 
         let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
 
@@ -164,12 +148,32 @@ where
         // update state commitment — this is the state-tree merkle commit
         // (Blake-heavy). Distinct from `da_commitment` (keccak/blob over
         // pubdata) and `blob_versioned_hash` (KZG per blob).
+        // Must run before `write_pubdata` so that the derived-key ->
+        // tree-index map is populated for the compressed pubdata encoding.
         cycle_marker::wrap!("state_commitment_update", {
             IOTeardown::<_>::update_commitment(
                 &mut io,
                 Some(&mut state_commitment),
                 &mut logger,
                 result_keeper,
+            );
+        });
+
+        // For keccak DA (`BlobsAndPubdataKeccak256`), `write_pubdata` streams
+        // bytes through `Keccak256CommitmentGenerator`, which absorbs them
+        // into the keccak state — this is where the bulk of keccak
+        // delegations fire on the DA-commit path. For blob DA
+        // (`BlobsZKsyncOS`) the same call just appends to a buffer (no
+        // hashing yet); the actual blob KZG work happens in `.finalize()`
+        // below and is already captured by the `blob_versioned_hash` marker.
+        cycle_marker::wrap!("da_commitment", {
+            write_pubdata(
+                da_commitment_generator.as_mut(),
+                result_keeper,
+                block_hash,
+                metadata.block_timestamp(),
+                metadata.block_level.repeated_write_index_encoding_length,
+                &mut io,
             );
         });
 
