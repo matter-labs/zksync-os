@@ -86,7 +86,6 @@ source = "git+https://github.com/matter-labs/airbender-platform?rev=72cce091#72c
 dependencies = [
  "getrandom",
  "riscv_common",
- "talc",
 ]
 
 [[package]]

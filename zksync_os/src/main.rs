@@ -20,7 +20,7 @@ static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 
 #[airbender::main(allocator_init = init_allocator)]
 fn main() -> [u32; 8] {
-    run_proving::<airbender::transport::CsrTransport, LoggerTy>(
-        airbender::transport::CsrTransport,
+    run_proving::<airbender::guest::transport::CsrTransport, LoggerTy>(
+        airbender::guest::transport::CsrTransport,
     )
 }
