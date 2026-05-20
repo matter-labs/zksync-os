@@ -30,13 +30,16 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
     ) -> Result<Vec<u32>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
-        // Input is [u32; 2] WordLayout-encoded: [ptr, len]
-        assert!(
-            input.len() == 2,
-            "Only a pointer and the length are expected."
-        );
-        let data_ptr = input[0] as u64;
-        let data_len = input[1] as usize;
+        // Input is (u64, u64) WordLayout-encoded: (ptr, len) = 4 u32 words
+        let (data_ptr, data_len): (u64, u64) = {
+            let mut cursor = 0;
+            <(u64, u64)>::read_words(&mut || {
+                let w = input[cursor];
+                cursor += 1;
+                w
+            })
+        };
+        let data_len = data_len as usize;
         assert!(data_len <= ENCODABLE_BYTES_PER_BLOB);
 
         // Read from host process memory
@@ -114,10 +117,13 @@ mod tests {
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
+        let input = (data.as_ptr() as u64, data.len() as u64);
+        let mut input_words = Vec::new();
+        input.write_words(&mut |w| input_words.push(w));
         let output = NativeBlobCommitmentAndProofQuery
             .process(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                &[data.as_ptr() as u32, data.len() as u32],
+                &input_words,
                 &DummyMemorySource,
             )
             .unwrap();

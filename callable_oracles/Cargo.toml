@@ -19,6 +19,9 @@ basic_bootloader = { path = "../basic_bootloader", default-features = false }
 
 c-kzg = "2.1.5"
 
+[dev-dependencies]
+basic_system = { path = "../basic_system", default-features = true }
+
 [features]
 default = ["evaluate"]
 evaluate = []

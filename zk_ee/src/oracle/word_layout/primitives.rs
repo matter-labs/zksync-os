@@ -58,3 +58,19 @@ impl WordLayout for u64 {
         lo | (hi << 32)
     }
 }
+
+impl<A: WordLayout, B: WordLayout> WordLayout for (A, B) {
+    const WORD_COUNT: Option<usize> = match (A::WORD_COUNT, B::WORD_COUNT) {
+        (Some(a), Some(b)) => Some(a + b),
+        _ => None,
+    };
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.0.write_words(w);
+        self.1.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        (A::read_words(r), B::read_words(r))
+    }
+}

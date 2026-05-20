@@ -39,7 +39,7 @@ impl<'a, O: zk_ee::oracle::IOOracle> BlobCommitmentAndProofAdvisor
         self.oracle
             .query(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                &[data.as_ptr() as u32, data.len() as u32],
+                &(data.as_ptr() as u64, data.len() as u64),
             )
             .expect("must deserialize commitment and proof")
     }
