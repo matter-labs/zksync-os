@@ -12,7 +12,8 @@ use revm::{
     DatabaseRef,
 };
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
-use zksync_os_interface::types::BlockContext;
+use zksync_os_interface::traits::AnyBlockContext;
+use zksync_os_interface::types::BlockHashes;
 use zksync_os_revm::ZKsyncTx;
 use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -93,7 +94,7 @@ where
         self
     }
 
-    pub fn run(
+    pub fn run<BlockContext: AnyBlockContext>(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
@@ -125,7 +126,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn run_with_call_traces(
+    pub fn run_with_call_traces<BlockContext: AnyBlockContext>(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
@@ -137,18 +138,18 @@ where
         Vec<TxComparisonMismatch>,
     )> {
         let blob_fee: u64 = block_context
-            .blob_fee
+            .blob_fee()
             .try_into()
             .context("Blob fee should fit into u64")?;
         let block_basefee: u64 = block_context
-            .eip1559_basefee
+            .eip1559_basefee()
             .try_into()
             .context("Block base fee should fit into u64")?;
 
         let state_provider = RevmStateProvider::new(
             self.state.clone(),
-            block_context.block_hashes,
-            block_context.block_number.saturating_sub(1),
+            BlockHashes(block_context.block_hashes().clone()),
+            block_context.block_number().saturating_sub(1),
         );
         let settlement_layer_chain_id = Self::read_settlement_layer_chain_id(self.state.clone())?;
 
@@ -163,16 +164,16 @@ where
         let mut evm = ZkContext::<EmptyDB>::default()
             .with_db(cache_db)
             .modify_cfg_chained(|cfg| {
-                cfg.chain_id = block_context.chain_id;
+                cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
             })
             .modify_block_chained(|block| {
-                block.number = U256::from(block_context.block_number);
-                block.timestamp = U256::from(block_context.timestamp);
-                block.beneficiary = block_context.coinbase;
+                block.number = U256::from(block_context.block_number());
+                block.timestamp = U256::from(block_context.timestamp());
+                block.beneficiary = block_context.coinbase();
                 block.basefee = block_basefee;
-                block.gas_limit = block_context.gas_limit;
-                block.prevrandao = Some(block_context.mix_hash.into());
+                block.gas_limit = block_context.gas_limit();
+                block.prevrandao = Some(block_context.mix_hash().into());
                 block.blob_excess_gas_and_price = Some(blob_excess_gas_and_price);
             })
             .build_zk_with_inspector(TracingInspector::new(TracingInspectorConfig::default_geth()));
@@ -180,7 +181,7 @@ where
         let revm_txs = Self::build_revm_txs(
             &transactions,
             block_output.as_ref(),
-            block_context.gas_limit,
+            block_context.gas_limit(),
             settlement_layer_chain_id,
             self.independent_gas,
         )?;
