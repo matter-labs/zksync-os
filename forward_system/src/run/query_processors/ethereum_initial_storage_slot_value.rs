@@ -20,12 +20,21 @@ use zk_ee::storage_types::StorageAddress;
 use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone)]
-// #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryEthereumInitialStorageSlotValueResponder {
     pub source: HashMap<B160, EthereumAccountProperties>,
     pub preimages_oracle: BTreeMap<Bytes32, Vec<u8>>,
     interner: BoxInterner<Global>,
     hasher: crypto::sha3::Keccak256,
+}
+
+/// Decode WordLayout-encoded u32 words back into a typed value.
+fn decode_input<T: WordLayout>(input: &[u32]) -> T {
+    let mut cursor = 0;
+    T::read_words(&mut || {
+        let w = input.get(cursor).copied().unwrap_or(0);
+        cursor += 1;
+        w
+    })
 }
 
 impl InMemoryEthereumInitialStorageSlotValueResponder {
@@ -54,18 +63,15 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = StorageAddress::<EthereumIOTypesConfig>::from_iter(&mut query.into_iter())
-            .expect("must deserialize address value");
-
-        // println!("Reading for address 0x{:040x} and key {:?}", address.address.as_uint(), address.key);
+        let address: StorageAddress<EthereumIOTypesConfig> = decode_input(input);
 
         let data = self
             .source
@@ -75,12 +81,10 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
         let initial_root = data.storage_root;
         let mut value = Bytes32::ZERO;
         if !data.is_empty() && initial_root != EMPTY_ROOT_HASH {
-            // println!("Expecting non-empty value");
             use crypto::MiniDigest;
             let hash = crypto::sha3::Keccak256::digest(address.key.as_u8_array_ref());
             let digits = digits_from_key(&hash);
             let path = Path::new(&digits);
-            // make MPT...
             self.interner.reset();
             let mut accounts_mpt: EthereumMPT<'_, Global, VecCtor, false> =
                 EthereumMPT::new_in(initial_root.as_u8_array(), &mut self.interner, Global)
@@ -98,7 +102,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
                 );
             };
             if !encoding.is_empty() {
-                // strip one more RLP
                 let rlp_slice = RLPSlice::from_slice(encoding).unwrap();
                 value = bytes32_from_rlp_slice(&rlp_slice).unwrap();
             }
@@ -109,8 +112,8 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_constructor(initial_value, |inner_ref| {
-            UsizeSerializable::iter(inner_ref)
-        })
+        let mut result = Vec::new();
+        initial_value.write_words(&mut |w| result.push(w));
+        Ok(result)
     }
 }

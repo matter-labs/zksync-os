@@ -1,89 +1,29 @@
 //! Oracle query processors for secp256k1 field operations (sqrt, inverse).
 //!
-//! Provides two implementations:
-//! - [`FieldOpsQuery`]: Reads operands from simulated RISC-V memory.
-//! - [`NativeFieldOpsQuery`]: Reads operands directly from native memory (for host execution).
+//! The processor decodes `FieldOpsInput` from WordLayout-encoded u32 words,
+//! performs the computation, and returns the result as WordLayout-encoded u32 words.
 
-use basic_system::system_functions::field_ops::{FieldHintOp, FieldOpsHint};
-use basic_system::system_functions::field_ops::{FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID};
+use basic_system::system_functions::field_ops::{
+    FieldHintOp, FieldOpsInput, FieldSqrtResponse, FIELD_OPS_ADVISE_QUERY_ID,
+};
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
-use zk_ee::utils::Bytes32;
+use zk_ee::oracle::word_layout::WordLayout;
+use zk_ee::system::errors::internal::InternalError;
 mod impls;
 
-use crate::utils::evaluate::{read_memory_as_u64, read_struct};
-use crate::{read_host_struct, read_u64_words};
-
-#[derive(Default)]
-pub struct FieldOpsQuery;
-
-impl OracleQueryProcessor for FieldOpsQuery {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        vec![FIELD_OPS_ADVISE_QUERY_ID]
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        query_id: u32,
-        query: Vec<usize>,
-        memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        debug_assert!(self.supports_query_id(query_id));
-
-        let mut it = query.into_iter();
-
-        let arg_ptr = it.next().expect("A u32 should've been passed in.");
-
-        assert!(
-            it.next().is_none(),
-            "A single RISC-V ptr should've been passed."
-        );
-
-        assert!(arg_ptr.is_multiple_of(4));
-        const { assert!(core::mem::align_of::<FieldOpsHint>() == 4) }
-        const { assert!(core::mem::size_of::<FieldOpsHint>().is_multiple_of(4)) }
-
-        let arg = unsafe { read_struct::<FieldOpsHint>(memory, arg_ptr as u32) }.unwrap();
-
-        let Some(op) = FieldHintOp::parse_u32(arg.op) else {
-            panic!("Unknown field hint op {}", arg.op);
-        };
-
-        const { assert!(8 == core::mem::size_of::<usize>()) };
-        assert!(arg.src_ptr > 0);
-        assert_eq!(arg.src_len_u32_words, 8);
-        let n = read_memory_as_u64(memory, arg.src_ptr as u32, arg.src_len_u32_words / 2).unwrap();
-
-        let n = Bytes32::from_array(
-            n.into_iter()
-                .flat_map(|el| el.to_le_bytes())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        );
-
-        match op {
-            FieldHintOp::Secp256k1BaseFieldSqrt => {
-                let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1BaseFieldInverse => {
-                let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1ScalarFieldInverse => {
-                let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            _ => {
-                panic!("Unknown field hint op {}", arg.op);
-            }
-        }
-    }
+/// Decode WordLayout-encoded u32 words back into a typed value.
+fn decode_input<T: WordLayout>(input: &[u32]) -> T {
+    let mut cursor = 0;
+    T::read_words(&mut || {
+        let w = input.get(cursor).copied().unwrap_or(0);
+        cursor += 1;
+        w
+    })
 }
 
+/// Unified field operations query processor. Handles both RISC-V and native queries
+/// since inputs arrive WordLayout-encoded.
 #[derive(Default)]
 pub struct NativeFieldOpsQuery;
 
@@ -92,88 +32,110 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
         vec![FIELD_OPS_ADVISE_QUERY_ID]
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         debug_assert!(self.supports_query_id(query_id));
 
-        let mut it = query.into_iter();
-        let arg_ptr = it.next().expect("A u64 should've been passed in.");
-        assert!(it.next().is_none(), "A single ptr should've been passed.");
-        let arg: FieldOpsHint64 = read_host_struct(arg_ptr as u64);
+        let field_input: FieldOpsInput = decode_input(input);
 
-        let op = FieldHintOp::parse_u32(arg.op)
-            .unwrap_or_else(|| panic!("Unknown field hint op {}", arg.op));
+        let Some(op) = FieldHintOp::parse_u32(field_input.op) else {
+            panic!("Unknown field hint op {}", field_input.op);
+        };
 
-        const { assert!(8 == core::mem::size_of::<usize>()) };
-        assert!(arg.src_ptr > 0);
-        assert_eq!(arg.src_len_u32_words, 8);
-        let n: Vec<u64> = read_u64_words(arg.src_ptr, u64::from(arg.src_len_u32_words / 2));
-        let n = Bytes32::from_array(
-            n.into_iter()
-                .flat_map(|el| el.to_le_bytes())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        );
+        let n = field_input.src;
 
+        let mut result = Vec::new();
         match op {
             FieldHintOp::Secp256k1BaseFieldSqrt => {
-                let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                let (candidate, is_qnr) = impls::secp256k1_base_field_sqrt(n);
+                let response = FieldSqrtResponse {
+                    sqrt_candidate: candidate,
+                    is_quadratic_non_residue: is_qnr,
+                };
+                response.write_words(&mut |w| result.push(w));
             }
             FieldHintOp::Secp256k1BaseFieldInverse => {
-                let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                let inv = impls::secp256k1_base_field_inverse(n);
+                inv.write_words(&mut |w| result.push(w));
             }
             FieldHintOp::Secp256k1ScalarFieldInverse => {
-                let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                let inv = impls::secp256k1_scalar_field_inverse(n);
+                inv.write_words(&mut |w| result.push(w));
             }
             _ => {
-                panic!("Unknown field hint op {}", arg.op);
+                panic!("Unknown field hint op {}", field_input.op);
             }
         }
+        Ok(result)
+    }
+}
+
+/// Backward-compatible alias for RISC-V mode.
+#[derive(Default)]
+pub struct FieldOpsQuery;
+
+impl OracleQueryProcessor for FieldOpsQuery {
+    fn supported_query_ids(&self) -> Vec<u32> {
+        NativeFieldOpsQuery.supported_query_ids()
+    }
+
+    fn process(
+        &mut self,
+        query_id: u32,
+        input: &[u32],
+        memory: &dyn RamPeek,
+    ) -> Result<Vec<u32>, InternalError> {
+        NativeFieldOpsQuery.process(query_id, input, memory)
     }
 }
 
 #[cfg(test)]
-mod native_query_tests {
+mod tests {
     use super::*;
     use oracle_provider::DummyMemorySource;
 
     #[test]
-    fn native_field_ops_query_processes_valid_query() {
-        let mut input = [0u8; 32];
-        input[31] = 1;
-        let hint = FieldOpsHint64 {
+    fn field_ops_query_processes_inverse() {
+        let mut input_bytes = [0u8; 32];
+        input_bytes[31] = 1;
+        let src = zk_ee::utils::Bytes32::from_array(input_bytes);
+        let field_input = FieldOpsInput {
             op: FieldHintOp::Secp256k1BaseFieldInverse as u32,
-            src_ptr: input.as_ptr().addr() as u64,
-            src_len_u32_words: 8,
+            src,
         };
+        let mut input_words = Vec::new();
+        field_input.write_words(&mut |w| input_words.push(w));
 
-        let output: Vec<usize> = NativeFieldOpsQuery
-            .process_buffered_query(
-                FIELD_OPS_ADVISE_QUERY_ID,
-                vec![(&hint as *const FieldOpsHint64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
+        let output = NativeFieldOpsQuery
+            .process(FIELD_OPS_ADVISE_QUERY_ID, &input_words, &DummyMemorySource)
+            .unwrap();
 
-        assert_eq!(output.len(), 4);
+        // Bytes32 = 8 u32 words
+        assert_eq!(output.len(), 8);
         assert!(output.iter().any(|word| *word != 0));
     }
 
     #[test]
-    #[should_panic]
-    fn native_field_ops_query_rejects_null_query_pointer() {
-        let _ = NativeFieldOpsQuery.process_buffered_query(
-            FIELD_OPS_ADVISE_QUERY_ID,
-            vec![0],
-            &DummyMemorySource,
-        );
+    fn field_ops_query_processes_sqrt() {
+        let mut input_bytes = [0u8; 32];
+        input_bytes[31] = 4; // 4 has a sqrt in the field
+        let src = zk_ee::utils::Bytes32::from_array(input_bytes);
+        let field_input = FieldOpsInput {
+            op: FieldHintOp::Secp256k1BaseFieldSqrt as u32,
+            src,
+        };
+        let mut input_words = Vec::new();
+        field_input.write_words(&mut |w| input_words.push(w));
+
+        let output = NativeFieldOpsQuery
+            .process(FIELD_OPS_ADVISE_QUERY_ID, &input_words, &DummyMemorySource)
+            .unwrap();
+
+        // FieldSqrtResponse: Bytes32 (8 words) + bool (1 word) = 9 words
+        assert_eq!(output.len(), 9);
     }
 }

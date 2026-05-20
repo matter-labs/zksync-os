@@ -32,7 +32,7 @@ use basic_bootloader::bootloader::config::{
     BasicBootloaderProvingExecutionConfig,
 };
 use errors::ForwardSubsystemError;
-use oracle_provider::ReadWitnessSource;
+use oracle_provider::WitnessRecordingOracle;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
@@ -152,7 +152,7 @@ pub fn generate_proof_input<
     oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
 
     // We'll wrap the source, to collect all the reads.
-    let copy_source = ReadWitnessSource::new(oracle);
+    let copy_source = WitnessRecordingOracle::new(oracle);
 
     let mut tracer = NopTracer::default();
     let mut result_keeper = ProverInputResultKeeper::new(tx_result_callback);

@@ -5,8 +5,6 @@ use basic_system::system_implementation::ethereum_storage_model::{
     ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
 };
 use basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::utils::usize_rw::ReadIterWrapper;
 use zk_ee::utils::Bytes32;
 
 /// This processor handles requests to resolve hash preimages - given a hash,
@@ -16,6 +14,16 @@ use zk_ee::utils::Bytes32;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericPreimageResponder<PS: PreimageSource> {
     pub preimage_source: PS,
+}
+
+/// Decode WordLayout-encoded u32 words back into a typed value.
+fn decode_input<T: WordLayout>(input: &[u32]) -> T {
+    let mut cursor = 0;
+    T::read_words(&mut || {
+        let w = input.get(cursor).copied().unwrap_or(0);
+        cursor += 1;
+        w
+    })
 }
 
 impl<PS: PreimageSource> GenericPreimageResponder<PS> {
@@ -37,15 +45,15 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let hash = Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+        let hash: Bytes32 = decode_input(input);
 
         let preimage = if hash.is_zero() {
             vec![]
@@ -58,15 +66,14 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
                 )
             })
         };
+        let mut result = Vec::new();
         if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
             || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
         {
-            let len = preimage.len() as u32;
-            DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+            (preimage.len() as u32).write_words(&mut |w| result.push(w));
         } else {
-            DynUsizeIterator::from_constructor(preimage, |inner_ref| {
-                ReadIterWrapper::from(inner_ref.iter().copied())
-            })
+            preimage.write_words(&mut |w| result.push(w));
         }
+        Ok(result)
     }
 }

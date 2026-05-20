@@ -362,6 +362,25 @@ impl UsizeSerializable for TxEncodingFormat {
     }
 }
 
+impl zk_ee::oracle::word_layout::WordLayout for TxEncodingFormat {
+    const WORD_COUNT: Option<usize> = Some(1);
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        w(*self as u32);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        let byte = r() as u8;
+        if byte == TxEncodingFormat::Abi as u8 {
+            TxEncodingFormat::Abi
+        } else if byte == TxEncodingFormat::Rlp as u8 {
+            TxEncodingFormat::Rlp
+        } else {
+            panic!("Unsupported tx encoding format: {byte}")
+        }
+    }
+}
+
 pub struct TxEncodingFormatQuery;
 
 impl SimpleOracleQuery for TxEncodingFormatQuery {

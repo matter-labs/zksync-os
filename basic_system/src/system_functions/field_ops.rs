@@ -311,39 +311,37 @@ mod tests {
                 self.inner.supported_query_ids()
             }
 
-            fn process_buffered_query(
+            fn process(
                 &mut self,
                 query_id: u32,
-                query: Vec<usize>,
+                input: &[u32],
                 memory: &dyn RamPeek,
-            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            ) -> Result<Vec<u32>, zk_ee::system::errors::internal::InternalError> {
                 // Get the correct response
-                let correct_iter = self.inner.process_buffered_query(query_id, query, memory);
-                let correct_response: Vec<usize> = correct_iter.collect();
+                let correct_response = self.inner.process(query_id, input, memory)?;
 
-                // Determine if this is a sqrt query (returns Bytes32 + bool) or inverse query (returns Bytes32)
-                // sqrt response: 4 usize for Bytes32 + 1 usize for bool = 5 usize
-                // inverse response: 4 usize for Bytes32 = 4 usize
-                let is_sqrt_query = correct_response.len() == 5;
+                // Determine if this is a sqrt query (returns Bytes32 + bool = 9 u32 words)
+                // or inverse query (returns Bytes32 = 8 u32 words)
+                let is_sqrt_query = correct_response.len() == 9;
 
                 let mut corrupted = correct_response.clone();
 
                 if is_sqrt_query && self.lie_about_sqrt_existence {
-                    // Flip the boolean (last element)
-                    corrupted[4] ^= 1;
+                    // Flip the boolean (last u32 word)
+                    corrupted[8] ^= 1;
                 } else {
-                    // Corrupt the Bytes32 result (first 4 usize = 32 bytes)
+                    // Corrupt the Bytes32 result (first 8 u32 words = 32 bytes)
                     let mut bytes = [0u8; 32];
-                    for (i, &word) in corrupted[..4].iter().enumerate() {
-                        bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
+                    for (i, &word) in corrupted[..8].iter().enumerate() {
+                        bytes[i * 4..(i + 1) * 4].copy_from_slice(&word.to_le_bytes());
                     }
                     self.corruption.apply(&mut bytes);
-                    for (i, chunk) in bytes.chunks(8).enumerate() {
-                        corrupted[i] = usize::from_le_bytes(chunk.try_into().unwrap());
+                    for (i, chunk) in bytes.chunks(4).enumerate() {
+                        corrupted[i] = u32::from_le_bytes(chunk.try_into().unwrap());
                     }
                 }
 
-                Box::new(corrupted.into_iter())
+                Ok(corrupted)
             }
         }
 
@@ -617,12 +615,12 @@ mod tests {
                 vec![FIELD_OPS_ADVISE_QUERY_ID]
             }
 
-            fn process_buffered_query(
+            fn process(
                 &mut self,
                 query_id: u32,
-                _query: Vec<usize>,
+                _input: &[u32],
                 _memory: &dyn RamPeek,
-            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            ) -> Result<Vec<u32>, zk_ee::system::errors::internal::InternalError> {
                 panic!("field ops oracle should not be queried for zero input, query_id=0x{query_id:08x}");
             }
         }

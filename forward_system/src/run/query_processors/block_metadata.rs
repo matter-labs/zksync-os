@@ -22,14 +22,16 @@ impl OracleQueryProcessor for BlockMetadataResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
+        _input: &[u32],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        DynUsizeIterator::from_constructor(self.block_metadata, UsizeSerializable::iter)
+        let mut result = Vec::new();
+        self.block_metadata.write_words(&mut |w| result.push(w));
+        Ok(result)
     }
 }

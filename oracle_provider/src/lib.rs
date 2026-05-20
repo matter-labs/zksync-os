@@ -2,19 +2,10 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
-#[cfg(all(
-    not(target_arch = "riscv32"),
-    not(all(target_pointer_width = "64", target_endian = "little"))
-))]
-compile_error!("ReadWitnessSource host recording requires a 64-bit little-endian host target");
-
 // Hook zk_ee IOOracle to be NonDeterminismCSRSource
-
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use zk_ee::oracle::query_ids::{DISCONNECT_ORACLE_QUERY_ID, UART_QUERY_ID};
-use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use zk_ee::oracle::word_layout::WordLayout;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
 
@@ -35,11 +26,17 @@ impl RamPeek for DummyMemorySource {
 /// that responders do not try to serve the same query ID.
 #[derive(Default)]
 pub struct ZkEENonDeterminismSource {
-    query_buffer: Option<QueryBuffer>,
     current_query_id: Option<u32>,
-    current_iterator: Option<Box<dyn ExactSizeIterator<Item = usize> + 'static>>,
-    iterator_len_to_indicate: Option<u32>,
-    high_half: Option<u32>,
+    /// Input buffer: collects u32 words written by the guest.
+    input_buffer: Vec<u32>,
+    /// Expected number of remaining u32 words for the current input.
+    input_remaining: Option<u32>,
+    /// Response buffer: u32 words to be read by the guest.
+    response_buffer: Vec<u32>,
+    /// Cursor into response_buffer for reads.
+    response_cursor: usize,
+    /// Whether a response length word needs to be returned first.
+    response_len_pending: bool,
     is_connected_to_external_oracle: bool,
     /// Vector of different processors that are responsible for handling queries.
     processors: Vec<Box<dyn OracleQueryProcessor + 'static>>,
@@ -64,193 +61,117 @@ impl ZkEENonDeterminismSource {
     }
 
     fn process_buffered_query(&mut self, memory: &dyn RamPeek) {
-        assert!(self.current_iterator.is_none());
-        assert!(self.current_query_id.is_none());
+        let query_id = self.current_query_id.take().expect("must have query id");
+        let input = core::mem::take(&mut self.input_buffer);
 
-        let buffer = self.query_buffer.take().expect("must exist");
-        let query_id = buffer.query_type;
         if query_id == DISCONNECT_ORACLE_QUERY_ID {
             self.is_connected_to_external_oracle = false;
+            self.response_buffer.clear();
+            self.response_cursor = 0;
+            self.response_len_pending = false;
         } else {
-            let buffer = buffer.buffer;
             let Some(processor_id) = self.ranges.get(&query_id).copied() else {
                 panic!("Can not process query with ID = 0x{query_id:08x}");
             };
             let processor = &mut self.processors[processor_id];
-            let new_iterator = processor.process_buffered_query(query_id, buffer, memory);
+            let result = processor
+                .process(query_id, &input, memory)
+                .unwrap_or_else(|e| {
+                    panic!("Query processor failed for ID 0x{query_id:08x}: {e:?}")
+                });
 
-            let result_len = new_iterator.len() * 2; // NOTE for mismatch of 32/64-bit archs
-            self.iterator_len_to_indicate = Some(result_len as u32);
-            if result_len > 0 {
-                self.current_query_id = Some(query_id);
-                self.current_iterator = Some(new_iterator);
-            }
+            self.response_buffer = result;
+            self.response_cursor = 0;
+            self.response_len_pending = true;
         }
     }
 
-    /// Reads the next 32bits.
-    /// Our iterators and queues hold usize elements (u64), so we have to do some splitting and caching.
+    /// Reads the next 32 bits from the response buffer.
     fn read_impl(&mut self) -> u32 {
-        // We mocked reads, so it's filtered out before
         if self.is_connected_to_external_oracle == false {
             return 0;
         }
 
-        if let Some(iterator_len_to_indicate) = self.iterator_len_to_indicate.take() {
-            return iterator_len_to_indicate;
+        if self.response_len_pending {
+            self.response_len_pending = false;
+            return self.response_buffer.len() as u32;
         }
 
-        // This is the 32 bits remaining from the previous item - return them now.
-        if let Some(high) = self.high_half.take() {
-            return high;
-        }
-        // If we didn't have any partial data left, we should fetch another element from the iterator.
-        let Some(current_iterator) = self.current_iterator.as_mut() else {
+        if self.response_cursor < self.response_buffer.len() {
+            let value = self.response_buffer[self.response_cursor];
+            self.response_cursor += 1;
+            value
+        } else {
             panic!("trying to read, but data is not prepared");
-        };
-        let next = current_iterator.next().expect("must contain next element");
-        if current_iterator.len() == 0 {
-            // we are done - there are no more elements left after this one.
-            self.current_query_id = None;
-            self.current_iterator = None;
         }
-        // Split the 64 bits into 2 pieces - one is put into 'high' field, to be returned later
-        // and the other one is returned immediately.
-        let high = (next >> 32) as u32;
-        let low = next as u32;
-        self.high_half = Some(high);
-
-        low
     }
 
     fn write_impl(&mut self, memory: &dyn RamPeek, value: u32) {
+        // If there's an unconsumed response, clear it
+        if self.response_cursor < self.response_buffer.len() || self.response_len_pending {
+            self.response_buffer.clear();
+            self.response_cursor = 0;
+            self.response_len_pending = false;
+        }
+
         if self.current_query_id.is_some() {
-            println!(
-                "Current query ID = 0x{:08x} iterator is not consumed in full, but received value 0x{:08x}",
-                self.current_query_id.unwrap(),
-                value
-            );
-            self.current_query_id = None;
-        }
-
-        // may have something from remains
-        if self.current_iterator.is_some() {
-            if self.current_iterator.as_ref().unwrap().len() != 0 {
-                println!(
-                    "Current iterator is not consumed in full, but received value 0x{value:08x}"
-                );
-            }
-            self.current_iterator = None;
-        }
-        if self.iterator_len_to_indicate.is_some() {
-            self.iterator_len_to_indicate = None;
-        }
-        if self.high_half.is_some() {
-            self.high_half = None;
-        }
-
-        if let Some(query_buffer) = self.query_buffer.as_mut() {
-            let complete = query_buffer.write(value);
-            if complete {
-                self.process_buffered_query(memory);
+            // We're in the middle of buffering input
+            if let Some(remaining) = self.input_remaining.as_mut() {
+                self.input_buffer.push(value);
+                *remaining -= 1;
+                if *remaining == 0 {
+                    self.input_remaining = None;
+                    self.process_buffered_query(memory);
+                }
+            } else {
+                // This word is the input length
+                let len = value;
+                if len == 0 {
+                    self.input_remaining = None;
+                    self.process_buffered_query(memory);
+                } else {
+                    self.input_remaining = Some(len);
+                }
             }
         } else {
             if self.is_connected_to_external_oracle == false && value != UART_QUERY_ID {
-                // we are not interested in general to start another query
                 return;
             }
 
-            let new_buffer = QueryBuffer::empty_for_query_type(value);
-            self.query_buffer = Some(new_buffer);
+            self.current_query_id = Some(value);
+            self.input_buffer.clear();
+            self.input_remaining = None;
         }
     }
 }
 
 impl IOOracle for ZkEENonDeterminismSource {
-    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-        &'a mut self,
+    fn query<I: WordLayout, O: WordLayout>(
+        &mut self,
         query_type: u32,
         input: &I,
-    ) -> Result<Self::RawIterator<'a>, InternalError> {
+    ) -> Result<O, InternalError> {
         if query_type == DISCONNECT_ORACLE_QUERY_ID {
             self.is_connected_to_external_oracle = false;
         }
         if self.is_connected_to_external_oracle == false {
-            return Ok(Box::new([].into_iter()));
+            // Return default-decoded from zero words
+            return Ok(O::read_words(&mut || 0));
         }
         let Some(processor) = self.ranges.get(&query_type).copied() else {
             return Err(internal_error!("invalid query ID"));
         };
+        let mut input_words = Vec::new();
+        input.write_words(&mut |w| input_words.push(w));
         let processor = &mut self.processors[processor];
-        let response = processor.process_buffered_query(
-            query_type,
-            UsizeSerializable::iter(input).collect::<Vec<usize>>(),
-            &DummyMemorySource,
-        );
-
-        Ok(response)
-    }
-}
-
-pub trait OracleQueryProcessor {
-    /// List of different query ids that are supported (for example NextTxSize or BlockLevelMetadataIterator).
-    fn supported_query_ids(&self) -> Vec<u32>;
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        self.supported_query_ids().contains(&query_id)
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        query_id: u32,
-        query: Vec<usize>,
-        memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>;
-}
-
-struct QueryBuffer {
-    query_type: u32,
-    remaining_len: Option<usize>,
-    write_low: bool,
-    buffer: Vec<usize>,
-}
-
-impl QueryBuffer {
-    fn empty_for_query_type(query_type: u32) -> Self {
-        Self {
-            query_type,
-            remaining_len: None,
-            write_low: true,
-            buffer: Vec::new(),
-        }
-    }
-
-    fn write(&mut self, value: u32) -> bool {
-        // NOTE: we have to match between 32 bit inner env and 64 bit outer env
-        if let Some(remaining_len) = self.remaining_len.as_mut() {
-            // println!("Writing word 0x{:08x} for query ID = 0x{:08x}", value, self.query_type);
-            if self.write_low {
-                self.buffer.push(value as usize);
-                self.write_low = false;
-            } else {
-                let last = self.buffer.last_mut().unwrap();
-                *last |= (value as usize) << 32;
-                self.write_low = true;
-            }
-            *remaining_len -= 1;
-
-            *remaining_len == 0
-        } else {
-            // println!("Expecting {} words for query ID = 0x{:08x}", value, self.query_type);
-            self.remaining_len = Some(value as usize);
-            if value == 0 {
-                // nothing else to expect
-                true
-            } else {
-                false
-            }
-        }
+        let response_words = processor.process(query_type, &input_words, &DummyMemorySource)?;
+        let mut cursor = 0;
+        let result = O::read_words(&mut || {
+            let w = response_words.get(cursor).copied().unwrap_or(0);
+            cursor += 1;
+            w
+        });
+        Ok(result)
     }
 }
 
@@ -273,79 +194,49 @@ impl NonDeterminismCSRSource for ZkEENonDeterminismSource {
     }
 }
 
-/// Wraps the original source and remembers all the read accesses.
-pub struct ReadWitnessSource {
-    original_source: ZkEENonDeterminismSource,
-    read_items: Rc<RefCell<Vec<u32>>>,
+pub trait OracleQueryProcessor {
+    /// List of different query ids that are supported (for example NextTxSize or BlockLevelMetadataIterator).
+    fn supported_query_ids(&self) -> Vec<u32>;
+    fn supports_query_id(&self, query_id: u32) -> bool {
+        self.supported_query_ids().contains(&query_id)
+    }
+
+    fn process(
+        &mut self,
+        query_id: u32,
+        input: &[u32],
+        memory: &dyn RamPeek,
+    ) -> Result<Vec<u32>, InternalError>;
 }
 
-impl ReadWitnessSource {
-    pub fn new(original_source: ZkEENonDeterminismSource) -> Self {
+/// Wraps an inner IOOracle and records all response words for witness generation.
+pub struct WitnessRecordingOracle<O: IOOracle> {
+    inner: O,
+    witness_words: Vec<u32>,
+}
+
+impl<O: IOOracle> WitnessRecordingOracle<O> {
+    pub fn new(inner: O) -> Self {
         Self {
-            original_source,
-            read_items: Rc::new(RefCell::new(vec![])),
+            inner,
+            witness_words: Vec::new(),
         }
     }
 
-    pub fn get_read_items(&self) -> Rc<RefCell<Vec<u32>>> {
-        self.read_items.clone()
+    pub fn into_witness(self) -> (O, Vec<u32>) {
+        (self.inner, self.witness_words)
     }
 }
 
-impl NonDeterminismCSRSource for ReadWitnessSource {
-    fn read(&mut self) -> u32 {
-        let item = self.original_source.read();
-        // On read - remember the items.
-        self.read_items.borrow_mut().push(item);
-        item
-    }
-
-    fn write_with_memory_access<R: RamPeek>(&mut self, ram: &R, value: u32) {
-        self.original_source.write_with_memory_access(ram, value);
-    }
-
-    fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
-        self.original_source
-            .write_with_memory_access_dyn(ram, value);
-    }
-}
-
-impl IOOracle for ReadWitnessSource {
-    type RawIterator<'a> = <ZkEENonDeterminismSource as IOOracle>::RawIterator<'a>;
-
-    fn raw_query<'a, I>(
-        &'a mut self,
+impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
+    fn query<I: WordLayout, R: WordLayout>(
+        &mut self,
         query_type: u32,
         input: &I,
-    ) -> Result<Self::RawIterator<'a>, InternalError>
-    where
-        I: UsizeSerializable + UsizeDeserializable,
-    {
-        let inner = self.original_source.raw_query(query_type, input)?;
-        // First add the length of the iterator.
-        let len = inner.len();
-        {
-            let mut read_items = self.read_items.borrow_mut();
-            // Len is multiplied by 2 to account for 32/64-bit mismatch
-            let len_u32 = u32::try_from(len.checked_mul(2).expect("response length overflow"))
-                .expect("iterator length does not fit into u32");
-            read_items.push(len_u32);
-        }
-        let read_items = Rc::clone(&self.read_items);
-        let wrapped: Self::RawIterator<'a> = Box::new(inner.inspect(move |v| {
-            record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
-        }));
-
-        Ok(wrapped)
-    }
-}
-
-fn record_usize_as_u32_words(dst: &mut Vec<u32>, value: usize) {
-    {
-        let v = value as u64;
-        // LE
-        dst.push((v & 0xFFFF_FFFF) as u32);
-        dst.push((v >> 32) as u32);
+    ) -> Result<R, InternalError> {
+        let response: R = self.inner.query(query_type, input)?;
+        response.write_words(&mut |w| self.witness_words.push(w));
+        Ok(response)
     }
 }
 
@@ -362,32 +253,48 @@ mod tests {
             vec![TEST_QUERY_ID]
         }
 
-        fn process_buffered_query(
+        fn process(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
+            input: &[u32],
             _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        ) -> Result<Vec<u32>, InternalError> {
             assert_eq!(query_id, TEST_QUERY_ID);
-            assert_eq!(query, vec![7usize]);
-            Box::new(vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize].into_iter())
+            // Input should be the WordLayout encoding of 7u64: [7, 0]
+            assert_eq!(input, &[7u32, 0]);
+            // Return two u64 values as u32 words
+            let mut result = Vec::new();
+            // 0x1122_3344_5566_7788u64 as LE u32 words
+            result.push(0x5566_7788u32);
+            result.push(0x1122_3344u32);
+            // 0x99aa_bbcc_ddee_ff00u64 as LE u32 words
+            result.push(0xddee_ff00u32);
+            result.push(0x99aa_bbccu32);
+            Ok(result)
         }
     }
 
     #[test]
-    fn read_witness_source_records_length_and_words() {
+    fn witness_recording_oracle_records_response_words() {
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(FixedResponseProcessor);
 
-        let mut source = ReadWitnessSource::new(oracle);
-        let response: Vec<usize> = source.raw_query(TEST_QUERY_ID, &7u64).unwrap().collect();
+        let mut source = WitnessRecordingOracle::new(oracle);
+        let response: [u64; 2] = source.query(TEST_QUERY_ID, &7u64).unwrap();
         assert_eq!(
             response,
-            vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize]
+            [0x1122_3344_5566_7788u64, 0x99aa_bbcc_ddee_ff00u64]
         );
+        let (_inner, witness) = source.into_witness();
+        // witness should contain the u32 LE words of the response
         assert_eq!(
-            *source.get_read_items().borrow(),
-            vec![4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc,]
+            witness,
+            vec![
+                0x5566_7788u32,
+                0x1122_3344u32,
+                0xddee_ff00u32,
+                0x99aa_bbccu32
+            ]
         );
     }
 }

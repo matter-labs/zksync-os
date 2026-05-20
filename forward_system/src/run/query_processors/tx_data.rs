@@ -8,8 +8,6 @@ use zk_ee::oracle::query_ids::TX_FROM_QUERY_ID;
 use zk_ee::oracle::query_ids::{
     NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
 };
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::utils::usize_rw::ReadIterWrapper;
 
 /// This processor handles four types of queries:
 /// 1. NEXT_TX_SIZE_QUERY_ID - Returns the size of the next transaction
@@ -51,14 +49,15 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
+        _input: &[u32],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
+        let mut result = Vec::new();
         match query_id {
             NEXT_TX_SIZE_QUERY_ID => {
                 let len = match &self.next_tx {
@@ -88,7 +87,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     }
                 } as u32;
 
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                len.write_words(&mut |w| result.push(w));
             }
             TX_DATA_WORDS_QUERY_ID => {
                 let Some(tx) = self.next_tx.take() else {
@@ -97,9 +96,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynUsizeIterator::from_constructor(tx, |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                tx.write_words(&mut |w| result.push(w));
             }
             TX_ENCODING_FORMAT_QUERY_ID => {
                 let Some(format) = self.next_tx_format.take() else {
@@ -108,7 +105,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynUsizeIterator::from_constructor(format, UsizeSerializable::iter)
+                format.write_words(&mut |w| result.push(w));
             }
             TX_FROM_QUERY_ID => {
                 let Some(from) = self.next_tx_from.take() else {
@@ -116,9 +113,10 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                         "trying to read next tx from before size query, after seal response or for a zk transaction"
                     );
                 };
-                DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                from.write_words(&mut |w| result.push(w));
             }
             _ => unreachable!(),
         }
+        Ok(result)
     }
 }

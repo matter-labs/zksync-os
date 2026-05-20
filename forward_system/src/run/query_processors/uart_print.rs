@@ -1,9 +1,6 @@
 use super::*;
 use oracle_provider::OracleQueryProcessor;
-use zk_ee::{
-    oracle::query_ids::UART_QUERY_ID,
-    oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-};
+use zk_ee::oracle::query_ids::UART_QUERY_ID;
 
 /// This processor handles debug print requests from the RISC-V execution
 /// environment. It receives formatted string data and outputs it to stdout,
@@ -25,29 +22,23 @@ impl OracleQueryProcessor for UARTPrintResponder {
         Self::SUPPORTED_QUERY_IDS.contains(&query_id)
     }
 
-    fn process_buffered_query(
+    fn process(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        input: &[u32],
         _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Result<Vec<u32>, InternalError> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let u32_vec: Vec<u32> = query
-            .into_iter()
-            .flat_map(|el| [el as u32, (el >> 32) as u32])
-            .collect();
-        assert!(!u32_vec.is_empty());
-        let message_len_in_bytes = u32_vec[0] as usize;
-        let mut string_bytes: Vec<u8> = u32_vec[1..]
-            .iter()
-            .flat_map(|el| el.to_le_bytes())
-            .collect();
+        // Input is WordLayout-encoded: first word is message length in bytes,
+        // followed by the message bytes packed into u32 words.
+        assert!(!input.is_empty());
+        let message_len_in_bytes = input[0] as usize;
+        let mut string_bytes: Vec<u8> = input[1..].iter().flat_map(|el| el.to_le_bytes()).collect();
         assert!(string_bytes.len() >= message_len_in_bytes);
         string_bytes.truncate(message_len_in_bytes);
         print!("{}", String::from_utf8_lossy(&string_bytes));
-        // println!("UART: {}", String::from_utf8_lossy(&string_bytes));
 
-        DynUsizeIterator::from_constructor((), UsizeSerializable::iter)
+        Ok(Vec::new())
     }
 }
