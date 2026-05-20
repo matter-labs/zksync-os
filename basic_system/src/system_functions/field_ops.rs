@@ -16,7 +16,8 @@ pub struct FieldSqrtResponse {
 }
 
 /// Oracle input for field operations: source data + operation code.
-#[repr(C)]
+/// No repr(C): Bytes32(align 8) + u32 causes 4 bytes trailing padding,
+/// so bulk path would read/write more words than the field-by-field encoding.
 #[derive(Clone, Copy, Debug, WordLayout)]
 pub struct FieldOpsInput {
     pub src: Bytes32,

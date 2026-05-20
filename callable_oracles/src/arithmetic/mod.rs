@@ -278,24 +278,14 @@ mod tests {
             .process(MODEXP_ADVICE_QUERY_ID, &input_words, &DummyMemorySource)
             .unwrap();
 
-        assert!(output.len() >= 2);
-        let q_len = output[0] as usize;
-        let r_len = output[1] as usize;
-        assert_eq!(output.len(), 2 + q_len + r_len);
-
-        // Reconstruct quotient and remainder
-        let q_words = &output[2..2 + q_len];
-        let r_words = &output[2 + q_len..];
-        let q_u64: Vec<u64> = q_words
-            .chunks(2)
-            .map(|c| c[0] as u64 | ((c[1] as u64) << 32))
-            .collect();
-        let r_u64: Vec<u64> = r_words
-            .chunks(2)
-            .map(|c| c[0] as u64 | ((c[1] as u64) << 32))
-            .collect();
-        assert_eq!(q_u64, vec![3]);
-        assert_eq!(r_u64, vec![1]);
+        let mut cursor = 0;
+        let response = ModexpResponse::read_words(&mut || {
+            let w = output[cursor];
+            cursor += 1;
+            w
+        });
+        assert_eq!(response.quotient, vec![3u64]);
+        assert_eq!(response.remainder, vec![1u64]);
     }
 
     #[test]
