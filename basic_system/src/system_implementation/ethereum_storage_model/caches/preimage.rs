@@ -81,11 +81,13 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
             let expected_length_in_bytes =
                 PreimageLengthQuery::get(oracle, hash).expect("must get preimage length") as usize;
             // NOTE: we leave some slack for 64/32 bit arch mismatches
-            let bytes: alloc::vec::Vec<u8> = oracle
-                .query_bytes(ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID, hash)
+            let mut buffered = oracle
+                .query_byte_box(
+                    ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+                    hash,
+                    self.allocator.clone(),
+                )
                 .expect("must get preimage");
-            let mut buffered =
-                UsizeAlignedByteBox::from_slices_in(&[&bytes], self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_length_in_bytes);
 

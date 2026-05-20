@@ -354,24 +354,13 @@ where
         body_query_id: u32,
     ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
         let allocator = self.get_allocator();
-        let bytes: alloc::vec::Vec<u8> = self.io.oracle().query_bytes(body_query_id, &())?;
-        if bytes.is_empty() {
+        let buffer = self
+            .io
+            .oracle()
+            .query_byte_box(body_query_id, &(), allocator)?;
+        if buffer.len() == 0 {
             return Ok(None);
         }
-        let byte_len = bytes.len();
-        let usize_words = byte_len.div_ceil(core::mem::size_of::<usize>());
-        let usize_words = usize_words.next_multiple_of(2);
-        let mut words = alloc::vec::Vec::with_capacity_in(usize_words, allocator.clone());
-        for chunk in bytes.chunks(core::mem::size_of::<usize>()) {
-            let mut word_bytes = [0u8; core::mem::size_of::<usize>()];
-            word_bytes[..chunk.len()].copy_from_slice(chunk);
-            words.push(usize::from_le_bytes(word_bytes));
-        }
-        while words.len() < usize_words {
-            words.push(0);
-        }
-        let mut buffer = UsizeAlignedByteBox::from_usize_iterator_in(words.into_iter(), allocator);
-        buffer.truncated_to_byte_length(byte_len);
         Ok(Some(buffer))
     }
 

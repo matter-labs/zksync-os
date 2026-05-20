@@ -940,10 +940,18 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordLayout
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
         let index = u64::read_words(r);
         let leaf = FlatStorageLeaf::<N>::read_words(r);
-        let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
-        for dst in path.iter_mut() {
-            *dst = Bytes32::read_words(r);
+        // Allocate uninit on heap and read [Bytes32; N] directly into it.
+        // [Bytes32; N] hits the bulk path (512 u32 stores for N=64).
+        // No zeroing, no stack-to-heap copy.
+        let mut path = Box::<[Bytes32; N], A>::new_uninit_in(A::default());
+        let dst = path.as_mut_ptr() as *mut u32;
+        let word_count = N * 8; // N Bytes32 × 8 u32 words each
+        for i in 0..word_count {
+            unsafe {
+                dst.add(i).write(r());
+            }
         }
+        let path = unsafe { path.assume_init() };
         Self {
             index,
             leaf,

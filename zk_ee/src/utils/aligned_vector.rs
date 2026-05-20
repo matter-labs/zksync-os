@@ -67,6 +67,16 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         }
     }
 
+    /// Raw pointer to the backing for direct writes.
+    pub fn inner_mut_ptr(&mut self) -> *mut MaybeUninit<usize> {
+        self.inner.as_mut_ptr()
+    }
+
+    /// Mark `n` bytes as initialized (after direct writes via inner_mut_ptr).
+    pub fn mark_initialized(&mut self, n: usize) {
+        self.initialized_bytes = n;
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         debug_assert!(self.inner.len() * USIZE_SIZE >= self.byte_capacity);
         assert!(

@@ -108,18 +108,19 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // We do not charge for gas in this concrete implementation and
             // expect higher-level model to do so.
             // We charge for native.
-            let bytes: alloc::vec::Vec<u8> = oracle
-                .query_bytes(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
+            let mut buffered = oracle
+                .query_byte_box(
+                    FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID,
+                    hash,
+                    self.allocator.clone(),
+                )
                 .expect("must get preimage bytes");
-            // IMPORTANT: oracle should be somewhat "sane", it also limits the number of cycles spent below.
 
-            if bytes.len() > expected_preimage_len_in_bytes {
+            if buffered.len() > expected_preimage_len_in_bytes {
                 return Err(
                     internal_error!("Preimage length exceeds expected preimage length").into(),
                 );
             }
-            let mut buffered =
-                UsizeAlignedByteBox::from_slices_in(&[&bytes], self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 
