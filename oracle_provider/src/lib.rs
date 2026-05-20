@@ -173,6 +173,35 @@ impl IOOracle for ZkEENonDeterminismSource {
         });
         Ok(result)
     }
+
+    fn query_into<I: WordLayout, O: WordLayout>(
+        &mut self,
+        query_type: u32,
+        input: &I,
+        output: &mut O,
+    ) -> Result<(), InternalError> {
+        if query_type == DISCONNECT_ORACLE_QUERY_ID {
+            self.is_connected_to_external_oracle = false;
+        }
+        if self.is_connected_to_external_oracle == false {
+            output.read_words_into(&mut || 0);
+            return Ok(());
+        }
+        let Some(processor) = self.ranges.get(&query_type).copied() else {
+            return Err(internal_error!("invalid query ID"));
+        };
+        let mut input_words = Vec::new();
+        input.write_words(&mut |w| input_words.push(w));
+        let processor = &mut self.processors[processor];
+        let response_words = processor.process(query_type, &input_words, &DummyMemorySource)?;
+        let mut cursor = 0;
+        output.read_words_into(&mut || {
+            let w = response_words.get(cursor).copied().unwrap_or(0);
+            cursor += 1;
+            w
+        });
+        Ok(())
+    }
 }
 
 // Now we hook an access
@@ -237,6 +266,17 @@ impl<O: IOOracle> IOOracle for WitnessRecordingOracle<O> {
         let response: R = self.inner.query(query_type, input)?;
         response.write_words(&mut |w| self.witness_words.push(w));
         Ok(response)
+    }
+
+    fn query_into<I: WordLayout, R: WordLayout>(
+        &mut self,
+        query_type: u32,
+        input: &I,
+        output: &mut R,
+    ) -> Result<(), InternalError> {
+        self.inner.query_into(query_type, input, output)?;
+        output.write_words(&mut |w| self.witness_words.push(w));
+        Ok(())
     }
 }
 
