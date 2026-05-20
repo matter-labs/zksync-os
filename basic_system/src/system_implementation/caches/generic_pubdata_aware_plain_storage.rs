@@ -240,7 +240,7 @@ impl<
         new_value: &V,
         oracle: &mut impl IOOracle,
         resources: &mut R,
-    ) -> Result<(V, V), SystemError>
+    ) -> Result<V, SystemError>
     where
         StorageAddress<EthereumIOTypesConfig>: From<K>,
     {
@@ -254,15 +254,13 @@ impl<
             oracle,
         )?;
 
+        let val_at_tx_start = addr_data.committed().value();
         let val_current = addr_data.current().value();
-
-        // Try to get initial value at the beginning of the tx.
-        let val_at_tx_start = addr_data.committed().value().clone();
-
         let is_new_slot = addr_data.element_properties().is_new_element();
+
         self.resources_policy.charge_storage_write_extra(
             ee_type,
-            &val_at_tx_start,
+            val_at_tx_start,
             val_current,
             new_value,
             resources,
@@ -270,27 +268,30 @@ impl<
             is_new_slot,
         )?;
 
-        let old_value = addr_data.current().value().clone();
+        // Compute refund before mutating the cache, so val_at_tx_start and
+        // val_current can stay borrowed from addr_data.
+        let mut refund_counter_value = self.evm_refunds_counter.value().clone();
+        self.resources_policy.refund_for_storage_write(
+            ee_type,
+            val_at_tx_start,
+            val_current,
+            new_value,
+            resources,
+            &mut refund_counter_value,
+        )?;
+
+        // Detach owned old_value from addr_data's borrow before the update.
+        let old_value = val_current.clone();
+
         addr_data.update(|cache_record| {
             cache_record.update(|x, _| {
                 *x = new_value.clone();
                 Ok(())
             })
         })?;
-
-        // Add refund for storage
-        let mut refund_counter_value = self.evm_refunds_counter.value().clone();
-        self.resources_policy.refund_for_storage_write(
-            ee_type,
-            &val_at_tx_start,
-            &old_value,
-            new_value,
-            resources,
-            &mut refund_counter_value,
-        )?;
         self.evm_refunds_counter.update(refund_counter_value);
 
-        Ok((old_value, val_at_tx_start))
+        Ok(old_value)
     }
 
     /// Clear state at specified address

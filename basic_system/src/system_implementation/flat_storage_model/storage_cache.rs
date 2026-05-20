@@ -99,8 +99,7 @@ impl<
             key: *key,
         };
 
-        #[allow(unused_variables)]
-        let (old_value, val_at_tx_start) = self
+        let old_value = self
             .0
             .apply_write_impl(ee_type, &key, new_value, oracle, resources)?;
 
@@ -165,7 +164,7 @@ impl<
             core::ptr::read((new_value as *const T::Value).cast::<Bytes32>())
         };
 
-        let (old_value, _) = self
+        let old_value = self
             .0
             .apply_write_impl(ee_type, &key, &new_value, oracle, resources)?;
 
