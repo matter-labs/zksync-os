@@ -78,9 +78,5 @@ evm_tester_pectra = ["evm_tester", "pectra"]
 # Features used for evm_tester with Fusaka hardfork
 evm_tester_fusaka = ["evm_tester", "fusaka"]
 
-# Features used for legacy evm_tester. Only defined in forward system,
-# as the legacy evm_tester does not perform a proof run.
-evm_tester_legacy = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles"]
-
 [dev-dependencies]
 tempfile = "3"
