@@ -116,8 +116,11 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
         // Only valid when struct size matches word count * 4 (no padding)
         // and alignment is >= 4.
         quote! {
-            const { assert!(core::mem::size_of::<Self>() % 4 == 0, "WordLayout bulk read: struct size not a multiple of 4 (padding detected)") };
             const { assert!(core::mem::align_of::<Self>() >= 4, "WordLayout bulk read: struct alignment must be >= 4") };
+            const { assert!(
+                core::mem::size_of::<Self>() == <Self as zk_ee::oracle::word_layout::WordLayout>::WORD_COUNT.unwrap() * 4,
+                "WordLayout bulk read: struct has internal padding — size_of != WORD_COUNT * 4. Reorder fields to eliminate padding."
+            ) };
             let mut result = core::mem::MaybeUninit::<Self>::uninit();
             let dst = result.as_mut_ptr() as *mut u32;
             for i in 0..(core::mem::size_of::<Self>() / 4) {
