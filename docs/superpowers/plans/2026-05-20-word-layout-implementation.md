@@ -46,17 +46,16 @@ These corrections override the corresponding plan sections below:
    (NOT `proving_oracle.rs`). It contains `CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation>`,
    `CsrBasedIOOracleIterator`, and `NonDeterminismCSRSourceImplementation` trait. All get replaced.
 
-2. **Task 7 Step 2 — Transport trait**: draft-0.4.0 does NOT have airbender-guest's `Transport` trait.
-   Define a new `WordSource` trait in `proof_running_system/src/io_oracle/mod.rs`:
-   ```
-   pub trait WordSource: 'static { fn read_word(&mut self) -> u32; }
-   ```
-   `ProvingOracle<S: WordSource>` replaces `CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation>`.
+2. **Task 7 Step 2 — Transport trait**: `proof_running_system` doesn't depend on airbender-guest
+   yet, but should. Add `airbender-guest` dependency (with `default-features = false,
+   features = ["allocator-custom"]`) and use its `Transport` trait (`read_word() -> u32`).
+   `ProvingOracle<T: Transport>` replaces `CsrBasedIOOracle<I: NonDeterminismCSRSourceImplementation>`.
 
 3. **Task 7 Step 2 — guest binary**: `zksync_os/src/main.rs` must be updated. The current
    `CSRBasedNonDeterminismSource` implements `NonDeterminismCSRSourceImplementation` (read/write usizes).
-   Replace with a `WordSource` impl that just calls `airbender::rt::sys::read_word()`.
-   Also update `proof_running_system/src/system/bootloader.rs` (`run_proving` generic param).
+   Replace with airbender-sdk's `CsrTransport` (already provides `Transport` impl) or a
+   simple `Transport` wrapper. Also update `proof_running_system/src/system/bootloader.rs`
+   (`run_proving` generic param).
 
 4. **Task 7 Step 4 — OracleQueryProcessor**: The current trait has
    `process_buffered_query(query_id: u32, query: Vec<usize>, memory: &dyn RamPeek) → Box<dyn ExactSizeIterator<Item = usize>>`.
