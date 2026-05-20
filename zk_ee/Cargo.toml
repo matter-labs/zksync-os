@@ -17,6 +17,7 @@ arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true  }
 
 u256 = { path = "../supporting_crates/u256", default-features = false }
+word_layout_derive = { path = "../supporting_crates/word_layout_derive" }
 cfg-if = { workspace = true }
 crypto = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
