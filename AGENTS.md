@@ -47,9 +47,9 @@ installed automatically via `rust-toolchain.toml`.
 
 Common commands:
 ```bash
-# Workspace build/test
+# Workspace build/test (default-members only)
 cargo build
-cargo test --workspace
+cargo test
 
 # Per-crate
 cargo build -p <crate-name>
@@ -64,7 +64,7 @@ cargo clippy --all -- -D warnings
 cargo clippy --fix -p <crate-name>
 ```
 
-Note: `cargo test --workspace` does not include crates/directories excluded in root `Cargo.toml` (e.g. `zksync_os`, `tests/fuzzer`, `tests/evm_tester`, `tests/instances/eth_runner`).
+Note: `cargo build`, `cargo test`, and `cargo clippy` operate on `default-members` by default. Tool crates (`evm_tester`, `evm_divergence_validator`, `eth_runner`) are workspace members but not default-members — they enable conflicting features on `forward_system` via `rig` that break other tests through feature unification. Use `cargo test -p <crate>` to test them individually. `zksync_os`, `circuit_test_program`, and `tests/fuzzer` are excluded from the workspace entirely.
 
 RISC-V build (from repo root):
 ```bash

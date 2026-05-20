@@ -13,16 +13,8 @@ import os
 import re
 import sys
 
-
-def median_int(values):
-    """Return the true median of integer samples."""
-    if not values:
-        return 0
-    sorted_vals = sorted(values)
-    mid = len(sorted_vals) // 2
-    if len(sorted_vals) % 2 == 0:
-        return (sorted_vals[mid - 1] + sorted_vals[mid]) // 2
-    return sorted_vals[mid]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from benchlib import fmt_pct, median_int, pct  # noqa: E402
 
 
 def parse_opcode_stats(filename):
@@ -195,18 +187,6 @@ def overlay_sampled_stats(base_stats, sampled_stats):
         existing.update(sample_stats)
         merged[op] = existing
     return merged
-
-
-def pct(old, new):
-    if old == 0:
-        return 0.0 if new == 0 else float("inf")
-    return (new - old) / old * 100
-
-
-def fmt_pct(val):
-    if abs(val) < 0.005:
-        return ""
-    return f" ({val:+.1f}%)"
 
 
 def compare(base_stats, head_stats):

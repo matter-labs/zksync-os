@@ -23,27 +23,13 @@ import os
 import re
 import sys
 
-
-def median_int(values):
-    """Return the true median of integer samples."""
-    if not values:
-        return 0
-    sorted_vals = sorted(values)
-    mid = len(sorted_vals) // 2
-    if len(sorted_vals) % 2 == 0:
-        return (sorted_vals[mid - 1] + sorted_vals[mid]) // 2
-    return sorted_vals[mid]
-
-
-def median_float(values):
-    """Return the true median of float samples."""
-    if not values:
-        return None
-    sorted_vals = sorted(values)
-    mid = len(sorted_vals) // 2
-    if len(sorted_vals) % 2 == 0:
-        return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
-    return sorted_vals[mid]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from benchlib import (  # noqa: E402
+    fmt_pct,
+    median_float,
+    median_int,
+    pct,
+)
 
 
 def parse_cycle_stats(filename):
@@ -133,17 +119,33 @@ def load_tracer_samples(samples_dir):
 
 
 def load_cycle_samples(samples_dir):
-    """Load per-opcode cycle samples from a directory."""
+    """Load per-opcode cycle samples from a directory.
+
+    Prefers `<OPCODE>.effective.cycles` (raw + Blake/BigInt/Keccak delegation
+    weights, matching the block_effective formula) over `<OPCODE>.cycles`
+    (raw only). Effective samples reflect true prover cost for opcodes whose
+    handlers delegate (SHA3, SLOAD/SSTORE, BALANCE/EXTCODE*, CALL family,
+    CREATE/CREATE2); raw samples undercount them. Falls back to raw per
+    opcode when the effective variant is absent.
+    """
     stats = {}
     try:
-        entries = os.listdir(samples_dir)
+        entries = set(os.listdir(samples_dir))
     except OSError:
         return stats
 
+    # Group by opcode: prefer .effective.cycles, fall back to .cycles.
+    opcode_to_file = {}
     for name in entries:
-        if not name.endswith(".cycles"):
-            continue
-        opcode = name[:-len(".cycles")]
+        if name.endswith(".effective.cycles"):
+            opcode = name[: -len(".effective.cycles")]
+            opcode_to_file[opcode] = name
+    for name in entries:
+        if name.endswith(".cycles") and not name.endswith(".effective.cycles"):
+            opcode = name[: -len(".cycles")]
+            opcode_to_file.setdefault(opcode, name)
+
+    for opcode, name in opcode_to_file.items():
         rows = []
         with open(os.path.join(samples_dir, name)) as f:
             for line in f:
@@ -247,20 +249,13 @@ def overlay_sampled_stats(base_stats, sampled_stats):
     return merged
 
 
-def pct(old, new):
-    if old == 0:
-        return 0.0 if new == 0 else float("inf")
-    return (new - old) / old * 100
-
-
-def fmt_pct(val):
-    if abs(val) < 0.005:
-        return ""
-    return f" ({val:+.1f}%)"
-
-
 def ratio(num, den):
-    """Return num/den, or None if den is zero."""
+    """Return num/den, or None if den is zero.
+
+    NOTE: this differs from `benchlib.ratio` (which returns 0.0 for zero
+    denominator) — kept local so that downstream `fmt_ratio_pct` can
+    branch on None to render "n/a".
+    """
     return num / den if den > 0 else None
 
 
@@ -377,20 +372,27 @@ def format_table(rows, has_gas, label=""):
     lines.append("")
 
     if has_gas:
+        # When `--sample-dirs` is supplied (the CI path), `overlay_sampled_stats`
+        # replaces the .bench-aggregate cycle values with per-execution
+        # sampled values via `load_cycle_samples`, which prefers
+        # `<OPCODE>.effective.cycles` (raw + Blake/BigInt/Keccak delegation
+        # weights). Both cycles and cyc/gas columns are therefore effective.
+        # Without `--sample-dirs` (local fallback), the cycles columns come
+        # directly from the .bench aggregate which is raw.
         lines.append(
-            "| Opcode | Count | Med Cycles (%) | Total Cycles (%) "
-            "| Med Cyc/Gas (%) | Worst Cyc/Gas (%) |"
+            "| Opcode | Count | Med Cycles eff (%) | Total Cycles eff (%) "
+            "| Med Cyc/Gas eff (%) | Worst Cyc/Gas eff (%) |"
         )
         lines.append(
-            "|--------|-------|----------------|------------------"
-            "|-----------------|-------------------|"
+            "|--------|-------|--------------------|----------------------"
+            "|---------------------|-----------------------|"
         )
     else:
         lines.append(
-            "| Opcode | Count | Med Cycles (%) | Total Cycles (%) |"
+            "| Opcode | Count | Med Cycles eff (%) | Total Cycles eff (%) |"
         )
         lines.append(
-            "|--------|-------|----------------|------------------|"
+            "|--------|-------|--------------------|----------------------|"
         )
 
     # Sort by head total cycles descending (biggest cost first)

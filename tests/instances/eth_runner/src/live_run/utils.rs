@@ -120,7 +120,7 @@ pub fn fetch_block_hashes(start_block: u64, db: &Database, endpoint: &str) -> Re
 
     // Fetch all missing hashes in a single batched RPC call
     let hashes = rpc::get_block_hashes_batch(endpoint, &blocks_to_fetch)
-        .context(format!("Failed to fetch block hashes in batch"))?;
+        .context("Failed to fetch block hashes in batch")?;
 
     // Save all hashes to DB
     let blocks_count = blocks_to_fetch.len();

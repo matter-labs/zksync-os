@@ -5,6 +5,7 @@ pub mod event;
 ///
 /// The compiler test outcome data.
 ///
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct ExecutionOutput {
     /// The return data values.
@@ -20,6 +21,7 @@ impl ExecutionOutput {
     ///
     /// A shortcut constructor.
     ///
+    #[allow(dead_code)]
     pub fn new(
         return_data: Vec<u8>,
         exception: bool,
