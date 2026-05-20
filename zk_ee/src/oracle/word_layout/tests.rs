@@ -127,6 +127,90 @@ fn b160_roundtrip() {
     assert_eq!(<B160 as WordLayout>::WORD_COUNT, Some(6));
 }
 
+// --- Derive macro tests ---
+
+#[repr(C)]
+#[derive(Debug, PartialEq, WordLayout)]
+struct BulkStruct {
+    a: u64,
+    b: [u64; 4],
+}
+
+#[test]
+fn derive_bulk_struct() {
+    assert_eq!(BulkStruct::WORD_COUNT, Some(10));
+    let val = BulkStruct {
+        a: 42,
+        b: [1, 2, 3, 4],
+    };
+    assert_eq!(roundtrip(&val), val);
+}
+
+#[derive(Debug, PartialEq, WordLayout)]
+struct FieldByFieldStruct {
+    flag: bool,
+    value: u64,
+}
+
+#[test]
+fn derive_field_by_field() {
+    assert_eq!(FieldByFieldStruct::WORD_COUNT, Some(3));
+    let val = FieldByFieldStruct {
+        flag: true,
+        value: 999,
+    };
+    assert_eq!(roundtrip(&val), val);
+}
+
+#[derive(Debug, PartialEq, WordLayout)]
+struct DynamicStruct {
+    data: Vec<u64>,
+}
+
+#[test]
+fn derive_dynamic() {
+    assert_eq!(DynamicStruct::WORD_COUNT, None);
+    let val = DynamicStruct {
+        data: vec![1, 2, 3],
+    };
+    assert_eq!(roundtrip(&val), val);
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, WordLayout)]
+struct NoPaddingBulk {
+    a: u64,
+    b: u64,
+    c: crate::utils::Bytes32,
+}
+
+#[test]
+fn derive_no_padding_bulk() {
+    assert_eq!(NoPaddingBulk::WORD_COUNT, Some(12)); // 2 + 2 + 8
+    let val = NoPaddingBulk {
+        a: 0xAA,
+        b: 0xBBCCDDEE,
+        c: crate::utils::Bytes32::from_array(core::array::from_fn(|i| i as u8)),
+    };
+    assert_eq!(roundtrip(&val), val);
+}
+
+#[derive(Debug, PartialEq, WordLayout)]
+struct SubWordFieldStruct {
+    flag: bool,
+    value: crate::utils::Bytes32,
+}
+
+#[test]
+fn derive_sub_word_field() {
+    assert_eq!(SubWordFieldStruct::WORD_COUNT, Some(9)); // 1 + 8
+    let val = SubWordFieldStruct {
+        flag: true,
+        value: crate::utils::Bytes32::from_array(core::array::from_fn(|i| i as u8)),
+    };
+    assert_eq!(roundtrip(&val), val);
+}
+
 #[test]
 fn u64_max() {
     assert_eq!(roundtrip(&u64::MAX), u64::MAX);

@@ -33,6 +33,7 @@
 )]
 
 extern crate alloc;
+extern crate self as zk_ee;
 
 pub mod common_structs;
 pub mod common_traits;
