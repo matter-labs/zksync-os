@@ -1,7 +1,7 @@
 //! Contains a key-value map that allows reverting items state.
 
 mod element_pool;
-pub mod element_with_history;
+pub(crate) mod element_with_history;
 mod element_with_history_arena;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
@@ -115,7 +115,7 @@ where
     }
 
     /// Get history of an element by key
-    pub fn get<'s>(&'s self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A, KP>> {
+    pub fn get(&self, key: &K) -> Option<HistoryMapItemRef<'_, K, V, A, KP>> {
         self.btree.get(key).map(|ptr| HistoryMapItemRef {
             // Safety: pointer is valid for the lifetime of `&self`.
             history: unsafe { ptr.as_ref() },
@@ -123,7 +123,7 @@ where
     }
 
     /// Get history of an element by key, mutable
-    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A, KP>> {
+    pub fn get_mut(&mut self, key: &K) -> Option<HistoryMapItemRefMut<'_, K, V, A, KP>> {
         let ptr = *self.btree.get(key)?;
         Some(HistoryMapItemRefMut {
             // Safety: pointer is valid for the lifetime of `&mut self`. We borrow
@@ -137,11 +137,11 @@ where
     }
 
     /// Get history of an element by key or use callback to insert initial value
-    pub fn get_or_insert<'s, E>(
-        &'s mut self,
-        key: &'s K,
+    pub fn get_or_insert<E>(
+        &mut self,
+        key: &K,
         spawn_v: impl FnOnce() -> Result<(V, KP), E>,
-    ) -> Result<HistoryMapItemRefMut<'s, K, V, A, KP>, E> {
+    ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
         let ptr = match self.btree.entry(key.clone()) {
             Entry::Occupied(o) => *o.into_mut(),
             Entry::Vacant(vacant_entry) => {
