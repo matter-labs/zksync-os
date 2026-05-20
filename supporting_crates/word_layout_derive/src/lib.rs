@@ -113,7 +113,8 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
 
     let read_body = if qualifies_for_bulk && repr_c {
         // Bulk path: direct u32 store loop.
-        // Only valid when struct size matches word count * 4 (no padding).
+        // Only valid when struct size matches word count * 4 (no padding)
+        // and alignment is >= 4.
         quote! {
             const _WORD_COUNT: usize = match <#name #ty_generics as zk_ee::oracle::word_layout::WordLayout>::WORD_COUNT {
                 Some(n) => n,
@@ -124,6 +125,10 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
                 "WordLayout bulk read: struct size does not match word count (padding detected). \
                  Reorder fields to eliminate padding, or remove repr(C) to use field-by-field path."
             );
+            const _: () = assert!(
+                core::mem::align_of::<#name #ty_generics>() >= 4,
+                "WordLayout bulk read: struct alignment must be >= 4 for u32 stores."
+            );
             let mut result = core::mem::MaybeUninit::<Self>::uninit();
             let dst = result.as_mut_ptr() as *mut u32;
             for i in 0.._WORD_COUNT {
@@ -132,12 +137,14 @@ pub fn derive_word_layout(input: TokenStream) -> TokenStream {
             unsafe { result.assume_init() }
         }
     } else if qualifies_for_bulk && !repr_c {
-        // Compile error: qualifies but missing repr(C)
-        let msg = format!(
-            "WordLayout: `{}` qualifies for bulk word read. Add #[repr(C)] to enable it.",
-            name
-        );
-        quote! { compile_error!(#msg); }
+        // Eligible for bulk but missing repr(C) — fall back to field-by-field.
+        // This avoids forcing users to add repr(C), while still producing
+        // correct (though slightly slower) code.
+        quote! {
+            Self {
+                #( #field_names: <#field_types as zk_ee::oracle::word_layout::WordLayout>::read_words(r), )*
+            }
+        }
     } else {
         // Field-by-field path
         quote! {
