@@ -100,14 +100,18 @@ where
             self.records_memory_pool
                 .reuse_memory(element.head, element.initial);
         }
+        // Drop the containers that hold arena-derived pointers *before* the
+        // arena itself, so the invariant "every pointer in `btree` and in
+        // `pending_updated_elements` is valid" holds at every observable
+        // point. Defends against any future panic path between the two
+        // drops.
         self.btree.clear();
-        // Releases the arena pages along with the `ElementWithHistory` values
-        // (and their owned keys). Pointers stored in `btree` or pending list
-        // would be dangling after this — but both have just been cleared.
+        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+        // Now safe to release the backing arena pages along with their
+        // contained `ElementWithHistory` values (and their owned keys).
         self.elements_arena.clear();
         self.state.next_snapshot_id = CacheSnapshotId(1);
         self.state.frozen_snapshot_id = CacheSnapshotId(0);
-        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
     }
 
     /// Get history of an element by key

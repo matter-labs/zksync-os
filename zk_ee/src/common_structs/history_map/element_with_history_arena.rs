@@ -10,6 +10,7 @@
 use core::{alloc::Allocator, ptr::NonNull};
 
 use crate::{common_structs::skip_list_quasi_vec::ListVec, memory::stack_trait::Stack};
+// `Stack` is imported solely for its `clear` method on `ListVec`.
 
 use super::element_with_history::ElementWithHistory;
 
@@ -31,22 +32,24 @@ impl<K, V, A: Allocator + Clone, KP> ElementWithHistoryArena<K, V, A, KP> {
     }
 
     /// Moves `element` into the arena and returns a stable pointer to it.
+    ///
+    /// Uses `ListVec::push_returning_ref` so we walk the backing linked list
+    /// once via `back_mut()` (O(1)) rather than twice via `iter_mut().last()`
+    /// (O(pages) each) as separate `push` + `top_mut` calls would.
     pub fn allocate(
         &mut self,
         element: ElementWithHistory<K, V, A, KP>,
     ) -> NonNull<ElementWithHistory<K, V, A, KP>> {
-        self.buffer.push(element);
-        let slot = self
-            .buffer
-            .top_mut()
-            .expect("ListVec::top_mut must yield the slot we just pushed");
-        NonNull::from(&mut *slot)
+        let slot = self.buffer.push_returning_ref(element);
+        NonNull::from(slot)
     }
 
     /// Drops every element and releases the arena pages.
     pub fn clear(&mut self) {
-        // LinkedList::clear drops the ArrayVec nodes, which in turn drop the
-        // contained ElementWithHistory values (and their owned keys).
-        self.buffer.0.clear();
+        // Goes through the `Stack` trait so we don't couple to `ListVec`'s
+        // internal tuple-struct field. Drops the ArrayVec nodes, which in
+        // turn drop the contained `ElementWithHistory` values (and their
+        // owned keys).
+        self.buffer.clear();
     }
 }
