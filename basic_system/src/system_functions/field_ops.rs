@@ -15,11 +15,12 @@ pub struct FieldSqrtResponse {
     pub is_quadratic_non_residue: bool,
 }
 
-/// Oracle input for field operations: operation code + source data.
+/// Oracle input for field operations: source data + operation code.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, WordLayout)]
 pub struct FieldOpsInput {
-    pub op: u32,
     pub src: Bytes32,
+    pub op: u32,
 }
 
 pub const FIELD_OPS_ADVISE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x11;
