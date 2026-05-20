@@ -889,13 +889,6 @@ pub struct ModexpResponse<A: Allocator + Clone = alloc::alloc::Global> {
 }
 
 impl<A: Allocator + Clone> ModexpResponse<A> {
-    pub(crate) fn new(allocator: A) -> Self {
-        Self {
-            quotient: BigintRepr::with_capacity_in(0, allocator.clone()),
-            remainder: BigintRepr::with_capacity_in(0, allocator),
-        }
-    }
-
     pub fn quotient_u64s(&self) -> &[u64] {
         self.quotient.u64_digits_ref()
     }
@@ -967,35 +960,6 @@ impl<A: Allocator + Clone> WordLayout for ModexpResponse<A> {
     }
 }
 
-fn write_bigint_from_u32_words(words: &[u32], dst: &mut BigintRepr<impl Allocator + Clone>) {
-    // NOTE: even if oracle overstates the number of digits (so - iterator length), it is not important
-    // as long as caller checks that number of digits is within bounds of soundness
-    // Safety: we only write initialized u32 chunks into spare capacity and
-    // then set the number of initialized big-int digits accordingly.
-    let word_count = words.len();
-    unsafe {
-        let num_digits = word_count.next_multiple_of(BIGINT_DIGIT_U32_SIZE) / BIGINT_DIGIT_U32_SIZE;
-        let dst_capacity = dst.clear_as_capacity_mut();
-        let mut consumed = 0;
-        for dst in dst_capacity[..num_digits].iter_mut() {
-            let dst: *mut u32 = dst
-                .as_mut_ptr()
-                .cast::<[u32; BIGINT_DIGIT_U32_SIZE]>()
-                .cast();
-            for i in 0..BIGINT_DIGIT_U32_SIZE {
-                if consumed < word_count {
-                    dst.add(i).write(words[consumed]);
-                    consumed += 1;
-                } else {
-                    dst.add(i).write(0);
-                }
-            }
-        }
-        assert_eq!(consumed, word_count);
-        dst.set_num_digits(num_digits);
-    }
-}
-
 /// Serializes bigint digits as a Vec of u32 words for use as oracle query input.
 fn bigint_to_u32_words<A: Allocator + Clone>(repr: &BigintRepr<A>) -> Vec<u32> {
     let mut words = Vec::with_capacity(repr.digits * BIGINT_DIGIT_U32_SIZE);
@@ -1027,21 +991,32 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
     ) {
         assert!(m.digits > 0);
 
-        let input = ModexpReductionInput {
-            op: 0,
-            a_words: bigint_to_u32_words(a),
-            modulus_words: bigint_to_u32_words(m),
-        };
-
-        // query_into reads directly into the destination BigintReprs via the
-        // view — no intermediate buffer, no swap, no copy.
         let mut view = ModexpResponseView {
             quotient: quotient_dst,
             remainder: remainder_dst,
         };
-        self.inner
-            .query_into(MODEXP_ADVICE_QUERY_ID, &input, &mut view)
-            .unwrap();
+
+        // On riscv32 (proving path): ProvingOracle ignores the input entirely,
+        // so skip the expensive Vec<u32> allocations for input serialization.
+        #[cfg(target_pointer_width = "32")]
+        {
+            self.inner
+                .query_into(MODEXP_ADVICE_QUERY_ID, &(), &mut view)
+                .unwrap();
+        }
+
+        // On 64-bit (forward/recording path): build and send the real input.
+        #[cfg(target_pointer_width = "64")]
+        {
+            let input = ModexpReductionInput {
+                op: 0,
+                a_words: bigint_to_u32_words(a),
+                modulus_words: bigint_to_u32_words(m),
+            };
+            self.inner
+                .query_into(MODEXP_ADVICE_QUERY_ID, &input, &mut view)
+                .unwrap();
+        }
 
         let max_quotient_digits = if a.digits < m.digits {
             0
