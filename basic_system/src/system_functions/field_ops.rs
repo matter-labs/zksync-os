@@ -3,22 +3,26 @@
 use crypto::secp256k1::field::FieldElement;
 use crypto::secp256k1::scalars::Scalar;
 use zk_ee::{
-    oracle::{query_ids::ADVICE_SUBSPACE_MASK, usize_serialization::UsizeDeserializable, IOOracle},
+    oracle::{query_ids::ADVICE_SUBSPACE_MASK, word_layout::WordLayout, IOOracle},
     utils::Bytes32,
 };
 
-pub const FIELD_OPS_ADVISE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x11;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct GenericFieldOpsHint<W> {
-    pub op: u32,
-    pub src_ptr: W,
-    pub src_len_u32_words: u32,
+/// Oracle response for field sqrt: the candidate root and whether x is a quadratic non-residue.
+/// Contains a bool (sub-word type) so must use field-by-field path (no repr(C)).
+#[derive(Clone, Copy, Debug, WordLayout)]
+pub struct FieldSqrtResponse {
+    pub sqrt_candidate: Bytes32,
+    pub is_quadratic_non_residue: bool,
 }
 
-pub type FieldOpsHint = GenericFieldOpsHint<u32>;
-pub type FieldOpsHint64 = GenericFieldOpsHint<u64>;
+/// Oracle input for field operations: operation code + source data.
+#[derive(Clone, Copy, Debug, WordLayout)]
+pub struct FieldOpsInput {
+    pub op: u32,
+    pub src: Bytes32,
+}
+
+pub const FIELD_OPS_ADVISE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x11;
 
 #[repr(u32)]
 #[non_exhaustive]
@@ -62,8 +66,10 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         }
 
         let input = Bytes32::from_array(x.to_bytes().into());
-        let (sqrt_candidate, is_quadratic_non_residue): (Bytes32, bool) =
-            self.query_field_op(FieldHintOp::Secp256k1BaseFieldSqrt, &input);
+        let FieldSqrtResponse {
+            sqrt_candidate,
+            is_quadratic_non_residue,
+        } = self.query_field_op(FieldHintOp::Secp256k1BaseFieldSqrt, &input);
 
         // Answer must be a valid field element
         let fe = FieldElement::from_bytes(sqrt_candidate.as_u8_array_ref()).unwrap();
@@ -137,38 +143,14 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 }
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
-    fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
-        // We use different advice params depending on architecture
-        // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_pointer_width = "32")]
-        let r: R = {
-            let hint_request = FieldOpsHint {
-                op: op as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint).addr() as u32),
-                )
-                .unwrap()
+    fn query_field_op<R: WordLayout>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
+        let query_input = FieldOpsInput {
+            op: op as u32,
+            src: *input,
         };
-        #[cfg(target_pointer_width = "64")]
-        let r: R = {
-            let hint_request = FieldOpsHint64 {
-                op: op as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
-                )
-                .unwrap()
-        };
-        r
+        self.oracle
+            .query(FIELD_OPS_ADVISE_QUERY_ID, &query_input)
+            .unwrap()
     }
 }
 

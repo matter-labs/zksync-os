@@ -8,13 +8,15 @@ use zk_ee::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
         simple_oracle_query::SimpleOracleQuery,
         usize_serialization::{UsizeDeserializable, UsizeSerializable},
+        word_layout::WordLayout,
     },
     utils::{exact_size_chain::ExactSizeChain, Bytes32},
 };
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, WordLayout)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EthereumAccountProperties {
     pub nonce: u64,

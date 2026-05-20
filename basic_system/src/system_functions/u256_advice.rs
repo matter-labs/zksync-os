@@ -1,31 +1,7 @@
 use u256::U256;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{DivRemExt, WideDivRemExt};
-
-/// Params for U256 div_rem oracle query (pointer-based, like modexp).
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct U256DivRemAdviceParamsGeneric<W> {
-    pub dividend_ptr: W,
-    pub divisor_ptr: W,
-}
-
-pub type U256DivRemAdviceParams = U256DivRemAdviceParamsGeneric<u32>;
-pub type U256DivRemAdviceParams64 = U256DivRemAdviceParamsGeneric<u64>;
-
-/// Params for U256 wide div_rem oracle query (512-bit dividend, 256-bit divisor).
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct U256WideDivRemAdviceParamsGeneric<W> {
-    pub dividend_lo_ptr: W,
-    pub dividend_hi_ptr: W,
-    pub divisor_ptr: W,
-}
-
-pub type U256WideDivRemAdviceParams = U256WideDivRemAdviceParamsGeneric<u32>;
-pub type U256WideDivRemAdviceParams64 = U256WideDivRemAdviceParamsGeneric<u64>;
 
 /// Verifies a div_rem hint. On success, `dividend` is modified in-place to
 /// hold the remainder. Caller must save q_limbs before calling.
@@ -122,16 +98,6 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
     }
 }
 
-#[inline(always)]
-fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> [u64; 4] {
-    [
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 0"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 1"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 2"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 3"),
-    ]
-}
-
 #[inline]
 pub fn u256_div_rem_with_advice<O: IOOracle>(
     dividend_or_quotient: &mut U256,
@@ -140,35 +106,13 @@ pub fn u256_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor_or_remainder.is_zero());
 
-    #[cfg(target_pointer_width = "32")]
-    let mut it = {
-        let params = U256DivRemAdviceParams {
-            dividend_ptr: (dividend_or_quotient as *const U256).addr() as u32,
-            divisor_ptr: (divisor_or_remainder as *const U256).addr() as u32,
-        };
-        oracle
-            .raw_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256DivRemAdviceParams).addr() as u32),
-            )
-            .expect("div_rem oracle query failed")
-    };
-
-    #[cfg(target_pointer_width = "64")]
-    let mut it = {
-        let params = U256DivRemAdviceParams64 {
-            dividend_ptr: (dividend_or_quotient as *const U256).addr() as u64,
-            divisor_ptr: (divisor_or_remainder as *const U256).addr() as u64,
-        };
-        oracle
-            .raw_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256DivRemAdviceParams64).addr() as u64),
-            )
-            .expect("div_rem oracle query failed")
-    };
-
-    let q_limbs = read_limbs_from_oracle_response(&mut it);
+    // Query oracle: input is (dividend, divisor) as 8 u64 limbs, output is quotient limbs [u64; 4]
+    let mut input = [0u64; 8];
+    input[..4].copy_from_slice(dividend_or_quotient.as_limbs());
+    input[4..].copy_from_slice(divisor_or_remainder.as_limbs());
+    let q_limbs: [u64; 4] = oracle
+        .query(U256_DIV_REM_ADVICE_QUERY_ID, &input)
+        .expect("div_rem oracle query failed");
 
     // verify modifies dividend_or_quotient in-place to hold the remainder
     assert!(verify_div_rem_hint(
@@ -201,38 +145,17 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor.is_zero());
 
-    #[cfg(target_pointer_width = "32")]
-    let mut it = {
-        let params = U256WideDivRemAdviceParams {
-            dividend_lo_ptr: (dividend_lo as *const U256).addr() as u32,
-            dividend_hi_ptr: (dividend_hi as *const U256).addr() as u32,
-            divisor_ptr: (divisor as *const U256).addr() as u32,
-        };
-        oracle
-            .raw_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256WideDivRemAdviceParams).addr() as u32),
-            )
-            .expect("wide_div_rem oracle query failed")
-    };
+    // Query oracle: input is (dividend_lo, dividend_hi, divisor) as 12 u64 limbs, output is (q_lo, q_hi) as [u64; 8]
+    let mut input = [0u64; 12];
+    input[..4].copy_from_slice(dividend_lo.as_limbs());
+    input[4..8].copy_from_slice(dividend_hi.as_limbs());
+    input[8..].copy_from_slice(divisor.as_limbs());
+    let q_limbs: [u64; 8] = oracle
+        .query(U256_WIDE_DIV_REM_ADVICE_QUERY_ID, &input)
+        .expect("wide_div_rem oracle query failed");
 
-    #[cfg(target_pointer_width = "64")]
-    let mut it = {
-        let params = U256WideDivRemAdviceParams64 {
-            dividend_lo_ptr: (dividend_lo as *const U256).addr() as u64,
-            dividend_hi_ptr: (dividend_hi as *const U256).addr() as u64,
-            divisor_ptr: (divisor as *const U256).addr() as u64,
-        };
-        oracle
-            .raw_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
-            )
-            .expect("wide_div_rem oracle query failed")
-    };
-
-    let q_lo_limbs = read_limbs_from_oracle_response(&mut it);
-    let q_hi_limbs = read_limbs_from_oracle_response(&mut it);
+    let q_lo_limbs: [u64; 4] = q_limbs[..4].try_into().unwrap();
+    let q_hi_limbs: [u64; 4] = q_limbs[4..].try_into().unwrap();
 
     // verify modifies dividend_lo in-place to hold the remainder
     assert!(verify_wide_div_rem_hint(

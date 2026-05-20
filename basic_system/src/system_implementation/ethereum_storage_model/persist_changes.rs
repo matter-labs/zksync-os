@@ -26,7 +26,7 @@ use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::types_config::EthereumIOTypesConfig;
-use zk_ee::utils::{Bytes32, USIZE_SIZE};
+use zk_ee::utils::Bytes32;
 
 use super::vec_trait::VecLikeCtor;
 
@@ -45,25 +45,39 @@ impl<'o, O: IOOracle> PreimagesOracle for OracleProxy<'o, O> {
         interner: &'_ mut I,
     ) -> Result<&'a [u8], ()> {
         // first length
+        let key_bytes32 = Bytes32::from_array(*key);
         let expected_bytes: u32 = self
             .0
-            .query_serializable(
-                ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
-                &Bytes32::from_array(*key),
-            )
+            .query(ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, &key_bytes32)
             .map_err(|_| ())?;
-        let words_buffer_size = (expected_bytes as usize).next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
-        assert!(I::SUPPORTS_WORD_LEVEL_INTERNING);
-        // NOTE: we leave some slack for 64/32 bit arch mismatches
-        let mut buffer = interner.get_word_buffer(words_buffer_size.next_multiple_of(2))?;
-        let key = Bytes32::from_array(*key);
-        let capacity = buffer.spare_capacity_mut();
-        let num_written = self
+        // Get the preimage bytes
+        let bytes: alloc::vec::Vec<u8> = self
             .0
-            .expose_preimage(ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID, &key, capacity)
+            .query_bytes(ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID, &key_bytes32)
             .map_err(|_| ())?;
+        assert!(I::SUPPORTS_WORD_LEVEL_INTERNING);
+        let usize_size = core::mem::size_of::<usize>();
+        let words_buffer_size = bytes.len().next_multiple_of(usize_size) / usize_size;
+        let mut buffer = interner.get_word_buffer(words_buffer_size.next_multiple_of(2))?;
+        // Copy the bytes into the interner word buffer
+        let capacity = buffer.spare_capacity_mut();
+        let mut word_idx = 0;
+        let mut byte_idx = 0;
+        while byte_idx < bytes.len() {
+            let mut word: usize = 0;
+            for j in 0..usize_size {
+                if byte_idx + j < bytes.len() {
+                    word |= (bytes[byte_idx + j] as usize) << (j * 8);
+                }
+            }
+            if word_idx < capacity.len() {
+                capacity[word_idx].write(word);
+            }
+            word_idx += 1;
+            byte_idx += usize_size;
+        }
         unsafe {
-            buffer.set_word_len(num_written);
+            buffer.set_word_len(word_idx);
         }
 
         Ok(buffer.flush_as_bytes(expected_bytes as usize))

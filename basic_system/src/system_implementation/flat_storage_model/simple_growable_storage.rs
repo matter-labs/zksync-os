@@ -34,6 +34,7 @@ use zk_ee::{internal_error, logger_log};
 use zk_ee::{
     memory::stack_trait::Stack,
     oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::word_layout::WordLayout,
     oracle::IOOracle,
     system::{errors::internal::InternalError, logger::Logger},
     types_config::EthereumIOTypesConfig,
@@ -46,6 +47,7 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageLeaf<const N: usize> {
@@ -80,6 +82,30 @@ impl<const N: usize> UsizeDeserializable for FlatStorageLeaf<N> {
         let new = Self { key, value, next };
 
         Ok(new)
+    }
+}
+
+impl<const N: usize> WordLayout for FlatStorageLeaf<N> {
+    const WORD_COUNT: Option<usize> = match (
+        <Bytes32 as WordLayout>::WORD_COUNT,
+        <u64 as WordLayout>::WORD_COUNT,
+    ) {
+        (Some(b32), Some(u)) => Some(b32 * 2 + u),
+        _ => None,
+    };
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.key.write_words(w);
+        self.value.write_words(w);
+        self.next.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        Self {
+            key: Bytes32::read_words(r),
+            value: Bytes32::read_words(r),
+            next: u64::read_words(r),
+        }
     }
 }
 
@@ -132,11 +158,34 @@ impl FlatStorageHasher for Blake2sStorageHasher {
     }
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageCommitment<const N: usize> {
     pub root: Bytes32,
     pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes
+}
+
+impl<const N: usize> WordLayout for FlatStorageCommitment<N> {
+    const WORD_COUNT: Option<usize> = match (
+        <Bytes32 as WordLayout>::WORD_COUNT,
+        <u64 as WordLayout>::WORD_COUNT,
+    ) {
+        (Some(b32), Some(u)) => Some(b32 + u),
+        _ => None,
+    };
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.root.write_words(w);
+        self.next_free_slot.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        Self {
+            root: Bytes32::read_words(r),
+            next_free_slot: u64::read_words(r),
+        }
+    }
 }
 
 impl<const N: usize> UsizeSerializable for FlatStorageCommitment<N> {
@@ -847,9 +896,8 @@ fn get_proof_for_index<
     oracle: &mut O,
     index: u64,
 ) -> ValueAtIndexProof<N, H, A> {
-    // we can not use query here, but almost
     let proof: ValueAtIndexProof<N, H, A> = oracle
-        .query_serializable(PROOF_FOR_INDEX_QUERY_ID, &index)
+        .query(PROOF_FOR_INDEX_QUERY_ID, &index)
         .expect("must deserialize proof for index");
     assert_eq!(proof.proof.existing.index, index);
 
@@ -1016,6 +1064,42 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
     }
 }
 
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordLayout
+    for LeafProof<N, H, A>
+{
+    const WORD_COUNT: Option<usize> = match (
+        <u64 as WordLayout>::WORD_COUNT,
+        <FlatStorageLeaf<N> as WordLayout>::WORD_COUNT,
+        <Bytes32 as WordLayout>::WORD_COUNT,
+    ) {
+        (Some(a), Some(b), Some(c)) => Some(a + b + c * N),
+        _ => None,
+    };
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        WordLayout::write_words(&self.index, w);
+        WordLayout::write_words(&self.leaf, w);
+        for el in self.path.as_slice().iter() {
+            <Bytes32 as WordLayout>::write_words(el, w);
+        }
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        let index = u64::read_words(r);
+        let leaf = FlatStorageLeaf::<N>::read_words(r);
+        let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
+        for dst in path.iter_mut() {
+            *dst = Bytes32::read_words(r);
+        }
+        Self {
+            index,
+            leaf,
+            path,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExistingReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub existing: LeafProof<N, H, A>,
@@ -1040,6 +1124,22 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
         let existing = UsizeDeserializable::from_iter(src)?;
 
         Ok(Self { existing })
+    }
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordLayout
+    for ExistingReadProof<N, H, A>
+{
+    const WORD_COUNT: Option<usize> = <LeafProof<N, H, A> as WordLayout>::WORD_COUNT;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.existing.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        Self {
+            existing: LeafProof::read_words(r),
+        }
     }
 }
 
@@ -1293,6 +1393,22 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
         let new = Self { proof };
 
         Ok(new)
+    }
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordLayout
+    for ValueAtIndexProof<N, H, A>
+{
+    const WORD_COUNT: Option<usize> = <ExistingReadProof<N, H, A> as WordLayout>::WORD_COUNT;
+
+    fn write_words(&self, w: &mut impl FnMut(u32)) {
+        self.proof.write_words(w);
+    }
+
+    fn read_words(r: &mut impl FnMut() -> u32) -> Self {
+        Self {
+            proof: ExistingReadProof::read_words(r),
+        }
     }
 }
 
