@@ -1427,7 +1427,6 @@ mod fri_precompile_e2e {
     // Address 0x7003 — the FRI precompile.
     const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000007003");
     const FRI_VERIFIER_CONTRACT: Address = address!("000000000000000000000000000000000000f101");
-    const MESSAGE_ROOT_CONTRACT: Address = address!("0000000000000000000000000000000000010005");
     // Runtime bytecode compiled from
     // contracts/l1-contracts/contracts/state-transition/verifiers/ZKsyncOSVerifierFri.sol
     // in zksync-era-clean-latest.
@@ -1600,30 +1599,14 @@ mod fri_precompile_e2e {
         B256::from(hash)
     }
 
-    fn message_root_multichain_root_slot(tree_height: U256) -> U256 {
-        // keccak256(uint256(6)) + height is the Solidity slot of
-        // `_nodes[height]`; hashing it gives `_nodes[height][0]`.
-        const NODES_FIRST_ELEMENT_SLOT: [u8; 32] = [
-            0xf6, 0x52, 0x22, 0x23, 0x13, 0xe2, 0x84, 0x59, 0x52, 0x8d, 0x92, 0x0b, 0x65, 0x11,
-            0x5c, 0x16, 0xc0, 0x4f, 0x3e, 0xfc, 0x82, 0xaa, 0xed, 0xc9, 0x7b, 0xe5, 0x9f, 0x3f,
-            0x37, 0x7c, 0x0d, 0x3f,
-        ];
-
-        let nodes_height_array_slot =
-            U256::from_be_bytes(NODES_FIRST_ELEMENT_SLOT).saturating_add(tree_height);
-        let hash = rig::alloy::primitives::keccak256(nodes_height_array_slot.to_be_bytes::<32>());
-        U256::from_be_slice(hash.as_slice())
-    }
-
-    fn seed_gateway_message_root_storage(tester: &mut TestingFramework) {
-        let zero = rig::ruint::aliases::B256::from(U256::ZERO);
-        // L2MessageRoot._height is read from slot 4 in Gateway post-tx proving.
-        tester.set_storage_slot(MESSAGE_ROOT_CONTRACT, U256::from(4), zero);
-        tester.set_storage_slot(
-            MESSAGE_ROOT_CONTRACT,
-            message_root_multichain_root_slot(U256::ZERO),
-            zero,
-        );
+    fn fri_gateway_run_config() -> rig::chain::RunConfig {
+        let mut run_config = rig::chain::RunConfig::default();
+        // The benchmark/test still runs the RISC-V simulator when enabled by
+        // the environment. This disables only the legacy extra assertion that
+        // assumes the guest returns the storage-diff hash. The current
+        // `for_tests` proving binary returns the batch public-input hash.
+        run_config.check_storage_diff_hashes = false;
+        run_config
     }
 
     /// Loads a committed proof fixture and returns `(raw_bincode_bytes, stmt_hash)`.
@@ -1788,7 +1771,7 @@ mod fri_precompile_e2e {
                 compiled_layouts,
             }),
         );
-        seed_gateway_message_root_storage(&mut tester);
+        tester = tester.with_run_config(fri_gateway_run_config());
         let wallet = tester.prefunded_random_signer();
 
         // ----- 6. Submit FRI_PROOF_TX that calls the FRI precompile -------------
@@ -1845,7 +1828,7 @@ mod fri_precompile_e2e {
     /// The tx first verifies the FRI sidecar through the bootloader path, then
     /// executes `ZKsyncOSVerifierFri.verify(...)`. The contract recomputes the
     /// statement hash from the proof arguments and reaches the FRI precompile
-    /// at 0x0101. A `true` return proves the contract bytecode, ABI shape,
+    /// at 0x7003. A `true` return proves the contract bytecode, ABI shape,
     /// tx-scoped verified-statement state, and precompile all line up.
     fn execute_fri_verifier_contract_tx(
         fixture_relative: &str,
@@ -1877,7 +1860,7 @@ mod fri_precompile_e2e {
         let stmt_bytes32 = rig::zk_ee::utils::Bytes32::from_array(stmt_hash.0);
         let (mut tester, _counter) = TestingFramework::new()
             .with_mock_fri_sidecars([(stmt_bytes32, proof_bytes)], Some(artifacts));
-        seed_gateway_message_root_storage(&mut tester);
+        tester = tester.with_run_config(fri_gateway_run_config());
         tester.set_evm_contract(FRI_VERIFIER_CONTRACT, &verifier_bytecode);
         let wallet = tester.prefunded_random_signer();
 
@@ -1974,24 +1957,6 @@ mod fri_precompile_e2e {
 
     #[test]
     fn fri_verifier_contract_returns_true_for_verified_proof() {
-        // Skip under RISC-V proving mode: the bootloader's Gateway post-tx
-        // path reads message-root storage slots and asks the oracle for
-        // their initial values. The rig builds the proving-mode storage
-        // witness from the Ethereum MPT at chain construction time, while
-        // `seed_gateway_message_root_storage` writes only to forward-mode
-        // flat storage — so the proving oracle has no witness for those
-        // slots and panics with `Must get initial slot value from oracle`.
-        // Forward-mode correctness is still exercised in non-bench CI
-        // (which runs with `ZKSYNC_RISC_V_RUN=false`). Drop this guard
-        // once the rig exposes an MPT-side seeding API.
-        if std::env::var("ZKSYNC_RISC_V_RUN").is_ok() {
-            eprintln!(
-                "skipping fri_verifier_contract_returns_true_for_verified_proof under \
-                 ZKSYNC_RISC_V_RUN: rig MPT seeding gap for message-root slots"
-            );
-            return;
-        }
-
         let fixtures = all_fri_proof_fixtures();
         assert!(
             !fixtures.is_empty(),

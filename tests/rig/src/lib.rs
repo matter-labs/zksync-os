@@ -295,6 +295,9 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
 
     /// Builder: sets default block context used by subsequent block execution.
     pub fn with_block_context(mut self, block_context: BlockContext) -> Self {
+        if block_context.is_gateway {
+            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        }
         self.block_context = Some(block_context);
         self
     }
@@ -304,11 +307,18 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
     /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
+        if block_context
+            .as_ref()
+            .is_some_and(|block_context| block_context.is_gateway)
+        {
+            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        }
         self.block_context = block_context;
         self
     }
@@ -318,6 +328,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
@@ -387,6 +398,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
         let counter = sidecar_source.lookup_counter();
@@ -504,6 +516,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.block_context
             .get_or_insert_with(Default::default)
             .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self.fri_sidecar = sidecars.into_iter().collect();
         self.fri_artifacts = None;
         self

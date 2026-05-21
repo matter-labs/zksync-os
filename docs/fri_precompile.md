@@ -119,7 +119,7 @@ stored list are deduped).
 | Quantity | Constant | Value | Multiplier |
 |---|---|---|---|
 | Intrinsic gas per statement | `FRI_PROOF_TX_INTRINSIC_GAS` | `100_000` | × submitted count |
-| Intrinsic native per statement | `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF` | `10_000_000` | × submitted count |
+| Intrinsic native per statement | `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF` | `17_000_000` | × submitted count |
 
 Both are added to the tx's intrinsic charges in
 `calculate_tx_intrinsic_gas` / `calculate_l2_tx_intrinsic_computational_native_resources`
@@ -134,7 +134,7 @@ before execution begins; the user must have budget for both.
 | `MAX_FRI_STATEMENTS_PER_TX` | `8` | `zk_ee::system::constants` |
 | `FRI_STATEMENT_HASH_VERSION` | `1` (first byte of hash) | `basic_bootloader::bootloader::constants` |
 | `FRI_PROOF_TX_INTRINSIC_GAS` | `100_000` (per submitted statement) | same |
-| `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF` | `10_000_000` (per submitted statement) | same |
+| `FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF` | `17_000_000` (per submitted statement) | same |
 | `FRI_PROOF_QUERY_ID` | `0x40020001` | `zk_ee::oracle::query_ids` |
 
 ## Statement hash format
