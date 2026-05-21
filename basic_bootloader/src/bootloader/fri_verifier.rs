@@ -215,7 +215,7 @@ mod guest {
 
         Ok(
             full_statement_verifier::unified_circuit_statement::verify_unified_circuit_recursion_layer(
-                full_statement_verifier::verifier_common::SecurityModel::Security80,
+                full_statement_verifier::verifier_common::SecurityModel::Security100,
             ),
         )
     }

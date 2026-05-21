@@ -147,11 +147,11 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::NativeResourcesAreTooExpensive => {InvalidTransaction::NativeResourcesAreTooExpensive}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7623IntrinsicGasIsTooLow => {InvalidTransaction::EIP7623IntrinsicGasIsTooLow}
             basic_bootloader::bootloader::errors::InvalidTransaction::CallerGasLimitMoreThanTxLimit => {InvalidTransaction::CallerGasLimitMoreThanTxLimit}
-            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofTxNotSupported => {InvalidTransaction::FilteredByValidator}
-            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofSidecarMissing => {InvalidTransaction::FilteredByValidator}
-            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofVerificationFailed => {InvalidTransaction::FilteredByValidator}
-            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofStatementHashMismatch => {InvalidTransaction::FilteredByValidator}
-            basic_bootloader::bootloader::errors::InvalidTransaction::TooManyFriStatements => {InvalidTransaction::InvalidStructure}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofTxNotSupported => {InvalidTransaction::FriProofTxNotSupported}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofSidecarMissing => {InvalidTransaction::FriProofSidecarMissing}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofVerificationFailed => {InvalidTransaction::FriProofVerificationFailed}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofStatementHashMismatch => {InvalidTransaction::FriProofStatementHashMismatch}
+            basic_bootloader::bootloader::errors::InvalidTransaction::TooManyFriStatements => {InvalidTransaction::TooManyFriStatements}
         }
     }
 }

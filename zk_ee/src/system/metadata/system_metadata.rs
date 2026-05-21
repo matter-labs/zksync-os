@@ -61,9 +61,6 @@ impl<
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.block_level.blob_base_fee_per_gas()
     }
-    fn is_gateway(&self) -> bool {
-        self.block_level.is_gateway()
-    }
 }
 
 /// Forwards to `tx_level`.
@@ -91,12 +88,12 @@ impl<
     }
 }
 
-/// Assumes that ZK specific pricing metadata is implemented at the block level.
+/// Assumes that ZK-specific metadata is implemented at the block level.
 impl<
         IOTypes: SystemIOTypesConfig,
-        B: BasicBlockMetadata<IOTypes> + ZkSpecificPricingMetadata,
+        B: BasicBlockMetadata<IOTypes> + ZkSpecificMetadata,
         TX: BasicTransactionMetadata<IOTypes>,
-    > ZkSpecificPricingMetadata for SystemMetadata<IOTypes, B, TX>
+    > ZkSpecificMetadata for SystemMetadata<IOTypes, B, TX>
 {
     fn native_price(&self) -> U256 {
         self.block_level.native_price()
@@ -106,6 +103,9 @@ impl<
     }
     fn get_pubdata_price(&self) -> U256 {
         self.block_level.get_pubdata_price()
+    }
+    fn is_gateway(&self) -> bool {
+        self.block_level.is_gateway()
     }
 }
 

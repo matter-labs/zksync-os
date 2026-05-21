@@ -22,7 +22,7 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
-use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
@@ -51,7 +51,7 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 ) -> Result<TxContextForPreAndPostProcessing<S>, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,
@@ -144,8 +144,6 @@ where
         .statement_versioned_hashes()
         .map(|hashes| hashes.count as u64)
         .unwrap_or(0);
-    let fri_proof_intrinsic_native_cost =
-        FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF.saturating_mul(statement_versioned_hashes_num);
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
@@ -189,6 +187,7 @@ where
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
         transaction.is_service(),
     );
     let intrinsic_pubdata =
@@ -202,7 +201,7 @@ where
         native_prepaid_from_gas,
         native_per_pubdata,
         intrinsic_gas,
-        intrinsic_computational_native.saturating_add(fri_proof_intrinsic_native_cost),
+        intrinsic_computational_native,
         intrinsic_pubdata,
     )?;
 
@@ -295,6 +294,19 @@ where
         }
     };
     let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
+
+    // Charge the per-statement FRI verifier native budget against
+    // `intrinsic_resources` so `verify_intrinsic_native` exercises this
+    // portion of the intrinsic formula. The verifier itself runs later
+    // and is gated by this prepayment.
+    if statement_versioned_hashes_num > 0 {
+        intrinsic_resources.charge(&Resources::from_native(
+            <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF
+                    .saturating_mul(statement_versioned_hashes_num),
+            ),
+        ))?;
+    }
 
     // any IO starts here
 

@@ -70,7 +70,7 @@ fn run_host_verifier(verifier_words: &[u32]) -> Result<[u32; 16], FriHostVerifyE
         .spawn(move || {
             nd_source_std::set_iterator(words.into_iter());
             let output = full_statement_verifier::unified_circuit_statement::verify_unified_circuit_recursion_layer(
-                full_statement_verifier::verifier_common::SecurityModel::Security80,
+                full_statement_verifier::verifier_common::SecurityModel::Security100,
             );
             let trailing = nd_source_std::try_read_word().is_some();
             (output, trailing)

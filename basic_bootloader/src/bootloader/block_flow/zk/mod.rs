@@ -1,6 +1,6 @@
 use super::*;
 use core::marker::PhantomData;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
+use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
 use zk_ee::{internal_error, system_log, types_config::*};
 
@@ -51,7 +51,7 @@ fn check_for_block_limits<S: EthereumLikeTypes>(
 ) -> Result<(), InvalidTransaction>
 where
     S::IO: IOSubsystemExt,
-    <S as SystemTypes>::Metadata: ZkSpecificPricingMetadata,
+    <S as SystemTypes>::Metadata: ZkSpecificMetadata,
 {
     if gas_used > system.get_gas_limit() {
         system_log!(

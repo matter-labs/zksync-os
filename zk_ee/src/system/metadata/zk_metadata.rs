@@ -1,9 +1,7 @@
 //! TODO: this actually belongs to the bootloader, just for the ZK STF.
 //! We will move it in future PRs.
 
-use super::basic_metadata::{
-    BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
-};
+use super::basic_metadata::{BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificMetadata};
 use super::system_metadata::SystemMetadata;
 use crate::system::constants::*;
 use crate::system::errors::internal::InternalError;
@@ -194,13 +192,9 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.blob_fee
     }
-
-    fn is_gateway(&self) -> bool {
-        self.is_gateway
-    }
 }
 
-impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
+impl ZkSpecificMetadata for BlockMetadataFromOracle {
     fn get_pubdata_price(&self) -> U256 {
         self.pubdata_price
     }
@@ -209,6 +203,9 @@ impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
     }
     fn get_pubdata_limit(&self) -> u64 {
         self.pubdata_limit
+    }
+    fn is_gateway(&self) -> bool {
+        self.is_gateway
     }
 }
 

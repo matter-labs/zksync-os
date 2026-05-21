@@ -51,10 +51,9 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
-/// FRI proof verification cost.
+/// FRI proof verification cost charged per submitted statement hash.
 pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 10_000_000;
-/// Flat intrinsic gas surcharge for a `FriProofTx` carrying at least one
-/// statement hash.
+/// Per-statement intrinsic gas surcharge for `FriProofTx`.
 pub const FRI_PROOF_TX_INTRINSIC_GAS: u64 = 100_000;
 /// Current statement-hash version of FRI proof transactions.
 pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;

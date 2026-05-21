@@ -48,7 +48,7 @@ use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::basic_metadata::{
-        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
     },
 };
 
@@ -218,7 +218,7 @@ impl<S: SystemTypes> System<S> {
 
 impl<S: SystemTypes> System<S>
 where
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificMetadata,
 {
     pub fn get_native_price(&self) -> ruint::aliases::U256 {
         self.metadata.native_price()

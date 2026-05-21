@@ -113,7 +113,7 @@ pub fn precompile_name(low: u16) -> &'static str {
         0x0010 => "bls12_map_fp_to_g1",
         0x0011 => "bls12_map_fp2_to_g2",
         0x0100 => "p256_verify",
-        0x0101 => "fri_proof",
+        0x7003 => "fri_proof",
         _ => {
             debug_assert!(false, "precompile_name: unexpected low-address {low:#06x}");
             "unknown"

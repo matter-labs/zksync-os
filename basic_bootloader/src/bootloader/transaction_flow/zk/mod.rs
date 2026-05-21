@@ -20,7 +20,7 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -189,7 +189,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
 impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     type TransactionContext = TxContextForPreAndPostProcessing<S>;
@@ -638,7 +638,7 @@ where
 impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     fn execute_call<'a>(
@@ -947,12 +947,7 @@ where
         // present: failed auths (bad sig, wrong chain id, nonce overflow)
         // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
         // formula budgets worst-case success cost per entry.
-        //
-        // Also skip when FRI statement hashes are present: the budget
-        // covers the airbender unified verifier on RISC-V, which is
-        // much more expensive than the host-mode verifier this check
-        // runs under.
-        if context.authorization_list_num == 0 && context.statement_versioned_hashes_num == 0 {
+        if context.authorization_list_num == 0 {
             assert!(
                 formula <= actual_used * 2,
                 "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",

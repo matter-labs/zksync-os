@@ -27,7 +27,7 @@ use crate::bootloader::transaction::Transaction;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
-use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
+use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
 
@@ -37,7 +37,10 @@ use zk_ee::utils::Bytes32;
 pub(super) fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
     system: &System<S>,
     transaction: &Transaction<S::Allocator>,
-) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError> {
+) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError>
+where
+    S::Metadata: ZkSpecificMetadata,
+{
     if !system.metadata.is_gateway() {
         return Err(TxError::Validation(
             InvalidTransaction::FriProofTxNotSupported,

@@ -1257,8 +1257,8 @@ mod fri_precompile {
         fri_proof_tx::UnsignedZKsyncFriProofTx, ZKsyncTxEnvelope,
     };
 
-    // The FRI precompile lives at address 0x0000...0101 (FRI_PRECOMPILE_ADDRESS_LOW = 0x0101).
-    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+    // The FRI precompile lives at address 0x0000...7003 (FRI_PRECOMPILE_ADDRESS_LOW = 0x7003).
+    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000007003");
 
     /// Calling the FRI precompile on a non-gateway chain: the address has no
     /// code and the call returns empty data (behaves like a call to an EOA),
@@ -1424,8 +1424,8 @@ mod fri_precompile_e2e {
     use std::path::PathBuf;
 
     pub(super) const FRI_STATEMENT_HASH_VERSION: u8 = 1;
-    // Address 0x0101 — the FRI precompile.
-    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000000101");
+    // Address 0x7003 — the FRI precompile.
+    const FRI_PRECOMPILE: Address = address!("0000000000000000000000000000000000007003");
     const FRI_VERIFIER_CONTRACT: Address = address!("000000000000000000000000000000000000f101");
     const MESSAGE_ROOT_CONTRACT: Address = address!("0000000000000000000000000000000000010005");
     // Runtime bytecode compiled from
@@ -1434,9 +1434,9 @@ mod fri_precompile_e2e {
     const FRI_VERIFIER_DEPLOYED_BYTECODE: &str =
         include_str!("../../../fixtures/fri/zksync_os_verifier_fri_deployed_bytecode.hex");
     pub(super) const FRI_PRIMARY_PROOF_FIXTURE: &str =
-        "tests/fixtures/fri/airbender_test_proof.bin";
+        "tests/fixtures/fri/fri_proof_security_100_14470757.bin";
     const FRI_SECONDARY_PROOF_FIXTURE: &str =
-        "matter-labs_b18507c4-50f3-4638-854a-ed625c7e685a_11025221.bin";
+        "tests/fixtures/fri/fri_proof_security_100_14469803.bin";
 
     sol! {
         interface ZKsyncOSVerifierFri {
@@ -1462,7 +1462,7 @@ mod fri_precompile_e2e {
     }
 
     pub(super) fn maybe_decompress(bytes: &[u8]) -> Vec<u8> {
-        if bytes.starts_with(&[0x1f, 0x8b]) {
+        let decoded = if bytes.starts_with(&[0x1f, 0x8b]) {
             let mut out = Vec::new();
             GzDecoder::new(bytes)
                 .read_to_end(&mut out)
@@ -1470,6 +1470,16 @@ mod fri_precompile_e2e {
             out
         } else {
             bytes.to_vec()
+        };
+
+        // Strip the 10-byte EPROOF01 server envelope (8-byte magic + 1-byte
+        // version + 1-byte security-bits marker) when present, leaving the raw
+        // bincoded `UnrolledProgramProof` the verifier and sidecar consumers
+        // both expect.
+        if decoded.starts_with(b"EPROOF01") && decoded.len() > 10 {
+            decoded[10..].to_vec()
+        } else {
+            decoded
         }
     }
 
@@ -1645,7 +1655,7 @@ mod fri_precompile_e2e {
             &setup,
             &compiled_layouts,
             false,
-            SecurityModel::Security80,
+            SecurityModel::Security100,
         )
         .expect("proof must verify");
         let stmt_hash = statement_versioned_hash(&verifier_output);
@@ -1676,7 +1686,7 @@ mod fri_precompile_e2e {
             &setup,
             &compiled_layouts,
             false,
-            SecurityModel::Security80,
+            SecurityModel::Security100,
         )
         .expect("proof must verify");
         Some((proof_bytes, verifier_output))
@@ -1716,7 +1726,7 @@ mod fri_precompile_e2e {
     /// and configures `FriVerifierArtifacts` on the oracle so the bootloader
     /// resolves `FRI_PROOF_QUERY_ID` into the flattened word stream. The test
     /// then executes a `FRI_PROOF_TX` inside a gateway-mode block and asserts
-    /// that the FRI precompile at 0x0101 returns ABI-encoded `true`.
+    /// that the FRI precompile at 0x7003 returns ABI-encoded `true`.
     ///
     /// Acts as a silent no-op when the proof fixture is not present on disk.
     #[test]
@@ -1762,7 +1772,7 @@ mod fri_precompile_e2e {
             &setup,
             &compiled_layouts,
             false, // input_is_unrolled = false → unified-over-unified path
-            SecurityModel::Security80,
+            SecurityModel::Security100,
         )
         .expect("proof must verify");
 
@@ -1838,13 +1848,14 @@ mod fri_precompile_e2e {
     /// at 0x0101. A `true` return proves the contract bytecode, ABI shape,
     /// tx-scoped verified-statement state, and precompile all line up.
     fn execute_fri_verifier_contract_tx(
+        fixture_relative: &str,
         precompile_stats: Option<&mut PrecompileStatsTracer<ForwardRunningSystem>>,
     ) -> Option<rig::zksync_os_interface::types::BlockOutput> {
         let (setup_path, layout_path) = default_setup_and_layout_paths();
         let verifier_bytecode = hex::decode(FRI_VERIFIER_DEPLOYED_BYTECODE.trim())
             .expect("decode FRI verifier bytecode");
         let Some((proof_bytes, verifier_output)) =
-            load_proof_fixture_with_output(FRI_PRIMARY_PROOF_FIXTURE, &setup_path, &layout_path)
+            load_proof_fixture_with_output(fixture_relative, &setup_path, &layout_path)
         else {
             return None;
         };
@@ -1935,24 +1946,59 @@ mod fri_precompile_e2e {
         }
     }
 
+    /// Returns every committed 100-bit FRI proof fixture (file name
+    /// → repo-relative path) in deterministic block-number order. Used by
+    /// `fri_verifier_contract_returns_true_for_verified_proof` to exercise
+    /// the full pipeline across the whole fixture corpus and, when
+    /// `cycle_marker` is enabled, to emit one bench sample per proof.
+    fn all_fri_proof_fixtures() -> Vec<(u64, String)> {
+        let dir = repo_root().join("tests/fixtures/fri");
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("read fixtures dir") {
+            let entry = entry.expect("read fixtures dir entry");
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(block_str) = name
+                .strip_prefix("fri_proof_security_100_")
+                .and_then(|s| s.strip_suffix(".bin"))
+            else {
+                continue;
+            };
+            let Ok(block) = block_str.parse::<u64>() else {
+                continue;
+            };
+            out.push((block, format!("tests/fixtures/fri/{name}")));
+        }
+        out.sort_by_key(|(block, _)| *block);
+        out
+    }
+
     #[test]
     fn fri_verifier_contract_returns_true_for_verified_proof() {
+        let fixtures = all_fri_proof_fixtures();
+        assert!(
+            !fixtures.is_empty(),
+            "no FRI proof fixtures found under tests/fixtures/fri/"
+        );
+
         let mut precompile_stats = PrecompileStatsTracer::<ForwardRunningSystem>::default();
-        let output = if precompile_stats_enabled() {
-            execute_fri_verifier_contract_tx(Some(&mut precompile_stats))
-        } else {
-            execute_fri_verifier_contract_tx(None)
-        };
-        let Some(output) = output else {
-            return;
-        };
-        assert_fri_verifier_contract_output(&output);
+        for (_block, fixture) in &fixtures {
+            cycle_marker::log_marker("Params: fri_proof");
+            let output = if precompile_stats_enabled() {
+                execute_fri_verifier_contract_tx(fixture, Some(&mut precompile_stats))
+            } else {
+                execute_fri_verifier_contract_tx(fixture, None)
+            };
+            let Some(output) = output else {
+                continue;
+            };
+            assert_fri_verifier_contract_output(&output);
+        }
         if precompile_stats_enabled() {
             dump_precompile_stats(&precompile_stats);
         }
     }
 
-/// E2E: a single `FRI_PROOF_TX` that carries two distinct verified
+    /// E2E: a single `FRI_PROOF_TX` that carries two distinct verified
     /// statement hashes. Both must verify, both must land on the
     /// tx-level metadata, and the precompile must find both when
     /// queried. We query the second hash (not the first) as calldata to
@@ -2276,7 +2322,7 @@ mod fri_precompile_e2e {
         assert!(
             matches!(
                 output.tx_results[0],
-                Err(InvalidTransaction::InvalidStructure)
+                Err(InvalidTransaction::TooManyFriStatements)
             ),
             "tx with 9 statement hashes (cap=8) must be rejected; \
              got: {:?}",

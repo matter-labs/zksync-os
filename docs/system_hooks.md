@@ -15,7 +15,7 @@ System hooks have two distinct use cases:
   - ecpairing
   - P256
 - Implementing Gateway-only precompiles:
-  - FRI proof verification (`0x0101`) — see the [FRI precompile design](./fri_precompile.md)
+  - FRI proof verification (`0x7003`) — see the [FRI precompile design](./fri_precompile.md)
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook

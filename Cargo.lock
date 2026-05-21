@@ -7948,6 +7948,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-sol-types",
  "bincode 2.0.1",
+ "cycle_marker",
  "execution_utils",
  "flate2",
  "full_statement_verifier",
@@ -9705,12 +9706,12 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=71f9d8edac658e8384c245cf63c3f03d6c5b2454#71f9d8edac658e8384c245cf63c3f03d6c5b2454"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=48d02758ad42684abb9180588e4c14a46be63475#48d02758ad42684abb9180588e4c14a46be63475"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.1.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=71f9d8edac658e8384c245cf63c3f03d6c5b2454#71f9d8edac658e8384c245cf63c3f03d6c5b2454"
+source = "git+https://github.com/matter-labs/zksync-os-interface.git?rev=48d02758ad42684abb9180588e4c14a46be63475#48d02758ad42684abb9180588e4c14a46be63475"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

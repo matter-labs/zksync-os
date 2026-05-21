@@ -79,7 +79,7 @@ The design keeps the EVM-facing contract flow lightweight:
 | Host verifier helper: `verify_host_fri_statement` | `basic_bootloader::bootloader::fri_host_verifier` | Wraps the airbender host verifier with a dedicated 128 MiB-stack thread. Used by admission and by the host recording pass. |
 | Oracle responder: `FriProofResponder` | `forward_system::run::query_processors::fri_proof` | Sequencer-side. Pulls bincode `UnrolledProgramProof` bytes from a `FriProofSidecarSource`, decodes, flattens via `execution_utils::flatten_proof_into_responses_for_unified_recursion`, packs into the host-u64/guest-u32 oracle response. |
 | Admission API: `validate_fri_statement(hash, bytes, artifacts)` | `forward_system::run::fri_admission` | Standalone entry the server calls before admitting `FriProofTx`. Returns `Ok(())` only if the proof verifies *and* its derived hash matches. |
-| Precompile hook | `system_hooks::call_hooks::fri_precompile` (address `0x0101`) | Read-only membership check against the tx-scoped verified-hash list. Returns ABI-encoded `bool`. |
+| Precompile hook | `system_hooks::call_hooks::fri_precompile` (address `0x7003`) | Read-only membership check against the tx-scoped verified-hash list. Returns ABI-encoded `bool`. |
 
 ## End-to-end flow
 
@@ -105,7 +105,7 @@ sign with EOA
                                                                         native: drain + verify (recording pass)
                                                                         riscv: airbender unified verifier
                                                                     EVM frame runs
-                                                                    precompile 0x0101 -> tx-scoped list membership
+                                                                    precompile 0x7003 -> tx-scoped list membership
 ```
 
 ## Resource accounting
@@ -130,7 +130,7 @@ before execution begins; the user must have budget for both.
 | Constant | Value | Where |
 |---|---|---|
 | `FRI_PROOF_TX_TYPE` | `0x7c` | `fri_proof_tx.rs` |
-| `FRI_PRECOMPILE_ADDRESS` | `0x0000000000000000000000000000000000000101` | `system_hooks/addresses_constants.rs` |
+| `FRI_PRECOMPILE_ADDRESS` | `0x0000000000000000000000000000000000007003` | `system_hooks/addresses_constants.rs` |
 | `MAX_FRI_STATEMENTS_PER_TX` | `8` | `zk_ee::system::constants` |
 | `FRI_STATEMENT_HASH_VERSION` | `1` (first byte of hash) | `basic_bootloader::bootloader::constants` |
 | `FRI_PROOF_TX_INTRINSIC_GAS` | `100_000` (per submitted statement) | same |
