@@ -52,7 +52,11 @@ else
 fi
 
 EVM_FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
-FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
+if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"
+else
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
+fi
 
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
