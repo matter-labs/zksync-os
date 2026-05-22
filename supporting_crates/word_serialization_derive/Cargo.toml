@@ -1,0 +1,18 @@
+[package]
+name = "word_serialization_derive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = { version = "1" }
+proc-macro2 = "1"
+
+[lib]
+proc-macro = true

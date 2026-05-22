@@ -27,8 +27,9 @@ use rig::zk_ee::common_structs::{
 };
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use rig::zk_ee::oracle::word_serialization::{
+    dyn_word_iterator::DynWordIterator, WordDeserializable,
+};
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
@@ -74,7 +75,7 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key } = <InitialStorageSlotQuery<
                     EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
+                > as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter()
                 )
                 .expect("must deserialize the address/slot");
@@ -106,7 +107,7 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                             }
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(slot_data)
             }
             _ => unreachable!(),
         }

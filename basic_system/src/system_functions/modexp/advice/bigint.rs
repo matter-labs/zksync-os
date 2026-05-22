@@ -978,7 +978,7 @@ mod tests {
     use std::alloc::Global;
 
     use super::*;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable};
     use zk_ee::system::errors::internal::InternalError;
 
     struct PackedLengthOracle {
@@ -988,7 +988,7 @@ mod tests {
     impl IOOracle for PackedLengthOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+        fn raw_query<'a, I: WordSerializable + WordDeserializable>(
             &'a mut self,
             query_type: u32,
             _input: &I,

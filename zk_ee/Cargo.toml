@@ -22,6 +22,7 @@ crypto = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = { workspace = true }
 paste = { workspace = true }
+word_serialization_derive = { path = "../supporting_crates/word_serialization_derive" }
 
 [features]
 # serde derivation has to be disabled for risc-v target until we update ruint version

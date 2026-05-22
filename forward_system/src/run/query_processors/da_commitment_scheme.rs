@@ -37,6 +37,8 @@ impl OracleQueryProcessor for DACommitmentSchemeResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        DynUsizeIterator::from_constructor(data as u8, UsizeSerializable::iter)
+        zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+            data as u8,
+        )
     }
 }

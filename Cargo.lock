@@ -9469,6 +9469,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "word_serialization_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "worker"
 version = "0.1.0"
 source = "git+https://github.com/matter-labs/zksync-airbender?rev=73d69b5#73d69b5346b3c2350fa104a56ec4df78840cea99"
@@ -9647,6 +9656,7 @@ dependencies = [
  "serde",
  "strum_macros",
  "u256",
+ "word_serialization_derive",
 ]
 
 [[package]]

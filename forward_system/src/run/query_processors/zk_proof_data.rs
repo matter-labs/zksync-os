@@ -45,6 +45,6 @@ impl OracleQueryProcessor for ZKProofDataResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        DynUsizeIterator::from_constructor(data, UsizeSerializable::iter)
+        DynWordIterator::from_word_serializable(data)
     }
 }

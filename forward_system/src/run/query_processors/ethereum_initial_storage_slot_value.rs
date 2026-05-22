@@ -15,6 +15,7 @@ use ruint::aliases::B160;
 use std::alloc::Global;
 use std::collections::BTreeMap;
 use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
+use zk_ee::oracle::word_serialization::WordDeserializable;
 use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::storage_types::StorageAddress;
 use zk_ee::utils::Bytes32;
@@ -62,7 +63,7 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = StorageAddress::<EthereumIOTypesConfig>::from_iter(&mut query.into_iter())
+        let address = StorageAddress::<EthereumIOTypesConfig>::read_words(&mut query.into_iter())
             .expect("must deserialize address value");
 
         // println!("Reading for address 0x{:040x} and key {:?}", address.address.as_uint(), address.key);
@@ -109,8 +110,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_constructor(initial_value, |inner_ref| {
-            UsizeSerializable::iter(inner_ref)
-        })
+        DynWordIterator::from_word_serializable(initial_value)
     }
 }

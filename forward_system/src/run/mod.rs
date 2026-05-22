@@ -36,6 +36,7 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
+use zk_ee::oracle::word_serialization::WordSerializable;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 
@@ -61,7 +62,6 @@ use crate::run::test_impl::NoopTxCallback;
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
 use zksync_os_interface::traits::TxListSource;
 
@@ -219,7 +219,7 @@ pub fn generate_batch_proof_input(
                 let advice =
                     callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof(blob_data);
                 blobs_advice.push(24);
-                for word in advice.iter() {
+                for word in advice.to_word_vec() {
                     #[cfg(target_pointer_width = "32")]
                     blobs_advice.push(word as u32);
                     #[cfg(target_pointer_width = "64")]

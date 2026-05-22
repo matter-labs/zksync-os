@@ -1,9 +1,6 @@
 use super::*;
 use oracle_provider::OracleQueryProcessor;
-use zk_ee::{
-    oracle::query_ids::UART_QUERY_ID,
-    oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-};
+use zk_ee::oracle::query_ids::UART_QUERY_ID;
 
 /// This processor handles debug print requests from the RISC-V execution
 /// environment. It receives formatted string data and outputs it to stdout,
@@ -48,6 +45,6 @@ impl OracleQueryProcessor for UARTPrintResponder {
         print!("{}", String::from_utf8_lossy(&string_bytes));
         // println!("UART: {}", String::from_utf8_lossy(&string_bytes));
 
-        DynUsizeIterator::from_constructor((), UsizeSerializable::iter)
+        zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<0, _>(())
     }
 }

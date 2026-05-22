@@ -8,6 +8,7 @@ use basic_system::system_implementation::ethereum_storage_model::*;
 use ruint::aliases::B160;
 use std::alloc::Global;
 use vec_trait::VecCtor;
+use zk_ee::oracle::word_serialization::WordDeserializable;
 use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone)]
@@ -56,7 +57,8 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = B160::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+        let address =
+            B160::read_words(&mut query.into_iter()).expect("must deserialize hash value");
 
         let account = if let Some(data) = self.source.get(&address).copied() {
             data
@@ -89,6 +91,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
             }
         };
 
-        DynUsizeIterator::from_constructor(account, UsizeSerializable::iter)
+        DynWordIterator::from_word_serializable(account)
     }
 }

@@ -30,6 +30,6 @@ impl OracleQueryProcessor for BlockMetadataResponder {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        DynUsizeIterator::from_constructor(self.block_metadata, UsizeSerializable::iter)
+        DynWordIterator::from_word_serializable(self.block_metadata)
     }
 }

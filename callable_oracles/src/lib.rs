@@ -28,11 +28,7 @@ pub mod blob_kzg_commitment;
 pub mod field_hints;
 pub mod utils;
 
-use zk_ee::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
-    system::errors::internal::InternalError,
-    utils::exact_size_chain::ExactSizeChain,
-};
+use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable};
 
 /// Shared test utilities for callable oracle unit tests.
 #[cfg(any(test, feature = "testing"))]
@@ -73,34 +69,10 @@ pub mod test_utils {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, WordSerializable, WordDeserializable)]
 pub struct MemoryRegionDescriptionParams {
     pub offset: u32,
     pub len: u32,
-}
-
-impl UsizeSerializable for MemoryRegionDescriptionParams {
-    const USIZE_LEN: usize = <u32 as UsizeSerializable>::USIZE_LEN * 2;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.offset),
-            UsizeSerializable::iter(&self.len),
-        )
-    }
-}
-
-impl UsizeDeserializable for MemoryRegionDescriptionParams {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let offset = <u32 as UsizeDeserializable>::from_iter(src)?;
-        let len = <u32 as UsizeDeserializable>::from_iter(src)?;
-
-        let new = Self { offset, len };
-
-        Ok(new)
-    }
 }
 
 /// Convert a host-supplied integer address into a raw pointer after the

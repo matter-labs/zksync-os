@@ -153,31 +153,31 @@ mod block_metadata {
 mod tx_encoding_format {
     //! Unit tests for transaction encoding format oracle validation.
     //!
-    //! TxEncodingFormat::from_iter validates the oracle-provided encoding format byte.
+    //! TxEncodingFormat::read_words validates the oracle-provided encoding format byte.
     //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected
     //! with an internal error rather than panicking.
 
     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-    use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+    use rig::zk_ee::oracle::word_serialization::WordDeserializable;
 
     #[test]
     fn test_tx_encoding_format_accepts_abi() {
         let mut iter = [0usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = <TxEncodingFormat as WordDeserializable>::read_words(&mut iter);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_accepts_rlp() {
         let mut iter = [1usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = <TxEncodingFormat as WordDeserializable>::read_words(&mut iter);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_2() {
         let mut iter = [2usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = <TxEncodingFormat as WordDeserializable>::read_words(&mut iter);
         assert!(
             result.is_err(),
             "TxEncodingFormat should reject value 2 (only 0=Abi and 1=Rlp are valid)"
@@ -187,16 +187,16 @@ mod tx_encoding_format {
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_255() {
         let mut iter = [255usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = <TxEncodingFormat as WordDeserializable>::read_words(&mut iter);
         assert!(result.is_err(), "TxEncodingFormat should reject value 255");
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_large_value() {
-        // Values that would be truncated to u8 — the from_iter first deserializes
+        // Values that would be truncated to u8 — read_words first deserializes
         // as u8, so large usize values test the u8 deserialization path too.
         let mut iter = [256usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = <TxEncodingFormat as WordDeserializable>::read_words(&mut iter);
         assert!(
             result.is_err(),
             "TxEncodingFormat should reject value 256 (overflows u8)"
@@ -273,8 +273,7 @@ mod custom_oracle_factories {
         TX_FROM_QUERY_ID,
     };
     use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-    use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-    use rig::zk_ee::oracle::usize_serialization::UsizeSerializable;
+    use rig::zk_ee::oracle::word_serialization::dyn_word_iterator::DynWordIterator;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
     use rig::zk_ee::utils::Bytes32;
@@ -454,13 +453,13 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(len)
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
+                    DynWordIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
                         ReadIterWrapper::from(inner_ref.iter().copied())
                     })
                 }
@@ -472,7 +471,7 @@ mod custom_oracle_factories {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(from)
                 }
                 _ => unreachable!(),
             }
@@ -651,12 +650,12 @@ mod custom_oracle_factories {
             query: Vec<usize>,
             _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+            use rig::zk_ee::oracle::word_serialization::WordDeserializable;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+                <Bytes32 as WordDeserializable>::read_words(&mut query.into_iter()).expect("must deserialize hash value");
 
             let preimage = if hash.is_zero() {
                 vec![]
@@ -690,9 +689,9 @@ mod custom_oracle_factories {
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(len)
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
+                DynWordIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }
@@ -822,14 +821,14 @@ mod custom_oracle_factories {
             _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+            use rig::zk_ee::oracle::word_serialization::WordDeserializable;
             use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
             use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let StorageAddress { address, key } =
-                <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input::from_iter(
+                <InitialStorageSlotQuery<EthereumIOTypesConfig> as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter(),
                 )
                 .expect("must deserialize the address/slot");
@@ -859,7 +858,7 @@ mod custom_oracle_factories {
                     }
                 };
 
-            DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+            DynWordIterator::from_word_serializable(slot_data)
         }
     }
 
@@ -996,13 +995,13 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(len)
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
+                    DynWordIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
                         ReadIterWrapper::from(inner_ref.iter().copied())
                     })
                 }
@@ -1014,7 +1013,7 @@ mod custom_oracle_factories {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(from)
                 }
                 _ => unreachable!(),
             }
@@ -1142,7 +1141,7 @@ mod custom_oracle_factories {
                 ExactIndexQuery, PreviousIndexQuery, PROOF_FOR_INDEX_QUERY_ID,
             };
             use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+            use rig::zk_ee::oracle::word_serialization::WordDeserializable;
             use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
             use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -1152,7 +1151,7 @@ mod custom_oracle_factories {
                 _ if query_id == InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                     let StorageAddress { address, key } = <InitialStorageSlotQuery<
                         EthereumIOTypesConfig,
-                    > as SimpleOracleQuery>::Input::from_iter(
+                    > as SimpleOracleQuery>::Input::read_words(
                         &mut query.into_iter()
                     )
                     .expect("must deserialize the address/slot");
@@ -1174,18 +1173,18 @@ mod custom_oracle_factories {
                             }
                         };
 
-                    DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(slot_data)
                 }
                 _ if query_id == PreviousIndexQuery::QUERY_ID => {
-                    let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                    let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::read_words(
                         &mut query.into_iter(),
                     )
                     .expect("must deserialize key");
                     let prev_index = self.storage.prev_tree_index(key);
-                    DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(prev_index)
                 }
                 _ if query_id == ExactIndexQuery::QUERY_ID => {
-                    let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                    let key = <ExactIndexQuery as SimpleOracleQuery>::Input::read_words(
                         &mut query.into_iter(),
                     )
                     .expect("must deserialize key");
@@ -1193,20 +1192,20 @@ mod custom_oracle_factories {
                         .storage
                         .tree_index(key)
                         .expect("Reading index for key that is not in the tree");
-                    DynUsizeIterator::from_constructor(index, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(index)
                 }
                 _ if query_id == PROOF_FOR_INDEX_QUERY_ID => {
                     use rig::basic_system::system_implementation::flat_storage_model::{
                         ExistingReadProof, ValueAtIndexProof,
                     };
                     let index =
-                        u64::from_iter(&mut query.into_iter()).expect("must deserialize index");
+                        <u64 as WordDeserializable>::read_words(&mut query.into_iter()).expect("must deserialize index");
                     let proof = ValueAtIndexProof {
                         proof: ExistingReadProof {
                             existing: self.storage.merkle_proof(index),
                         },
                     };
-                    DynUsizeIterator::from_constructor(proof, UsizeSerializable::iter)
+                    DynWordIterator::from_word_serializable(proof)
                 }
                 _ => unreachable!(),
             }
@@ -1341,12 +1340,12 @@ mod custom_oracle_factories {
             query: Vec<usize>,
             _memory: &dyn RamPeek,
         ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+            use rig::zk_ee::oracle::word_serialization::WordDeserializable;
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let hash =
-                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+                <Bytes32 as WordDeserializable>::read_words(&mut query.into_iter()).expect("must deserialize hash value");
 
             let is_corrupted = self.corrupted_hashes.iter().any(|h| *h == hash);
 
@@ -1378,9 +1377,9 @@ mod custom_oracle_factories {
                 // Length queries return the correct length even for corrupted preimages.
                 // The corruption is in the content, not the metadata.
                 let len = preimage.len() as u32;
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(len)
             } else {
-                DynUsizeIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
+                DynWordIterator::from_constructor(preimage, |inner_ref: &Vec<u8>| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }

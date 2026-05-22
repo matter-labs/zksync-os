@@ -12,7 +12,6 @@ use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
-use zk_ee::utils::exact_size_chain::ExactSizeChain;
 use zk_ee::utils::{u256_to_usize_saturated, Bytes32};
 
 pub const CONSOLIDATION_REQUEST_EIP_7685_TYPE: u8 = 0x02;
@@ -159,25 +158,25 @@ where
 
         let source_pubkey_part_0 = slot_1.as_u8_array_ref();
         let source_pubkey_part_1 = &slot_2.as_u8_array_ref()[..16];
+        let mut source_pubkey = [0u8; 48];
+        source_pubkey[..32].copy_from_slice(source_pubkey_part_0);
+        source_pubkey[32..].copy_from_slice(source_pubkey_part_1);
 
         requests_hasher.update(source_pubkey_part_0);
         requests_hasher.update(source_pubkey_part_1);
         logger_log!(logger, "\nSource pubkey = ");
-        let _ = logger.log_data(ExactSizeChain::new(
-            source_pubkey_part_0.iter().copied(),
-            source_pubkey_part_1.iter().copied(),
-        ));
+        let _ = logger.log_data(source_pubkey.iter().copied());
 
         let target_pubkey_part_0 = &slot_2.as_u8_array_ref()[16..];
         let target_pubkey_part_1 = slot_3.as_u8_array_ref();
+        let mut target_pubkey = [0u8; 48];
+        target_pubkey[..16].copy_from_slice(target_pubkey_part_0);
+        target_pubkey[16..].copy_from_slice(target_pubkey_part_1);
 
         requests_hasher.update(target_pubkey_part_0);
         requests_hasher.update(target_pubkey_part_1);
         logger_log!(logger, "\nTarget pubkey = ");
-        let _ = logger.log_data(ExactSizeChain::new(
-            target_pubkey_part_0.iter().copied(),
-            target_pubkey_part_1.iter().copied(),
-        ));
+        let _ = logger.log_data(target_pubkey.iter().copied());
 
         logger_log!(logger, "\n");
     }

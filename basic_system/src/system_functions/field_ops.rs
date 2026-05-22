@@ -3,7 +3,7 @@
 use crypto::secp256k1::field::FieldElement;
 use crypto::secp256k1::scalars::Scalar;
 use zk_ee::{
-    oracle::{query_ids::ADVICE_SUBSPACE_MASK, usize_serialization::UsizeDeserializable, IOOracle},
+    oracle::{query_ids::ADVICE_SUBSPACE_MASK, word_serialization::WordDeserializable, IOOracle},
     utils::Bytes32,
 };
 
@@ -137,7 +137,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 }
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
-    fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
+    fn query_field_op<R: WordDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
         // We use different advice params depending on architecture
         // They are mostly the same, main difference is the width of pointers
         #[cfg(target_pointer_width = "32")]

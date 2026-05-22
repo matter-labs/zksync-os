@@ -9,6 +9,7 @@ use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::{
     oracle::query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID,
+    oracle::word_serialization::WordDeserializable,
     utils::{usize_rw::ReadIterWrapper, Bytes32},
 };
 
@@ -47,43 +48,45 @@ impl OracleQueryProcessor for EthereumCLResponder {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
-            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => DynUsizeIterator::from_constructor(
-                self.withdrawals_list.len() as u32,
-                UsizeSerializable::iter,
-            ),
+            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => {
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                    self.withdrawals_list.len() as u32,
+                )
+            }
             ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID => {
-                DynUsizeIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
+                DynWordIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }
             ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID => {
                 let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
+                    u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
-                DynUsizeIterator::from_constructor(
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
                     self.parent_headers_encodings_list[input as usize].len() as u32,
-                    UsizeSerializable::iter,
                 )
             }
             ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID => {
                 let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
+                    u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
-                DynUsizeIterator::from_constructor(
+                DynWordIterator::from_constructor(
                     self.parent_headers_encodings_list[input as usize].clone(),
-                    |inner_ref| ReadIterWrapper::from(inner_ref.iter().copied()),
+                    |inner_ref: &'static Vec<u8>| ReadIterWrapper::from(inner_ref.iter().copied()),
                 )
             }
             HISTORICAL_BLOCK_HASH_QUERY_ID => {
                 let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
+                    u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
                 let hash: Bytes32 = self
                     .parent_headers_encodings_list
                     .get(input as usize)
                     .map(|el| crypto::sha3::Keccak256::digest(el).into())
                     .unwrap_or(Bytes32::ZERO);
-                DynUsizeIterator::from_constructor(hash, UsizeSerializable::iter)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<4, _>(
+                    hash,
+                )
             }
             _ => {
                 unreachable!()

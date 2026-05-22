@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use zk_ee::oracle::query_ids::{DISCONNECT_ORACLE_QUERY_ID, UART_QUERY_ID};
-use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
 
@@ -169,7 +169,7 @@ impl ZkEENonDeterminismSource {
 impl IOOracle for ZkEENonDeterminismSource {
     type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
-    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+    fn raw_query<'a, I: WordSerializable + WordDeserializable>(
         &'a mut self,
         query_type: u32,
         input: &I,
@@ -184,11 +184,8 @@ impl IOOracle for ZkEENonDeterminismSource {
             return Err(internal_error!("invalid query ID"));
         };
         let processor = &mut self.processors[processor];
-        let response = processor.process_buffered_query(
-            query_type,
-            UsizeSerializable::iter(input).collect::<Vec<usize>>(),
-            &DummyMemorySource,
-        );
+        let response =
+            processor.process_buffered_query(query_type, input.to_word_vec(), &DummyMemorySource);
 
         Ok(response)
     }
@@ -319,7 +316,7 @@ impl IOOracle for ReadWitnessSource {
         input: &I,
     ) -> Result<Self::RawIterator<'a>, InternalError>
     where
-        I: UsizeSerializable + UsizeDeserializable,
+        I: WordSerializable + WordDeserializable,
     {
         let inner = self.original_source.raw_query(query_type, input)?;
         // First add the length of the iterator.

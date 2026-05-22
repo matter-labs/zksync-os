@@ -2,7 +2,7 @@ use core::ops::DerefMut;
 
 use crate::*;
 use ruint::aliases::B160;
-use zk_ee::{system::EthereumLikeTypes, utils::exact_size_chain::ExactSizeChain};
+use zk_ee::system::EthereumLikeTypes;
 
 pub fn bytereverse_u256(value: &mut U256) {
     value.bytereverse();
@@ -98,58 +98,38 @@ pub(crate) const MAX_CREATE_RLP_ENCODING_LEN: usize = 1 + 1 + 20 + 1 + 8;
 ///
 pub(crate) fn create_quasi_rlp(address: &B160, nonce: u64) -> impl ExactSizeIterator<Item = u8> {
     let address_bytes = address.to_be_bytes::<{ B160::BYTES }>();
-
     let nonce_bytes = nonce.to_be_bytes();
     let skip_nonce_len = nonce_bytes.iter().take_while(|el| **el == 0).count();
     let nonce_len = 8 - skip_nonce_len;
+    let mut encoding = [0u8; MAX_CREATE_RLP_ENCODING_LEN];
+    let mut offset = 0;
 
     // manual encoding of the list
-    use either::Either;
     if nonce_len == 1 && nonce_bytes[7] < 128 {
-        // we encode
-        // - 0xc0 + payload len
-        // - 0x80 + 20(address len)
-        // - address
-        // - one byte nonce
-
         let payload_len = 1 + B160::BYTES + 1;
-
-        Either::Left(ExactSizeChain::new(
-            [
-                // payload_len <= 23
-                0xc0u8 + (payload_len as u8),
-                0x80u8 + B160::BYTES as u8,
-            ]
-            .into_iter(),
-            ExactSizeChain::new(address_bytes.into_iter(), core::iter::once(nonce_bytes[7])),
-        ))
+        encoding[offset] = 0xc0u8 + (payload_len as u8);
+        offset += 1;
+        encoding[offset] = 0x80u8 + B160::BYTES as u8;
+        offset += 1;
+        encoding[offset..offset + B160::BYTES].copy_from_slice(&address_bytes);
+        offset += B160::BYTES;
+        encoding[offset] = nonce_bytes[7];
+        offset += 1;
     } else {
-        // we encode
-        // - 0xc0 + payload len
-        // - 0x80 + 20(address len)
-        // - address
-        // - 0x80 + length of nonce
-        // - nonce
-
         let payload_len = 1 + B160::BYTES + 1 + nonce_len;
-
-        Either::Right(ExactSizeChain::new(
-            [
-                // payload_len <= 30
-                0xc0u8 + (payload_len as u8),
-                0x80u8 + B160::BYTES as u8,
-            ]
-            .into_iter(),
-            ExactSizeChain::new(
-                address_bytes.into_iter(),
-                ExactSizeChain::new(
-                    // nonce_len <= 8
-                    core::iter::once(0x80u8 + (nonce_len as u8)),
-                    nonce_bytes.into_iter().skip(skip_nonce_len),
-                ),
-            ),
-        ))
+        encoding[offset] = 0xc0u8 + (payload_len as u8);
+        offset += 1;
+        encoding[offset] = 0x80u8 + B160::BYTES as u8;
+        offset += 1;
+        encoding[offset..offset + B160::BYTES].copy_from_slice(&address_bytes);
+        offset += B160::BYTES;
+        encoding[offset] = 0x80u8 + (nonce_len as u8);
+        offset += 1;
+        encoding[offset..offset + nonce_len].copy_from_slice(&nonce_bytes[skip_nonce_len..]);
+        offset += nonce_len;
     }
+
+    encoding.into_iter().take(offset)
 }
 
 /// Helper to check if an address is an ethereum precompile

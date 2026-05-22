@@ -7,14 +7,16 @@ use zk_ee::{
     oracle::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
         simple_oracle_query::SimpleOracleQuery,
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
+        word_serialization::{WordDeserializable, WordSerializable},
     },
-    utils::{exact_size_chain::ExactSizeChain, Bytes32},
+    utils::Bytes32,
 };
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, WordSerializable, WordDeserializable,
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EthereumAccountProperties {
     pub nonce: u64,
@@ -26,49 +28,6 @@ pub struct EthereumAccountProperties {
 impl Default for EthereumAccountProperties {
     fn default() -> Self {
         Self::EMPTY_ACCOUNT
-    }
-}
-
-impl UsizeSerializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
-        + <U256 as UsizeSerializable>::USIZE_LEN
-        + <Bytes32 as UsizeSerializable>::USIZE_LEN * 2
-        + <bool as UsizeSerializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.nonce),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.balance),
-                ExactSizeChain::new(
-                    UsizeSerializable::iter(&self.storage_root),
-                    UsizeSerializable::iter(&self.bytecode_hash),
-                ),
-            ),
-        )
-    }
-}
-
-impl UsizeDeserializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(
-        src: &mut impl ExactSizeIterator<Item = usize>,
-    ) -> Result<Self, zk_ee::system::errors::internal::InternalError> {
-        let nonce = UsizeDeserializable::from_iter(src)?;
-        let balance = UsizeDeserializable::from_iter(src)?;
-        let storage_root = UsizeDeserializable::from_iter(src)?;
-        let bytecode_hash = UsizeDeserializable::from_iter(src)?;
-
-        // NOTE: we verify basic computed property
-        let new = Self {
-            nonce,
-            balance,
-            bytecode_hash,
-            storage_root,
-        };
-
-        Ok(new)
     }
 }
 

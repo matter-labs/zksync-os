@@ -115,8 +115,8 @@ impl zk_ee::oracle::IOOracle for DummyOracle {
 
     fn raw_query<
         'a,
-        I: zk_ee::oracle::usize_serialization::UsizeSerializable
-            + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+        I: zk_ee::oracle::word_serialization::WordSerializable
+            + zk_ee::oracle::word_serialization::WordDeserializable,
     >(
         &'a mut self,
         _query_type: u32,

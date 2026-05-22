@@ -1,6 +1,6 @@
 use u256::U256;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
+use zk_ee::oracle::word_serialization::WordDeserializable;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{DivRemExt, WideDivRemExt};
 
@@ -125,10 +125,10 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
 #[inline(always)]
 fn read_limbs_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> [u64; 4] {
     [
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 0"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 1"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 2"),
-        <u64 as UsizeDeserializable>::from_iter(it).expect("u256 limb 3"),
+        <u64 as WordDeserializable>::read_words(it).expect("u256 limb 0"),
+        <u64 as WordDeserializable>::read_words(it).expect("u256 limb 1"),
+        <u64 as WordDeserializable>::read_words(it).expect("u256 limb 2"),
+        <u64 as WordDeserializable>::read_words(it).expect("u256 limb 3"),
     ]
 }
 

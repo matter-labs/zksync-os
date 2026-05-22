@@ -1,6 +1,6 @@
-use crate::oracle::usize_serialization::UsizeDeserializable;
+use crate::internal_error;
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink};
 use crate::system::errors::internal::InternalError;
-use crate::{internal_error, oracle::usize_serialization::UsizeSerializable};
 use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 
@@ -326,31 +326,23 @@ impl From<[u8; 32]> for Bytes32 {
     }
 }
 
-impl UsizeSerializable for Bytes32 {
-    const USIZE_LEN: usize = const {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let size = 8;
-            } else if #[cfg(target_pointer_width = "64")] {
-                let size = 4;
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-        #[allow(clippy::let_and_return)]
-        size
-    };
+impl WordSerializable for Bytes32 {
+    fn word_len(&self) -> usize {
+        BYTES32_USIZE_SIZE
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+    fn write_words(&self, out: &mut impl WordSink) {
         cfg_if::cfg_if!(
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else if #[cfg(target_pointer_width = "32")] {
-                return self.as_u32_array_ref().into_iter().map(|el| *el as usize);
+                for word in self.as_u32_array_ref() {
+                    out.write_word(*word as usize);
+                }
             } else if #[cfg(target_pointer_width = "64")] {
-                return self.as_u64_array_ref().map(|el| el as usize).into_iter();
+                for word in self.as_u64_array_ref() {
+                    out.write_word(*word as usize);
+                }
             } else {
                 compile_error!("unsupported architecture")
             }
@@ -358,11 +350,9 @@ impl UsizeSerializable for Bytes32 {
     }
 }
 
-impl UsizeDeserializable for Bytes32 {
-    const USIZE_LEN: usize = <Bytes32 as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
+impl WordDeserializable for Bytes32 {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        if src.len() < BYTES32_USIZE_SIZE {
             return Err(internal_error!("Bytes32 deserialization failed: too short"));
         }
         let mut new = Bytes32::ZERO;
@@ -373,11 +363,11 @@ impl UsizeDeserializable for Bytes32 {
         Ok(new)
     }
 
-    unsafe fn init_from_iter(
+    unsafe fn init_from_words(
         this: &mut MaybeUninit<Self>,
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
+        if src.len() < BYTES32_USIZE_SIZE {
             return Err(internal_error!("Bytes32 deserialization failed: too short"));
         }
         // Initialize
