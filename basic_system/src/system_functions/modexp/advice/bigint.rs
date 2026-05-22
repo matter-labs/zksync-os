@@ -872,9 +872,13 @@ impl<A: Allocator + Clone> WordLayout for BigintRepr<A> {
         let num_digits = u32::read_words(r) as usize;
         self.backing.clear();
         self.backing.reserve(num_digits);
-        for _ in 0..num_digits {
-            self.backing.push(DelegatedU256::read_words(r));
+        let spare = self.backing.spare_capacity_mut();
+        let dst = spare.as_mut_ptr() as *mut u32;
+        let total_u32_words = num_digits * BIGINT_DIGIT_U32_SIZE;
+        for i in 0..total_u32_words {
+            unsafe { dst.add(i).write(r()) };
         }
+        unsafe { self.backing.set_len(num_digits) };
         self.digits = num_digits;
     }
 }

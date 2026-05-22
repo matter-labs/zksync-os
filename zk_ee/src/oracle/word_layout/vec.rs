@@ -28,7 +28,11 @@ impl<T: WordLayout> WordLayout for Vec<T> {
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
         let len = r() as usize;
         if core::mem::size_of::<T>() == 1 {
-            let mut bytes = alloc::vec![0u8; len];
+            let mut bytes = Vec::with_capacity(len);
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                bytes.set_len(len);
+            }
             let mut i = 0;
             while i < len {
                 let word = r().to_le_bytes();
@@ -46,7 +50,11 @@ impl<T: WordLayout> WordLayout for Vec<T> {
                 core::mem::transmute(bytes)
             }
         } else {
-            (0..len).map(|_| T::read_words(r)).collect()
+            let mut result = Vec::with_capacity(len);
+            for _ in 0..len {
+                result.push(T::read_words(r));
+            }
+            result
         }
     }
 
@@ -55,9 +63,11 @@ impl<T: WordLayout> WordLayout for Vec<T> {
         self.clear();
         self.reserve(len);
         if core::mem::size_of::<T>() == 1 {
-            // Byte-packed path: reuse backing as &mut [u8]
             let bytes: &mut Vec<u8> = unsafe { &mut *(self as *mut Vec<T> as *mut Vec<u8>) };
-            bytes.resize(len, 0);
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                bytes.set_len(len);
+            }
             let mut i = 0;
             while i < len {
                 let word = r().to_le_bytes();

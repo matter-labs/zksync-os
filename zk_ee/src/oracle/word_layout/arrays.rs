@@ -39,9 +39,9 @@ impl<T: WordLayout, const N: usize> WordLayout for [T; N] {
     fn read_words(r: &mut impl FnMut() -> u32) -> Self {
         if core::mem::size_of::<T>() == 1 {
             // Byte-packed path
-            let mut result = unsafe { core::mem::MaybeUninit::<Self>::zeroed().assume_init() };
+            let mut result = core::mem::MaybeUninit::<Self>::uninit();
             let bytes =
-                unsafe { core::slice::from_raw_parts_mut(&mut result as *mut Self as *mut u8, N) };
+                unsafe { core::slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, N) };
             let mut i = 0;
             while i < N {
                 let word = r().to_le_bytes();
@@ -49,7 +49,7 @@ impl<T: WordLayout, const N: usize> WordLayout for [T; N] {
                 bytes[i..i + take].copy_from_slice(&word[..take]);
                 i += 4;
             }
-            result
+            unsafe { result.assume_init() }
         } else if core::mem::size_of::<Self>()
             == match Self::WORD_COUNT {
                 Some(wc) => wc * 4,
