@@ -18,8 +18,8 @@ use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSour
 use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use rig::zk_ee::oracle::word_serialization::dyn_word_iterator::DynWordIterator;
+use rig::zk_ee::oracle::word_serialization::WordDeserializable;
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
@@ -117,7 +117,7 @@ impl OracleQueryProcessor for RpcStorageResponder {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key } = <InitialStorageSlotQuery<
                     EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
+                > as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter()
                 )
                 .expect("must deserialize the address/slot");
@@ -201,10 +201,10 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         }
                     };
 
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(slot_data)
             }
             FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
-                let hash = Bytes32::from_iter(&mut query.into_iter())
+                let hash = <Bytes32 as WordDeserializable>::read_words(&mut query.into_iter())
                     .expect("must deserialize hash value");
 
                 let preimage = self
@@ -221,7 +221,7 @@ impl OracleQueryProcessor for RpcStorageResponder {
                         )
                     });
 
-                DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+                DynWordIterator::from_constructor(preimage, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }

@@ -93,6 +93,11 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
 // those that define "block", like uniform fee for block,
 // block number, etc
 
+// Field declaration order is part of the oracle wire-format contract:
+// the derived `WordSerializable`/`WordDeserializable` impls encode and
+// decode fields in declaration order, matching the legacy hand-written
+// iter()/from_iter() chain. Do not reorder without coordinating the
+// host-side oracle that produces this payload.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, WordSerializable, WordDeserializable)]
 pub struct BlockMetadataFromOracle {
