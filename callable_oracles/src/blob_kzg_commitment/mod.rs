@@ -142,7 +142,7 @@ mod tests {
     use super::*;
     use crate::test_utils::TestMemorySource;
     use oracle_provider::DummyMemorySource;
-    use zk_ee::oracle::usize_serialization::UsizeSerializable;
+    use zk_ee::oracle::word_serialization::WordSerializable;
 
     #[test]
     fn native_blob_query_processes_valid_query() {
@@ -202,7 +202,7 @@ mod tests {
         assert!(!result.is_empty(), "Oracle should return non-empty result");
 
         let expected = blob_kzg_commitment_and_proof(data);
-        let expected_serialized: Vec<usize> = expected.iter().collect();
+        let expected_serialized: Vec<usize> = expected.to_word_vec();
         assert_eq!(result, expected_serialized);
     }
 

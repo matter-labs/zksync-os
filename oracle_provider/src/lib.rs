@@ -316,7 +316,7 @@ impl IOOracle for ReadWitnessSource {
         input: &I,
     ) -> Result<Self::RawIterator<'a>, InternalError>
     where
-        I: UsizeSerializable + UsizeDeserializable,
+        I: WordSerializable + WordDeserializable,
     {
         let inner = self.original_source.raw_query(query_type, input)?;
         // First add the length of the iterator.

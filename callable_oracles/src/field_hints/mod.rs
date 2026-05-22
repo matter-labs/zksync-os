@@ -8,8 +8,7 @@ use basic_system::system_functions::field_ops::{FieldHintOp, FieldOpsHint};
 use basic_system::system_functions::field_ops::{FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID};
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
+use zk_ee::oracle::word_serialization::dyn_word_iterator::DynWordIterator;
 use zk_ee::utils::Bytes32;
 mod impls;
 
@@ -67,15 +66,15 @@ impl OracleQueryProcessor for FieldOpsQuery {
         match op {
             FieldHintOp::Secp256k1BaseFieldSqrt => {
                 let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             FieldHintOp::Secp256k1BaseFieldInverse => {
                 let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             FieldHintOp::Secp256k1ScalarFieldInverse => {
                 let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             _ => {
                 panic!("Unknown field hint op {}", arg.op);
@@ -123,15 +122,15 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
         match op {
             FieldHintOp::Secp256k1BaseFieldSqrt => {
                 let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             FieldHintOp::Secp256k1BaseFieldInverse => {
                 let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             FieldHintOp::Secp256k1ScalarFieldInverse => {
                 let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+                DynWordIterator::from_word_serializable(t)
             }
             _ => {
                 panic!("Unknown field hint op {}", arg.op);
