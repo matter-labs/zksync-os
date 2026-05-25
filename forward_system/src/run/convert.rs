@@ -1,4 +1,4 @@
-use crate::run::convert_alloy::{FromAlloy, IntoAlloy};
+use crate::run::convert_alloy::IntoAlloy;
 use alloy::consensus::{Header, Sealed};
 use alloy::primitives::Log;
 use basic_bootloader::bootloader::block_header::BlockHeader;

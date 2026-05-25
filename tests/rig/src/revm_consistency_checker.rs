@@ -2,6 +2,7 @@ use alloy::primitives::{Address, B256, U256};
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use forward_system::run::ReadStorage as ForwardSystemReadStorage;
+use zk_ee::system::metadata::zk_metadata::BlockHashes;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::{AnyBlockContext, PreimageSource, ReadStorage};
 use zksync_os_revm_runner::revm_state_provider::{RevmStateProviderError, ViewState};
@@ -43,7 +44,7 @@ impl<const RANDOMIZED_TREE: bool> ViewState for ChainStateView<RANDOMIZED_TREE> 
 pub struct BlockContextInterface {
     pub chain_id: u64,
     pub block_number: u64,
-    pub block_hashes: zksync_os_interface::types::BlockHashes,
+    pub block_hashes: BlockHashes,
     pub timestamp: u64,
     pub eip1559_basefee: U256,
     pub pubdata_price: U256,
@@ -102,10 +103,6 @@ impl AnyBlockContext for BlockContextInterface {
         self.mix_hash
     }
 
-    fn execution_version(&self) -> u32 {
-        self.execution_version
-    }
-
     fn blob_fee(&self) -> U256 {
         self.blob_fee
     }
@@ -124,7 +121,7 @@ pub fn generate_block_context_interface<const RANDOMIZED_TREE: bool>(
         timestamp: rig_block_context.timestamp,
         eip1559_basefee: rig_block_context.eip1559_basefee,
         chain_id: chain.chain_id(),
-        block_hashes: zksync_os_interface::types::BlockHashes(chain.block_hashes()),
+        block_hashes: BlockHashes(chain.block_hashes()),
         pubdata_price: rig_block_context.pubdata_price,
         native_price: rig_block_context.native_price,
         coinbase: rig_block_context.coinbase.into_alloy(),

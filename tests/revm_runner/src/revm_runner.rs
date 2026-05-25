@@ -12,8 +12,8 @@ use revm::{
     DatabaseRef,
 };
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
+use zk_ee::system::metadata::zk_metadata::BlockHashes;
 use zksync_os_interface::traits::AnyBlockContext;
-use zksync_os_interface::types::BlockHashes;
 use zksync_os_revm::ZKsyncTx;
 use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
