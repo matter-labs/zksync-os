@@ -166,137 +166,90 @@ pub fn calculate_l2_tx_intrinsic_pubdata(authorization_list_num: u64, is_service
 }
 
 ///
-/// Create initial resources for a transaction. Pure constructor: splits the
-/// native budget into `main_resources` (capped at `MAX_NATIVE_COMPUTATIONAL`)
-/// and `withheld` (the excess, only spendable on pubdata at refund time), and
-/// loads `gas_limit · ERGS_PER_GAS` ergs into `main_resources`.
+/// Create initial resources for a transaction, applying all three intrinsic
+/// charges (pubdata, computational native, gas) in u64 arithmetic.
 ///
-/// Intrinsic gas / native / pubdata are NOT subtracted here. Callers must
-/// charge them via [`charge_intrinsic_pubdata`],
-/// [`charge_intrinsic_computational_native`] and [`charge_intrinsic_gas`]
-/// with whatever error semantics they need (L2 surfaces validation errors,
-/// L1 logs and saturates).
+/// Charges are saturating: on underflow the running counter goes to 0, the
+/// first observed failure is recorded, and remaining charges still apply.
 ///
-/// Note: for zero gas price, we use "unlimited native".
 pub fn create_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
     free_native: bool,
     native_prepaid_from_gas: u64,
-) -> ResourcesForTx<S>
+    native_per_pubdata_byte: u64,
+    intrinsic_gas: u64,
+    intrinsic_computational_native: u64,
+    intrinsic_pubdata: u64,
+) -> (ResourcesForTx<S>, Option<InvalidTransaction>)
 where
     S::Metadata: ZkSpecificMetadata,
 {
-    let native_total = if free_native {
+    let mut first_error: Option<InvalidTransaction> = None;
+
+    // Gross native budget.
+    let native_limit = if free_native {
         u64::MAX - 1 // So any saturating subtraction below cannot underflow it
     } else {
         native_prepaid_from_gas
     };
 
-    // Always cap the computational budget at `MAX_NATIVE_COMPUTATIONAL`.
-    // Anything above the cap can only be spent on pubdata at refund time.
-    let (main_native_u64, withheld) = if native_total <= MAX_NATIVE_COMPUTATIONAL {
-        (native_total, S::Resources::from_ergs(Ergs::empty()))
+    // Charge intrinsic pubdata. Subtracted from the total native budget
+    // before splitting into main / withheld, matching pre-refactor semantics.
+    let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
+    let native_limit = match native_limit.checked_sub(intrinsic_pubdata_overhead) {
+        Some(val) => val,
+        None => {
+            first_error.get_or_insert(InvalidTransaction::OutOfNativeResourcesDuringValidation);
+            0
+        }
+    };
+
+    // Split: anything above MAX_NATIVE_COMPUTATIONAL goes into `withheld`
+    // (only spendable on pubdata at refund time).
+    let (native_limit, withheld) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
+        (native_limit, S::Resources::from_ergs(Ergs::empty()))
     } else {
         let withheld_native =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
-                native_total - MAX_NATIVE_COMPUTATIONAL,
+                native_limit - MAX_NATIVE_COMPUTATIONAL,
             );
-
         (
             MAX_NATIVE_COMPUTATIONAL,
             S::Resources::from_native(withheld_native),
         )
     };
 
-    let main_native =
-        <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
-            main_native_u64,
-        );
-    let ergs = gas_limit.saturating_mul(ERGS_PER_GAS);
-    let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), main_native);
-
-    ResourcesForTx {
-        main_resources,
-        withheld,
-    }
-}
-
-/// Charge intrinsic pubdata cost (native-only). Drains `withheld` first,
-/// then spills into `main_resources`. Underlying `charge` already saturates
-/// each resource to zero on insufficient funds; this helper returns `Err(())`
-/// if the total budget couldn't cover the cost, so the caller can decide
-/// whether to surface a validation error (L2) or just log (L1).
-///
-/// Equivalent in steady state to the original behavior of
-/// `create_resources_for_tx`, which subtracted pubdata cost from the total
-/// native budget before splitting into `main`/`withheld`.
-pub fn charge_intrinsic_pubdata<S: EthereumLikeTypes>(
-    resources: &mut ResourcesForTx<S>,
-    intrinsic_pubdata: u64,
-    native_per_pubdata: u64,
-) -> Result<(), ()> {
-    let total_cost = native_per_pubdata.saturating_mul(intrinsic_pubdata);
-    if total_cost == 0 {
-        return Ok(());
-    }
-
-    let withheld_avail = resources.withheld.native().as_u64();
-    let from_withheld = total_cost.min(withheld_avail);
-    let from_main = total_cost - from_withheld;
-
-    if from_withheld > 0 {
-        let cost = S::Resources::from_native(
-            <<S::Resources as Resources>::Native as Computational>::from_computational(
-                from_withheld,
-            ),
-        );
-        // Saturates withheld to 0 if insufficient — for our `min` choice it
-        // should be exact, but be defensive.
-        let _ = resources.withheld.charge(&cost);
-    }
-
-    if from_main > 0 {
-        let cost = S::Resources::from_native(
-            <<S::Resources as Resources>::Native as Computational>::from_computational(from_main),
-        );
-        if resources.main_resources.charge(&cost).is_err() {
-            return Err(());
+    // Charge intrinsic computational native against the post-split main budget.
+    let native_limit = match native_limit.checked_sub(intrinsic_computational_native) {
+        Some(val) => val,
+        None => {
+            first_error.get_or_insert(InvalidTransaction::OutOfNativeResourcesDuringValidation);
+            0
         }
-    }
+    };
+    let native_limit =
+        <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
+            native_limit,
+        );
 
-    Ok(())
-}
+    // Charge intrinsic gas against gas_limit.
+    let gas_limit_for_tx = match gas_limit.checked_sub(intrinsic_gas) {
+        Some(val) => val,
+        None => {
+            first_error.get_or_insert(InvalidTransaction::OutOfGasDuringValidation);
+            0
+        }
+    };
+    let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS);
 
-/// Charge intrinsic computational native against `main_resources`.
-/// `charge` saturates the resource to zero if insufficient; we surface that
-/// as `Err(())` so the caller can map it to its preferred error variant.
-pub fn charge_intrinsic_computational_native<S: EthereumLikeTypes>(
-    main: &mut S::Resources,
-    intrinsic_computational_native: u64,
-) -> Result<(), ()> {
-    if intrinsic_computational_native == 0 {
-        return Ok(());
-    }
-    let cost = S::Resources::from_native(
-        <<S::Resources as Resources>::Native as Computational>::from_computational(
-            intrinsic_computational_native,
-        ),
-    );
-    main.charge(&cost).map_err(|_| ())
-}
-
-/// Charge intrinsic gas (in EVM gas units) against `main_resources` ergs.
-/// `charge` saturates the resource to zero on underflow; we surface that as
-/// `Err(())`.
-pub fn charge_intrinsic_gas<S: EthereumLikeTypes>(
-    main: &mut S::Resources,
-    intrinsic_gas: u64,
-) -> Result<(), ()> {
-    if intrinsic_gas == 0 {
-        return Ok(());
-    }
-    let cost = S::Resources::from_ergs(Ergs(intrinsic_gas.saturating_mul(ERGS_PER_GAS)));
-    main.charge(&cost).map_err(|_| ())
+    let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+    (
+        ResourcesForTx {
+            main_resources,
+            withheld,
+        },
+        first_error,
+    )
 }
 
 ///

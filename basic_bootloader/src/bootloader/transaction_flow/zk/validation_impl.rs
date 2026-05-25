@@ -7,8 +7,7 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, charge_intrinsic_computational_native, charge_intrinsic_gas,
-    charge_intrinsic_pubdata, create_resources_for_tx, get_gas_price,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -107,29 +106,25 @@ where
     };
 
     // `native_price == 0` means the chain doesn't price native. Downstream
-    // treats `native_per_gas == 0` as "unlimited native budget" (see
-    // `create_resources_for_tx` and `compute_gas_refund`), so we propagate the
-    // zero directly without doing any division. This replaces the historical
-    // `resources_for_tester` / `unlimited_native` compile-time features.
-    let (native_per_gas, native_per_pubdata) = if native_price.is_zero() {
-        (0u64, 0u64)
+    // treats `native_per_gas == 0` as "unlimited native budget"
+    let native_per_gas = if native_price.is_zero() {
+        0u64
+    } else if Config::SIMULATION && gas_price.is_zero() {
+        // For simulation, if gas price isn't set, we use base fee
+        // for native calculation
+        u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
+            TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
+        )?
     } else {
-        let native_per_gas = if Config::SIMULATION && gas_price.is_zero() {
-            // For simulation, if gas price isn't set, we use base fee
-            // for native calculation
-            // TODO: wrong error
-            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
-                TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
-            )?
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
-                InvalidTransaction::NativeResourcesAreTooExpensive,
-            ))?
-        };
-        let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
-            .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
-        (native_per_gas, native_per_pubdata)
+        u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
+            InvalidTransaction::NativeResourcesAreTooExpensive,
+        ))?
     };
+    // If native resources are free (native_price == 0), pubdata is free too:
+    // `checked_div` returns `None` and we fall back to 0.
+    let native_per_pubdata =
+        u256_try_to_u64(&pubdata_price.checked_div(native_price).unwrap_or_default())
+            .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
     let statement_versioned_hashes_num = transaction
         .statement_versioned_hashes()
@@ -184,27 +179,20 @@ where
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 
-    // Materialize the gross resource budget for the tx, then charge the
-    // intrinsic overheads. Underflow on any of the charges surfaces as a
-    // validation error so the whole tx is dropped without state changes.
-    let mut tx_resources = create_resources_for_tx::<S>(
+    // Materialize the tx's resource budget and charge the intrinsic overheads.
+    // Underflow on any of the charges surfaces as a validation error
+    let (tx_resources, charge_err) = create_resources_for_tx::<S>(
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
-    );
-    charge_intrinsic_pubdata(&mut tx_resources, intrinsic_pubdata, native_per_pubdata)
-        .map_err(|()| {
-            TxError::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
-        })?;
-    charge_intrinsic_computational_native::<S>(
-        &mut tx_resources.main_resources,
+        native_per_pubdata,
+        intrinsic_gas,
         intrinsic_computational_native,
-    )
-    .map_err(|()| {
-        TxError::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
-    })?;
-    charge_intrinsic_gas::<S>(&mut tx_resources.main_resources, intrinsic_gas)
-        .map_err(|()| TxError::Validation(InvalidTransaction::OutOfGasDuringValidation))?;
+        intrinsic_pubdata,
+    );
+    if let Some(e) = charge_err {
+        return Err(TxError::Validation(e));
+    }
 
     system_log!(
         system,

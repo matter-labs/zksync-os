@@ -8,7 +8,6 @@ use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
-    charge_intrinsic_computational_native, charge_intrinsic_gas, charge_intrinsic_pubdata,
     check_enough_resources_for_pubdata, create_resources_for_tx,
     get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
@@ -516,39 +515,22 @@ where
         transaction.calldata().len() as u64,
     );
 
-    // Materialize the gross resource budget for the tx, then charge the
-    // intrinsic overheads. L1 transactions cannot be invalidated (the
-    // priority queue requires the tx to be processed), so underflow on any
-    // of the charges is logged and absorbed — the user ends up with a
-    // zero-saturated resource and `gas_used == gas_limit` downstream.
-    let mut resources = create_resources_for_tx::<S>(
+    let (resources, charge_err) = create_resources_for_tx::<S>(
         gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
-    );
-    if charge_intrinsic_pubdata(&mut resources, intrinsic_pubdata, native_per_pubdata).is_err() {
-        system_log!(
-            system,
-            "L1 tx: native budget below intrinsic pubdata cost, saturating to 0\n"
-        );
-    }
-    if charge_intrinsic_computational_native::<S>(
-        &mut resources.main_resources,
+        native_per_pubdata,
+        intrinsic_gas,
         intrinsic_computational_native,
-    )
-    .is_err()
-    {
+        intrinsic_pubdata,
+    );
+    // We are not invalidating L1 txs in case of there is not enough resources to cover intrinsic costs.
+    // It shouldn't be reachable in practice, as we checking it on l1, but we want to be extra safe.
+    if let Some(e) = charge_err {
         system_log!(
             system,
-            "L1 tx: native budget below intrinsic computational native cost, saturating to 0\n"
-        );
-    }
-    if charge_intrinsic_gas::<S>(&mut resources.main_resources, intrinsic_gas).is_err() {
-        system_log!(
-            system,
-            "L1 tx: gas limit {} below intrinsic gas {}, saturating to 0\n",
-            gas_limit,
-            intrinsic_gas
+            "L1 tx: intrinsic charge underflow ({:?}), saturating\n",
+            e
         );
     }
 

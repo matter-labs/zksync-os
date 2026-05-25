@@ -1,4 +1,4 @@
- use super::Transaction;
+use super::Transaction;
 use crate::bootloader::errors::TxError;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::system::{Ergs, Resource, Resources};
