@@ -194,7 +194,7 @@ where
     };
 
     // Charge intrinsic pubdata. Subtracted from the total native budget
-    // before splitting into main / withheld, matching pre-refactor semantics.
+    // before splitting into main / withheld.
     let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
     let native_limit = match native_limit.checked_sub(intrinsic_pubdata_overhead) {
         Some(val) => val,
@@ -305,7 +305,6 @@ pub(crate) fn get_gas_price<S: EthereumLikeTypes, Config: BasicBootloaderExecuti
 ) -> Result<U256, TxError> {
     let base_fee = system.get_eip1559_basefee();
     // If base fee is zero, then we ignore priority fee
-    // TODO: not ignore?
     if base_fee.is_zero() {
         Ok(U256::ZERO)
     } else {
