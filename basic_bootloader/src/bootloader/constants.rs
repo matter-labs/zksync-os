@@ -69,9 +69,7 @@ pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
 pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 
 /// Fixed `native_per_gas` ratio used for all L1->L2 transactions
-/// (including upgrade, service txs).
-///
-/// Instead we hardcode a single ratio:
+/// (including upgrade, service txs):
 /// - high enough that computational part becomes negligible (with current
 ///   ratio, ~350 gas is enough to exceed computational native limit)
 /// - low enough that native resources doesn't overflow `u64` for

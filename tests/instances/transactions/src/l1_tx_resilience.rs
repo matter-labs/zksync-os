@@ -227,32 +227,6 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
 /// - `gas_per_pubdata = 800`
 /// → theoretical pubdata budget = `72_000_000 / 800 = 90_000` bytes.
 ///
-/// Pre-fix (with `L1_TX_NATIVE_PRICE = 10` and `native_per_gas` derived
-/// from `gas_price`), `native_per_pubdata = gas_per_pubdata · native_per_gas`
-/// could grow large. At refund time the bootloader computes
-/// `pubdata_used · native_per_pubdata` to charge native for pubdata; for a
-/// tx that produced this many pubdata bytes the multiplication overflows
-/// `u64` and returns an `out_of_native_resources` error from
-/// `get_resources_to_charge_for_pubdata`, marking the L1 tx as reverted
-/// despite the gas math saying the budget covers it.
-///
-/// Numerically, with the pre-fix code and `gas_price = 10^15`:
-///   native_per_gas    = 10^15 / 10                 = 10^14
-///   native_per_pubdata = 800 · 10^14               = 8·10^16
-///   pubdata_used · native_per_pubdata ≈ 86_000 · 8·10^16 ≈ 6.88·10^21
-/// which overflows u64 (max ≈ 1.8·10^19).
-///
-/// Post-fix `L1_TX_NATIVE_PER_GAS = 1e8` is a fixed constant, so the
-/// conversion factor cancels: pubdata cost in native scales with pubdata
-/// cost in gas, and any pubdata volume the gas budget covers is also
-/// affordable in native.
-///
-/// The test sends a single L1 tx that calls the L1 messenger with a
-/// ~86 KB payload — each message data byte flows through to pubdata via
-/// the L2→L1 log storage, so this consumes ~86_000 of the 90_000-byte
-/// theoretical budget. The gas headroom (~1.5M gas) covers intrinsic
-/// (21k + zero-byte calldata at 4 gas/byte) and the L1 messenger
-/// contract's `keccak256` + `LOG3` + counter SSTORE.
 #[test]
 fn test_l1_tx_can_use_full_pubdata_budget() {
     let from = address!("1234000000000000000000000000000000000000");
@@ -268,13 +242,9 @@ fn test_l1_tx_can_use_full_pubdata_budget() {
     // Theoretical pubdata budget (in bytes).
     let theoretical_budget = gas_limit / gas_per_pubdata; // = 90_000
 
-    // Payload sized to consume most of the budget while leaving gas headroom
-    // for intrinsic + the L1 messenger contract's EVM ops:
-    //   intrinsic ≈ 21k + 4 · (payload + ABI overhead)
-    //   L1 messenger ≈ 770k (LOG3 8 gas/byte dominates) for an 86k payload
-    //   pubdata ≈ 86_000 · 800 = 68_800_000
-    //   total ≈ 70.0M ≤ 72M ✓
-    let payload_len: usize = 86_000;
+    // There is also intrinsic pubdata and overhead for l2 -> l1 log
+    // Also computational part is really small, but still takes 1 byte of pubdata
+    let payload_len: usize = 89_500;
     // Use zero bytes so calldata intrinsic is 4 gas/byte (vs 16 for non-zero).
     let payload = vec![0u8; payload_len];
 
@@ -289,10 +259,6 @@ fn test_l1_tx_can_use_full_pubdata_budget() {
     let padding = (32 - (payload_len % 32)) % 32;
     calldata.extend_from_slice(&vec![0u8; padding]);
 
-    // High `gas_price` to exercise the pre-fix native_per_pubdata overflow
-    // path. With L1_TX_NATIVE_PRICE = 10 this drove native_per_gas to ~10^14
-    // and native_per_pubdata to ~8·10^16, making the refund-time
-    // `pubdata_used · native_per_pubdata` overflow u64.
     let high_gas_price = 10u128.pow(15);
 
     let tx = L1TxBuilder::new()
