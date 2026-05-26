@@ -1,7 +1,6 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    ASSET_TRACKER_INTRINSIC_PUBDATA, FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_PUBDATA,
-    L1_TX_NATIVE_PRICE,
+    ASSET_TRACKER_INTRINSIC_PUBDATA, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PER_GAS,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -37,7 +36,7 @@ use zk_ee::system::{EthereumLikeTypes, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{IOSubsystem, IOSubsystemExt, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
-use zk_ee::utils::{u256_to_b160_checked, u256_try_to_u64, Bytes32};
+use zk_ee::utils::{u256_to_b160_checked, Bytes32};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 use system_hooks::addresses_constants::{L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
@@ -112,12 +111,10 @@ where
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
-    } = prepare_and_check_resources::<S, Config>(
+    } = prepare_and_check_resources::<S>(
         system,
         transaction,
-        is_priority_op,
         gas_limit,
-        gas_price,
         gas_per_pubdata,
         intrinsic_pubdata,
     )?;
@@ -432,16 +429,10 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
 ///
-fn prepare_and_check_resources<
-    'a,
-    S: EthereumLikeTypes + 'a,
-    Config: BasicBootloaderExecutionConfig,
->(
+fn prepare_and_check_resources<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
-    is_priority_op: bool,
     gas_limit: u64,
-    gas_price: U256,
     gas_per_pubdata: u32,
     intrinsic_pubdata: u64,
 ) -> Result<ResourceAndFeeInfo<S>, BootloaderSubsystemError>
@@ -450,34 +441,10 @@ where
     S::Metadata: ZkSpecificPricingMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    // For L1->L2 txs, we use a constant native price to avoid censorship.
-    let native_price = L1_TX_NATIVE_PRICE;
-    let native_per_gas = if is_priority_op {
-        if gas_price.is_zero() {
-            if Config::SIMULATION {
-                u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price))
-                    .unwrap_or_else(|| {
-                        system_log!(
-                            system,
-                            "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
-                        u64::MAX
-                    })
-            } else {
-                FREE_L1_TX_NATIVE_PER_GAS
-            }
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price)).unwrap_or_else(|| {
-                system_log!(
-                    system,
-                    "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
-                u64::MAX
-            })
-        }
-    } else {
-        // Upgrade txs are paid by the protocol, so we use a fixed native per gas
-        FREE_L1_TX_NATIVE_PER_GAS
-    };
+    let native_per_gas = L1_TX_NATIVE_PER_GAS;
 
+    // gas_per_pubdata currently ishardcoded to 800, so the product fits in
+    // u64. Saturate defensively in case future constants change.
     let native_per_pubdata = (gas_per_pubdata as u64)
         .checked_mul(native_per_gas)
         .unwrap_or_else(|| {
@@ -487,6 +454,7 @@ where
                 u64::MAX
         });
 
+    // Any reasonable gas limit will not saturate
     let native_prepaid_from_gas = native_per_gas.checked_mul(gas_limit)
         .unwrap_or_else(|| {
             system_log!(
