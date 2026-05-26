@@ -33,6 +33,8 @@ pub fn keccak256_native_cost_u64(len: usize) -> u64 {
     keccak256_native_cost_for_rounds_u64(rounds)
 }
 
+// Note: `#[inline(never)]` is required, otherwise compiler produces signed multiplication instruction.
+#[inline(never)]
 pub const fn keccak256_native_cost_for_rounds_u64(rounds: usize) -> u64 {
     (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST
 }
