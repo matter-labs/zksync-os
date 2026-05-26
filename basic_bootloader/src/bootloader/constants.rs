@@ -16,7 +16,7 @@ use basic_system::system_implementation::flat_storage_model::cost_constants::{
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
@@ -68,13 +68,15 @@ pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
 /// value. The value is so high because of modexp tests.
 pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 
-// Default native price for L1->L2 transactions.
-// TODO (EVM-1157): find a reasonable value for it.
-pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
-
-// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
-// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
+/// Fixed `native_per_gas` ratio used for all L1->L2 transactions
+/// (including upgrade, service txs).
+///
+/// Instead we hardcode a single ratio:
+/// - high enough that computational part becomes negligible (with current
+///   ratio, ~350 gas is enough to exceed computational native limit)
+/// - low enough that native resources doesn't overflow `u64` for
+///   any realistic L1 gas_limit.
+pub const L1_TX_NATIVE_PER_GAS: u64 = 100_000_000;
 
 // computational native consts
 /// Constant part of l2 tx intrinsic computational native cost.

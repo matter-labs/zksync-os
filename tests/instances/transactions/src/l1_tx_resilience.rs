@@ -66,24 +66,23 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
     assert!(tx_output.is_success(), "Transaction should succeed");
 }
 
-/// Test that an L1 transaction with a gas price that would overflow the
-/// native_per_gas calculation is processed gracefully.
+/// Test that an L1 transaction with an absurdly high gas price is processed
+/// gracefully.
 ///
-/// The calculation is: native_per_gas = gas_price.div_ceil(L1_TX_NATIVE_PRICE)
-/// where L1_TX_NATIVE_PRICE = 10. To overflow u64, gas_price needs to be
-/// > u64::MAX * 10.
-///
-/// Prior to the resilience changes, this would fail with
-/// InvalidTransaction::NativeResourcesAreTooExpensive. Now, u64::MAX is used
-/// via saturating arithmetic.
+/// `native_per_gas` for L1 txs is now a fixed constant
+/// (`L1_TX_NATIVE_PER_GAS`), independent of `gas_price`, so the historic
+/// overflow path (`gas_price.div_ceil(L1_TX_NATIVE_PRICE)` exceeding u64)
+/// no longer exists. The test still serves as a regression check that
+/// large `gas_price` values don't break L1 tx processing through other
+/// code paths (e.g. `tx_internal_cost = gas_price · gas_limit`).
 #[test]
 fn test_l1_tx_gas_price_overflow_native_per_gas() {
     let from = address!("1234000000000000000000000000000000000000");
     let to = common_target_address();
 
-    // L1_TX_NATIVE_PRICE = 10
-    // To overflow u64 in native_per_gas calculation: gas_price / 10 > u64::MAX
-    // So gas_price > u64::MAX * 10
+    // Historic threshold for overflowing `gas_price / L1_TX_NATIVE_PRICE`
+    // when L1_TX_NATIVE_PRICE was 10. Kept as a witness value for the
+    // regression scenario it covers.
     let overflow_gas_price = u128::from(u64::MAX) * 11;
 
     let tx = L1TxBuilder::new()
@@ -216,6 +215,124 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
     assert_eq!(
         gas_used_zero, gas_used_high,
         "L1->L2 tx gas_used must be independent of block base_fee"
+    );
+}
+
+/// Verify that an L1 transaction can consume close to its full
+/// gas-implied pubdata budget under production parameters, regardless of
+/// L1 `gas_price`.
+///
+/// Production values used here:
+/// - `gas_limit = 72_000_000` (PRIORITY_TX_MAX_GAS_LIMIT)
+/// - `gas_per_pubdata = 800`
+/// → theoretical pubdata budget = `72_000_000 / 800 = 90_000` bytes.
+///
+/// Pre-fix (with `L1_TX_NATIVE_PRICE = 10` and `native_per_gas` derived
+/// from `gas_price`), `native_per_pubdata = gas_per_pubdata · native_per_gas`
+/// could grow large. At refund time the bootloader computes
+/// `pubdata_used · native_per_pubdata` to charge native for pubdata; for a
+/// tx that produced this many pubdata bytes the multiplication overflows
+/// `u64` and returns an `out_of_native_resources` error from
+/// `get_resources_to_charge_for_pubdata`, marking the L1 tx as reverted
+/// despite the gas math saying the budget covers it.
+///
+/// Numerically, with the pre-fix code and `gas_price = 10^15`:
+///   native_per_gas    = 10^15 / 10                 = 10^14
+///   native_per_pubdata = 800 · 10^14               = 8·10^16
+///   pubdata_used · native_per_pubdata ≈ 86_000 · 8·10^16 ≈ 6.88·10^21
+/// which overflows u64 (max ≈ 1.8·10^19).
+///
+/// Post-fix `L1_TX_NATIVE_PER_GAS = 1e8` is a fixed constant, so the
+/// conversion factor cancels: pubdata cost in native scales with pubdata
+/// cost in gas, and any pubdata volume the gas budget covers is also
+/// affordable in native.
+///
+/// The test sends a single L1 tx that calls the L1 messenger with a
+/// ~86 KB payload — each message data byte flows through to pubdata via
+/// the L2→L1 log storage, so this consumes ~86_000 of the 90_000-byte
+/// theoretical budget. The gas headroom (~1.5M gas) covers intrinsic
+/// (21k + zero-byte calldata at 4 gas/byte) and the L1 messenger
+/// contract's `keccak256` + `LOG3` + counter SSTORE.
+#[test]
+fn test_l1_tx_can_use_full_pubdata_budget() {
+    let from = address!("1234000000000000000000000000000000000000");
+    // L1 messenger system contract address (`sendToL1(bytes)` selector
+    // 0x62f84b24 emits the data as an L2→L1 message).
+    let l1_messenger = rig::alloy::primitives::Address::from_slice(
+        address!("0000000000000000000000000000000000008008").as_slice(),
+    );
+
+    // PRIORITY_TX_MAX_GAS_LIMIT — production cap for L1 priority txs.
+    let gas_limit: u64 = 72_000_000;
+    let gas_per_pubdata: u64 = 800;
+    // Theoretical pubdata budget (in bytes).
+    let theoretical_budget = gas_limit / gas_per_pubdata; // = 90_000
+
+    // Payload sized to consume most of the budget while leaving gas headroom
+    // for intrinsic + the L1 messenger contract's EVM ops:
+    //   intrinsic ≈ 21k + 4 · (payload + ABI overhead)
+    //   L1 messenger ≈ 770k (LOG3 8 gas/byte dominates) for an 86k payload
+    //   pubdata ≈ 86_000 · 800 = 68_800_000
+    //   total ≈ 70.0M ≤ 72M ✓
+    let payload_len: usize = 86_000;
+    // Use zero bytes so calldata intrinsic is 4 gas/byte (vs 16 for non-zero).
+    let payload = vec![0u8; payload_len];
+
+    // ABI calldata for `sendToL1(bytes)`: selector || offset(0x20) || length || data || pad
+    let mut calldata = Vec::with_capacity(4 + 64 + payload_len.next_multiple_of(32));
+    calldata.extend_from_slice(&hex::decode("62f84b24").unwrap()); // selector
+    calldata.extend_from_slice(&[0u8; 32 - 1]); // offset upper 31 bytes
+    calldata.push(0x20); // offset = 32
+    calldata.extend_from_slice(&[0u8; 32 - 8]); // length upper 24 bytes
+    calldata.extend_from_slice(&(payload_len as u64).to_be_bytes());
+    calldata.extend_from_slice(&payload);
+    let padding = (32 - (payload_len % 32)) % 32;
+    calldata.extend_from_slice(&vec![0u8; padding]);
+
+    // High `gas_price` to exercise the pre-fix native_per_pubdata overflow
+    // path. With L1_TX_NATIVE_PRICE = 10 this drove native_per_gas to ~10^14
+    // and native_per_pubdata to ~8·10^16, making the refund-time
+    // `pubdata_used · native_per_pubdata` overflow u64.
+    let high_gas_price = 10u128.pow(15);
+
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(l1_messenger)
+        .gas_price(high_gas_price)
+        .gas_limit(gas_limit.into())
+        .gas_per_pubdata_byte_limit(gas_per_pubdata.into())
+        .input(calldata)
+        .build()
+        .into();
+
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, false)
+        .with_balance(from, U256::MAX);
+
+    let output = tester.execute_block(vec![tx]);
+    let tx_result = output.tx_results[0]
+        .as_ref()
+        .expect("L1 tx must be processed");
+
+    assert!(
+        tx_result.is_success(),
+        "L1 tx with large L2→L1 message must succeed; got: {:?}",
+        output.tx_results[0]
+    );
+
+    // Each L1 message data byte ≈ one pubdata byte (plus a fixed L2ToL1Log
+    // envelope), so the tx should report close to `payload_len` pubdata.
+    assert!(
+        tx_result.pubdata_used >= payload_len as u64,
+        "expected at least {payload_len} pubdata bytes, got {}",
+        tx_result.pubdata_used
+    );
+    // And we must stay within the gas-implied theoretical budget.
+    assert!(
+        tx_result.pubdata_used <= theoretical_budget,
+        "pubdata_used ({}) exceeds the theoretical budget \
+         ({theoretical_budget} = gas_limit / gas_per_pubdata)",
+        tx_result.pubdata_used,
     );
 }
 
