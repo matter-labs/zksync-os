@@ -17,7 +17,7 @@
 # Output: writes the full PR-comment markdown to `<output.md>`.
 #
 # Sections (in order):
-#   1. Block-level effective cycles      (`process_block` aggregated across all
+#   1. Block-level effective cycles      (`process_block` averaged across all
 #                                         block fixtures per DA scheme; the
 #                                         per-block breakdown is under <details>)
 #   2. Block-level sub-phases            (collapsed under <details>)
@@ -140,12 +140,12 @@ emit_details_section() {
 }
 
 # Section 1: headline. Show one aggregate `process_block` row per DA scheme
-# (summed across all block fixtures) in the top-level table, and the full
+# (averaged across all block fixtures) in the top-level table, and the full
 # per-block breakdown under a spoiler so the comment stays readable as the
 # fixture set grows.
 headline_agg_body=$(mktemp)
 python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title --aggregate "[${headline_agg_pairs}]" > "$headline_agg_body"
-emit_section "$headline_agg_body" "## Block-level effective cycles" "" "_Totals across all block fixtures (\`process_block\`). Per-block breakdown below._" ""
+emit_section "$headline_agg_body" "## Block-level effective cycles" "" "_Average across all block fixtures (\`process_block\`). Per-block breakdown below._" ""
 rm -f "$headline_agg_body"
 
 headline_body=$(mktemp)

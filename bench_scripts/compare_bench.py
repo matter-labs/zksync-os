@@ -91,9 +91,9 @@ def main():
     # table has many (benchmark × symbol) combinations like the
     # block-level sub-phases view.
     # `--aggregate` collapses all input entries sharing the same (name,
-    # symbol) into a single summed row (counts added, percentages recomputed
-    # on the sums). Used to show one headline total across many block fixtures
-    # instead of one row per block.
+    # symbol) into a single averaged row (counts meaned across the grouped
+    # entries, percentages recomputed on the means). Used to show one headline
+    # average across many block fixtures instead of one row per block.
     cli_flags = {"--no-title", "--sort-by-symbol", "--aggregate"}
     args = [a for a in sys.argv[1:] if a not in cli_flags]
     emit_title = "--no-title" not in sys.argv[1:]
@@ -171,24 +171,31 @@ def main():
         return
 
     if aggregate:
-        # Sum count columns within each (name, symbol) group; recompute the
-        # percentage columns on the summed base/head totals. Count columns are
-        # the base/head pairs at these row indices; the percentage column that
-        # follows each pair is recomputed.
+        # Average count columns within each (name, symbol) group (mean across
+        # the grouped entries, e.g. per-block), then recompute the percentage
+        # columns from the averaged base/head values. Count columns are the
+        # base/head pairs at these row indices; the percentage column that
+        # follows each pair is recomputed. Averaging (not summing) keeps the
+        # headline stable as the number of block fixtures changes.
         from collections import OrderedDict
 
         count_idx = (2, 3, 5, 6, 8, 9, 11, 12, 14, 15)
         groups = OrderedDict()
+        sizes = {}
         for r in rows:
             key = (r[0], r[1])
             acc = groups.get(key)
             if acc is None:
                 acc = [r[0], r[1]] + [0] * (len(r) - 2)
                 groups[key] = acc
+            sizes[key] = sizes.get(key, 0) + 1
             for i in count_idx:
                 acc[i] += r[i]
         rows = []
-        for acc in groups.values():
+        for key, acc in groups.items():
+            n = sizes[key]
+            for i in count_idx:
+                acc[i] = round(acc[i] / n)
             for base_i, head_i, pct_i in ((2, 3, 4), (5, 6, 7), (8, 9, 10), (11, 12, 13), (14, 15, 16)):
                 acc[pct_i] = pct_change(acc[base_i], acc[head_i])
             rows.append(tuple(acc))
