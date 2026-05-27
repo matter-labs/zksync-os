@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-benchmarking-fusaka|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -63,6 +63,13 @@ case "$TYPE" in
     # a `grep -q` fallback target by `.github/workflows/bench.yml` — if
     # this case label is renamed, update the workflow too.
     FEATURES="$FEATURES,for_tests,benchmarking,pectra"
+    APP_NAME="for_tests"
+    ;;
+  for-tests-benchmarking-fusaka)
+    # Adds `fusaka` (a superset of `pectra`) on top of `for-tests-benchmarking`
+    # so the proving binary supports the Fusaka semantics (CLZ, modexp
+    # repricing, EIP-7825/7934/7918) in addition to the pectra precompiles.
+    FEATURES="$FEATURES,for_tests,benchmarking,fusaka"
     APP_NAME="for_tests"
     ;;
   for-tests-logging-enabled)
