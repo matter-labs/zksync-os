@@ -128,6 +128,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
 /// L2 tx access list storage slot computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
     PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
+    WARM_STORAGE_READ_NATIVE_COST + // warm cache access always charged before the cold read (see materialize_element)
     COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
     33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
 
