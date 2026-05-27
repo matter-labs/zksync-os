@@ -40,6 +40,7 @@ zksync_os_basic_bootloader = { package = "basic_bootloader", path = "../../basic
 zksync_os_rig = { package = "rig", path = "../../tests/rig", features = ["evm_tester"] }
 
 [features]
+default = ["evm_tester_fusaka"]
 pectra = ["zksync_os_forward_system/pectra"]
 evm_tester_pectra = ["zksync_os_forward_system/evm_tester_pectra"]
 fusaka = ["zksync_os_forward_system/fusaka"]
