@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-benchmarking-fusaka|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-benchmarking-fusaka|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -86,6 +86,12 @@ case "$TYPE" in
     ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,eth_runner,benchmarking"
+    APP_NAME="evm_replay"
+    ;;
+  evm-replay-benchmarking-fusaka)
+    # Adds `fusaka` so the proving binary can replay Osaka blocks (CLZ,
+    # modexp repricing, EIP-7825/7934/7918, base-Osaka blob schedule).
+    FEATURES="$FEATURES,eth_runner,benchmarking,fusaka"
     APP_NAME="evm_replay"
     ;;
   evm-tester)

@@ -54,7 +54,8 @@ impl Block {
                     // Skip unsupported txs or tx that call into unsupported precompiles
 
                     let transaction_type = tx.ty();
-                    let supported_tx_type = transaction_type <= 3;
+                    // Supported: legacy(0), 2930(1), 1559(2), 4844(3), 7702(4).
+                    let supported_tx_type = transaction_type <= 4;
                     let single_tx_cond = single_tx.is_none_or(|idx| idx as usize == i);
                     let unsupported_precompile =
                         calltrace.result.has_call_to_unsupported_precompile();

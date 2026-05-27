@@ -240,10 +240,13 @@ pub fn single_run(
     let diff_file = File::open(dir.join("difftrace.json"))?;
     let diff_reader = BufReader::new(diff_file);
     let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
-    let block_hashes: Option<BlockHashes> = block_hashes.map(|path| {
-        let hashes = fs::read_to_string(&path).expect("valid block hashes path");
-        serde_json::from_str(&hashes).expect("valid block hashes JSON")
-    });
+    // Prefer an explicit --block-hashes path; otherwise auto-load
+    // block_hashes.json from the block dir if present, so the BLOCKHASH opcode
+    // resolves against the real ancestor hashes instead of zero.
+    let block_hashes: Option<BlockHashes> = block_hashes
+        .map(|path| fs::read_to_string(&path).expect("valid block hashes path"))
+        .or_else(|| fs::read_to_string(dir.join("block_hashes.json")).ok())
+        .map(|hashes| serde_json::from_str(&hashes).expect("valid block hashes JSON"));
 
     let calltrace: CallTrace = serde_json::from_reader(calltrace_reader)?;
     let block: Block = serde_json::from_str(&block).expect("valid block JSON");
