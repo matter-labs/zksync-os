@@ -67,6 +67,22 @@ subphase_symbols_blobs="da_commitment state_commitment_update blob_versioned_has
 
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
+  # When this PR changes the fixture set, the base (merge-base) side ran a
+  # different set of blocks and produced no artifacts for the new ones.
+  # Synthesize the missing base artifacts from head so the comparison renders
+  # with 0% deltas and visible absolute values (same philosophy as the blobs
+  # `.bench` fallback below); real deltas appear once the fixtures land on the
+  # base branch.
+  for suf in .out .bench; do
+    if [ ! -e "base_block_${blk}${suf}" ] && [ -e "head_block_${blk}${suf}" ]; then
+      cp "head_block_${blk}${suf}" "base_block_${blk}${suf}"
+    fi
+  done
+  for d in opcode_samples opcode_cycles; do
+    if [ ! -d "${d}/base_${blk}" ] && [ -d "${d}/head_${blk}" ]; then
+      cp -r "${d}/head_${blk}" "${d}/base_${blk}"
+    fi
+  done
   python3 "$REPO_ROOT/bench_scripts/parse_opcodes.py" "base_block_${blk}.out" "bench_results/base_block_${blk}.csv" "bench_results/base_block_${blk}.png"
   python3 "$REPO_ROOT/bench_scripts/parse_opcodes.py" "head_block_${blk}.out" "bench_results/head_block_${blk}.csv" "bench_results/head_block_${blk}.png"
   add_pair headline_pairs "(\"block_${blk} (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
