@@ -91,7 +91,7 @@ def main():
     # table has many (benchmark × symbol) combinations like the
     # block-level sub-phases view.
     # `--aggregate` collapses all input entries sharing the same (name,
-    # symbol) into a single averaged row (counts meaned across the grouped
+    # symbol) into a single averaged row (counts averaged across the grouped
     # entries, percentages recomputed on the means). Used to show one headline
     # average across many block fixtures instead of one row per block.
     cli_flags = {"--no-title", "--sort-by-symbol", "--aggregate"}

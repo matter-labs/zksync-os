@@ -54,7 +54,7 @@ add_pair() {
 #   - Precompiles bench: the synthetic test-crate workload — ~30 labels.
 headline_pairs=""
 # Aggregate variant of the headline: same data relabeled so all blocks of a
-# DA scheme collapse to one summed row (see `compare_bench.py --aggregate`).
+# DA scheme collapse to one averaged row (see `compare_bench.py --aggregate`).
 # Keeps the top-level comment to two rows regardless of fixture count; the
 # per-block breakdown goes under a spoiler.
 headline_agg_pairs=""
