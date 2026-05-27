@@ -1,7 +1,10 @@
 //! Mocked precompiles needed to pass some tests in the EVM test suite.
 //! Not to be used in production.
 #[allow(clippy::module_inception)]
-#[cfg(feature = "mock-unsupported-precompiles")]
+#[cfg(all(
+    feature = "mock-unsupported-precompiles",
+    any(not(feature = "blake2f"), not(feature = "point_eval_precompile"))
+))]
 pub(crate) mod mock_precompiles {
     use zk_ee::{
         common_traits::TryExtend,
@@ -12,7 +15,9 @@ pub(crate) mod mock_precompiles {
         },
     };
 
+    #[cfg(not(feature = "blake2f"))]
     pub struct Blake2f;
+    #[cfg(not(feature = "blake2f"))]
     impl<R: Resources> SystemFunction<R, MissingSystemFunctionErrors> for Blake2f {
         fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
             input: &[u8],
