@@ -87,7 +87,7 @@ where
             let individual_limit = system.get_individual_tx_gas_limit();
             require!(
                 tx_gas_limit <= individual_limit,
-                InvalidTransaction::CallerGasLimitMoreThanBlock,
+                InvalidTransaction::CallerGasLimitMoreThanTxLimit,
                 system
             )?;
         }
