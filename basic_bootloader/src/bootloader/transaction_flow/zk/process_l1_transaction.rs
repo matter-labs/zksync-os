@@ -443,8 +443,9 @@ where
 {
     let native_per_gas = L1_TX_NATIVE_PER_GAS;
 
-    // gas_per_pubdata currently ishardcoded to 800, so the product fits in
-    // u64. Saturate defensively in case future constants change.
+    // `gas_per_pubdata` is provided for the transaction and is expected to be
+    // 800 in production, so the product fits in u64. Saturate defensively in
+    // case future values or constants change.
     let native_per_pubdata = (gas_per_pubdata as u64)
         .checked_mul(native_per_gas)
         .unwrap_or_else(|| {
