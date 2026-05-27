@@ -857,7 +857,6 @@ entries:
           test_wycheproof_valid.json:
             hash: '0xebee63cfb92e7a99e54eed4884603eb3'
             enabled: true
-        hardforkOverride: Osaka
   paris:
     enabled: true
     entries:
