@@ -169,19 +169,29 @@ pub fn populate_prestate<const RANDOMIZED_TREE: bool>(
 ) -> Cache {
     let mut cache = Cache::default();
 
+    let created = created_mid_block_accounts(diff);
+
     // Pre-seed accounts created mid-block as empty (balance 0). This prevents a
     // later tx's prestate (which reports their post-creation state) from being
     // taken as the block-initial state — `filter_pre_account_state` fills each
     // field only once. Cache-only: chain state stays empty for these accounts.
-    for address in created_mid_block_accounts(diff) {
-        cache.0.entry(address).or_insert(AccountState {
+    for address in &created {
+        cache.0.entry(*address).or_insert(AccountState {
             balance: Some(ruint::aliases::U256::ZERO),
             ..Default::default()
         });
     }
 
     ps.result.into_iter().for_each(|item| {
-        item.result.into_iter().for_each(|(address, account)| {
+        item.result.into_iter().for_each(|(address, mut account)| {
+            // A mid-block-created account had no storage at block start, so any
+            // storage a later prestate reports for it is post-creation. Drop it
+            // here so it isn't installed as block-initial state (the balance
+            // pre-seed above only blocks balance/nonce/code, not storage).
+            // Execution replays the writes, so the slots are rebuilt anyway.
+            if created.contains(&address.0) {
+                account.storage = None;
+            }
             let account = cache.filter_pre_account_state(address.0, account);
             // Set account properties
             chain.set_account_properties(
