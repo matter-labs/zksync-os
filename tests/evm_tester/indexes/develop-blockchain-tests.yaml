@@ -981,7 +981,8 @@ entries:
             hash: '0x96fb8062f427ffc3945a6232d5f2e03f'
             enabled: true
       eip6110_deposits:
-        enabled: true
+        enabled: false
+        comment: Deposits not supported (L2 does not process L1 beacon-chain requests)
         entries:
           test_deposit.json:
             hash: '0x1d6bd286ee255de7d34d3aded0b5d7a4'
@@ -1027,7 +1028,8 @@ entries:
             hash: '0xf46fc91f86791e18fbbd17de8be2e2ee'
             enabled: true
       eip7251_consolidations:
-        enabled: true
+        enabled: false
+        comment: Consolidations not supported (L2 does not process L1 beacon-chain requests)
         entries:
           test_consolidation_requests.json:
             hash: '0x1371e2a714c15d147e8e854da0f0c686'
@@ -1078,7 +1080,8 @@ entries:
             hash: '0x3ab6afd3ce0c45e35ce0ce7c8cb29ff9'
             enabled: true
       eip7685_general_purpose_el_requests:
-        enabled: true
+        enabled: false
+        comment: EL requests not supported (L2 does not process L1 beacon-chain requests)
         entries:
           test_invalid_multi_type_requests.json:
             hash: '0x4bbb70b8a06e838945574439e2a9c2a5'
