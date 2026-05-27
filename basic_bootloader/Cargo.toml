@@ -51,7 +51,10 @@ pectra = ["eip-2935", "eip-7702", "eip-7623", "eip-4844", "zk_ee/pectra-blobs", 
 eip-7825 = ["zk_ee/eip-7825"]
 eip-7934 = []
 eip-7918 = []
-fusaka = ["pectra", "eip-7825", "eip-7934", "eip-7918", "zk_ee/fusaka-blobs", "zk_ee/eip-7825", "basic_system/fusaka"]
+# Latest blob-count schedule (BPO). Opt-in on top of `fusaka`; without it,
+# `fusaka` uses base-Osaka (Prague) blob counts. Production enables this.
+fusaka-blobs = ["zk_ee/fusaka-blobs"]
+fusaka = ["pectra", "eip-7825", "eip-7934", "eip-7918", "zk_ee/eip-7825", "basic_system/fusaka"]
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 resources_for_tester = []

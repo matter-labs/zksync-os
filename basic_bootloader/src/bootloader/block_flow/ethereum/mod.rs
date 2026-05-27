@@ -5,14 +5,16 @@ use crate::bootloader::block_flow::post_tx_loop_op::PostTxLoopOp;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
 use zk_ee::common_structs::WarmStorageKey;
 
+// Blob count schedule (selected by the `fusaka-blobs` feature = latest BPO),
+// independent of the EIP-7918 reserve-price logic. Base Osaka = Prague counts.
 // TODO: move to fork params
-#[cfg(not(feature = "eip-7918"))]
+#[cfg(not(feature = "fusaka-blobs"))]
 pub const MAX_BLOBS_PER_BLOCK: usize = 9;
-#[cfg(feature = "eip-7918")]
+#[cfg(feature = "fusaka-blobs")]
 pub const MAX_BLOBS_PER_BLOCK: usize = 21;
-#[cfg(not(feature = "eip-7918"))]
+#[cfg(not(feature = "fusaka-blobs"))]
 pub const TARGET_BLOBS_PER_BLOCK: usize = 6;
-#[cfg(feature = "eip-7918")]
+#[cfg(feature = "fusaka-blobs")]
 pub const TARGET_BLOBS_PER_BLOCK: usize = 14;
 pub const GAS_PER_BLOB: u64 = 1 << 17;
 pub const TARGET_BLOBS_GAS_PER_BLOCK: u64 = (TARGET_BLOBS_PER_BLOCK as u64) * GAS_PER_BLOB;

@@ -55,6 +55,7 @@ evm_tester = ["forward_system/evm_tester"]
 pectra = ["forward_system/pectra"]
 evm_tester_pectra = ["forward_system/evm_tester_pectra"]
 fusaka = ["forward_system/fusaka"]
+fusaka-blobs = ["forward_system/fusaka-blobs"]
 evm_tester_fusaka = ["forward_system/evm_tester_fusaka"]
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.

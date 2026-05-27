@@ -45,3 +45,5 @@ pectra = ["zksync_os_forward_system/pectra"]
 evm_tester_pectra = ["zksync_os_forward_system/evm_tester_pectra"]
 fusaka = ["zksync_os_forward_system/fusaka"]
 evm_tester_fusaka = ["zksync_os_forward_system/evm_tester_fusaka"]
+# Opt-in: test against the latest BPO blob-count schedule instead of base Osaka.
+fusaka-blobs = ["zksync_os_forward_system/fusaka-blobs"]

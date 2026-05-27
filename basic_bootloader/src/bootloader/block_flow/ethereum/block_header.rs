@@ -24,18 +24,21 @@ use super::utils::fake_exponential;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser;
 
 pub const MIN_BASE_FEE_PER_BLOB_GAS: u64 = 1;
-#[cfg(not(feature = "eip-7918"))]
+// Blob count schedule. Selected by the blob-count feature (`fusaka-blobs` =
+// latest BPO schedule), independent of the EIP-7918 reserve-price *logic*
+// (gated on `eip-7918`). Base Osaka keeps Prague's counts.
+#[cfg(not(feature = "fusaka-blobs"))]
 pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5007716;
-#[cfg(feature = "eip-7918")]
+#[cfg(feature = "fusaka-blobs")]
 pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11684671;
 
-#[cfg(not(feature = "eip-7918"))]
+#[cfg(not(feature = "fusaka-blobs"))]
 const MAX_BLOBS_PER_BLOCK: usize = 9;
-#[cfg(feature = "eip-7918")]
+#[cfg(feature = "fusaka-blobs")]
 const MAX_BLOBS_PER_BLOCK: usize = 21;
-#[cfg(not(feature = "eip-7918"))]
+#[cfg(not(feature = "fusaka-blobs"))]
 const TARGET_BLOBS_PER_BLOCK: u64 = 6;
-#[cfg(feature = "eip-7918")]
+#[cfg(feature = "fusaka-blobs")]
 const TARGET_BLOBS_PER_BLOCK: u64 = 14;
 const TARGET_BLOB_GAS_PER_BLOCK: u64 = GAS_PER_BLOB * TARGET_BLOBS_PER_BLOCK;
 #[cfg(feature = "eip-7918")]
