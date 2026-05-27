@@ -58,5 +58,6 @@ pub fn generate_block_context_interface<const RANDOMIZED_TREE: bool>(
         mix_hash: rig_block_context.mix_hash,
         execution_version: 0, // TODO meaningless here
         blob_fee: rig_block_context.blob_fee,
+        is_gateway: rig_block_context.is_gateway,
     }
 }

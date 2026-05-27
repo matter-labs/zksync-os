@@ -85,6 +85,7 @@ for dir in tests/instances/eth_runner/blocks/*; do
 done
 
 precompiles_pair="(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
+fri_precompile_pair="(\"fri_precompile\", \"base_fri_precompile.bench\", \"head_fri_precompile.bench\")"
 
 # Each sub-script emits nothing when no row moved between base and head.
 # We capture into a tmpfile and skip the surrounding header/<details>
@@ -131,7 +132,15 @@ python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${precompiles_p
 emit_details_section "$precompiles_body" "Precompiles test-crate bench (synthetic workload, all labels)"
 rm -f "$precompiles_body"
 
-# Section 3a: pubdata bytes per block (keccak-DA bench files; pubdata is
+# Section 3a: FRI precompile contract/sidecar bench (collapsed).
+fri_precompile_body=$(mktemp)
+if [ -f base_fri_precompile.bench ] && [ -f head_fri_precompile.bench ]; then
+  python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${fri_precompile_pair}]" > "$fri_precompile_body"
+fi
+emit_details_section "$fri_precompile_body" "FRI precompile bench (FriProofTx + sidecar + contract call)"
+rm -f "$fri_precompile_body"
+
+# Section 3b: pubdata bytes per block (keccak-DA bench files; pubdata is
 # invariant to the DA scheme — the keccak file just happens to be where
 # `single_run.rs` appends `pubdata_bytes: N`). `compare_pubdata.py`
 # self-suppresses when no block's value changed between base and head,
@@ -193,6 +202,15 @@ join_bench_args=""
 join_opcode_args=""
 if [ -f head_precompiles.bench ]; then
   join_bench_args="--bench-file head_precompiles.bench"
+fi
+if [ -d head_fri_precompile_samples ] && [ -d head_fri_precompile_cycles ]; then
+  join_pairs="$join_pairs head_fri_precompile_samples head_fri_precompile_cycles"
+  if [ -f head_fri_precompile.bench ]; then
+    join_bench_args="$join_bench_args --bench-file head_fri_precompile.bench"
+  else
+    join_bench_args="$join_bench_args --bench-file /dev/null"
+  fi
+  join_opcode_args="$join_opcode_args --opcode-samples-dir /dev/null"
 fi
 # Test-crate run dumps opcode samples to a flat dir; per-block runs dump
 # under opcode_samples/head_${blk}. Pass the flat dir as the first

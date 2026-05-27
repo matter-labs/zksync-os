@@ -93,6 +93,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,
             blob_fee: value.blob_fee,
+            is_gateway: value.is_gateway,
         }
     }
 }
@@ -146,6 +147,11 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::NativeResourcesAreTooExpensive => {InvalidTransaction::NativeResourcesAreTooExpensive}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7623IntrinsicGasIsTooLow => {InvalidTransaction::EIP7623IntrinsicGasIsTooLow}
             basic_bootloader::bootloader::errors::InvalidTransaction::CallerGasLimitMoreThanTxLimit => {InvalidTransaction::CallerGasLimitMoreThanTxLimit}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofTxNotSupported => {InvalidTransaction::FriProofTxNotSupported}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofSidecarMissing => {InvalidTransaction::FriProofSidecarMissing}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofVerificationFailed => {InvalidTransaction::FriProofVerificationFailed}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FriProofStatementHashMismatch => {InvalidTransaction::FriProofStatementHashMismatch}
+            basic_bootloader::bootloader::errors::InvalidTransaction::TooManyFriStatements => {InvalidTransaction::TooManyFriStatements}
         }
     }
 }

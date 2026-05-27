@@ -52,6 +52,11 @@ else
 fi
 
 EVM_FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"
+else
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
+fi
 
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
@@ -106,3 +111,24 @@ PRECOMPILE_SAMPLES_DIR="$(pwd)/${SIDE}_precompile_samples" \
 LABEL_CYCLE_SAMPLES_DIR="$(pwd)/${SIDE}_precompile_cycles" \
   cargo test $PROFILE --features "$PRECOMPILES_FEATURES" -p precompiles \
     -- --test-threads=1 $PRECOMPILES_TESTS
+
+# FRI precompile workload. This is separate from `precompiles` because a raw
+# call to 0x7003 is not meaningful: the transaction must be a real FriProofTx
+# with a sidecar proof so the oracle decode/flatten path and tx-scoped verified
+# statement state are exercised before the contract calls the precompile.
+#
+# Base-side bench jobs can land on an intermediate tree where the FRI test
+# exists but the rig does not yet seed Gateway L2MessageRoot storage. In that
+# case RISC-V proving panics while reading initial storage. Skip the FRI pass on
+# those trees; there is no meaningful base comparison until the rig supports
+# Gateway state seeding.
+if grep -q "fri_verifier_contract_returns_true_for_verified_proof" tests/instances/system_hooks/src/lib.rs \
+   && grep -q "cycle_marker" tests/instances/system_hooks/Cargo.toml \
+   && grep -q "install_gateway_predeployed_contracts" tests/rig/src/predeployed_contracts.rs; then
+  MARKER_PATH="$(pwd)/${SIDE}_fri_precompile.bench" \
+  PRECOMPILE_STATS_PATH="$(pwd)/${SIDE}_fri_precompile_stats.csv" \
+  PRECOMPILE_SAMPLES_DIR="$(pwd)/${SIDE}_fri_precompile_samples" \
+  LABEL_CYCLE_SAMPLES_DIR="$(pwd)/${SIDE}_fri_precompile_cycles" \
+    cargo test $PROFILE --features "$FRI_PRECOMPILE_FEATURES" -p system_hooks_tests \
+      -- --test-threads=1 fri_verifier_contract_returns_true_for_verified_proof
+fi

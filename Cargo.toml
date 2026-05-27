@@ -105,19 +105,26 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { version = "0.1.1", default-features =  false }
-zksync_os_interface = {  version = "0.1.1" }
+zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "48d02758ad42684abb9180588e4c14a46be63475", default-features = false }
+zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", rev = "48d02758ad42684abb9180588e4c14a46be63475" }
 
+# zksync-airbender deps pinned to the same commit airbender-platform
+# resolves `branch = "dev"` to at the time of pinning.
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
-prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false }
-
 common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5", package = "airbender-crypto", default-features = false }
+
 seq-macro = { version = "0.3.6", default-features = false }
 
 anyhow = "1"
@@ -149,10 +156,13 @@ once_cell = "1.20.3"
 zerocopy = { version = "=0.8.28" }
 
 
-# [profile.dev]
-# opt-level = 0
-# lto = false
-# panic = "abort"
+[profile.dev]
+# The Airbender dependency graph currently triggers an LLVM/DWARF SIGBUS
+# on this toolchain when compiling debug-info-heavy host builds.
+debug = false
+
+[profile.test]
+debug = false
 
 [profile.release]
 opt-level = 3
@@ -185,4 +195,3 @@ debug = false
 [patch.crates-io]
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
-

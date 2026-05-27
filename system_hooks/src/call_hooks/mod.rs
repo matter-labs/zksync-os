@@ -2,6 +2,7 @@
 pub mod mock_precompiles;
 
 pub mod contract_deployer_temp;
+pub mod fri_precompile;
 pub mod l1_messenger;
 pub mod precompiles;
 pub mod set_bytecode_on_address;

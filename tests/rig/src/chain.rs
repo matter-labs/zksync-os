@@ -29,6 +29,7 @@ use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::FriVerifierArtifacts;
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
 use forward_system::system::system_types::ethereum::{
@@ -44,6 +45,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
@@ -68,6 +70,8 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -81,6 +85,8 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -88,7 +94,8 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     ) -> ZkEENonDeterminismSource;
 }
 
-/// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
+/// Default oracle factory used by normal rig runs.
+#[derive(Clone, Default)]
 pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
 
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
@@ -100,6 +107,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -110,6 +119,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -123,6 +134,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
@@ -133,6 +146,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             state_tree,
             preimage_source,
             tx_source,
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
@@ -166,6 +181,7 @@ pub struct BlockContext {
     pub pubdata_limit: u64,
     pub mix_hash: U256,
     pub blob_fee: U256,
+    pub is_gateway: bool,
 }
 
 impl Default for BlockContext {
@@ -180,6 +196,7 @@ impl Default for BlockContext {
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
             blob_fee: U256::ONE,
+            is_gateway: false,
         }
     }
 }
@@ -616,6 +633,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
+            is_gateway: block_context.is_gateway,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -699,6 +717,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut NopTracer::default(),
             &mut NopTxValidator,
             oracle_factory,
+            Default::default(),
+            None,
         )
         .unwrap()
         .0
@@ -719,6 +739,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             &factory,
+            Default::default(),
+            None,
             &mut NopTracer::default(),
             &mut NopTxValidator,
         )
@@ -742,6 +764,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             &factory,
+            Default::default(),
+            None,
             tracer,
             validator,
         )
@@ -758,6 +782,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
@@ -765,6 +791,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             oracle_factory,
+            fri_sidecar,
+            fri_artifacts,
             tracer,
             validator,
         )
@@ -779,6 +807,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: RunConfig,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
@@ -808,6 +838,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
+            is_gateway: block_context.is_gateway,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -829,6 +860,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             self.state_tree.clone(),
             self.preimage_source.clone(),
             tx_source.clone(),
+            fri_sidecar.clone(),
+            fri_artifacts.clone(),
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
@@ -896,6 +929,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
                 tx_source.clone(),
+                fri_sidecar,
+                fri_artifacts,
                 Some(proof_data),
                 Some(da_commitment_scheme),
                 false,

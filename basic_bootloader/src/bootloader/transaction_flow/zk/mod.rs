@@ -20,7 +20,7 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -41,6 +41,7 @@ use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
+mod fri;
 pub mod process_l1_transaction;
 mod validation_impl;
 
@@ -134,6 +135,8 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// authorizations are present (failed auths consume much less native than
     /// the worst-case formula budgets).
     pub authorization_list_num: u64,
+    /// Number of FRI statement hashes referenced by the transaction.
+    pub statement_versioned_hashes_num: u64,
 }
 
 impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
@@ -155,6 +158,10 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("native_used", &self.native_used)
             .field("intrinsic_resources", &self.intrinsic_resources)
             .field("authorization_list_num", &self.authorization_list_num)
+            .field(
+                "statement_versioned_hashes_num",
+                &self.statement_versioned_hashes_num,
+            )
             .finish()
     }
 }
@@ -182,7 +189,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
 impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     type TransactionContext = TxContextForPreAndPostProcessing<S>;
@@ -631,7 +638,7 @@ where
 impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     fn execute_call<'a>(

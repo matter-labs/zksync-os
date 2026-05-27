@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::bootloader::constants::{
+    FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF, FRI_PROOF_TX_INTRINSIC_GAS,
     L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
@@ -14,7 +15,7 @@ use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::out_of_native_resources;
 use zk_ee::system::errors::system::SystemError;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
+use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::{Computational, Ergs, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
@@ -202,6 +203,7 @@ pub fn calculate_l2_tx_intrinsic_computational_native_resources(
     access_list_accounts: u64,
     access_list_storages: u64,
     authorization_list_num: u64,
+    statement_versioned_hashes_num: u64,
     is_service: bool,
 ) -> u64 {
     let mut intrinsic_computational_native_resources = if is_service {
@@ -233,6 +235,12 @@ pub fn calculate_l2_tx_intrinsic_computational_native_resources(
         .saturating_add(
             authorization_list_num
                 .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION),
+        );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
+            statement_versioned_hashes_num
+                .saturating_mul(FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF),
         );
 
     intrinsic_computational_native_resources
@@ -267,6 +275,7 @@ pub fn calculate_tx_intrinsic_gas(
     access_list_accounts: u64,
     access_list_storage_keys: u64,
     authorization_list_num: u64,
+    statement_versioned_hashes_num: u64,
 ) -> u64 {
     let mut intrinsic_gas = TX_INTRINSIC_GAS;
 
@@ -295,6 +304,11 @@ pub fn calculate_tx_intrinsic_gas(
     intrinsic_gas = intrinsic_gas.saturating_add(
         authorization_list_num.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT),
     );
+
+    // FRI statements reserve a user-visible gas surcharge. The verifier cost
+    // is also charged via intrinsic native resources.
+    intrinsic_gas = intrinsic_gas
+        .saturating_add(statement_versioned_hashes_num.saturating_mul(FRI_PROOF_TX_INTRINSIC_GAS));
 
     intrinsic_gas
 }
@@ -332,7 +346,7 @@ pub fn create_resources_for_tx<S: EthereumLikeTypes, P: ResourcesCreationErrorPo
     intrinsic_pubdata: u64,
 ) -> Result<ResourcesForTx<S>, P::Error>
 where
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificMetadata,
 {
     // This is the real limit, which we later use to compute native_used.
     // From it, we discount intrinsic pubdata and then take the min

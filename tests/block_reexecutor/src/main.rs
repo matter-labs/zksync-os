@@ -252,6 +252,8 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
             &mut tracer,
             &mut validator,
             &oracle_factory,
+            rig::InMemoryFriProofSidecarSource::default(),
+            None,
         )
         .map_err(|err| anyhow::anyhow!("block execution failed: {err:?}"))?;
 

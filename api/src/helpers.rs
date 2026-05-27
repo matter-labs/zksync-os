@@ -397,6 +397,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     access_list_accounts: u64,
     access_list_storage_keys: u64,
     authorization_list_num: u64,
+    statement_versioned_hashes_num: u64,
     max_fee_per_gas: U256,
     max_priority_fee_per_gas: U256,
 ) -> Result<(), ()> {
@@ -447,6 +448,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
         false,
     );
 

@@ -26,7 +26,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
@@ -60,7 +60,7 @@ pub(crate) fn process_l1_transaction<
 ) -> Result<ZkTxResult<'a>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // The work done by the bootloader (outside of EE or EOA specific
@@ -447,7 +447,7 @@ fn prepare_and_check_resources<
 ) -> Result<ResourceAndFeeInfo<S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // For L1->L2 txs, we use a constant native price to avoid censorship.
@@ -498,7 +498,8 @@ where
     let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, transaction.calldata());
 
-    // L1 transactions never carry an access list or authorization list, so
+    // L1 transactions never carry an access list, authorization list or FRI
+    // statement hashes, so
     // the corresponding counts are 0 and the intrinsic-gas helper collapses
     // to TX_INTRINSIC_GAS + calldata-token cost (deployment is also false).
     let intrinsic_gas = calculate_tx_intrinsic_gas(
@@ -508,6 +509,7 @@ where
         0,     // access_list_accounts
         0,     // access_list_storage_keys
         0,     // authorization_list_num
+        0,     // statement_versioned_hashes_num
     );
     let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
         transaction.calldata().len() as u64,
@@ -581,7 +583,7 @@ fn execute_l1_transaction_and_notify_result<
 ) -> Result<L1ExecutionOutcome<S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     system_log!(system, "Executing L1 transaction\n");
@@ -591,6 +593,7 @@ where
         tx_gas_price: gas_price,
         tx_origin: from,
         blobs: ArrayVec::new(),
+        verified_fri_statements: ArrayVec::new(),
     });
 
     // Start a frame, to revert minting of value if execution fails
@@ -751,7 +754,7 @@ fn mint_base_token<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecuti
 ) -> Result<(), BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     notify_l2_asset_tracker::<S, Config>(
@@ -864,7 +867,7 @@ fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloade
 ) -> Result<(), BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {

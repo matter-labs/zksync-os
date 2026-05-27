@@ -6,6 +6,7 @@ This directory contains documentation of ZKsync OS:
 - [Repository structure](./repository_structure.md)
 - [Running tests](./running_tests.md)
 - [System hooks](./system_hooks.md)
+- [FRI precompile (Gateway-only)](./fri_precompile.md)
 - [Data Availability Commitment Schemes](./da_commitment_schemes.md)
 - [L1 Integration](./l1_integration.md)
 - [Double Resource Accounting](./double_resource_accounting.md)

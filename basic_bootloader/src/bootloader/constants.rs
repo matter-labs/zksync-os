@@ -51,6 +51,15 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
+/// FRI proof verification cost charged per submitted statement hash.
+/// Sized as an upper bound on the RISC-V `process_transaction` cycles for a
+/// single 100-bit FRI proof (~16.5M effective).
+pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 17_000_000;
+/// Per-statement intrinsic gas surcharge for `FriProofTx`.
+pub const FRI_PROOF_TX_INTRINSIC_GAS: u64 = 100_000;
+/// Current statement-hash version of FRI proof transactions.
+pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+
 /// Cost to convert zero byte of calldata into "token"
 pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 

@@ -15,18 +15,18 @@ features = ["http-rustls-tls", "test", "signing"]
 [dependencies]
 evm_interpreter = { path = "../../../evm_interpreter" }
 oracle_provider = { path = "../../../oracle_provider" }
-forward_system = { path = "../../../forward_system", features = ["no_print", "for_tests"] }
+forward_system = { path = "../../../forward_system", default-features = false, features = ["testing", "no_print", "for_tests"] }
 basic_system = { path = "../../../basic_system" }
 callable_oracles = { path = "../../../callable_oracles" }
 modexp = { path = "../../../supporting_crates/modexp" }
-basic_bootloader = { path = "../../../basic_bootloader" }
+basic_bootloader = { path = "../../../basic_bootloader", default-features = false, features = ["testing"] }
 system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
-alloy = { version = "=1.7.3", features = ["full", "eip712"]}
+alloy = { version = "=1.8.3", features = ["full", "eip712"]}
 alloy-rlp = "0.3.13"
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "72cce091", package = "airbender-crypto", default-features = false }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5", package = "airbender-crypto", default-features = false }
 fuzz_precompiles_forward = { path = "./wrappers/fuzz_precompiles_forward" }
 fuzz_precompiles_proving = { path = "./wrappers/fuzz_precompiles_proving" }
 basic_system_proving = { path = "./wrappers/basic_system_proving" }
@@ -362,4 +362,3 @@ path = "fuzz_targets/kzg_blobs/kzg_blobs.rs"
 test = false
 doc = false
 bench = false
-

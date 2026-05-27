@@ -13,7 +13,7 @@ impl<
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificMetadata,
 {
     type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
     // we write only enforced tx hashes to the batch data, so it can be anything that implements tx hashes accumulator

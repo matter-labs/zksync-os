@@ -4,6 +4,8 @@ pub trait BasicBootloaderExecutionConfig: 'static + Clone + Copy + core::fmt::De
     const VALIDATE_EOA_SIGNATURE: bool;
     /// Simulation flag(used for `eth_call` and `estimate_gas`)
     const SIMULATION: bool;
+    /// Flag to disable FRI proof verification. Disabled for sequencing.
+    const VERIFY_FRI_PROOFS: bool;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -12,6 +14,7 @@ pub struct BasicBootloaderProvingExecutionConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderProvingExecutionConfig {
     const SIMULATION: bool = false;
     const VALIDATE_EOA_SIGNATURE: bool = true;
+    const VERIFY_FRI_PROOFS: bool = true;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -20,6 +23,7 @@ pub struct BasicBootloaderForwardSimulationConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderForwardSimulationConfig {
     const VALIDATE_EOA_SIGNATURE: bool = false;
     const SIMULATION: bool = false;
+    const VERIFY_FRI_PROOFS: bool = false;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -29,6 +33,7 @@ impl BasicBootloaderExecutionConfig for BasicBootloaderCallSimulationConfig {
     // doesn't really matter, as `SIMULATION` disables signature validation anyway
     const VALIDATE_EOA_SIGNATURE: bool = true;
     const SIMULATION: bool = true;
+    const VERIFY_FRI_PROOFS: bool = false;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,4 +42,5 @@ pub struct BasicBootloaderForwardETHLikeConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderForwardETHLikeConfig {
     const VALIDATE_EOA_SIGNATURE: bool = true;
     const SIMULATION: bool = false;
+    const VERIFY_FRI_PROOFS: bool = false;
 }

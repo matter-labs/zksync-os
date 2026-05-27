@@ -495,7 +495,6 @@ impl<
             InteropRootStorage::<SF, N, A>::new_from_parts(allocator.clone());
         let new_settlement_layer_chain_id_storage =
             NewSettlementLayerChainIdStorage::<SF, N, A>::new_from_parts(allocator.clone());
-
         // we read da scheme during init as in future it should affect pubdata price
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)

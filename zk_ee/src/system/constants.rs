@@ -34,3 +34,8 @@ pub const MAX_BLOBS_PER_BLOCK: usize = 6;
 #[cfg(feature = "pectra-blobs")]
 pub const MAX_BLOBS_PER_BLOCK: usize = 9;
 pub const GAS_PER_BLOB: u64 = 1 << 17;
+
+/// Maximum number of FRI statement hashes a single `FriProofTx` may
+/// carry. Bounds the stack size of `TxLevelMetadata` and caps the
+/// validator's per-tx verification work.
+pub const MAX_FRI_STATEMENTS_PER_TX: usize = 8;

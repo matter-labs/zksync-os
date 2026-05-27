@@ -22,6 +22,8 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
+pub mod fri_host_verifier;
+mod fri_verifier;
 pub mod result_keeper;
 mod rlp;
 pub mod stf;
