@@ -422,9 +422,9 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
 /// validation errors, as "invalidating" an L1 transaction can halt
 /// the chain (due to the priority queue).
 /// Note that the "validation errors" are practically unreachable, as
-/// gas_limit, gas_price and gas_per_pubdata are either checked or set
-/// by the L1 contracts. We decide to handle these cases as a fallback in
-/// case the L1 contracts aren't properly updated to reflect a change in
+/// gas_limit, gas_per_pubdata are either checked or set by the L1
+/// contracts. We decide to handle these cases as a fallback in case
+/// the L1 contracts aren't properly updated to reflect a change in
 /// ZKsync OS.
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
