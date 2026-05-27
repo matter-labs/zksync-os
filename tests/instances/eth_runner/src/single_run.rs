@@ -29,7 +29,6 @@ fn run<const RANDOMIZED: bool>(
     transactions: Vec<EncodedTx>,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
-    calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
     flamegraph: Option<String>,
@@ -41,7 +40,7 @@ fn run<const RANDOMIZED: bool>(
         chain.set_block_hashes(block_hashes.into_array(block_number))
     }
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &diff_trace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();
@@ -284,15 +283,6 @@ pub fn single_run(
             .collect(),
     };
 
-    let calltrace = CallTrace {
-        result: calltrace
-            .result
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-            .collect(),
-    };
-
     if randomized {
         let chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
         run(
@@ -304,7 +294,6 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,
@@ -321,7 +310,6 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,

@@ -1,6 +1,5 @@
 use alloy::primitives::{address, Address, B256, U256};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -35,28 +34,6 @@ pub struct CallTrace {
 }
 
 impl CallTraceItem {
-    pub fn get_deployed_addresses(&self) -> HashSet<Address> {
-        let mut deployed = HashSet::new();
-        self.collect_deployed_addresses(&mut deployed);
-        deployed
-    }
-
-    fn collect_deployed_addresses(&self, acc: &mut HashSet<Address>) {
-        if matches!(self.call_type.as_deref(), Some("CREATE") | Some("CREATE2"))
-            && self.error.is_none()
-        {
-            if let Some(to) = self.to {
-                acc.insert(to);
-            }
-        }
-
-        if let Some(ref calls) = self.calls {
-            for call in calls {
-                call.collect_deployed_addresses(acc);
-            }
-        }
-    }
-
     pub fn has_call_to_unsupported_precompile(&self) -> bool {
         self.to == Some(address!("0x0000000000000000000000000000000000000009"))
             || self
