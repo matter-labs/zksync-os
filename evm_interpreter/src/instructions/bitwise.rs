@@ -207,4 +207,38 @@ mod tests {
             }
         }
     }
+
+    // Mirrors the value semantics of `Interpreter::clz` (EIP-7939): CLZ of zero
+    // is 256, otherwise the count of leading zero bits in the 256-bit word.
+    #[cfg(feature = "clz")]
+    fn clz_count(input: HostU256) -> usize {
+        let op: U256 = input.into();
+        if op.is_zero() {
+            256
+        } else {
+            op.leading_zeros()
+        }
+    }
+
+    #[cfg(feature = "clz")]
+    #[test]
+    fn clz_matches_expected_and_host_reference() {
+        let high_bit = HostU256::from_limbs([0, 0, 0, 0x8000_0000_0000_0000]);
+        let bit_192 = HostU256::from_limbs([0, 0, 0, 1]);
+        let cases = [
+            (HostU256::ZERO, 256usize),
+            (HostU256::from(1u64), 255),
+            (HostU256::from(2u64), 254),
+            (HostU256::from(u64::MAX), 192),
+            (bit_192, 63),
+            (high_bit, 0),
+            (HostU256::MAX, 0),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(clz_count(input), expected, "clz mismatch for {input:#x}");
+            // Cross-check the custom U256 against the host reference: ruint's
+            // `leading_zeros` already returns 256 for zero, matching CLZ.
+            assert_eq!(clz_count(input), input.leading_zeros());
+        }
+    }
 }
