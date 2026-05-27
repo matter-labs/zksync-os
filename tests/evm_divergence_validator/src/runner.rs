@@ -485,7 +485,7 @@ fn parse_alloy_u256(s: &str) -> anyhow::Result<AlloyU256> {
 fn make_block_context(block: &BlockDef) -> rig::BlockContext {
     rig::BlockContext {
         eip1559_basefee: ruint::aliases::U256::from(block.basefee.unwrap_or(DEFAULT_MAX_FEE)),
-        native_price: ruint::aliases::U256::from(10u64),
+        native_price: ruint::aliases::U256::from(0u64), // native resources will be unlimited
         pubdata_price: Default::default(),
         timestamp: block.timestamp.unwrap_or(1_700_000_000),
         gas_limit: block.gas_limit.unwrap_or(30_000_000),

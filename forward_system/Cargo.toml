@@ -51,10 +51,6 @@ production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
 for_tests = ["production", "basic_bootloader/eip-4844"]
 
 # Features used for eth_runner.
-# Test profiles that previously enabled `unlimited_native` / `resources_for_tester`
-# should now configure `native_price = 0` in the block metadata, which makes the
-# native budget effectively unlimited (subject to the `MAX_NATIVE_COMPUTATIONAL`
-# per-tx cap and the block-level limits).
 eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
 # Additional features used for eth_stf in eth_runner
