@@ -84,7 +84,13 @@ jobs:
           else
             ./dump_bin.sh --type for-tests-benchmarking
           fi
-          ./dump_bin.sh --type evm-replay-benchmarking
+          # Osaka bench fixtures are post-BPO; use the fusaka-blobs replay
+          # binary when available, falling back for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
       - name: Run benchmarks
         shell: bash
         # Orchestration lives in `bench_scripts/run_bench_side.sh` — see
@@ -137,7 +143,13 @@ jobs:
           else
             ./dump_bin.sh --type for-tests-benchmarking
           fi
-          ./dump_bin.sh --type evm-replay-benchmarking
+          # Osaka bench fixtures are post-BPO; use the fusaka-blobs replay
+          # binary when available, falling back for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
       - name: Run benchmarks
         shell: bash
         # Same orchestration as bench-base, only the `head` side selector

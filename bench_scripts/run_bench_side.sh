@@ -52,6 +52,13 @@ else
 fi
 
 EVM_FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+# The block fixtures are post-BPO Osaka blocks, so the eth_runner host must use
+# the fusaka + latest-BPO blob schedule. The `fusaka`/`fusaka-blobs` eth_runner
+# features were introduced on the PR side; guard so a pre-fusaka merge-base
+# (whose fixtures predate Osaka) still builds with the plain feature set.
+if grep -q '^fusaka-blobs = ' tests/instances/eth_runner/Cargo.toml; then
+  EVM_FEATURES="$EVM_FEATURES,fusaka,fusaka-blobs"
+fi
 if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
   FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"
 else

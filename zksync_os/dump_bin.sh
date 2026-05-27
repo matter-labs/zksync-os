@@ -89,8 +89,13 @@ case "$TYPE" in
     APP_NAME="evm_replay"
     ;;
   evm-replay-benchmarking-fusaka)
-    # Adds `fusaka` so the proving binary can replay Osaka blocks (CLZ,
-    # modexp repricing, EIP-7825/7934/7918, base-Osaka blob schedule).
+    # `fusaka` for the proving binary already pulls in the latest BPO blob
+    # schedule (zksync_os's `fusaka` => proof_running_system/fusaka-blobs), so
+    # this single type covers Osaka replay including post-BPO blob txs (CLZ,
+    # modexp repricing, EIP-7825/7934/7918, BPO blob base fee).
+    # NOTE: the literal string `evm-replay-benchmarking-fusaka` is used as a
+    # `grep -q` fallback target by `.github/workflows/bench.yml` — if this
+    # case label is renamed, update the workflow too.
     FEATURES="$FEATURES,eth_runner,benchmarking,fusaka"
     APP_NAME="evm_replay"
     ;;
