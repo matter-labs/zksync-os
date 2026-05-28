@@ -65,7 +65,25 @@ else
   FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
 fi
 
-for dir in tests/instances/eth_runner/blocks/*; do
+# Block runs are independent — outputs are namespaced by ${SIDE}_${blk} and
+# RISC-V cycle counts are deterministic (not wall-clock) — so build the runner
+# once and execute the blocks concurrently. Building first avoids cargo build-
+# lock contention between the parallel invocations.
+cargo build --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE \
+  --features "$EVM_FEATURES"
+case "$PROFILE" in
+  *bench-fast*) EVM_BIN="target/bench-fast/eth_runner" ;;
+  *)            EVM_BIN="target/release/eth_runner" ;;
+esac
+
+# Whether the checked-out tree supports the second (BlobsZKsyncOS) DA pass.
+DA_SUPPORTED=0
+if grep -q "BENCH_DA_SCHEME" tests/instances/eth_runner/src/single_run.rs; then
+  DA_SUPPORTED=1
+fi
+
+run_block() {
+  local dir="$1" blk
   blk=$(basename "$dir")
 
   # Pass 1: default DA scheme (BlobsAndPubdataKeccak256) — full
@@ -73,7 +91,7 @@ for dir in tests/instances/eth_runner/blocks/*; do
   # artifact; base skips it because nothing downstream consumes a
   # base-side opcode CSV (the per-opcode compare reads stdout `.out`
   # files, not the CSV).
-  env_args=(
+  local env_args=(
     OPCODE_SAMPLES_DIR="$(pwd)/opcode_samples/${SIDE}_${blk}"
     OPCODE_CYCLE_SAMPLES_DIR="$(pwd)/opcode_cycles/${SIDE}_${blk}"
     MARKER_PATH="$(pwd)/${SIDE}_block_${blk}.bench"
@@ -85,23 +103,40 @@ for dir in tests/instances/eth_runner/blocks/*; do
     env_args+=(OPCODE_STATS_PATH="$(pwd)/${SIDE}_block_${blk}_opcode_stats.csv")
   fi
   env "${env_args[@]}" \
-    cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE \
-      --features "$EVM_FEATURES" \
-      -- single-run --block-dir "$dir" --opcode-stats \
-      > "${SIDE}_block_${blk}.out"
+    "$EVM_BIN" single-run --block-dir "$dir" --opcode-stats \
+    > "${SIDE}_block_${blk}.out"
 
   # Pass 2: BlobsZKsyncOS DA scheme. Only the post-tx-op stage differs
   # (the tx loop is identical to pass 1), so we capture ONLY the cycle
   # markers here — no opcode/precompile dumps.
-  if grep -q "BENCH_DA_SCHEME" tests/instances/eth_runner/src/single_run.rs; then
+  if [ "$DA_SUPPORTED" = 1 ]; then
     BENCH_DA_SCHEME=blobs_zksync_os \
     MARKER_PATH="$(pwd)/${SIDE}_block_${blk}_blobs.bench" \
-      cargo run --manifest-path tests/instances/eth_runner/Cargo.toml $PROFILE \
-        --features "$EVM_FEATURES" \
-        -- single-run --block-dir "$dir" \
-        > "${SIDE}_block_${blk}_blobs.out"
+      "$EVM_BIN" single-run --block-dir "$dir" \
+      > "${SIDE}_block_${blk}_blobs.out"
   fi
-done
+}
+
+# Run up to BENCH_BLOCK_JOBS blocks concurrently (default: nproc, capped at 8).
+# Each run loads multi-MB traces plus an in-process RISC-V simulation, so lower
+# this if the runner is memory-constrained. xargs exits non-zero if any block
+# run fails, which then fails the job.
+JOBS="${BENCH_BLOCK_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+[ "$JOBS" -gt 8 ] && JOBS=8
+[ "$JOBS" -lt 1 ] && JOBS=1
+echo "Running block benchmarks with up to $JOBS parallel job(s)"
+# Invoking the built binary directly (not via `cargo run`) skips the
+# `.cargo/config.toml` [env], so set CARGO_WORKSPACE_DIR — the runner reads it
+# to locate `zksync_os/dist` for the RISC-V binary. The bench runs from the
+# repo root, which is the workspace dir.
+export CARGO_WORKSPACE_DIR="$(pwd)"
+export SIDE EVM_BIN DA_SUPPORTED
+export -f run_block
+if ! printf '%s\n' tests/instances/eth_runner/blocks/*/ \
+     | xargs -P "$JOBS" -I {} bash -c 'set -e; run_block "$1"' _ {}; then
+  echo "ERROR: one or more block benchmark runs failed" >&2
+  exit 1
+fi
 
 # Test-crate precompile workload. Test name substring filters (Rust's
 # harness matches if ANY substring matches):
