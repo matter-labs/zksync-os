@@ -1375,6 +1375,178 @@ fn test_pectra_precompiles() {
     }
 }
 
+/// Test BLS12-381 mapping precompiles (MAP_FP_TO_G1, MAP_FP2_TO_G2).
+/// These use an allocation-free isogeny map implementation and must work
+/// in proving mode (RISC-V) without global-alloc.
+#[cfg(feature = "pectra")]
+#[test]
+fn test_bls12_381_mapping_precompiles() {
+    // MAP_FP_TO_G1: 64-byte input (one Fp element)
+    let fp_input = hex::decode(
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
+    ).unwrap();
+    let g1_result = run_precompile_inner(
+        "0000000000000000000000000000000000000010",
+        None::<u64>,
+        &fp_input,
+        true,
+    )
+    .tx_results
+    .first()
+    .unwrap()
+    .clone()
+    .expect("MAP_FP_TO_G1 should succeed");
+    assert!(g1_result.is_success(), "MAP_FP_TO_G1 should not revert");
+    assert_eq!(
+        g1_result.as_returned_bytes().len(),
+        128,
+        "MAP_FP_TO_G1 should return a 128-byte G1 point"
+    );
+
+    // MAP_FP2_TO_G2: 128-byte input (one Fp2 element)
+    let fp2_input = hex::decode(
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa",
+    ).unwrap();
+    let g2_result = run_precompile_inner(
+        "0000000000000000000000000000000000000011",
+        None::<u64>,
+        &fp2_input,
+        true,
+    )
+    .tx_results
+    .first()
+    .unwrap()
+    .clone()
+    .expect("MAP_FP2_TO_G2 should succeed");
+    assert!(g2_result.is_success(), "MAP_FP2_TO_G2 should not revert");
+    assert_eq!(
+        g2_result.as_returned_bytes().len(),
+        256,
+        "MAP_FP2_TO_G2 should return a 256-byte G2 point"
+    );
+}
+
+/// Benchmark vectors for BLS12-381 and blake2f precompiles with varying input
+/// sizes. Used to measure per-unit delegation counts via cycle markers.
+/// Does NOT verify outputs — only checks that the precompile succeeds.
+#[cfg(feature = "pectra")]
+#[test]
+fn bench_pectra_precompile_scaling() {
+    // BLS12-381 G1 generator (EIP-2537)
+    const G1: &str = "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1";
+    // BLS12-381 G2 generator (EIP-2537)
+    const G2: &str = "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be";
+    // 128 zero bytes (256 hex chars) for G1 identity
+    let zero_g1 = "00".repeat(128);
+    // 256 zero bytes (512 hex chars) for G2 identity
+    let zero_g2 = "00".repeat(256);
+    const SCALAR_2: &str = "0000000000000000000000000000000000000000000000000000000000000002";
+    const SCALAR_3: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+    const SCALAR_7: &str = "0000000000000000000000000000000000000000000000000000000000000007";
+    const SCALAR_FF: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+    struct BenchCase {
+        name: &'static str,
+        precompile_id: &'static str,
+        input: String,
+    }
+
+    let cases = vec![
+        // G1 ADD: non-trivial (G1 + G1)
+        BenchCase {
+            name: "g1_add G+G",
+            precompile_id: "000000000000000000000000000000000000000b",
+            input: format!("{G1}{G1}"),
+        },
+        // G2 ADD: non-trivial (G2 + G2)
+        BenchCase {
+            name: "g2_add G+G",
+            precompile_id: "000000000000000000000000000000000000000d",
+            input: format!("{G2}{G2}"),
+        },
+        // G1 MSM: 2 points
+        BenchCase {
+            name: "g1_msm 2pt",
+            precompile_id: "000000000000000000000000000000000000000c",
+            input: format!("{G1}{SCALAR_2}{G1}{SCALAR_3}"),
+        },
+        // G1 MSM: 4 points
+        BenchCase {
+            name: "g1_msm 4pt",
+            precompile_id: "000000000000000000000000000000000000000c",
+            input: format!("{G1}{SCALAR_2}{G1}{SCALAR_3}{G1}{SCALAR_7}{G1}{SCALAR_FF}"),
+        },
+        // G2 MSM: 2 points
+        BenchCase {
+            name: "g2_msm 2pt",
+            precompile_id: "000000000000000000000000000000000000000e",
+            input: format!("{G2}{SCALAR_2}{G2}{SCALAR_3}"),
+        },
+        // G2 MSM: 4 points
+        BenchCase {
+            name: "g2_msm 4pt",
+            precompile_id: "000000000000000000000000000000000000000e",
+            input: format!("{G2}{SCALAR_2}{G2}{SCALAR_3}{G2}{SCALAR_7}{G2}{SCALAR_FF}"),
+        },
+        // Pairing: 1 pair (non-trivial — G1 generator, G2 generator)
+        BenchCase {
+            name: "pairing 1pair nontrivial",
+            precompile_id: "000000000000000000000000000000000000000f",
+            input: format!("{G1}{G2}"),
+        },
+        // Pairing: 2 pairs (non-trivial)
+        BenchCase {
+            name: "pairing 2pair nontrivial",
+            precompile_id: "000000000000000000000000000000000000000f",
+            input: format!("{G1}{G2}{G1}{G2}"),
+        },
+        // Pairing: 4 pairs (non-trivial)
+        BenchCase {
+            name: "pairing 4pair nontrivial",
+            precompile_id: "000000000000000000000000000000000000000f",
+            input: format!("{G1}{G2}{G1}{G2}{G1}{G2}{G1}{G2}"),
+        },
+        // MAP_FP_TO_G1
+        BenchCase {
+            name: "map_fp_to_g1",
+            precompile_id: "0000000000000000000000000000000000000010",
+            input: format!("{}", "00".repeat(63) + "ff"),
+        },
+        // MAP_FP2_TO_G2
+        BenchCase {
+            name: "map_fp2_to_g2",
+            precompile_id: "0000000000000000000000000000000000000011",
+            input: format!("{}{}", "00".repeat(63) + "ff", "00".repeat(63) + "aa"),
+        },
+        // Blake2f: 1 round
+        BenchCase {
+            name: "blake2f 1round",
+            precompile_id: "0000000000000000000000000000000000000009",
+            input: format!("00000001{}", "00".repeat(209)),
+        },
+        // Blake2f: 100 rounds
+        BenchCase {
+            name: "blake2f 100rounds",
+            precompile_id: "0000000000000000000000000000000000000009",
+            input: format!("00000064{}", "00".repeat(209)),
+        },
+    ];
+
+    for case in &cases {
+        let input = hex::decode(&case.input).unwrap();
+        eprintln!("Running bench case: {}", case.name);
+
+        let result = run_precompile_inner(case.precompile_id, None::<u64>, &input, true)
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect(&format!("{} should succeed", case.name));
+
+        assert!(result.is_success(), "{} failed: {:?}", case.name, result);
+    }
+}
+
 #[allow(clippy::large_const_arrays)]
 const P256_TESTS: [Test; 781] = [
     Test {

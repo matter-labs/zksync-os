@@ -56,3 +56,28 @@ pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 500;
 pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
 // TODO(EVM-1178) Add more vectors and benchmark cost better
 pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_000, 3_301_000, 0);
+
+// BLS12-381 native costs (EIP-2537).
+// Measured via RISC-V cycle markers with non-trivial inputs.
+pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(193_000, 35_700, 0);
+pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(249_000, 39_000, 0);
+// MSM: worst case per point (single-point MSM). Batching amortizes in practice
+// but we charge worst case per point; the EVM gas discount table handles batching.
+pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 = native_with_delegations!(912_000, 72_800, 0);
+pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
+    native_with_delegations!(1_571_000, 102_900, 0);
+// Pairing: measured with non-trivial G1/G2 generator inputs (1, 2, 4 pairs).
+// Linear model fits with <0.01% error on cross-check.
+pub const BLS12_381_PAIRING_NATIVE_COST: u64 = native_with_delegations!(12_140_000, 835_600, 0);
+pub const BLS12_381_PAIRING_PER_PAIR_NATIVE_COST: u64 =
+    native_with_delegations!(10_700_000, 830_500, 0);
+// Mapping: measured with allocation-free isogeny implementation (replaces
+// arkworks WBMap which used DensePolynomial/batch_inversion via global allocator).
+pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_640_000, 280_200, 0);
+pub const BLS12_381_MAP_FP2_TO_G2_NATIVE_COST: u64 =
+    native_with_delegations!(4_476_000, 575_200, 0);
+
+// Blake2f native costs (EIP-152).
+// Measured via RISC-V cycle markers. No delegations — pure RISC-V computation.
+pub const BLAKE2F_BASE_NATIVE_COST: u64 = 1_577;
+pub const BLAKE2F_PER_ROUND_NATIVE_COST: u64 = 672;
