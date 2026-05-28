@@ -100,7 +100,11 @@ case "$TYPE" in
     APP_NAME="evm_replay"
     ;;
   evm-tester)
-    FEATURES="$FEATURES,evm_tester"
+    # `fusaka` so the proving binary matches the host EVM tester, which now
+    # defaults to Fusaka (Osaka). Without it the nightly proof run would pair a
+    # pre-Osaka proving binary with Fusaka test selection (CLZ, modexp
+    # repricing, EIP-7825/7934 would diverge).
+    FEATURES="$FEATURES,evm_tester,fusaka"
     APP_NAME="evm_tester"
     ;;
   "")
