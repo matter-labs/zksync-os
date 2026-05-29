@@ -1,4 +1,5 @@
 use super::*;
+use crate::bootloader::config::BootloaderStaticConfig;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::SystemTypes;
@@ -12,5 +13,6 @@ pub trait MetadataInitOp<S: SystemTypes> {
     fn metadata_op<Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         allocator: S::Allocator,
+        static_config: &BootloaderStaticConfig,
     ) -> Result<S::Metadata, InternalError>;
 }

@@ -5,8 +5,11 @@ use crate::run::output::BlockOutput;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::validator_impl::ValidatorWrapped;
-use crate::run::{run_block, simulate_tx, FriVerifierArtifacts};
+use crate::run::{
+    run_block_with_chain_config, simulate_tx_with_chain_config, FriVerifierArtifacts,
+};
 use std::sync::Arc;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zksync_os_interface::tracing::{AnyTracer, AnyTxValidator};
 use zksync_os_interface::traits::{
@@ -21,7 +24,7 @@ pub struct RunBlockForward {
 }
 
 impl RunBlock for RunBlockForward {
-    type Config = ();
+    type Config = ChainConfig;
     type Error = ForwardSubsystemError;
     type BlockOutput = BlockOutput;
 
@@ -36,7 +39,7 @@ impl RunBlock for RunBlockForward {
         BlockContext: AnyBlockContext,
     >(
         &self,
-        _config: (),
+        config: ChainConfig,
         block_context: BlockContext,
         storage: Storage,
         preimage_source: PreimgSrc,
@@ -50,7 +53,8 @@ impl RunBlock for RunBlockForward {
         let evm_tx_validator = validator
             .as_evm()
             .expect("only EVM validators are supported");
-        run_block(
+        run_block_with_chain_config(
+            config,
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
             preimage_source,
@@ -65,7 +69,7 @@ impl RunBlock for RunBlockForward {
 }
 
 impl SimulateTx for RunBlockForward {
-    type Config = ();
+    type Config = ChainConfig;
     type Error = ForwardSubsystemError;
 
     fn simulate_tx<
@@ -76,7 +80,7 @@ impl SimulateTx for RunBlockForward {
         BlockContext: AnyBlockContext,
     >(
         &self,
-        _config: (),
+        config: ChainConfig,
         transaction: EncodedTx,
         block_context: BlockContext,
         storage: Storage,
@@ -88,7 +92,8 @@ impl SimulateTx for RunBlockForward {
         let evm_tx_validator = validator
             .as_evm()
             .expect("only EVM validators are supported");
-        simulate_tx(
+        simulate_tx_with_chain_config(
+            config,
             transaction,
             BlockMetadataFromOracle::from_interface(block_context),
             storage,

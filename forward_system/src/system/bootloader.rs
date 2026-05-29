@@ -3,7 +3,9 @@ use crate::system::system_types::ForwardRunningSystem;
 use crate::system::system_types::ProverInputSystem;
 use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::block_header as basic_booltoader_block_header;
-use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
+use basic_bootloader::bootloader::config::{
+    BasicBootloaderExecutionConfig, BootloaderStaticConfig,
+};
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::result_keeper::ResultKeeperExt;
 use oracle_provider::ReadWitnessSource;
@@ -19,7 +21,7 @@ use super::system_types::ProverInputBootloader;
 /// Returns execution results(tx results, state changes, events, etc) via `results_keeper`.
 ///
 pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
-    oracle: ZkEENonDeterminismSource,
+    mut oracle: ZkEENonDeterminismSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,
@@ -27,15 +29,22 @@ pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) {
-    if let Err(err) =
-        ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
-    {
+    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)
+        .unwrap_or_else(|err| panic!("Failed to read bootloader static config: {err}"));
+    if let Err(err) = ForwardBootloader::run_prepared_with_static_config::<Config>(
+        oracle,
+        &mut (),
+        result_keeper,
+        tracer,
+        validator,
+        &static_config,
+    ) {
         panic!("Forward run failed with: {err}")
     };
 }
 
 pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
-    oracle: ZkEENonDeterminismSource,
+    mut oracle: ZkEENonDeterminismSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,
@@ -43,12 +52,20 @@ pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<(), BootloaderSubsystemError> {
-    ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
-        .map(|_| ())
+    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)?;
+    ForwardBootloader::run_prepared_with_static_config::<Config>(
+        oracle,
+        &mut (),
+        result_keeper,
+        tracer,
+        validator,
+        &static_config,
+    )
+    .map(|_| ())
 }
 
 pub fn run_prover_input_no_panic<Config: BasicBootloaderExecutionConfig>(
-    oracle: ReadWitnessSource,
+    mut oracle: ReadWitnessSource,
     result_keeper: &mut impl ResultKeeperExt<
         EthereumIOTypesConfig,
         BlockHeader = basic_booltoader_block_header::BlockHeader,
@@ -56,19 +73,14 @@ pub fn run_prover_input_no_panic<Config: BasicBootloaderExecutionConfig>(
     tracer: &mut impl Tracer<ProverInputSystem>,
     validator: &mut impl TxValidator<ProverInputSystem>,
 ) -> Result<Vec<u32>, BootloaderSubsystemError> {
-    run_prover_input_with_batch_output_no_panic::<Config>(oracle, result_keeper, tracer, validator)
-        .map(|(prover_input, _)| prover_input)
-}
-
-pub fn run_prover_input_with_batch_output_no_panic<Config: BasicBootloaderExecutionConfig>(
-    oracle: ReadWitnessSource,
-    result_keeper: &mut impl ResultKeeperExt<
-        EthereumIOTypesConfig,
-        BlockHeader = basic_booltoader_block_header::BlockHeader,
-    >,
-    tracer: &mut impl Tracer<ProverInputSystem>,
-    validator: &mut impl TxValidator<ProverInputSystem>,
-) -> Result<(Vec<u32>, BatchOutput), BootloaderSubsystemError> {
-    ProverInputBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
-        .map(|o| (o.0.get_read_items().borrow().clone(), o.2))
+    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)?;
+    ProverInputBootloader::run_prepared_with_static_config::<Config>(
+        oracle,
+        &mut (),
+        result_keeper,
+        tracer,
+        validator,
+        &static_config,
+    )
+    .map(|o| o.0.get_read_items().borrow().clone())
 }

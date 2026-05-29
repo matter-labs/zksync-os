@@ -2,6 +2,7 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::utils::Bytes32;
 
 ///
@@ -52,6 +53,8 @@ impl ChainStateCommitment {
 pub struct BatchOutput {
     /// Chain id used during execution of the blocks.
     pub chain_id: U256,
+    /// Static chain-level execution rules used during execution.
+    pub chain_config: ChainConfig,
     /// First block timestamp.
     pub first_block_timestamp: u64,
     /// Last block timestamp.
@@ -83,9 +86,30 @@ impl BatchOutput {
     ///
     /// Calculate keccak256 hash of public input
     ///
+    /// Canonical chain config encoding, in order:
+    /// - `version`: uint32 encoded as a 32-byte big-endian word.
+    /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
+    /// - `max_contract_size.enabled`: bool encoded as a 32-byte word with the last byte 0/1.
+    /// - `max_contract_size.value`: uint32 encoded as a 32-byte big-endian word. Disabled limits
+    ///   are canonicalized to value 0.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(self.chain_id.to_be_bytes::<32>());
+        update_u32_word(&mut hasher, self.chain_config.version());
+        update_bool_word(
+            &mut hasher,
+            self.chain_config.fri_proof_verification_enabled(),
+        );
+        update_bool_word(
+            &mut hasher,
+            self.chain_config.max_contract_size().is_enabled(),
+        );
+        let max_contract_size = if self.chain_config.max_contract_size().is_enabled() {
+            self.chain_config.max_contract_size().value()
+        } else {
+            0
+        };
+        update_u32_word(&mut hasher, max_contract_size);
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         // Encode DA commitment scheme as U256 BE
@@ -101,6 +125,16 @@ impl BatchOutput {
         hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
         hasher.finalize()
     }
+}
+
+fn update_u32_word(hasher: &mut Keccak256, value: u32) {
+    hasher.update([0u8; 28]);
+    hasher.update(value.to_be_bytes());
+}
+
+fn update_bool_word(hasher: &mut Keccak256, value: bool) {
+    hasher.update([0u8; 31]);
+    hasher.update([u8::from(value)]);
 }
 
 #[derive(Debug)]
@@ -124,5 +158,62 @@ impl BatchPublicInput {
         hasher.update(self.state_after.as_u8_ref());
         hasher.update(self.batch_output.as_u8_ref());
         hasher.finalize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::hex;
+    use zk_ee::system::metadata::chain_config::ConfigurableLimitU32;
+
+    fn sample_batch_output(chain_config: ChainConfig) -> BatchOutput {
+        BatchOutput {
+            chain_id: U256::from(37u64),
+            chain_config,
+            first_block_timestamp: 1,
+            last_block_timestamp: 2,
+            da_commitment_scheme: DACommitmentScheme::BlobsAndPubdataKeccak256,
+            pubdata_commitment: Bytes32::ZERO,
+            number_of_layer_1_txs: U256::from(3u64),
+            number_of_layer_2_txs: U256::from(4u64),
+            priority_operations_hash: Bytes32::ZERO,
+            l2_logs_tree_root: Bytes32::ZERO,
+            upgrade_tx_hash: Bytes32::ZERO,
+            interop_roots_rolling_hash: Bytes32::ZERO,
+            settlement_layer_chain_id: U256::from(9u64),
+        }
+    }
+
+    #[test]
+    fn batch_output_hash_commits_to_chain_config() {
+        let default_hash = sample_batch_output(ChainConfig::default()).hash();
+        let fri_hash =
+            sample_batch_output(ChainConfig::default().with_fri_proof_verification_enabled(true))
+                .hash();
+
+        assert_ne!(default_hash, fri_hash);
+    }
+
+    #[test]
+    fn batch_output_hash_default_config_golden_vector() {
+        let default_hash = sample_batch_output(ChainConfig::default()).hash();
+
+        assert_eq!(
+            default_hash,
+            hex!("434f988fac3f28492366583c1ebb3513d3fe7c4f74e786869f19d20b92322308")
+        );
+    }
+
+    #[test]
+    fn disabled_contract_size_limit_is_hash_canonicalized() {
+        let canonical = ChainConfig::new(1, false, ConfigurableLimitU32::new(false, 0)).unwrap();
+        let non_canonical =
+            ChainConfig::new(1, false, ConfigurableLimitU32::new(false, 10)).unwrap();
+
+        assert_eq!(
+            sample_batch_output(canonical).hash(),
+            sample_batch_output(non_canonical).hash()
+        );
     }
 }

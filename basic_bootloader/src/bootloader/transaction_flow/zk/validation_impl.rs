@@ -460,7 +460,7 @@ where
 
     // FRI proof handling, split into two steps:
     //
-    // 1. Structural admission (is_gateway, cap, dedup) always runs
+    // 1. Structural admission (chain-config FRI support, cap, dedup) always runs
     //    and produces the hash list to install on tx-level metadata.
     // 2. Oracle-driven verification runs only when
     //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under

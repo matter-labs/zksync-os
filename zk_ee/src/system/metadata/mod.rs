@@ -2,6 +2,7 @@
 //! Each STF will provide its own implementation of these traits.
 
 pub mod basic_metadata;
+pub mod chain_config;
 pub mod dynamic_metadata_responder;
 pub mod system_metadata;
 pub mod zk_metadata;

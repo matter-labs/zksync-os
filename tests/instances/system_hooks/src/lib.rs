@@ -1247,7 +1247,7 @@ fn test_event_hooks_empty_topics() {
 // requires a proof fixture and is not covered here. These tests exercise:
 //   1. The precompile is not registered on non-gateway chains.
 //   2. On a gateway chain, querying an unverified statement hash returns false.
-//   3. FRI_PROOF_TX_TYPE is rejected when is_gateway = false.
+//   3. FRI_PROOF_TX_TYPE is rejected when chain-config FRI support is disabled.
 mod fri_precompile {
     use super::*;
     use rig::alloy::eips::eip2930::AccessList;
@@ -1356,7 +1356,7 @@ mod fri_precompile {
 
         // Construct a minimal FRI proof tx with one dummy statement hash.
         // The FRI sidecar is empty by default, but the tx should be
-        // rejected before sidecar resolution because is_gateway = false.
+        // rejected before sidecar resolution because chain-config FRI support is disabled.
         let statement_hash = B256::from([0x42u8; 32]);
         let unsigned = UnsignedZKsyncFriProofTx {
             chain_id: 37,

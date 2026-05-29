@@ -184,6 +184,7 @@ where
             next_proof_data,
             metadata.block_timestamp(),
             U256::from(metadata.chain_id()),
+            metadata.chain_config,
             upgrade_tx_hash,
             multichain_root,
             io.interop_root_storage.iter(),

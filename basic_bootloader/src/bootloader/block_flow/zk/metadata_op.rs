@@ -14,13 +14,17 @@ impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>
     fn metadata_op<Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         _allocator: S::Allocator,
+        static_config: &crate::bootloader::config::BootloaderStaticConfig,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
+        static_config.chain_config.validate()?;
+
         let block_level_metadata: BlockMetadataFromOracle =
             oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
 
         let metadata = ZkMetadata {
             tx_level: TxLevelMetadata::default(),
             block_level: block_level_metadata,
+            chain_config: static_config.chain_config,
             _marker: core::marker::PhantomData,
         };
 

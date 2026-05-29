@@ -12,6 +12,7 @@ use zk_ee::common_structs::ProofData;
 use zk_ee::logger_log;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::utils::Bytes32;
 
 ///
@@ -31,6 +32,7 @@ pub struct ZKBatchDataKeeper<A: alloc::alloc::Allocator, O: IOOracle> {
     first_block_timestamp: Option<u64>,
     current_block_timestamp: Option<u64>,
     chain_id: Option<U256>,
+    chain_config: Option<ChainConfig>,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
     pub da_commitment_generator: Option<alloc::boxed::Box<dyn DACommitmentGenerator<O>, A>>,
     pub logs_storage: ArrayVec<Bytes32, 16384>,
@@ -53,6 +55,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             first_block_timestamp: None,
             current_block_timestamp: None,
             chain_id: None,
+            chain_config: None,
             da_commitment_generator: None,
             da_commitment_scheme: None,
             logs_storage: ArrayVec::new(),
@@ -83,6 +86,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         next_proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>>,
         block_timestamp: u64,
         chain_id: U256,
+        chain_config: ChainConfig,
         upgrade_tx_hash: Bytes32,
         multichain_root: Bytes32,
         interop_roots: impl Iterator<Item = &'a InteropRoot>,
@@ -96,6 +100,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             self.first_block_timestamp = Some(block_timestamp);
             self.current_block_timestamp = Some(block_timestamp);
             self.chain_id = Some(chain_id);
+            self.chain_config = Some(chain_config);
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
             self.settlement_layer_chain_id = Some(settlement_layer_chain_id);
             self.is_first_block = false;
@@ -108,6 +113,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             self.current_proof_data = Some(next_proof_data);
             self.current_block_timestamp = Some(block_timestamp);
             assert_eq!(self.chain_id.unwrap(), chain_id);
+            assert_eq!(self.chain_config.unwrap(), chain_config);
             assert!(upgrade_tx_hash.is_zero());
             assert_eq!(
                 self.settlement_layer_chain_id,
@@ -173,6 +179,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         }
         let batch_output = BatchOutput {
             chain_id: self.chain_id.unwrap(),
+            chain_config: self.chain_config.unwrap(),
             first_block_timestamp: self.first_block_timestamp.unwrap(),
             last_block_timestamp: self.current_block_timestamp.unwrap(),
             da_commitment_scheme: self.da_commitment_scheme.unwrap(),

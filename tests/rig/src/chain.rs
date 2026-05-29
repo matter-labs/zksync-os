@@ -53,6 +53,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -72,6 +73,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -87,6 +89,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -109,6 +112,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -119,7 +123,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         add_uart: bool,
         use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
@@ -136,6 +141,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -146,7 +152,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         add_uart: bool,
         use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
@@ -172,6 +179,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
+    chain_config: ChainConfig,
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
@@ -186,7 +194,6 @@ pub struct BlockContext {
     pub pubdata_limit: u64,
     pub mix_hash: U256,
     pub blob_fee: U256,
-    pub is_gateway: bool,
 }
 
 impl Default for BlockContext {
@@ -201,7 +208,6 @@ impl Default for BlockContext {
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
             blob_fee: U256::ONE,
-            is_gateway: false,
         }
     }
 }
@@ -357,6 +363,7 @@ impl Chain<false> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::default(),
         }
     }
 }
@@ -380,6 +387,7 @@ impl Chain<true> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::default(),
         }
     }
 }
@@ -617,6 +625,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.chain_id
     }
 
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain_config
+    }
+
+    pub fn set_chain_config(&mut self, chain_config: ChainConfig) {
+        self.chain_config = chain_config;
+    }
+
+    pub fn set_fri_proof_verification_enabled(&mut self, enabled: bool) {
+        self.chain_config = self
+            .chain_config
+            .with_fri_proof_verification_enabled(enabled);
+    }
+
     pub fn block_hashes(&self) -> [U256; 256] {
         self.block_hashes
     }
@@ -701,9 +723,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
-
-        self.ensure_account_exists(block_context.coinbase);
-
+        let chain_config = self.chain_config;
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -717,7 +737,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -726,24 +745,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_tracer = NopTracer::default();
         let mut nop_validator = NopTxValidator;
 
-        let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
-            _,
-            _,
-            _,
-            _,
-            BasicBootloaderCallSimulationConfig,
-        >(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            NoopTxCallback,
-            None,
-            None,
-            &mut nop_tracer,
-            &mut nop_validator,
-        )
-        .unwrap();
+        let block_output: BlockOutput =
+            forward_system::run::run_block_with_oracle_dump_ext_with_chain_config::<
+                _,
+                _,
+                _,
+                _,
+                BasicBootloaderCallSimulationConfig,
+            >(
+                chain_config,
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                NoopTxCallback,
+                None,
+                None,
+                &mut nop_tracer,
+                &mut nop_validator,
+            )
+            .unwrap();
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -978,10 +999,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         } = run_config;
 
         let block_context = block_context.unwrap_or_default();
-
-        // Intrinsic cost formulas assume coinbase is an existing account.
-        self.ensure_account_exists(block_context.coinbase);
-
+        let chain_config = self.chain_config;
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -995,7 +1013,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -1014,6 +1031,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
+            chain_config,
             self.state_tree.clone(),
             self.preimage_source.clone(),
             tx_source.clone(),
@@ -1083,6 +1101,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             let prover_input_oracle = oracle_factory.create_forward_oracle(
                 block_metadata,
+                chain_config,
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
                 tx_source.clone(),
@@ -1500,7 +1519,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         BasicBootloader::<
             EthereumStorageSystemTypes<_>,
             EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
-        >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+        >::run_prepared_with_default_config::<BasicBootloaderForwardETHLikeConfig>(
             oracle,
             &mut (),
             &mut result_keeper,
@@ -1525,17 +1544,18 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
             let mut pi_validator = NopTxValidator;
-            let (returned_oracle, _, _) = BasicBootloader::<
-                EthereumStorageSystemTypesWithPostOps<_>,
-                EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
-                copy_source,
-                &mut (),
-                &mut pi_result_keeper,
-                &mut pi_tracer,
-                &mut pi_validator,
-            )
-            .expect("prover-input forward run must succeed");
+            let (returned_oracle, _, _) =
+                BasicBootloader::<
+                    EthereumStorageSystemTypesWithPostOps<_>,
+                    EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+                >::run_prepared_with_default_config::<BasicBootloaderForwardETHLikeConfig>(
+                    copy_source,
+                    &mut (),
+                    &mut pi_result_keeper,
+                    &mut pi_tracer,
+                    &mut pi_validator,
+                )
+                .expect("prover-input forward run must succeed");
 
             assert_eq!(
                 result_keeper.storage_writes, pi_result_keeper.storage_writes,

@@ -50,6 +50,7 @@ use self::{
     metadata::basic_metadata::{
         BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
     },
+    metadata::chain_config::{ChainConfig, ChainConfigMetadata, ConfigurableLimitU32},
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -74,7 +75,7 @@ pub trait SystemTypes {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
-    type Metadata: BasicMetadata<Self::IOTypes>;
+    type Metadata: BasicMetadata<Self::IOTypes> + ChainConfigMetadata;
 }
 
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
@@ -164,8 +165,16 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_gas_limit()
     }
 
-    pub fn get_individual_tx_gas_limit(&self) -> u64 {
-        self.metadata.individual_tx_gas_limit()
+    pub fn get_chain_config(&self) -> ChainConfig {
+        self.metadata.chain_config()
+    }
+
+    pub fn get_max_contract_size(&self) -> ConfigurableLimitU32 {
+        self.metadata.max_contract_size()
+    }
+
+    pub fn is_contract_size_allowed(&self, size: u32) -> bool {
+        self.get_max_contract_size().is_satisfied_by(size)
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

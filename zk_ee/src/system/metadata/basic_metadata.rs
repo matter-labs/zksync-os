@@ -71,9 +71,6 @@ pub trait ZkSpecificMetadata {
 
     /// Price in base token of 1 byte of pubdata.
     fn get_pubdata_price(&self) -> U256;
-
-    /// Runtime block-scoped flag for Gateway-specific features.
-    fn is_gateway(&self) -> bool;
 }
 
 /// Convenience super-trait for environments that expose both block- and tx-level

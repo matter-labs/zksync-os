@@ -1,4 +1,5 @@
 use super::basic_metadata::*;
+use super::chain_config::ChainConfigMetadata;
 use crate::types_config::SystemIOTypesConfig;
 use crate::utils::Bytes32;
 use ruint::aliases::U256;
@@ -88,6 +89,14 @@ impl<
     }
 }
 
+impl<
+        IOTypes: SystemIOTypesConfig,
+        B: BasicBlockMetadata<IOTypes>,
+        TX: BasicTransactionMetadata<IOTypes>,
+    > ChainConfigMetadata for SystemMetadata<IOTypes, B, TX>
+{
+}
+
 /// Assumes that ZK-specific metadata is implemented at the block level.
 impl<
         IOTypes: SystemIOTypesConfig,
@@ -103,9 +112,6 @@ impl<
     }
     fn get_pubdata_price(&self) -> U256 {
         self.block_level.get_pubdata_price()
-    }
-    fn is_gateway(&self) -> bool {
-        self.block_level.is_gateway()
     }
 }
 

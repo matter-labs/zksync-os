@@ -32,7 +32,7 @@ use crate::bootloader::block_flow::{
     MetadataInitOp, PostSystemInitOp, PostTxLoopOp, PreTxLoopOp, TxLoopOp,
 };
 use crate::bootloader::block_header::BlockHeader;
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use crate::bootloader::config::{BasicBootloaderExecutionConfig, BootloaderStaticConfig};
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -63,15 +63,50 @@ impl<S: EthereumLikeBasicSTF, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
+    /// Runs with the default static chain configuration.
+    ///
+    /// This is intended for legacy and Ethereum-like paths that do not commit
+    /// ZKsync chain config to public input. ZKsync forward/proving execution
+    /// should pass the frozen oracle-sourced config explicitly via
+    /// `run_prepared_with_static_config`.
+    pub fn run_prepared_with_default_config<Config: BasicBootloaderExecutionConfig>(
+        oracle: <S::IO as IOSubsystemExt>::IOOracle,
+        batch_data_keeper: &mut S::BatchDataKeeper,
+        result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
+        tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
+    ) -> Result<
+        <<S as BasicSTF>::PostTxLoopOp as PostTxLoopOp<S>>::PostTxLoopOpResult,
+        BootloaderSubsystemError,
+    >
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let static_config = BootloaderStaticConfig::default();
+        Self::run_prepared_with_static_config::<Config>(
+            oracle,
+            batch_data_keeper,
+            result_keeper,
+            tracer,
+            validator,
+            &static_config,
+        )
+    }
+
     /// Runs the transactions that it loads from the oracle.
-    /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
-    /// and in prover (where oracle uses CRS registers to communicate).
-    pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
+    ///
+    /// This code runs both in sequencer (then it uses ForwardOracle, which
+    /// stores data in local variables) and in prover (where oracle uses CSR
+    /// registers to communicate). `static_config` must be sourced once per run
+    /// and reused by execution and public-input construction.
+    ///
+    pub fn run_prepared_with_static_config<Config: BasicBootloaderExecutionConfig>(
         mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
         batch_data_keeper: &mut S::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
+        static_config: &BootloaderStaticConfig,
     ) -> Result<
         <<S as BasicSTF>::PostTxLoopOp as PostTxLoopOp<S>>::PostTxLoopOpResult,
         BootloaderSubsystemError,
@@ -86,6 +121,7 @@ where
         let metadata = <S::MetadataOp as MetadataInitOp<S>>::metadata_op::<Config>(
             &mut oracle,
             S::Allocator::default(),
+            static_config,
         )?;
 
         // we will model initial calldata buffer as just another "heap"

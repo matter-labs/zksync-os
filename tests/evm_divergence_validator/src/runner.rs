@@ -493,6 +493,5 @@ fn make_block_context(block: &BlockDef) -> rig::BlockContext {
         coinbase: Default::default(),
         mix_hash: Default::default(),
         blob_fee: Default::default(),
-        is_gateway: false,
     }
 }

@@ -260,8 +260,8 @@ mod custom_oracle_factories {
     use rig::chain::TestingOracleFactory;
     use rig::forward_system::run::convert_alloy::FromAlloy;
     use rig::forward_system::run::query_processors::{
-        BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder,
-        ReadTreeResponder, TxDataResponder, ZKProofDataResponder,
+        BlockMetadataResponder, ChainConfigResponder, DACommitmentSchemeResponder,
+        GenericPreimageResponder, ReadTreeResponder, TxDataResponder, ZKProofDataResponder,
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::forward_system::run::{NextTxResponse, PreimageSource};
@@ -275,6 +275,7 @@ mod custom_oracle_factories {
     use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
     use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
     use rig::zk_ee::oracle::usize_serialization::UsizeSerializable;
+    use rig::zk_ee::system::metadata::chain_config::ChainConfig;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
     use rig::zk_ee::utils::Bytes32;
@@ -287,6 +288,7 @@ mod custom_oracle_factories {
     where
         F: Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -298,6 +300,7 @@ mod custom_oracle_factories {
     where
         F: Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -308,6 +311,7 @@ mod custom_oracle_factories {
         fn create_forward_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
+            chain_config: ChainConfig,
             state_tree: InMemoryTree<false>,
             preimage_source: InMemoryPreimageSource,
             tx_source: TxListSource,
@@ -320,6 +324,7 @@ mod custom_oracle_factories {
         ) -> ZkEENonDeterminismSource {
             (self.0)(
                 block_metadata,
+                chain_config,
                 state_tree,
                 preimage_source,
                 tx_source,
@@ -331,6 +336,7 @@ mod custom_oracle_factories {
         fn create_proof_oracle(
             &self,
             block_metadata: BlockMetadataFromOracle,
+            chain_config: ChainConfig,
             state_tree: InMemoryTree<false>,
             preimage_source: InMemoryPreimageSource,
             tx_source: TxListSource,
@@ -343,6 +349,7 @@ mod custom_oracle_factories {
         ) -> ZkEENonDeterminismSource {
             (self.0)(
                 block_metadata,
+                chain_config,
                 state_tree,
                 preimage_source,
                 tx_source,
@@ -357,12 +364,14 @@ mod custom_oracle_factories {
     /// test-specific (possibly malicious) processors.
     pub(super) fn build_oracle(
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_custom: impl FnOnce(&mut ZkEENonDeterminismSource),
     ) -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(BlockMetadataResponder { block_metadata });
+        oracle.add_external_processor(ChainConfigResponder { chain_config });
         add_custom(&mut oracle);
         oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
         oracle.add_external_processor(DACommitmentSchemeResponder {
@@ -489,6 +498,7 @@ mod custom_oracle_factories {
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -498,19 +508,26 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             move |block_metadata,
+                  chain_config,
                   state_tree,
                   preimage_source,
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(MaliciousTxFormatResponder::new(
-                        tx_source,
-                        malicious_format_value,
-                    ));
-                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(MaliciousTxFormatResponder::new(
+                            tx_source,
+                            malicious_format_value,
+                        ));
+                        oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                        oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                    },
+                )
             },
         )
     }
@@ -709,6 +726,7 @@ mod custom_oracle_factories {
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -718,24 +736,31 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             move |block_metadata,
+                  chain_config,
                   state_tree,
                   preimage_source,
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(TxDataResponder {
-                        tx_source,
-                        next_tx: None,
-                        next_tx_format: None,
-                        next_tx_from: None,
-                    });
-                    oracle.add_external_processor(MaliciousPreimageResponder::new(
-                        preimage_source,
-                        blocked_hashes.clone(),
-                    ));
-                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(TxDataResponder {
+                            tx_source,
+                            next_tx: None,
+                            next_tx_format: None,
+                            next_tx_from: None,
+                        });
+                        oracle.add_external_processor(MaliciousPreimageResponder::new(
+                            preimage_source,
+                            blocked_hashes.clone(),
+                        ));
+                        oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                    },
+                )
             },
         )
     }
@@ -871,6 +896,7 @@ mod custom_oracle_factories {
     fn malicious_account_storage_factory() -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -880,22 +906,30 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             |block_metadata,
+             chain_config,
              state_tree,
              preimage_source,
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(TxDataResponder {
-                        tx_source,
-                        next_tx: None,
-                        next_tx_format: None,
-                        next_tx_from: None,
-                    });
-                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                    oracle
-                        .add_external_processor(MaliciousAccountStorageResponder::new(state_tree));
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(TxDataResponder {
+                            tx_source,
+                            next_tx: None,
+                            next_tx_format: None,
+                            next_tx_from: None,
+                        });
+                        oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                        oracle.add_external_processor(MaliciousAccountStorageResponder::new(
+                            state_tree,
+                        ));
+                    },
+                )
             },
         )
     }
@@ -1029,6 +1063,7 @@ mod custom_oracle_factories {
     fn malicious_tx_data_corrupt_factory() -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -1038,16 +1073,25 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             |block_metadata,
+             chain_config,
              state_tree,
              preimage_source,
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(MaliciousTxDataCorruptResponder::new(tx_source));
-                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(MaliciousTxDataCorruptResponder::new(
+                            tx_source,
+                        ));
+                        oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                        oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                    },
+                )
             },
         )
     }
@@ -1221,6 +1265,7 @@ mod custom_oracle_factories {
     fn false_existing_slot_factory() -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -1230,21 +1275,28 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             |block_metadata,
+             chain_config,
              state_tree,
              preimage_source,
              tx_source,
              proof_data,
              da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(TxDataResponder {
-                        tx_source,
-                        next_tx: None,
-                        next_tx_format: None,
-                        next_tx_from: None,
-                    });
-                    oracle.add_external_processor(GenericPreimageResponder { preimage_source });
-                    oracle.add_external_processor(FalseExistingSlotResponder::new(state_tree));
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(TxDataResponder {
+                            tx_source,
+                            next_tx: None,
+                            next_tx_format: None,
+                            next_tx_from: None,
+                        });
+                        oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+                        oracle.add_external_processor(FalseExistingSlotResponder::new(state_tree));
+                    },
+                )
             },
         )
     }
@@ -1397,6 +1449,7 @@ mod custom_oracle_factories {
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -1406,24 +1459,31 @@ mod custom_oracle_factories {
     > {
         CustomOracleFactory(
             move |block_metadata,
+                  chain_config,
                   state_tree,
                   preimage_source,
                   tx_source,
                   proof_data,
                   da_commitment_scheme| {
-                build_oracle(block_metadata, proof_data, da_commitment_scheme, |oracle| {
-                    oracle.add_external_processor(TxDataResponder {
-                        tx_source,
-                        next_tx: None,
-                        next_tx_format: None,
-                        next_tx_from: None,
-                    });
-                    oracle.add_external_processor(CorruptedPreimageResponder::new(
-                        preimage_source,
-                        corrupted_hashes.clone(),
-                    ));
-                    oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
-                })
+                build_oracle(
+                    block_metadata,
+                    chain_config,
+                    proof_data,
+                    da_commitment_scheme,
+                    |oracle| {
+                        oracle.add_external_processor(TxDataResponder {
+                            tx_source,
+                            next_tx: None,
+                            next_tx_format: None,
+                            next_tx_from: None,
+                        });
+                        oracle.add_external_processor(CorruptedPreimageResponder::new(
+                            preimage_source,
+                            corrupted_hashes.clone(),
+                        ));
+                        oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+                    },
+                )
             },
         )
     }
@@ -1554,6 +1614,7 @@ mod callable_oracle_tests {
     fn malicious_callable_oracle_factory() -> super::custom_oracle_factories::CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
+            ChainConfig,
             InMemoryTree<false>,
             InMemoryPreimageSource,
             TxListSource,
@@ -1563,6 +1624,7 @@ mod callable_oracle_tests {
     > {
         super::custom_oracle_factories::CustomOracleFactory(
             |block_metadata,
+             chain_config,
              state_tree,
              preimage_source,
              tx_source,
@@ -1570,6 +1632,7 @@ mod callable_oracle_tests {
              da_commitment_scheme| {
                 super::custom_oracle_factories::build_oracle(
                     block_metadata,
+                    chain_config,
                     proof_data,
                     da_commitment_scheme,
                     |oracle| {

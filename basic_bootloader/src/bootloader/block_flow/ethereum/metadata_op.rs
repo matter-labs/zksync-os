@@ -26,6 +26,7 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
     fn metadata_op<'a, Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         allocator: S::Allocator,
+        _static_config: &crate::bootloader::config::BootloaderStaticConfig,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
         // make header's buffer, parse, make into our internal structure, save hash
         let header = HeaderAndHistory::new(oracle, allocator.clone())?;
