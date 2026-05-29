@@ -24,6 +24,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
+mod storage_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;
 
@@ -89,7 +90,7 @@ fn run_base_system() {
             nonce: 0,
             max_fee_per_gas: 1000,
             max_priority_fee_per_gas: 1000,
-            gas_limit: 21_000,
+            gas_limit: 30_000,
             to: TxKind::Call(eoa_to),
             value: alloy::primitives::U256::from(100),
             access_list: Default::default(),
@@ -1507,6 +1508,10 @@ fn test_simulation_skips_nonce_check() {
 fn test_simulation_balance_check() {
     let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
+    // Create the account in the tree with zero balance so persist pricing
+    // uses the existing-account path (matching production: senders always
+    // exist because they were funded in a prior block).
+    tester.set_balance(wallet.address(), U256::ZERO);
     let target_address = common_target_address();
 
     // - gasPrice > 0 && value > 0: fail

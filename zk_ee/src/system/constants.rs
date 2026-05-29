@@ -3,6 +3,7 @@ pub const MAX_EVENT_TOPICS: usize = 4;
 
 pub const BLAKE_DELEGATION_COEFFICIENT: u64 = 16;
 pub const BIGINT_DELEGATION_COEFFICIENT: u64 = 4;
+pub const KECCAK_DELEGATION_COEFFICIENT: u64 = 4;
 
 ///
 /// Compute native cost from

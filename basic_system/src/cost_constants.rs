@@ -23,8 +23,16 @@ pub const POINT_EVALUATION_COST_ERGS: Ergs = Ergs(50_000 * ERGS_PER_GAS);
 pub const EVM_BYTECODE_MAX_ROUNDS_TO_DECOMMIT: Ergs = Ergs(180);
 
 pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(350_000, 43_000, 0);
+/// Native costs for keccak256 hashing.
+/// Each keccak f1600 permutation produces this many delegations
+/// (mirrors NUM_DELEGATION_CALLS_FOR_KECCAK_F1600 from common_constants).
+const KECCAK_DELEGATIONS_PER_ROUND: u64 = 649;
+/// Base cost covers non-delegation RISC-V overhead (measured at 1908 cycles
+/// via cycle_marker in proving mode, rounded up to 2500 for ~30% headroom).
+/// NOTE: To recompute if the keccak circuit changes.
 pub const KECCAK256_BASE_NATIVE_COST: u64 = 2_500;
-pub const KECCAK256_ROUND_NATIVE_COST: u64 = 17_500;
+pub const KECCAK256_ROUND_NATIVE_COST: u64 =
+    KECCAK_DELEGATIONS_PER_ROUND * zk_ee::system::constants::KECCAK_DELEGATION_COEFFICIENT;
 pub const KECCAK256_CHUNK_SIZE: usize = 136;
 pub const SHA256_BASE_NATIVE_COST: u64 = 1_600;
 pub const SHA256_ROUND_NATIVE_COST: u64 = 4_200;

@@ -620,6 +620,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
+
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -825,6 +828,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         } = run_config;
 
         let block_context = block_context.unwrap_or_default();
+
+        // Intrinsic cost formulas assume coinbase is an existing account.
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -1452,6 +1459,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Ensure an account exists in the state tree with default properties.
+    /// No-op if the account already exists.
+    pub fn ensure_account_exists(&mut self, address: B160) {
+        if self.get_account_properties_maybe(&address).is_some() {
+            return;
+        }
+        self.set_balance(address, U256::ZERO);
+    }
+
     /// Initialize the L2 base token treasury with 2^128 - 1 balance.
     ///
     /// This should be called during chain setup to pre-fund the treasury account.
