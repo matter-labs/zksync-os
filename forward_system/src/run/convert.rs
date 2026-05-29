@@ -8,7 +8,8 @@ use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle}
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zksync_os_evm_errors::EvmError as InterfaceEvmError;
 use zksync_os_interface::error::InvalidTransaction;
-use zksync_os_interface::types::{BlockContext, L2ToL1Log};
+use zksync_os_interface::traits::AnyBlockContext;
+use zksync_os_interface::types::L2ToL1Log;
 
 pub trait FromInterface<T> {
     fn from_interface(value: T) -> Self;
@@ -78,22 +79,22 @@ impl FromInterface<InterfaceEvmError> for ZkEvmError {
     }
 }
 
-impl FromInterface<BlockContext> for BlockMetadataFromOracle {
-    fn from_interface(value: BlockContext) -> Self {
+impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
+    fn from_interface(value: B) -> Self {
         BlockMetadataFromOracle {
-            chain_id: value.chain_id,
-            block_number: value.block_number,
-            block_hashes: BlockHashes(value.block_hashes.0),
-            timestamp: value.timestamp,
-            eip1559_basefee: value.eip1559_basefee,
-            pubdata_price: value.pubdata_price,
-            native_price: value.native_price,
-            coinbase: ruint::aliases::B160::from_alloy(value.coinbase),
-            gas_limit: value.gas_limit,
-            pubdata_limit: value.pubdata_limit,
-            mix_hash: value.mix_hash,
-            blob_fee: value.blob_fee,
-            is_gateway: value.is_gateway,
+            chain_id: value.chain_id(),
+            block_number: value.block_number(),
+            block_hashes: BlockHashes(*value.block_hashes()),
+            timestamp: value.timestamp(),
+            eip1559_basefee: value.eip1559_basefee(),
+            pubdata_price: value.pubdata_price(),
+            native_price: value.native_price(),
+            coinbase: ruint::aliases::B160::from_alloy(value.coinbase()),
+            gas_limit: value.gas_limit(),
+            pubdata_limit: value.pubdata_limit(),
+            mix_hash: value.mix_hash(),
+            blob_fee: value.blob_fee(),
+            is_gateway: value.is_gateway(),
         }
     }
 }
@@ -205,6 +206,8 @@ impl IntoInterface<Sealed<Header>> for BlockHeader {
             excess_blob_gas: None,
             parent_beacon_block_root: None,
             requests_hash: None,
+            block_access_list_hash: None,
+            slot_number: None,
         };
         Sealed::new_unchecked(header, hash.into())
     }

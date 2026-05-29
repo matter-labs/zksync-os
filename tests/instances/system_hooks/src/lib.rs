@@ -1833,7 +1833,7 @@ mod fri_precompile_e2e {
     fn execute_fri_verifier_contract_tx(
         fixture_relative: &str,
         precompile_stats: Option<&mut PrecompileStatsTracer<ForwardRunningSystem>>,
-    ) -> Option<rig::zksync_os_interface::types::BlockOutput> {
+    ) -> Option<rig::BlockOutput> {
         let (setup_path, layout_path) = default_setup_and_layout_paths();
         let verifier_bytecode = hex::decode(FRI_VERIFIER_DEPLOYED_BYTECODE.trim())
             .expect("decode FRI verifier bytecode");
@@ -1886,7 +1886,7 @@ mod fri_precompile_e2e {
         })
     }
 
-    fn assert_fri_verifier_contract_output(output: &rig::zksync_os_interface::types::BlockOutput) {
+    fn assert_fri_verifier_contract_output(output: &rig::BlockOutput) {
         assert!(
             tx_succeeded(output, 0),
             "FRI verifier contract call must succeed, got: {:?}",

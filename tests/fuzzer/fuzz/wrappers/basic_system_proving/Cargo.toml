@@ -56,7 +56,7 @@ num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
 alloy-rpc-types-debug = { version = "=1.8.3", default-features = false }
-alloy = { version = "=1.8.3", features = ["rlp", "full"] }
+alloy = { version = "2", features = ["rlp", "full"] }
 alloy-rlp = { version = "*" }
 alloy-primitives = { version = "1", features = ["arbitrary"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }

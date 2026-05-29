@@ -11,13 +11,13 @@ use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer
 use rig::forward_system::system::tracers::pair::Pair;
 use rig::forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::log::info;
+use rig::BlockOutput;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
 use zk_ee::system::tracer::{NopTracer, Tracer};
 use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
-use zksync_os_interface::types::BlockOutput;
 
 #[allow(clippy::too_many_arguments)]
 fn run<const RANDOMIZED: bool>(

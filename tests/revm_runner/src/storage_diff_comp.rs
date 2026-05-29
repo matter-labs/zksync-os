@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, U256};
 use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 use forward_system::run::convert_alloy::IntoAlloy;
-use revm::{bytecode::Bytecode, database::CacheDB, DatabaseRef};
+use revm::{bytecode::BytecodeKind, database::CacheDB, DatabaseRef};
 use std::collections::{HashMap, HashSet};
 use zksync_os_interface::types::{AccountDiff, StorageWrite};
 
@@ -275,12 +275,12 @@ where
             if code.is_empty() {
                 B256::ZERO
             } else {
-                match code {
-                    Bytecode::LegacyAnalyzed(legacy_code) => calculate_bytecode_hash(legacy_code),
-                    Bytecode::Eip7702(eip7702) => {
+                match code.kind() {
+                    BytecodeKind::LegacyAnalyzed => calculate_bytecode_hash(code),
+                    BytecodeKind::Eip7702 => {
                         return Err(anyhow::anyhow!(
                             "EIP-7702 bytecode is not supported on Consistency Checker (delegated_address={:?})",
-                            eip7702.address()
+                            code.eip7702_address()
                         ));
                     }
                 }

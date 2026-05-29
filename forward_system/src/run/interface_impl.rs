@@ -1,6 +1,7 @@
 use crate::run::convert::FromInterface;
 use crate::run::errors::ForwardSubsystemError;
 use crate::run::fri_proof_sidecar::FromInterfaceSidecar;
+use crate::run::output::BlockOutput;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::validator_impl::ValidatorWrapped;
@@ -9,11 +10,9 @@ use std::sync::Arc;
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zksync_os_interface::tracing::{AnyTracer, AnyTxValidator};
 use zksync_os_interface::traits::{
-    EncodedTx, FriProofSidecarSource, PreimageSource, ReadStorage, RunBlock, SimulateTx,
-    TxResultCallback, TxSource,
+    AnyBlockContext, EncodedTx, FriProofSidecarSource, PreimageSource, ReadStorage, RunBlock,
+    SimulateTx, TxResultCallback, TxSource,
 };
-use zksync_os_interface::types::BlockContext;
-use zksync_os_interface::types::BlockOutput;
 
 /// Forward-mode `RunBlock` impl.
 #[derive(Default)]
@@ -24,6 +23,7 @@ pub struct RunBlockForward {
 impl RunBlock for RunBlockForward {
     type Config = ();
     type Error = ForwardSubsystemError;
+    type BlockOutput = BlockOutput;
 
     fn run_block<
         Storage: ReadStorage,
@@ -33,6 +33,7 @@ impl RunBlock for RunBlockForward {
         TrCallback: TxResultCallback,
         Tracer: AnyTracer,
         Validator: AnyTxValidator,
+        BlockContext: AnyBlockContext,
     >(
         &self,
         _config: (),
@@ -44,7 +45,7 @@ impl RunBlock for RunBlockForward {
         tx_result_callback: TrCallback,
         tracer: &mut Tracer,
         validator: &mut Validator,
-    ) -> Result<BlockOutput, Self::Error> {
+    ) -> Result<Self::BlockOutput, Self::Error> {
         let evm_tracer = tracer.as_evm().expect("only EVM tracers are supported");
         let evm_tx_validator = validator
             .as_evm()
@@ -72,6 +73,7 @@ impl SimulateTx for RunBlockForward {
         PreimgSrc: PreimageSource,
         Tracer: AnyTracer,
         Validator: AnyTxValidator,
+        BlockContext: AnyBlockContext,
     >(
         &self,
         _config: (),

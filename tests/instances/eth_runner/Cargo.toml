@@ -18,6 +18,7 @@ serde_json = { workspace = true, features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"] }
 zk_ee = { path = "../../../zk_ee" }
 basic_system = { path = "../../../basic_system" }
+forward_system = { path = "../../../forward_system" }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = { workspace = true }
 ureq = { version = "3", features = ["json", "gzip"] }

@@ -7,9 +7,7 @@ use forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zk_ee::system::validator::NopTxValidator;
-use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
-use rig::BlockContext;
 use rig::{
     alloy::{
         primitives::{address, Address, TxKind},
@@ -18,6 +16,7 @@ use rig::{
     ruint::aliases::U256,
     TestingFramework,
 };
+use rig::{BlockContext, BlockOutput};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 // `std::assert_matches` is not available on nightly-2026-02-10, but is on 02-13

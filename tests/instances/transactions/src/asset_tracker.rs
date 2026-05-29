@@ -78,7 +78,7 @@ fn read_l1_chain_id_tx(nonce: u64) -> ZKsyncTxEnvelope {
 
 fn assert_reverted_deposit_asset_tracker(
     tester: &mut TestingFramework,
-    output: &rig::zksync_os_interface::types::BlockOutput,
+    output: &rig::BlockOutput,
     expected_total_deposited: rig::alloy::primitives::U256,
 ) {
     assert_eq!(output.tx_results.len(), 1);
