@@ -24,12 +24,25 @@ use super::utils::fake_exponential;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser;
 
 pub const MIN_BASE_FEE_PER_BLOB_GAS: u64 = 1;
-pub const BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE: u64 = 5007716;
-pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE;
+// Blob count schedule. Selected by the blob-count feature (`fusaka-blobs` =
+// latest BPO schedule), independent of the EIP-7918 reserve-price *logic*
+// (gated on `eip-7918`). Base Osaka keeps Prague's counts.
+#[cfg(not(feature = "fusaka-blobs"))]
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5007716;
+#[cfg(feature = "fusaka-blobs")]
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11684671;
 
+#[cfg(not(feature = "fusaka-blobs"))]
 const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "fusaka-blobs")]
+const MAX_BLOBS_PER_BLOCK: usize = 21;
+#[cfg(not(feature = "fusaka-blobs"))]
 const TARGET_BLOBS_PER_BLOCK: u64 = 6;
+#[cfg(feature = "fusaka-blobs")]
+const TARGET_BLOBS_PER_BLOCK: u64 = 14;
 const TARGET_BLOB_GAS_PER_BLOCK: u64 = GAS_PER_BLOB * TARGET_BLOBS_PER_BLOCK;
+#[cfg(feature = "eip-7918")]
+const BLOB_BASE_COST: u64 = 1 << 13;
 
 const PECTRA_EL_FORK_BLOCK_NUMBER: u64 = 22431084;
 
@@ -174,7 +187,16 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
         self.header.gas_limit
     }
     fn individual_tx_gas_limit(&self) -> u64 {
-        self.block_gas_limit()
+        #[cfg(feature = "eip-7825")]
+        {
+            // EIP-7825: cap individual transaction gas at 2^24
+            const EIP_7825_SINGLE_TX_GAS_LIMIT: u64 = 1 << 24;
+            core::cmp::min(self.block_gas_limit(), EIP_7825_SINGLE_TX_GAS_LIMIT)
+        }
+        #[cfg(not(feature = "eip-7825"))]
+        {
+            self.block_gas_limit()
+        }
     }
     fn eip1559_basefee(&self) -> U256 {
         U256::from(self.header.base_fee_per_gas)
@@ -204,6 +226,16 @@ impl HeaderAndHistory {
             allocator,
         )?;
         let target_header_buffer = target_header_buffer.expect("target header is not empty slice");
+
+        // EIP-7934: reject blocks whose RLP encoding exceeds 8 MiB
+        #[cfg(feature = "eip-7934")]
+        {
+            const EIP_7934_MAX_RLP_BLOCK_SIZE: usize = 8 * 1024 * 1024;
+            if target_header_buffer.len() > EIP_7934_MAX_RLP_BLOCK_SIZE {
+                return Err(internal_error!("block RLP size exceeds EIP-7934 limit"));
+            }
+        }
+
         let target_header =
             PectraForkHeaderReflection::decode_list_full(target_header_buffer.as_slice())
                 .map_err(|_| internal_error!("must parse target header from bytes"))?;
@@ -423,10 +455,38 @@ impl ChainChecker for PectraForkHeader {
                     assert_eq!(expected_base_fee_per_gas, self.base_fee_per_gas);
                 }
 
-                // EIP-4844
+                // EIP-4844 / EIP-7918: excess blob gas calculation
                 {
-                    let t = historical_header.excess_blob_gas + historical_header.blob_gas_used;
-                    let excess_blob_gas = t.saturating_sub(TARGET_BLOB_GAS_PER_BLOCK);
+                    #[cfg(not(feature = "eip-7918"))]
+                    let excess_blob_gas = {
+                        let t = historical_header.excess_blob_gas + historical_header.blob_gas_used;
+                        t.saturating_sub(TARGET_BLOB_GAS_PER_BLOCK)
+                    };
+                    #[cfg(feature = "eip-7918")]
+                    let excess_blob_gas = {
+                        let parent_excess = historical_header.excess_blob_gas;
+                        let parent_used = historical_header.blob_gas_used;
+                        if parent_excess + parent_used < TARGET_BLOB_GAS_PER_BLOCK {
+                            0
+                        } else {
+                            let computed_blob_base_fee = fake_exponential(
+                                U256::from(MIN_BASE_FEE_PER_BLOB_GAS),
+                                &U256::from(parent_excess),
+                                &U256::from(BLOB_BASE_FEE_UPDATE_FRACTION),
+                            );
+                            if U256::from(BLOB_BASE_COST)
+                                * U256::from(historical_header.base_fee_per_gas)
+                                > U256::from(GAS_PER_BLOB) * computed_blob_base_fee
+                            {
+                                parent_excess
+                                    + parent_used
+                                        * (MAX_BLOBS_PER_BLOCK as u64 - TARGET_BLOBS_PER_BLOCK)
+                                        / MAX_BLOBS_PER_BLOCK as u64
+                            } else {
+                                parent_excess + parent_used - TARGET_BLOB_GAS_PER_BLOCK
+                            }
+                        }
+                    };
                     assert_eq!(self.excess_blob_gas, excess_blob_gas);
                 }
             }

@@ -9,7 +9,10 @@ pub const SHA256_PER_WORD_COST_ERGS: Ergs = Ergs(12 * ERGS_PER_GAS);
 
 pub const RIPEMD_160_STATIC_COST_ERGS: Ergs = Ergs(600 * ERGS_PER_GAS);
 pub const RIPEMD_160_PER_WORD_COST_ERGS: Ergs = Ergs(120 * ERGS_PER_GAS);
+#[cfg(not(feature = "modexp-repricing"))]
 pub const MODEXP_MINIMAL_COST_ERGS: Ergs = Ergs(200 * ERGS_PER_GAS);
+#[cfg(feature = "modexp-repricing")]
+pub const MODEXP_MINIMAL_COST_ERGS: Ergs = Ergs(500 * ERGS_PER_GAS);
 pub const P256_VERIFY_COST_ERGS: Ergs = Ergs(6900 * ERGS_PER_GAS);
 pub const ECRECOVER_COST_ERGS: Ergs = Ergs(3000 * ERGS_PER_GAS);
 pub const BN254_ECADD_COST_ERGS: Ergs = Ergs(150 * ERGS_PER_GAS);
@@ -46,7 +49,10 @@ pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(46_000, 1650, 
 pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(600_000, 41_000, 0);
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
+#[cfg(not(feature = "modexp-repricing"))]
 pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;
+#[cfg(feature = "modexp-repricing")]
+pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 500;
 pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
 // TODO(EVM-1178) Add more vectors and benchmark cost better
 pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_000, 3_301_000, 0);

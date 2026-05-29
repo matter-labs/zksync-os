@@ -10,6 +10,10 @@ BLOCKS_DIR="$REPO_ROOT/tests/instances/eth_runner/blocks"
 QUICK_BLOCK="$(ls "$BLOCKS_DIR" | head -1)"
 
 FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+# Osaka block fixtures need the fusaka + latest-BPO blob schedule on the host.
+if grep -q '^fusaka-blobs = ' "$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"; then
+    FEATURES="$FEATURES,fusaka,fusaka-blobs"
+fi
 PRECOMPILE_FEATURES="rig/no_print,precompiles/cycle_marker,rig/unlimited_native"
 if grep -q "for-tests-benchmarking-pectra" "$REPO_ROOT/zksync_os/dump_bin.sh"; then
     FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"

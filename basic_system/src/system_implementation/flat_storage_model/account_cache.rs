@@ -474,6 +474,11 @@ impl<
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
+        // Advance the warmth id at the start of each tx (not at finish) so that
+        // block-level system operations, which run before the first `begin_new_tx`,
+        // keep tx id 0 and are never considered warm by user transactions
+        // (which start at id 1).
+        self.current_tx_id += 1;
     }
 
     pub fn start_frame(&mut self) -> CacheSnapshotId {
@@ -1229,8 +1234,6 @@ impl<
         &mut self,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
     ) -> Result<(), InternalError> {
-        self.current_tx_id += 1;
-
         // Actually deconstructing accounts
         self.cache.apply_to_last_record_of_pending_changes(
             |key, (_initial, current), cache_appearance| {

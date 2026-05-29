@@ -30,7 +30,7 @@ use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
-use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
+use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_TX};
 use zk_ee::system_log;
 use zk_ee::{internal_error, out_of_native_resources};
 use zk_ee::{utils::*, wrap_error};
@@ -84,9 +84,10 @@ where
                 InvalidTransaction::BlockGasLimitTooHigh,
                 system
             )?;
+            let individual_limit = system.get_individual_tx_gas_limit();
             require!(
-                tx_gas_limit <= block_gas_limit,
-                InvalidTransaction::CallerGasLimitMoreThanBlock,
+                tx_gas_limit <= individual_limit,
+                InvalidTransaction::CallerGasLimitMoreThanTxLimit,
                 system
             )?;
         }
@@ -415,7 +416,7 @@ where
             ));
         }
 
-        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+        match parse_blobs_list::<MAX_BLOBS_PER_TX>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);

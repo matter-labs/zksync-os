@@ -1,6 +1,5 @@
 use super::db::{BlockStatus, BlockTraces, Database, ResourceInfo};
 use super::utils;
-use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::populate_prestate;
@@ -92,10 +91,6 @@ pub fn run_block(
         result: filter_skipped(diff.result, &skipped),
     };
 
-    let calltrace = CallTrace {
-        result: filter_skipped(call.result, &skipped),
-    };
-
     let setup_start = Instant::now();
     let mut chain = Chain::empty_randomized(Some(chain_id));
     chain.set_last_block_number(block_number - 1);
@@ -105,7 +100,7 @@ pub fn run_block(
     let db_hash_time = db_hash_start.elapsed();
 
     let prestate_start = Instant::now();
-    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &diff_trace);
     let prestate_time = prestate_start.elapsed();
     let setup_time = setup_start.elapsed();
 

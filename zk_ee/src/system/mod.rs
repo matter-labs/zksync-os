@@ -164,6 +164,10 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_gas_limit()
     }
 
+    pub fn get_individual_tx_gas_limit(&self) -> u64 {
+        self.metadata.individual_tx_gas_limit()
+    }
+
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {
         self.metadata.tx_gas_price()
     }

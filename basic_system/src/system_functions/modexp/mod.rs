@@ -164,6 +164,10 @@ fn modexp_as_system_function_inner<
     };
 
     // Handle a special case when both the base and mod length are zero.
+    // Under fusaka repricing (EIP-7883), the gas formula must still be evaluated
+    // because multiplication_complexity is a fixed 16 for small inputs, and the
+    // exponent can still contribute to iteration_count.
+    #[cfg(not(feature = "modexp-repricing"))]
     if base_len == 0 && mod_len == 0 {
         // should be safe, since we checked that there is enough resources at the beginning
         resources.charge(&minimal_resources)?;
@@ -178,6 +182,20 @@ fn modexp_as_system_function_inner<
     let Ok(exp_len) = usize::try_from(exp_len) else {
         return Err(interface_error!(ModExpInterfaceError::InvalidInputLength));
     };
+
+    // EIP-7823: reject inputs where any length exceeds 1024 bytes
+    #[cfg(feature = "eip-7823-modexp-limit")]
+    {
+        const EIP_7823_LENGTH_LIMIT: usize = 1024;
+        if base_len > EIP_7823_LENGTH_LIMIT
+            || exp_len > EIP_7823_LENGTH_LIMIT
+            || mod_len > EIP_7823_LENGTH_LIMIT
+        {
+            return Err(interface_error!(
+                ModExpInterfaceError::InputLengthExceedsLimit
+            ));
+        }
+    }
 
     // Used to extract ADJUSTED_EXPONENT_LENGTH.
     let exp_highp_len = core::cmp::min(exp_len, 32);
@@ -261,6 +279,7 @@ fn modexp_as_system_function_inner<
 
 /// Computes the ergs cost for modexp.
 /// Returns an OOG error if there's an arithmetic overflow.
+#[cfg(not(feature = "modexp-repricing"))]
 pub fn ergs_cost(
     base_size: u64,
     exp_size: u64,
@@ -291,6 +310,50 @@ pub fn ergs_cost(
         .checked_div(3)
         .ok_or(out_of_ergs_error!())?;
     let gas = core::cmp::max(200, computed_gas);
+    let ergs = gas.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
+    Ok(Ergs(ergs))
+}
+
+/// Computes the ergs cost for modexp (Fusaka repricing).
+/// Returns an OOG error if there's an arithmetic overflow.
+#[cfg(feature = "modexp-repricing")]
+pub fn ergs_cost(
+    base_size: u64,
+    exp_size: u64,
+    mod_size: u64,
+    exp_highp: &U256,
+) -> Result<Ergs, SystemError> {
+    let multiplication_complexity = {
+        let max_length = core::cmp::max(base_size, mod_size);
+        if max_length <= 32 {
+            16u64
+        } else {
+            let words = max_length.div_ceil(8);
+            words
+                .checked_mul(words)
+                .ok_or(out_of_ergs_error!())?
+                .checked_mul(2)
+                .ok_or(out_of_ergs_error!())?
+        }
+    };
+    let iteration_count = {
+        let ic = if exp_size <= 32 && exp_highp.is_zero() {
+            0
+        } else if exp_size <= 32 {
+            exp_highp.bit_len() as u64 - 1
+        } else {
+            16u64
+                .checked_mul(exp_size - 32)
+                .ok_or(out_of_ergs_error!())?
+                .checked_add(core::cmp::max(1, exp_highp.bit_len() as u64) - 1)
+                .ok_or(out_of_ergs_error!())?
+        };
+        core::cmp::max(1, ic)
+    };
+    let computed_gas = multiplication_complexity
+        .checked_mul(iteration_count)
+        .ok_or(out_of_ergs_error!())?;
+    let gas = core::cmp::max(500, computed_gas);
     let ergs = gas.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
     Ok(Ergs(ergs))
 }

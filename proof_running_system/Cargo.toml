@@ -61,8 +61,17 @@ eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip-7623", "system_hook
 # Pectra hardfork: enables all execution-affecting Pectra EIPs
 pectra = ["basic_bootloader/pectra", "evm_interpreter/bls12_381", "evm_interpreter/blake2f", "system_hooks/p256_precompile"]
 
+# Fusaka hardfork: enables all execution-affecting Fusaka EIPs
+fusaka = ["pectra", "basic_bootloader/fusaka", "evm_interpreter/clz"]
+
+# Latest blob-count schedule (BPO), opt-in on top of `fusaka`.
+fusaka-blobs = ["basic_bootloader/fusaka-blobs"]
+
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
 
 # Features used for evm_tester with Pectra hardfork
 evm_tester_pectra = ["evm_tester", "pectra"]
+
+# Features used for evm_tester with Fusaka hardfork
+evm_tester_fusaka = ["evm_tester", "fusaka"]

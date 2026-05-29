@@ -17,7 +17,9 @@
 # Output: writes the full PR-comment markdown to `<output.md>`.
 #
 # Sections (in order):
-#   1. Block-level effective cycles      (`process_block` per (block, DA scheme))
+#   1. Block-level effective cycles      (`process_block` averaged across all
+#                                         block fixtures per DA scheme; the
+#                                         per-block breakdown is under <details>)
 #   2. Block-level sub-phases            (collapsed under <details>)
 #   3. Precompiles test-crate bench      (collapsed under <details>)
 #   4. Per-opcode gas/native diff
@@ -51,6 +53,11 @@ add_pair() {
 #                 because they're noisy unless something regresses inside one.
 #   - Precompiles bench: the synthetic test-crate workload — ~30 labels.
 headline_pairs=""
+# Aggregate variant of the headline: same data relabeled so all blocks of a
+# DA scheme collapse to one averaged row (see `compare_bench.py --aggregate`).
+# Keeps the top-level comment to two rows regardless of fixture count; the
+# per-block breakdown goes under a spoiler.
+headline_agg_pairs=""
 subphase_pairs=""
 # The default DA scheme run gets all four sub-phases. The BlobsZKsyncOS pass
 # only differs in the post-tx-op stage, so we surface only the rows that
@@ -60,9 +67,26 @@ subphase_symbols_blobs="da_commitment state_commitment_update blob_versioned_has
 
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
+  # When this PR changes the fixture set, the base (merge-base) side ran a
+  # different set of blocks and produced no artifacts for the new ones.
+  # Synthesize the missing base artifacts from head so the comparison renders
+  # with 0% deltas and visible absolute values (same philosophy as the blobs
+  # `.bench` fallback below); real deltas appear once the fixtures land on the
+  # base branch.
+  for suf in .out .bench; do
+    if [ ! -e "base_block_${blk}${suf}" ] && [ -e "head_block_${blk}${suf}" ]; then
+      cp "head_block_${blk}${suf}" "base_block_${blk}${suf}"
+    fi
+  done
+  for d in opcode_samples opcode_cycles; do
+    if [ ! -d "${d}/base_${blk}" ] && [ -d "${d}/head_${blk}" ]; then
+      cp -r "${d}/head_${blk}" "${d}/base_${blk}"
+    fi
+  done
   python3 "$REPO_ROOT/bench_scripts/parse_opcodes.py" "base_block_${blk}.out" "bench_results/base_block_${blk}.csv" "bench_results/base_block_${blk}.png"
   python3 "$REPO_ROOT/bench_scripts/parse_opcodes.py" "head_block_${blk}.out" "bench_results/head_block_${blk}.csv" "bench_results/head_block_${blk}.png"
   add_pair headline_pairs "(\"block_${blk} (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
+  add_pair headline_agg_pairs "(\"all blocks (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
   for sym in $subphase_symbols_keccak; do
     add_pair subphase_pairs "(\"block_${blk} (keccak DA)\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"${sym}\")"
   done
@@ -78,6 +102,7 @@ for dir in tests/instances/eth_runner/blocks/*; do
       base_blob="head_block_${blk}_blobs.bench"
     fi
     add_pair headline_pairs "(\"block_${blk} (blobs DA)\", \"${base_blob}\", \"head_block_${blk}_blobs.bench\", \"process_block\")"
+    add_pair headline_agg_pairs "(\"all blocks (blobs DA)\", \"${base_blob}\", \"head_block_${blk}_blobs.bench\", \"process_block\")"
     for sym in $subphase_symbols_blobs; do
       add_pair subphase_pairs "(\"block_${blk} (blobs DA)\", \"${base_blob}\", \"head_block_${blk}_blobs.bench\", \"${sym}\")"
     done
@@ -114,10 +139,18 @@ emit_details_section() {
   fi
 }
 
-# Section 1: headline (process_block per (block, DA scheme)).
+# Section 1: headline. Show one aggregate `process_block` row per DA scheme
+# (averaged across all block fixtures) in the top-level table, and the full
+# per-block breakdown under a spoiler so the comment stays readable as the
+# fixture set grows.
+headline_agg_body=$(mktemp)
+python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title --aggregate "[${headline_agg_pairs}]" > "$headline_agg_body"
+emit_section "$headline_agg_body" "## Block-level effective cycles" "" "_Average across all block fixtures (\`process_block\`). Per-block breakdown below._" ""
+rm -f "$headline_agg_body"
+
 headline_body=$(mktemp)
 python3 "$REPO_ROOT/bench_scripts/compare_bench.py" --no-title "[${headline_pairs}]" > "$headline_body"
-emit_section "$headline_body" "## Block-level effective cycles" ""
+emit_details_section "$headline_body" "Per-block effective cycles"
 rm -f "$headline_body"
 
 # Section 2: sub-phases (collapsed).

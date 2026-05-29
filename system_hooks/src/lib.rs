@@ -49,7 +49,10 @@ use zk_ee::system::base_system_functions::Bls12PrecompileErrors;
 use zk_ee::system::base_system_functions::P256VerifyErrors;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-#[cfg(feature = "mock-unsupported-precompiles")]
+#[cfg(all(
+    feature = "mock-unsupported-precompiles",
+    any(not(feature = "blake2f"), not(feature = "point_eval_precompile"))
+))]
 use zk_ee::system::MissingSystemFunctionErrors;
 use zk_ee::{
     memory::slice_vec::SliceVec,

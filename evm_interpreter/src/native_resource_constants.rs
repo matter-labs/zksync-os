@@ -27,6 +27,7 @@ pub const BYTE_NATIVE_COST: u64 = 160;
 pub const SHL_NATIVE_COST: u64 = 240;
 pub const SHR_NATIVE_COST: u64 = 240;
 pub const SAR_NATIVE_COST: u64 = 400;
+pub const CLZ_NATIVE_COST: u64 = 140;
 
 // SHA3
 // Only wrapping around heap manipulation and system hook
