@@ -101,13 +101,18 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 Ergs(total_cost * ERGS_PER_GAS)
             }
         };
-        let native = if is_new_slot {
+        let native = if is_warm_write {
+            R::Native::from_computational(
+                crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
+            )
+        } else if is_new_slot {
             R::Native::from_computational(
                 crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-          crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,
+            )
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }

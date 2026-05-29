@@ -114,7 +114,7 @@ fn test_l2_tx_low_ratio() {
     let wallet = testing_signer(0);
     let native_price = 100;
     // This ratio passes validation but runs out of native during execution.
-    let gas_price = native_price * 20u64;
+    let gas_price = native_price * 25u64;
     let gas_limit = 60_000;
     let tx = {
         let tx = TxEip1559 {

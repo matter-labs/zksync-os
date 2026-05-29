@@ -13,13 +13,23 @@ pub const PREIMAGE_CACHE_SET_NATIVE_COST: u64 = 500;
 pub const WARM_STORAGE_READ_NATIVE_COST: u64 = 4000;
 // Avg is ~10x smaller, maybe we can reduce it, but it depends on cache state.
 pub const WARM_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 = 1000;
-// Estimation based on worst-case
-pub const COLD_EXISTING_STORAGE_READ_NATIVE_COST: u64 = native_with_delegations!(100_000, 0, 1320);
-pub const COLD_NEW_STORAGE_READ_NATIVE_COST: u64 = 2 * COLD_EXISTING_STORAGE_READ_NATIVE_COST;
-pub const COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 =
-    native_with_delegations!(40_000, 0, 660);
-pub const COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 =
-    native_with_delegations!(100_000, 0, 1300);
+/// Native cost of a single Merkle path traversal (DEPTH=64 blake2s hashes).
+const SINGLE_MERKLE_PATH_NATIVE_COST: u64 = native_with_delegations!(100_000, 0, 1320);
+
+// Cold storage costs, derived from Merkle path counts (see docs/system/io/tree.md).
+// Read and write-extra are charged separately; write-extra covers the additional
+// paths beyond those already paid by the read.
+pub const COLD_EXISTING_STORAGE_READ_NATIVE_COST: u64 = SINGLE_MERKLE_PATH_NATIVE_COST;
+pub const COLD_NEW_STORAGE_READ_NATIVE_COST: u64 = 2 * SINGLE_MERKLE_PATH_NATIVE_COST;
+pub const COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 = SINGLE_MERKLE_PATH_NATIVE_COST;
+pub const COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST: u64 = 3 * SINGLE_MERKLE_PATH_NATIVE_COST;
+
+// Account persist costs: proactive charge for the deferred 0x8003 write + preimage hash.
+// Existing account: 1 merkle path write extra.
+pub const ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST: u64 =
+    COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST;
+// New account: 3 merkle paths write extra.
+pub const ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST: u64 = COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 
 pub const COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS: Ergs =
     Ergs((ADDRESS_ACCESS_COST_COLD - ADDRESS_ACCESS_COST_WARM) * ERGS_PER_GAS);
