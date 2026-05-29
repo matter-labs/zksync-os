@@ -1,4 +1,4 @@
-use crate::run::convert_alloy::IntoAlloy;
+use crate::run::convert_alloy::{FromAlloy, IntoAlloy};
 use alloy::consensus::{Header, Sealed};
 use alloy::primitives::Log;
 use basic_bootloader::bootloader::block_header::BlockHeader;
@@ -89,7 +89,7 @@ impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
             eip1559_basefee: value.eip1559_basefee(),
             pubdata_price: value.pubdata_price(),
             native_price: value.native_price(),
-            coinbase: ruint::aliases::B160::from_be_bytes(value.coinbase().0 .0),
+            coinbase: ruint::aliases::B160::from_alloy(value.coinbase()),
             gas_limit: value.gas_limit(),
             pubdata_limit: value.pubdata_limit(),
             mix_hash: value.mix_hash(),
