@@ -105,8 +105,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface.git", version = "0.1.3", default-features = false }
-zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface.git", version = "0.1.3" }
+zksync_os_evm_errors = { version = "0.1.3", default-features = false }
+zksync_os_interface = { version = "0.1.3" }
 
 # zksync-airbender deps pinned to the same commit airbender-platform
 # resolves `branch = "dev"` to at the time of pinning.
