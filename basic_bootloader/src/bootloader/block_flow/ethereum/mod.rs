@@ -47,7 +47,6 @@ mod post_init_op;
 mod post_tx_op_proving;
 mod post_tx_op_sequencing;
 mod pre_tx_loop;
-mod rlp_encodings;
 mod utils;
 pub(crate) mod withdrawals;
 

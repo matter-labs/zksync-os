@@ -400,6 +400,7 @@ where
     Ok(ZkTxResult {
         result,
         tx_hash,
+        tx_type: transaction.tx_type.value,
         is_priority_tx: is_priority_op,
         is_upgrade_tx: !is_priority_op,
         is_service_tx: false,

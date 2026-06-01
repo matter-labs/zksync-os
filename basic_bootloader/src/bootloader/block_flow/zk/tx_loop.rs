@@ -2,9 +2,15 @@ use zk_ee::{system::AccountDataRequest, utils::UsizeAlignedByteBox};
 
 use super::*;
 use crate::bootloader::{
-    block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
+    block_flow::tx_loop::TxLoopOp,
+    rlp::{CachingRLPEncodable, ReceiptEncoder},
+    transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
-use zk_ee::system::Resource;
+use crypto::blake2s::Blake2s256;
+use crypto::MiniDigest;
+use zk_ee::common_structs::GenericEventContentRef;
+use zk_ee::system::{IOTeardown, Resource, MAX_EVENT_TOPICS};
+use zk_ee::utils::Bytes32;
 
 impl<
         S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
@@ -12,7 +18,7 @@ impl<
         BatchEA: TxHashesAccumulator,
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
-    S::IO: IOSubsystemExt,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
     S::Metadata: ZkSpecificMetadata,
 {
     type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
@@ -181,6 +187,17 @@ where
 
                                 is_first_tx = false;
 
+                                let tx_status = matches!(
+                                    &tx_processing_result.result,
+                                    ExecutionResult::Success { .. }
+                                );
+                                let receipt_hash = compute_receipt_hash(
+                                    tx_processing_result.tx_type,
+                                    &tx_status,
+                                    &next_block_gas_used,
+                                    system.io.events_in_this_tx_iterator(),
+                                );
+
                                 // Finish the frame opened before processing the tx
                                 system.finish_global_frame(None)?;
 
@@ -196,8 +213,15 @@ where
                                     };
 
                                 block_data
-                                    .transaction_hashes_accumulator
-                                    .add_tx_hash(&tx_processing_result.tx_hash);
+                                    .transaction_hashes_tree
+                                    .append(tx_processing_result.tx_hash)
+                                    .map_err(|_| {
+                                        internal_error!("transactions root tree is full")
+                                    })?;
+                                block_data
+                                    .receipts_tree
+                                    .append(receipt_hash)
+                                    .map_err(|_| internal_error!("receipts root tree is full"))?;
                                 if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
@@ -209,7 +233,12 @@ where
                                         .upgrade_tx_recorder
                                         .add_upgrade_tx_hash(&tx_processing_result.tx_hash);
                                 }
-                                block_data.current_transaction_number += 1;
+                                block_data.current_transaction_number = block_data
+                                    .current_transaction_number
+                                    .checked_add(1)
+                                    .ok_or_else(|| {
+                                        internal_error!("too many transactions in block")
+                                    })?;
 
                                 result_keeper.tx_processed(Ok(TxProcessingOutput {
                                     status,
@@ -239,4 +268,25 @@ where
 
         Ok(())
     }
+}
+
+fn compute_receipt_hash<'events, I>(
+    tx_type: u8,
+    status: &bool,
+    cumulative_gas_used: &u64,
+    events: I,
+) -> Bytes32
+where
+    I: Iterator<
+            Item = GenericEventContentRef<'events, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
+        > + Clone,
+{
+    // ZK receipts currently reserve the bloom field but commit a zeroed placeholder.
+    let bloom = [0u8; 256];
+
+    let mut receipt_encoder =
+        ReceiptEncoder::new_from_fields(tx_type, status, cumulative_gas_used, &bloom, events);
+    let mut receipt_hasher = Blake2s256::new();
+    receipt_encoder.encode_into(&mut receipt_hasher);
+    Bytes32::from_array(receipt_hasher.finalize())
 }

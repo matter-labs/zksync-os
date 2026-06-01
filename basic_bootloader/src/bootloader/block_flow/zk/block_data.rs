@@ -1,13 +1,20 @@
+use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
+use zk_ee::common_structs::IncrementalMerkleTree;
 use zk_ee::utils::Bytes32;
+
+pub const ZK_BLOCK_TX_TREE_DEPTH: usize = 32;
+pub type ZKBlockRootTree = IncrementalMerkleTree<ZK_BLOCK_TX_TREE_DEPTH, Blake2s256>;
 
 /// ZKsync-specific block data keeper.
 #[derive(Debug)]
 pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator> {
     /// Current transaction number within the block
     pub current_transaction_number: u32,
-    /// Rolling Keccak hash of all transaction hashes in execution order
-    pub transaction_hashes_accumulator: TransactionsRollingKeccakHasher,
+    /// Incremental Merkle tree of transaction hashes in execution order.
+    pub transaction_hashes_tree: ZKBlockRootTree,
+    /// Incremental Merkle tree of receipt hashes in execution order.
+    pub receipts_tree: ZKBlockRootTree,
     /// Accumulator for L1->L2 transaction hashes (enforced transactions)
     /// It's generic as it needs to be different for different post-ops(sequencing, proving aggregation, proving batch, etc).
     pub enforced_transaction_hashes_accumulator: EA,
@@ -25,9 +32,11 @@ pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator> {
 
 impl<EA: TxHashesAccumulator> ZKBasicBlockDataKeeper<EA> {
     pub fn new() -> Self {
+        let empty_hashes = ZKBlockRootTree::empty_hashes();
         Self {
             current_transaction_number: 0,
-            transaction_hashes_accumulator: TransactionsRollingKeccakHasher::empty(),
+            transaction_hashes_tree: ZKBlockRootTree::new(empty_hashes),
+            receipts_tree: ZKBlockRootTree::new(empty_hashes),
             enforced_transaction_hashes_accumulator: EA::empty(),
             upgrade_tx_recorder: UpgradeTx {
                 inner: Bytes32::ZERO,
@@ -37,6 +46,14 @@ impl<EA: TxHashesAccumulator> ZKBasicBlockDataKeeper<EA> {
             block_computational_native_used: 0,
             block_blob_gas_used: 0,
         }
+    }
+
+    pub fn transactions_root(&self) -> Bytes32 {
+        self.transaction_hashes_tree.root()
+    }
+
+    pub fn receipts_root(&self) -> Bytes32 {
+        self.receipts_tree.root()
     }
 }
 

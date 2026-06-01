@@ -14,15 +14,18 @@ pub struct IncrementalMerkleTreeFull;
 /// subtree of size `2^i` in the appended prefix. Appending a leaf updates this
 /// frontier with the same carry logic as incrementing a binary counter.
 ///
-pub struct IncrementalMerkleTree<'a, const DEPTH: usize, H> {
+/// This is enough to maintain the current root, but it intentionally does not
+/// retain the sibling nodes needed to produce historical inclusion proofs.
+#[derive(Debug)]
+pub struct IncrementalMerkleTree<const DEPTH: usize, H> {
     len: u64,
     frontier: [Bytes32; DEPTH],
-    empty_hashes: &'a [Bytes32; DEPTH],
+    empty_hashes: [Bytes32; DEPTH],
     completed_root: Bytes32,
     _marker: PhantomData<H>,
 }
 
-impl<'a, const DEPTH: usize, H> IncrementalMerkleTree<'a, DEPTH, H>
+impl<const DEPTH: usize, H> IncrementalMerkleTree<DEPTH, H>
 where
     H: MiniDigest<HashOutput = [u8; 32]>,
 {
@@ -44,11 +47,11 @@ where
         empty_hashes
     }
 
-    /// Creates an empty tree borrowing a precomputed empty-hash table.
+    /// Creates an empty tree from a precomputed empty-hash table.
     ///
-    /// Multiple trees with the same `DEPTH` and hasher can share one table.
+    /// Multiple trees with the same `DEPTH` and hasher can use one table.
     /// The caller must pass hashes generated for this exact hasher.
-    pub fn new(empty_hashes: &'a [Bytes32; DEPTH]) -> Self {
+    pub fn new(empty_hashes: [Bytes32; DEPTH]) -> Self {
         assert!(DEPTH < u64::BITS as usize);
 
         Self {
@@ -170,7 +173,7 @@ mod tests {
         let mut width = 1usize << DEPTH;
         while width > 1 {
             for i in 0..(width / 2) {
-                level[i] = IncrementalMerkleTree::<'_, DEPTH, Blake2s256>::hash_pair(
+                level[i] = IncrementalMerkleTree::<DEPTH, Blake2s256>::hash_pair(
                     level[i * 2],
                     level[i * 2 + 1],
                 );
@@ -183,8 +186,8 @@ mod tests {
 
     #[test]
     fn empty_root_matches_full_tree() {
-        let empty_hashes = IncrementalMerkleTree::<'_, 4, Blake2s256>::empty_hashes();
-        let tree = IncrementalMerkleTree::<'_, 4, Blake2s256>::new(&empty_hashes);
+        let empty_hashes = IncrementalMerkleTree::<4, Blake2s256>::empty_hashes();
+        let tree = IncrementalMerkleTree::<4, Blake2s256>::new(empty_hashes);
 
         assert_eq!(tree.len(), 0);
         assert_eq!(tree.root(), reference_root::<4>(&[]));
@@ -192,8 +195,8 @@ mod tests {
 
     #[test]
     fn root_matches_full_tree_after_each_append() {
-        let empty_hashes = IncrementalMerkleTree::<'_, 4, Blake2s256>::empty_hashes();
-        let mut tree = IncrementalMerkleTree::<'_, 4, Blake2s256>::new(&empty_hashes);
+        let empty_hashes = IncrementalMerkleTree::<4, Blake2s256>::empty_hashes();
+        let mut tree = IncrementalMerkleTree::<4, Blake2s256>::new(empty_hashes);
         let mut leaves = Vec::new();
 
         for i in 0..16 {
@@ -208,8 +211,8 @@ mod tests {
 
     #[test]
     fn depth_zero_tree_accepts_one_leaf() {
-        let empty_hashes = IncrementalMerkleTree::<'_, 0, Blake2s256>::empty_hashes();
-        let mut tree = IncrementalMerkleTree::<'_, 0, Blake2s256>::new(&empty_hashes);
+        let empty_hashes = IncrementalMerkleTree::<0, Blake2s256>::empty_hashes();
+        let mut tree = IncrementalMerkleTree::<0, Blake2s256>::new(empty_hashes);
 
         assert_eq!(tree.root(), Bytes32::ZERO);
         assert_eq!(tree.append(leaf(7)), Ok(0));
@@ -218,10 +221,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_hashes_can_be_shared_between_trees() {
-        let empty_hashes = IncrementalMerkleTree::<'_, 4, Blake2s256>::empty_hashes();
-        let mut first = IncrementalMerkleTree::<'_, 4, Blake2s256>::new(&empty_hashes);
-        let mut second = IncrementalMerkleTree::<'_, 4, Blake2s256>::new(&empty_hashes);
+    fn empty_hashes_can_be_reused_between_trees() {
+        let empty_hashes = IncrementalMerkleTree::<4, Blake2s256>::empty_hashes();
+        let mut first = IncrementalMerkleTree::<4, Blake2s256>::new(empty_hashes);
+        let mut second = IncrementalMerkleTree::<4, Blake2s256>::new(empty_hashes);
 
         assert_eq!(first.append(leaf(1)), Ok(0));
         assert_eq!(second.append(leaf(2)), Ok(0));

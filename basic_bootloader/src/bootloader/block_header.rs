@@ -82,7 +82,8 @@ impl BlockHeader {
     pub fn new(
         parent_hash: Bytes32,
         beneficiary: B160,
-        transactions_rolling_hash: Bytes32,
+        transactions_root: Bytes32,
+        receipts_root: Bytes32,
         number: u64,
         gas_limit: u64,
         gas_used: u64,
@@ -97,10 +98,8 @@ impl BlockHeader {
             beneficiary,
             // for now state root is zero
             state_root: Bytes32::ZERO,
-            // for now we'll use rolling hash as txs commitment
-            transactions_root: transactions_rolling_hash,
-            // for now receipts root is zero
-            receipts_root: Bytes32::ZERO,
+            transactions_root,
+            receipts_root,
             // for now logs bloom is zero
             logs_bloom: [0; 256],
             // difficulty is set to zero after EIP-3675
