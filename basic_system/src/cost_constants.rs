@@ -61,11 +61,13 @@ pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_00
 // Measured via RISC-V cycle markers with non-trivial inputs.
 pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(193_000, 35_700, 0);
 pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(249_000, 39_000, 0);
-// MSM: worst case per point (single-point MSM). Batching amortizes in practice
-// but we charge worst case per point; the EVM gas discount table handles batching.
-pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 = native_with_delegations!(912_000, 72_800, 0);
+// MSM: worst case per point (single-point MSM with full 256-bit scalar).
+// Batching amortizes in practice but we charge worst case per point;
+// the EVM gas discount table handles batching.
+pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 =
+    native_with_delegations!(2_312_000, 279_900, 0);
 pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
-    native_with_delegations!(1_571_000, 102_900, 0);
+    native_with_delegations!(9_392_000, 784_000, 0);
 // Pairing: measured with non-trivial G1/G2 generator inputs (1, 2, 4 pairs).
 // Linear model fits with <0.01% error on cross-check.
 pub const BLS12_381_PAIRING_NATIVE_COST: u64 = native_with_delegations!(12_140_000, 835_600, 0);

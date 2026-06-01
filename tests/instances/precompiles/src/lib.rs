@@ -1444,6 +1444,9 @@ fn bench_pectra_precompile_scaling() {
     const SCALAR_3: &str = "0000000000000000000000000000000000000000000000000000000000000003";
     const SCALAR_7: &str = "0000000000000000000000000000000000000000000000000000000000000007";
     const SCALAR_FF: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    // Worst-case 256-bit scalars (random-looking, all bits active)
+    const SCALAR_WORST_A: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+    const SCALAR_WORST_B: &str = "2b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfe";
 
     struct BenchCase {
         name: &'static str,
@@ -1464,29 +1467,29 @@ fn bench_pectra_precompile_scaling() {
             precompile_id: "000000000000000000000000000000000000000d",
             input: format!("{G2}{G2}"),
         },
-        // G1 MSM: 2 points
+        // G1 MSM: 1 point, worst-case 256-bit scalar
         BenchCase {
-            name: "g1_msm 2pt",
+            name: "g1_msm 1pt worst-case scalar",
             precompile_id: "000000000000000000000000000000000000000c",
-            input: format!("{G1}{SCALAR_2}{G1}{SCALAR_3}"),
+            input: format!("{G1}{SCALAR_WORST_A}"),
         },
-        // G1 MSM: 4 points
+        // G1 MSM: 2 points, worst-case scalars
         BenchCase {
-            name: "g1_msm 4pt",
+            name: "g1_msm 2pt worst-case",
             precompile_id: "000000000000000000000000000000000000000c",
-            input: format!("{G1}{SCALAR_2}{G1}{SCALAR_3}{G1}{SCALAR_7}{G1}{SCALAR_FF}"),
+            input: format!("{G1}{SCALAR_WORST_A}{G1}{SCALAR_WORST_B}"),
         },
-        // G2 MSM: 2 points
+        // G2 MSM: 1 point, worst-case 256-bit scalar
         BenchCase {
-            name: "g2_msm 2pt",
+            name: "g2_msm 1pt worst-case scalar",
             precompile_id: "000000000000000000000000000000000000000e",
-            input: format!("{G2}{SCALAR_2}{G2}{SCALAR_3}"),
+            input: format!("{G2}{SCALAR_WORST_A}"),
         },
-        // G2 MSM: 4 points
+        // G2 MSM: 2 points, worst-case scalars
         BenchCase {
-            name: "g2_msm 4pt",
+            name: "g2_msm 2pt worst-case",
             precompile_id: "000000000000000000000000000000000000000e",
-            input: format!("{G2}{SCALAR_2}{G2}{SCALAR_3}{G2}{SCALAR_7}{G2}{SCALAR_FF}"),
+            input: format!("{G2}{SCALAR_WORST_A}{G2}{SCALAR_WORST_B}"),
         },
         // Pairing: 1 pair (non-trivial — G1 generator, G2 generator)
         BenchCase {
