@@ -29,12 +29,14 @@ jobs:
               working-directory: ./zksync_os
               run: |
                   ./dump_bin.sh --type for-tests
-                  ./dump_bin.sh --type for-tests-benchmarking-pectra
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
               run: cargo test --release
+            - name: Compile pectra RISC-V binary
+              working-directory: ./zksync_os
+              run: ./dump_bin.sh --type for-tests-benchmarking-pectra
             - name: Run pectra precompile tests (BLS12-381 + blake2f)
               run: cargo test -p precompiles --features precompiles/pectra --release
     test_revm_consistency:
