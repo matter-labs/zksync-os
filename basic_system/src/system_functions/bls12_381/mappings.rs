@@ -36,9 +36,12 @@ fn apply_isogeny_map_no_alloc<
             let y_num = evaluate_polynomial(map.y_map_numerator, &x);
             let y_den = evaluate_polynomial(map.y_map_denominator, &x);
 
+            // batch_inversion semantics: zero elements stay zero.
+            use crypto::ark_ff::AdditiveGroup;
             use crypto::ark_ff::Field;
-            let x_den_inv = x_den.inverse().expect("x_den is nonzero for valid input");
-            let y_den_inv = y_den.inverse().expect("y_den is nonzero for valid input");
+            let zero = Domain::BaseField::ZERO;
+            let x_den_inv = x_den.inverse().unwrap_or(zero);
+            let y_den_inv = y_den.inverse().unwrap_or(zero);
             let img_x = x_num * x_den_inv;
             let img_y = (y_num * y) * y_den_inv;
             Ok(crypto::ark_ec::short_weierstrass::Affine::<Codomain>::new_unchecked(img_x, img_y))
