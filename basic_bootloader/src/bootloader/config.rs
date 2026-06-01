@@ -13,7 +13,7 @@ pub trait BasicBootloaderExecutionConfig: 'static + Clone + Copy + core::fmt::De
     const VERIFY_FRI_PROOFS: bool;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BootloaderStaticConfig {
     pub chain_config: ChainConfig,
 }
@@ -22,14 +22,6 @@ impl BootloaderStaticConfig {
     pub fn read_from_oracle(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
         let chain_config = oracle.query_with_empty_input(CHAIN_CONFIG_QUERY_ID)?;
         Ok(Self { chain_config })
-    }
-}
-
-impl Default for BootloaderStaticConfig {
-    fn default() -> Self {
-        Self {
-            chain_config: ChainConfig::default(),
-        }
     }
 }
 

@@ -87,15 +87,16 @@ impl BatchOutput {
     /// Calculate keccak256 hash of public input
     ///
     /// Canonical chain config encoding, in order:
-    /// - `version`: uint32 encoded as a 32-byte big-endian word.
     /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
     /// - `max_contract_size.enabled`: bool encoded as a 32-byte word with the last byte 0/1.
     /// - `max_contract_size.value`: uint32 encoded as a 32-byte big-endian word. Disabled limits
     ///   are canonicalized to value 0.
+    /// - `max_tx_gas_limit.enabled`: bool encoded as a 32-byte word with the last byte 0/1.
+    /// - `max_tx_gas_limit.value`: uint64 encoded as a 32-byte big-endian word. Disabled limits
+    ///   are canonicalized to value 0.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(self.chain_id.to_be_bytes::<32>());
-        update_u32_word(&mut hasher, self.chain_config.version());
         update_bool_word(
             &mut hasher,
             self.chain_config.fri_proof_verification_enabled(),
@@ -110,6 +111,16 @@ impl BatchOutput {
             0
         };
         update_u32_word(&mut hasher, max_contract_size);
+        update_bool_word(
+            &mut hasher,
+            self.chain_config.max_tx_gas_limit().is_enabled(),
+        );
+        let max_tx_gas_limit = if self.chain_config.max_tx_gas_limit().is_enabled() {
+            self.chain_config.max_tx_gas_limit().value()
+        } else {
+            0
+        };
+        update_u64_word(&mut hasher, max_tx_gas_limit);
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         // Encode DA commitment scheme as U256 BE
@@ -129,6 +140,11 @@ impl BatchOutput {
 
 fn update_u32_word(hasher: &mut Keccak256, value: u32) {
     hasher.update([0u8; 28]);
+    hasher.update(value.to_be_bytes());
+}
+
+fn update_u64_word(hasher: &mut Keccak256, value: u64) {
+    hasher.update([0u8; 24]);
     hasher.update(value.to_be_bytes());
 }
 
@@ -165,7 +181,10 @@ impl BatchPublicInput {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
-    use zk_ee::system::metadata::chain_config::ConfigurableLimitU32;
+    use zk_ee::system::metadata::chain_config::{
+        ConfigurableLimitU32, ConfigurableLimitU64, DEFAULT_MAX_CONTRACT_SIZE,
+        DEFAULT_MAX_TX_GAS_LIMIT,
+    };
 
     fn sample_batch_output(chain_config: ChainConfig) -> BatchOutput {
         BatchOutput {
@@ -201,15 +220,58 @@ mod tests {
 
         assert_eq!(
             default_hash,
-            hex!("434f988fac3f28492366583c1ebb3513d3fe7c4f74e786869f19d20b92322308")
+            hex!("8f21f92c5c88a2b9643739de3de9cc86c0917bcd86ff4d81999ffcf7373230c0")
         );
     }
 
     #[test]
     fn disabled_contract_size_limit_is_hash_canonicalized() {
-        let canonical = ChainConfig::new(1, false, ConfigurableLimitU32::new(false, 0)).unwrap();
-        let non_canonical =
-            ChainConfig::new(1, false, ConfigurableLimitU32::new(false, 10)).unwrap();
+        let canonical = ChainConfig::new(
+            false,
+            ConfigurableLimitU32::new(false, 0),
+            ConfigurableLimitU64::enabled(DEFAULT_MAX_TX_GAS_LIMIT),
+        )
+        .unwrap();
+        let non_canonical = ChainConfig::new(
+            false,
+            ConfigurableLimitU32::new(false, 10),
+            ConfigurableLimitU64::enabled(DEFAULT_MAX_TX_GAS_LIMIT),
+        )
+        .unwrap();
+
+        assert_eq!(
+            sample_batch_output(canonical).hash(),
+            sample_batch_output(non_canonical).hash()
+        );
+    }
+
+    #[test]
+    fn batch_output_hash_commits_to_max_tx_gas_limit() {
+        let default_hash = sample_batch_output(ChainConfig::default()).hash();
+        let changed = ChainConfig::new(
+            false,
+            ConfigurableLimitU32::enabled(DEFAULT_MAX_CONTRACT_SIZE),
+            ConfigurableLimitU64::enabled(DEFAULT_MAX_TX_GAS_LIMIT * 2),
+        )
+        .unwrap();
+
+        assert_ne!(default_hash, sample_batch_output(changed).hash());
+    }
+
+    #[test]
+    fn disabled_max_tx_gas_limit_is_hash_canonicalized() {
+        let canonical = ChainConfig::new(
+            false,
+            ConfigurableLimitU32::enabled(DEFAULT_MAX_CONTRACT_SIZE),
+            ConfigurableLimitU64::new(false, 0),
+        )
+        .unwrap();
+        let non_canonical = ChainConfig::new(
+            false,
+            ConfigurableLimitU32::enabled(DEFAULT_MAX_CONTRACT_SIZE),
+            ConfigurableLimitU64::new(false, 10),
+        )
+        .unwrap();
 
         assert_eq!(
             sample_batch_output(canonical).hash(),

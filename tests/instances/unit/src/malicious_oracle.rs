@@ -1568,6 +1568,7 @@ mod callable_oracle_tests {
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::oracle_provider::ZkEENonDeterminismSource;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+    use rig::zk_ee::system::metadata::chain_config::ChainConfig;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
     use rig::zksync_os_interface::traits::TxListSource;
     use rig::{common_target_address, TestingFramework};

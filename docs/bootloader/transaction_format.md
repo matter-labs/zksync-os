@@ -69,8 +69,8 @@ is that only transactions with valid proofs make it to the sequencer.
 
 ### Validation
 
-- Reject with `FriProofTxNotSupported` if the block is not in Gateway
-  mode (`metadata.is_gateway() == false`).
+- Reject with `FriProofTxNotSupported` if the chain config does not enable
+  FRI proof verification (`chain_config.fri_proof_verification_enabled() == false`).
 - Reject with `TooManyFriStatements` if the list exceeds the cap.
 - After signature recovery, the list is deduplicated for verifier work
   and storage; the user still pays gas / native for the **submitted**
