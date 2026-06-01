@@ -36,12 +36,20 @@ fn apply_isogeny_map_no_alloc<
             let y_num = evaluate_polynomial(map.y_map_numerator, &x);
             let y_den = evaluate_polynomial(map.y_map_denominator, &x);
 
-            // batch_inversion semantics: zero elements stay zero.
+            // Montgomery's trick: compute both inverses with a single inversion.
             use crypto::ark_ff::AdditiveGroup;
             use crypto::ark_ff::Field;
             let zero = Domain::BaseField::ZERO;
-            let x_den_inv = x_den.inverse().unwrap_or(zero);
-            let y_den_inv = y_den.inverse().unwrap_or(zero);
+            let prod = x_den * y_den;
+            let (x_den_inv, y_den_inv) = if let Some(prod_inv) = prod.inverse() {
+                (y_den * prod_inv, x_den * prod_inv)
+            } else {
+                // At least one denominator is zero — fall back to individual inversions.
+                (
+                    x_den.inverse().unwrap_or(zero),
+                    y_den.inverse().unwrap_or(zero),
+                )
+            };
             let img_x = x_num * x_den_inv;
             let img_y = (y_num * y) * y_den_inv;
             Ok(crypto::ark_ec::short_weierstrass::Affine::<Codomain>::new_unchecked(img_x, img_y))

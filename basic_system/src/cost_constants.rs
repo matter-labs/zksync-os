@@ -73,11 +73,10 @@ pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
 pub const BLS12_381_PAIRING_NATIVE_COST: u64 = native_with_delegations!(12_140_000, 835_600, 0);
 pub const BLS12_381_PAIRING_PER_PAIR_NATIVE_COST: u64 =
     native_with_delegations!(10_700_000, 830_500, 0);
-// Mapping: measured with allocation-free isogeny implementation (replaces
-// arkworks WBMap which used DensePolynomial/batch_inversion via global allocator).
-pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_640_000, 280_200, 0);
+// Mapping: allocation-free isogeny with Montgomery's trick for batch inversion.
+pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_469_000, 246_300, 0);
 pub const BLS12_381_MAP_FP2_TO_G2_NATIVE_COST: u64 =
-    native_with_delegations!(4_476_000, 575_200, 0);
+    native_with_delegations!(4_325_000, 541_600, 0);
 
 // Blake2f native costs (EIP-152).
 // Measured via RISC-V cycle markers. No delegations — pure RISC-V computation.
