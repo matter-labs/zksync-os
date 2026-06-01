@@ -1380,7 +1380,7 @@ fn test_pectra_precompiles() {
 /// in proving mode (RISC-V) without global-alloc.
 #[cfg(feature = "pectra")]
 #[test]
-fn test_bls12_381_mapping_precompiles() {
+fn test_pectra_bls12_381_mapping_precompiles() {
     // MAP_FP_TO_G1: 64-byte input (one Fp element)
     let fp_input = hex::decode(
         "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
