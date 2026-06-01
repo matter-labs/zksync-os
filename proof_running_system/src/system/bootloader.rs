@@ -132,7 +132,9 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
         panic!("global alloc not allowed")
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        panic!("global alloc not allowed");
+    }
 }
 
 ///
