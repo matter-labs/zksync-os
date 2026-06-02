@@ -11,6 +11,7 @@
 //! to continue.
 //!
 
+use alloy_sol_types::{sol, SolCall};
 use rig::alloy::primitives::address;
 use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::U256;
@@ -20,6 +21,12 @@ use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
 
 use super::common_target_address;
+
+sol! {
+    /// L1 messenger `sendToL1(bytes)` — emits the data as an L2→L1 message
+    /// (selector 0x62f84b24).
+    function sendToL1(bytes message) external returns (bytes32 hash);
+}
 
 /// Test that an L1 transaction with gas limit below intrinsic gas (21k) is
 /// processed gracefully instead of causing a validation error.
@@ -248,16 +255,11 @@ fn test_l1_tx_can_use_full_pubdata_budget() {
     // Use zero bytes so calldata intrinsic is 4 gas/byte (vs 16 for non-zero).
     let payload = vec![0u8; payload_len];
 
-    // ABI calldata for `sendToL1(bytes)`: selector || offset(0x20) || length || data || pad
-    let mut calldata = Vec::with_capacity(4 + 64 + payload_len.next_multiple_of(32));
-    calldata.extend_from_slice(&hex::decode("62f84b24").unwrap()); // selector
-    calldata.extend_from_slice(&[0u8; 32 - 1]); // offset upper 31 bytes
-    calldata.push(0x20); // offset = 32
-    calldata.extend_from_slice(&[0u8; 32 - 8]); // length upper 24 bytes
-    calldata.extend_from_slice(&(payload_len as u64).to_be_bytes());
-    calldata.extend_from_slice(&payload);
-    let padding = (32 - (payload_len % 32)) % 32;
-    calldata.extend_from_slice(&vec![0u8; padding]);
+    // ABI-encode `sendToL1(bytes)` with the zero-byte payload as its argument.
+    let calldata = sendToL1Call {
+        message: payload.into(),
+    }
+    .abi_encode();
 
     let high_gas_price = 10u128.pow(15);
 
