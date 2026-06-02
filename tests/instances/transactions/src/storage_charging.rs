@@ -398,3 +398,107 @@ fn test_existing_slot_write_cheaper_than_new_slot() {
          existing vs new slot, but only saved {savings} native"
     );
 }
+
+/// SLOAD followed by SSTORE to the same slot should cost at least as much
+/// native as a standalone SSTORE (without prior SLOAD). The SLOAD warms the
+/// EVM access but must NOT discount the native write extra — the tree still
+/// needs the full write merkle paths.
+#[test]
+fn test_sload_then_sstore_charges_cold_write_extra() {
+    let contract_a_addr = address!("0000000000000000000000000000000000060001");
+    let contract_b_addr = address!("0000000000000000000000000000000000060002");
+
+    // Contract A: SLOAD slot 0, then SSTORE slot 0.
+    let bytecode_sload_sstore = BytecodeBuilder::new()
+        .push_u8(0)
+        .sload() // SLOAD(0) — warms access but does NOT pay write extra
+        .pop()
+        .push_u8(42)
+        .push_u8(0)
+        .sstore() // SSTORE(0, 42) — must pay cold write extra
+        .return_empty()
+        .finish();
+
+    // Contract B: standalone SSTORE slot 0 (no prior read).
+    let bytecode_sstore_only = BytecodeBuilder::new()
+        .push_u8(42)
+        .push_u8(0)
+        .sstore() // SSTORE(0, 42) — cold access + cold write extra
+        .return_empty()
+        .finish();
+
+    let wallet_a = testing_signer(0);
+    let wallet_b = testing_signer(1);
+    let block_context = storage_test_block_context();
+
+    // Run contract A (SLOAD→SSTORE).
+    let mut tester_a = TestingFramework::new()
+        .with_evm_contract(contract_a_addr, &bytecode_sload_sstore)
+        .with_balance(wallet_a.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context.clone());
+
+    let tx_a = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(contract_a_addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_a.clone())
+    };
+    let output_a = tester_a.execute_block(vec![tx_a]);
+    let result_a = output_a.tx_results[0]
+        .as_ref()
+        .expect("SLOAD→SSTORE tx should be processed");
+    assert!(
+        result_a.is_success(),
+        "SLOAD→SSTORE should succeed, got: {:?}",
+        output_a.tx_results[0]
+    );
+    let native_a = result_a.computational_native_used;
+
+    // Run contract B (standalone SSTORE).
+    let mut tester_b = TestingFramework::new()
+        .with_evm_contract(contract_b_addr, &bytecode_sstore_only)
+        .with_balance(wallet_b.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context);
+
+    let tx_b = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(contract_b_addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_b.clone())
+    };
+    let output_b = tester_b.execute_block(vec![tx_b]);
+    let result_b = output_b.tx_results[0]
+        .as_ref()
+        .expect("Standalone SSTORE tx should be processed");
+    assert!(
+        result_b.is_success(),
+        "Standalone SSTORE should succeed, got: {:?}",
+        output_b.tx_results[0]
+    );
+    let native_b = result_b.computational_native_used;
+
+    // SLOAD→SSTORE should cost at least as much native as standalone SSTORE.
+    // The SLOAD adds a warm read cost but the SSTORE still pays cold write extra.
+    // If the SLOAD incorrectly discounted the write, native_a would be less than native_b.
+    assert!(
+        native_a >= native_b,
+        "SLOAD→SSTORE (native={native_a}) should cost at least as much as \
+         standalone SSTORE (native={native_b}) — SLOAD must not discount write extra"
+    );
+}
