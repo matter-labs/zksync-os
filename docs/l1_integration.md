@@ -80,6 +80,11 @@ It equals to `keccak256` hash of(concatenation):
 Where chain state commitments are the same `blake2s` hashes of the state before and after as for block(s) PI.
 And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `used_chain_id`
+- `chain_config.fri_proof_verification_enabled`
+- `chain_config.max_contract_size.enabled`
+- `chain_config.max_contract_size.value`
+- `chain_config.max_tx_gas_limit.enabled`
+- `chain_config.max_tx_gas_limit.value`
 - `first_block_timestamp`
 - `last_block_timestamp`
 - `da_commitment_scheme`
@@ -88,6 +93,8 @@ And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `rolling_l1_txs_keccak256`
 - `l2_logs_tree_root`
 - `upgrade_tx_hash`
+
+On the ZK path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. The legacy Ethereum metadata path still follows the compile-time `eip-7825` feature for the single-transaction gas cap.
 
 This includes almost the same data as block(s) output, with 2 main differences:
 - `l2_logs_tree_root` instead `l2_to_l1_logs_hashes_blake2s_hash`, we'll build tree during batch processing.

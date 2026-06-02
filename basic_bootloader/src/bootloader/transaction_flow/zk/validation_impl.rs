@@ -72,8 +72,10 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate block-level invariants (for non-service transactions)
-    if !transaction.is_service() {
+    // Validate block-level invariants for non-service transactions. Call
+    // simulation intentionally skips normal tx-admission checks so RPC callers
+    // can estimate with a high gas ceiling.
+    if !Config::SIMULATION && !transaction.is_service() {
         {
             // Validate that the transaction's gas limit is not larger than
             // the block's gas limit.
