@@ -35,9 +35,13 @@ type AddressItem<'a, K, V, A> =
 
 #[derive(Default, Clone)]
 pub struct StorageElementMetadata {
-    /// Transaction where this account was last accessed.
-    /// Considered warm if equal to Some(current_tx)
+    /// Transaction where this slot was last accessed (read or write).
+    /// Considered warm if equal to Some(current_tx).
     pub last_touched_in_tx: Option<TransactionId>,
+    /// Transaction where cold write extra was last charged for this slot.
+    /// Used to distinguish "warm because previously written" (write paths paid)
+    /// from "warm because previously read" (only read paths paid).
+    pub write_extra_charged_in_tx: Option<TransactionId>,
 }
 
 impl StorageElementMetadata {
