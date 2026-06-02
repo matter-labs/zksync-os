@@ -865,7 +865,7 @@ pub fn run_block_with_oracle_dump_ext_with_chain_config<
         let dump = crate::run::query_processors::ForwardRunningOracleDump {
             zk_proof_data_responder: zk_proof_data_responder.clone(),
             da_commitment_scheme_responder: da_commitment_scheme_responder.clone(),
-            chain_config_responder: chain_config_responder.clone(),
+            chain_config_responder,
             block_metadata_responder,
             tree_responder: tree_responder.clone(),
             tx_data_responder: tx_data_responder.clone(),

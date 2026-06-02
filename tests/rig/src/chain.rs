@@ -7,6 +7,7 @@ use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
+use basic_bootloader::bootloader::config::BootloaderStaticConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
@@ -20,6 +21,7 @@ use basic_system::system_implementation::flat_storage_model::{
     TREE_HEIGHT,
 };
 use forward_system::run::output::BlockOutput;
+use forward_system::run::query_processors::ChainConfigResponder;
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
@@ -1426,6 +1428,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
             da_commitment_scheme: Some(DACommitmentScheme::None),
         };
+        let chain_config_responder = ChainConfigResponder {
+            chain_config: ChainConfig::default(),
+        };
         let preimage_responder = GenericPreimageResponder { preimage_source };
         let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
             initial_root.0,
@@ -1442,6 +1447,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         };
 
         let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(chain_config_responder);
         oracle.add_external_processor(target_header_responder.clone());
         oracle.add_external_processor(tx_data_responder.clone());
         oracle.add_external_processor(preimage_responder.clone());
@@ -1539,7 +1545,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 block_header,
                 withdrawals,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let static_config = BootloaderStaticConfig::read_from_oracle(&mut copy_source)
+                .expect("must read bootloader static config");
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
@@ -1548,12 +1556,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 BasicBootloader::<
                     EthereumStorageSystemTypesWithPostOps<_>,
                     EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-                >::run_prepared_with_default_config::<BasicBootloaderForwardETHLikeConfig>(
+                >::run_prepared_with_static_config::<BasicBootloaderForwardETHLikeConfig>(
                     copy_source,
                     &mut (),
                     &mut pi_result_keeper,
                     &mut pi_tracer,
                     &mut pi_validator,
+                    &static_config,
                 )
                 .expect("prover-input forward run must succeed");
 
