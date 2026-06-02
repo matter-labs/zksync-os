@@ -21,9 +21,8 @@ fn test_block_header_invariants() {
     assert_eq!(header.ommers_hash, B256::from(EMPTY_OMMER_ROOT_HASH));
     assert_eq!(header.beneficiary, Address::ZERO);
     assert_eq!(header.state_root, B256::ZERO);
-    // TODO: enable when this is implemented
-    // assert_ne!(header.transactions_root, Bytes32::ZERO);
-    // assert_ne!(header.receipts_root, Bytes32::ZERO);
+    assert_ne!(header.transactions_root, B256::ZERO);
+    assert_ne!(header.receipts_root, B256::ZERO);
     assert_eq!(header.number, 1);
     assert_eq!(header.gas_limit, MAX_BLOCK_GAS_LIMIT);
     assert!(
@@ -59,9 +58,8 @@ fn test_block_header_invariants() {
     assert_eq!(header.ommers_hash, EMPTY_OMMER_ROOT_HASH);
     assert_eq!(header.beneficiary.0, coinbase.to_be_bytes());
     assert_eq!(header.state_root, B256::ZERO);
-    // TODO: enable when this is implemented
-    // assert_ne!(header.transactions_root, Bytes32::ZERO);
-    // assert_ne!(header.receipts_root, Bytes32::ZERO);
+    assert_ne!(header.transactions_root, B256::ZERO);
+    assert_ne!(header.receipts_root, B256::ZERO);
     assert_eq!(header.number, 2);
     assert_eq!(header.gas_limit, gas_limit);
     assert!(

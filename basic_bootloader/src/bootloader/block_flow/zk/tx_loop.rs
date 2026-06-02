@@ -4,6 +4,7 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
+use zk_ee::system::IOTeardown;
 use zk_ee::system::Resource;
 
 impl<
@@ -12,10 +13,10 @@ impl<
         BatchEA: TxHashesAccumulator,
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
-    S::IO: IOSubsystemExt,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
     S::Metadata: ZkSpecificMetadata,
 {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<S::Allocator, BlockEA>;
     // we write only enforced tx hashes to the batch data, so it can be anything that implements tx hashes accumulator
     type BatchDataKeeper = BatchEA;
 
@@ -68,6 +69,17 @@ where
                             )
                             .expect("must heat coinbase");
                     }
+
+                    // Snapshot the raw transaction bytes for inclusion in the
+                    // transactions trie. Kept here because `process_transaction`
+                    // consumes the buffer. Allocated against the system allocator
+                    // so it's compatible with no-std proving mode.
+                    let raw_tx_bytes = {
+                        let slice = initial_calldata_buffer.as_slice();
+                        let mut v = alloc::vec::Vec::with_capacity_in(slice.len(), system.get_allocator());
+                        v.extend_from_slice(slice);
+                        v
+                    };
 
                     system_log!(system, "====================================\n",);
                     system_log!(system, "TX execution begins\n");
@@ -210,6 +222,11 @@ where
                                         .add_upgrade_tx_hash(&tx_processing_result.tx_hash);
                                 }
                                 block_data.current_transaction_number += 1;
+
+                                // Record per-tx data for the transactions/receipts trie.
+                                // Must happen after `block_data.block_gas_used` has been
+                                // updated so it represents the post-tx cumulative gas.
+                                block_data.record_tx_result(system, raw_tx_bytes, status);
 
                                 result_keeper.tx_processed(Ok(TxProcessingOutput {
                                     status,

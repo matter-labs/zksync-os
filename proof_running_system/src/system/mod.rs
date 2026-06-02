@@ -83,7 +83,8 @@ impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemT
 
 #[cfg(not(any(feature = "multiblock-batch", feature = "state-diffs-pi")))]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<Self::Allocator, block_flow::TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;
@@ -95,7 +96,8 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 #[cfg(feature = "multiblock-batch")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::NopTxHashesAccumulator>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<Self::Allocator, block_flow::NopTxHashesAccumulator>;
     type BatchDataKeeper = block_flow::ZKBatchDataKeeper<Self::Allocator, O>;
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;
@@ -110,7 +112,8 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 #[cfg(feature = "state-diffs-pi")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<Self::Allocator, block_flow::TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;

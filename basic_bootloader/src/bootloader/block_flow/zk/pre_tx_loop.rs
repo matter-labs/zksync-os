@@ -10,14 +10,14 @@ impl<S: EthereumLikeTypes, EA: TxHashesAccumulator> PreTxLoopOp<S> for ZKHeaderS
 where
     S::IO: IOSubsystemExt,
 {
-    type PreTxLoopResult = ZKBasicBlockDataKeeper<EA>;
+    type PreTxLoopResult = ZKBasicBlockDataKeeper<S::Allocator, EA>;
 
     fn pre_op(
         system: &mut System<S>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError> {
         // Create data keeper and seed block intrinsic constants
-        let mut block_data = ZKBasicBlockDataKeeper::new();
+        let mut block_data = ZKBasicBlockDataKeeper::new_in(system.get_allocator());
         block_data.block_computational_native_used = BLOCK_INTRINSIC_NATIVE;
         block_data.block_pubdata_used = BLOCK_INTRINSIC_PUBDATA_BYTES;
 

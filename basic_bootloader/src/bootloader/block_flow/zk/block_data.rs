@@ -1,9 +1,70 @@
+use crate::bootloader::block_flow::ethereum::{
+    rlp_ordering_and_key_for_index, short_digits_from_key, CellEnvelope, ReceiptEncoder,
+};
+use crate::bootloader::transaction_flow::ethereum::LogsBloom;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
+use basic_system::system_implementation::ethereum_storage_model::{
+    BoxInterner, ByteBuffer, EthereumMPT, LazyEncodable, LazyLeafValue, LeafValue,
+    MPTInternalCapacities, Path,
+};
+use core::alloc::Allocator;
 use crypto::MiniDigest;
+use zk_ee::common_structs::skip_list_quasi_vec::ListVec;
+use zk_ee::common_structs::GenericEventContentRef;
+use zk_ee::memory::stack_trait::Stack;
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, IOTeardown, System};
 use zk_ee::utils::Bytes32;
+
+/// Opaque transaction encoding stored as a trie leaf.
+///
+/// For RLP-encoded txs this is the canonical EIP-2718 envelope as parsed from
+/// the oracle. For ABI-encoded txs (ZKsync L1->L2 / upgrade) this is the raw
+/// ABI buffer as received from the oracle — a canonical typed-envelope format
+/// is TODO; for the draft we just use the bytes as-is.
+pub struct RawTxLeaf<A: Allocator> {
+    bytes: Vec<u8, A>,
+}
+
+impl<A: Allocator> core::fmt::Debug for RawTxLeaf<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RawTxLeaf")
+            .field("len", &self.bytes.len())
+            .finish()
+    }
+}
+
+impl<A: Allocator> RawTxLeaf<A> {
+    pub fn new(bytes: Vec<u8, A>) -> Self {
+        Self { bytes }
+    }
+}
+
+impl<A: Allocator> LazyEncodable for RawTxLeaf<A> {
+    fn encoding_len_and_first_byte(&self) -> (usize, u8) {
+        // Transactions are never of length 1 in practice, so the first byte
+        // marker (used by the MPT's hash-vs-inline decision) can be a dummy.
+        debug_assert!(self.bytes.len() != 1);
+        (self.bytes.len(), 0xff)
+    }
+
+    fn encode(&self, into: &mut dyn ByteBuffer) {
+        into.write_slice(&self.bytes);
+    }
+}
+
+/// Computed block-header values derived from accumulated per-tx data.
+#[derive(Debug)]
+pub struct ZkBlockHeaderRoots {
+    pub transactions_root: Bytes32,
+    pub receipts_root: Bytes32,
+    pub block_bloom: LogsBloom,
+}
 
 /// ZKsync-specific block data keeper.
 #[derive(Debug)]
-pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator> {
+pub struct ZKBasicBlockDataKeeper<A: Allocator + Clone, EA: TxHashesAccumulator> {
     /// Current transaction number within the block
     pub current_transaction_number: u32,
     /// Rolling Keccak hash of all transaction hashes in execution order
@@ -21,10 +82,16 @@ pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator> {
     pub block_computational_native_used: u64,
     /// Amount of blob gas used in the block
     pub block_blob_gas_used: u64,
+    /// Per-tx data needed to compute receipts trie root + block bloom.
+    /// Tuple: (status, cumulative_gas_used, num_events, per_tx_bloom)
+    pub per_tx_data: ListVec<(bool, u64, usize, LogsBloom), 32, A>,
+    /// Opaque transaction encodings, one per included transaction, ordered by
+    /// inclusion. Used as leaves of the transactions trie.
+    pub executed_transactions: ListVec<RawTxLeaf<A>, 32, A>,
 }
 
-impl<EA: TxHashesAccumulator> ZKBasicBlockDataKeeper<EA> {
-    pub fn new() -> Self {
+impl<A: Allocator + Clone, EA: TxHashesAccumulator> ZKBasicBlockDataKeeper<A, EA> {
+    pub fn new_in(allocator: A) -> Self {
         Self {
             current_transaction_number: 0,
             transaction_hashes_accumulator: TransactionsRollingKeccakHasher::empty(),
@@ -36,6 +103,144 @@ impl<EA: TxHashesAccumulator> ZKBasicBlockDataKeeper<EA> {
             block_pubdata_used: 0,
             block_computational_native_used: 0,
             block_blob_gas_used: 0,
+            per_tx_data: ListVec::new_in(allocator.clone()),
+            executed_transactions: ListVec::new_in(allocator),
+        }
+    }
+
+    /// Record per-tx data after the block-limit check has passed and
+    /// `block_gas_used` has been updated to its new cumulative value.
+    pub fn record_tx_result<S: EthereumLikeTypes>(
+        &mut self,
+        system: &System<S>,
+        raw_tx_bytes: Vec<u8, A>,
+        status: bool,
+    ) where
+        S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
+    {
+        // Compute per-tx logs bloom from this tx's emitted events.
+        let mut bloom = LogsBloom::default();
+        let events_it = system.io.events_in_this_tx_iterator();
+        let num_events = events_it.len();
+        let mut hasher = crypto::sha3::Keccak256::new();
+        bloom.mark_events(&mut hasher, events_it);
+
+        self.per_tx_data
+            .push((status, self.block_gas_used, num_events, bloom));
+        self.executed_transactions.push(RawTxLeaf::new(raw_tx_bytes));
+    }
+
+    /// Compute transactions/receipts trie roots and the block-level bloom.
+    ///
+    /// Mirrors `EthereumBasicTransactionDataKeeper::compute_header_values` but
+    /// uses opaque raw-bytes leaves for the transactions trie and consumes the
+    /// ZK keeper's per-tx data.
+    pub fn compute_header_roots<S: EthereumLikeTypes<Allocator = A>>(
+        &self,
+        system: &System<S>,
+    ) -> ZkBlockHeaderRoots
+    where
+        S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
+    {
+        let allocator = system.get_allocator();
+        let mut hasher = crypto::sha3::Keccak256::new();
+        let mut block_bloom = LogsBloom::default();
+
+        // Reorder by RLP-encoded index so we can insert sequentially.
+        let mut tmp_map = BTreeMap::new_in(allocator.clone());
+
+        let mut all_events_it = system.io.events_iterator();
+        for (tx_number, ((tx_status, cumulative_gas, num_events, bloom), tx_leaf)) in self
+            .per_tx_data
+            .iter()
+            .zip(self.executed_transactions.iter())
+            .enumerate()
+        {
+            let events_it = all_events_it.clone().take(*num_events).map(move |el| {
+                debug_assert_eq!(tx_number, el.tx_number as usize);
+                GenericEventContentRef {
+                    address: el.address,
+                    topics: el.topics,
+                    data: el.data,
+                }
+            });
+            for _ in 0..*num_events {
+                let _ = all_events_it.next().unwrap();
+            }
+
+            block_bloom.merge(bloom);
+
+            // Receipt format follows EIP-2718; for ZK we use tx_type=0
+            // (legacy-style receipt envelope) because the per-tx data here
+            // does not carry the original tx type. TODO: thread the tx type
+            // through so L1/upgrade txs can be tagged 0x7e/0x7f.
+            let receipt_encoder = ReceiptEncoder::new_from_fields(
+                0u8,
+                tx_status,
+                cumulative_gas,
+                bloom,
+                events_it,
+            );
+
+            let (ordering_key, tx_number_rlp) = rlp_ordering_and_key_for_index(tx_number as u32);
+            tmp_map.insert(
+                ordering_key,
+                (tx_number_rlp, CellEnvelope::new(receipt_encoder), tx_leaf),
+            );
+        }
+
+        let num_txs = self.current_transaction_number as usize;
+        let mut interner = BoxInterner::with_capacity_in(1 << 20, allocator.clone());
+        let receipts_mpt_capacity = MPTInternalCapacities::<S::Allocator, VecCtor>::with_capacity_in(
+            num_txs,
+            allocator.clone(),
+        );
+        let mut receipts_mpt = EthereumMPT::<_, _, true>::empty_with_preallocated_capacities(
+            receipts_mpt_capacity,
+            allocator.clone(),
+        );
+        let transactions_mpt_capacity =
+            MPTInternalCapacities::<S::Allocator, VecCtor>::with_capacity_in(
+                num_txs,
+                allocator.clone(),
+            );
+        let mut transactions_mpt = EthereumMPT::<_, _, true>::empty_with_preallocated_capacities(
+            transactions_mpt_capacity,
+            allocator.clone(),
+        );
+
+        for (_, ((key, len), receipt, tx_leaf)) in tmp_map.iter() {
+            let digits = short_digits_from_key(key);
+            let path = Path::new(&digits[..(*len * 2)]);
+            let receipt_value = LeafValue::LazyEncodable {
+                value: LazyLeafValue::from_value(receipt),
+                cached_encoding_len_with_metadata: 0,
+            };
+            receipts_mpt
+                .insert_lazy_value(path, receipt_value, &mut (), &mut interner, &mut hasher)
+                .expect("must insert receipt leaf");
+
+            let tx_value = LeafValue::LazyEncodable {
+                value: LazyLeafValue::from_value(*tx_leaf),
+                cached_encoding_len_with_metadata: 0,
+            };
+            transactions_mpt
+                .insert_lazy_value(path, tx_value, &mut (), &mut interner, &mut hasher)
+                .expect("must insert tx leaf");
+        }
+        receipts_mpt
+            .recompute(&mut (), &mut interner, &mut hasher)
+            .expect("must compute receipts root");
+        let receipts_root = Bytes32::from_array(receipts_mpt.root(&mut hasher));
+        transactions_mpt
+            .recompute(&mut (), &mut interner, &mut hasher)
+            .expect("must compute transactions root");
+        let transactions_root = Bytes32::from_array(transactions_mpt.root(&mut hasher));
+
+        ZkBlockHeaderRoots {
+            transactions_root,
+            receipts_root,
+            block_bloom,
         }
     }
 }

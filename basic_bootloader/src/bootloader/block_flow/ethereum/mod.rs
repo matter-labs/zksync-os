@@ -39,13 +39,14 @@ mod post_init_op;
 mod post_tx_op_proving;
 mod post_tx_op_sequencing;
 mod pre_tx_loop;
-mod rlp_encodings;
+pub(crate) mod rlp_encodings;
 mod utils;
 pub(crate) mod withdrawals;
 
 pub use self::block_data::*;
 pub use self::block_header::PectraForkHeader;
 pub use self::metadata_op::EthereumBlockMetadata;
+pub(crate) use self::rlp_encodings::{CellEnvelope, ReceiptEncoder};
 
 pub use super::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
 pub use eip_4788_historical_beacon_root::BEACON_ROOTS_ADDRESS;

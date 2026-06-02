@@ -70,6 +70,9 @@ fn write_pubdata<
 fn form_block_header<S: EthereumLikeTypes>(
     system: &System<S>,
     tx_rolling_hash: Bytes32,
+    transactions_root: Bytes32,
+    receipts_root: Bytes32,
+    logs_bloom: [u8; 256],
     block_gas_used: u64,
 ) -> Result<BlockHeader, BootloaderSubsystemError> {
     let block_number = system.get_block_number();
@@ -88,7 +91,7 @@ fn form_block_header<S: EthereumLikeTypes>(
         .try_into()
         .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
 
-    Ok(BlockHeader::new(
+    let mut header = BlockHeader::new(
         previous_block_hash,
         beneficiary,
         tx_rolling_hash,
@@ -98,7 +101,14 @@ fn form_block_header<S: EthereumLikeTypes>(
         timestamp,
         consensus_random,
         base_fee_per_gas,
-    ))
+    );
+    // Overwrite the placeholder fields set inside `BlockHeader::new`.
+    // `transactions_root` defaulted to the tx rolling hash, `receipts_root`
+    // defaulted to zero, `logs_bloom` defaulted to zero.
+    header.transactions_root = transactions_root;
+    header.receipts_root = receipts_root;
+    header.logs_bloom = logs_bloom;
+    Ok(header)
 }
 
 /// Calculates a rolling hash over a sequence of interop roots.
