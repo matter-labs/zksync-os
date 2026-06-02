@@ -213,15 +213,9 @@ where
                                     };
 
                                 block_data
-                                    .transaction_hashes_tree
-                                    .append(tx_processing_result.tx_hash)
-                                    .map_err(|_| {
-                                        internal_error!("transactions root tree is full")
-                                    })?;
-                                block_data
-                                    .receipts_tree
-                                    .append(receipt_hash)
-                                    .map_err(|_| internal_error!("receipts root tree is full"))?;
+                                    .transaction_hashes
+                                    .push(tx_processing_result.tx_hash);
+                                block_data.receipt_hashes.push(receipt_hash);
                                 if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
