@@ -251,7 +251,7 @@ impl<
     where
         StorageAddress<EthereumIOTypesConfig>: From<K>,
     {
-        let (mut addr_data, _is_warm_read) = Self::materialize_element(
+        let (mut addr_data, is_warm_read) = Self::materialize_element(
             &mut self.cache,
             &mut self.resources_policy,
             self.current_tx_id,
@@ -265,10 +265,11 @@ impl<
         let val_current = addr_data.current().value();
         let is_new_slot = addr_data.element_properties().is_new_element();
 
-        // Only discount write extra if this slot was already WRITTEN in this tx
-        // (cold write extra already paid). A prior SLOAD warms the access but
-        // doesn't pay for write paths.
-        let is_warm_write =
+        // Two separate warmness flags:
+        // - is_warm_access: EIP-2929 access warmness (any prior SLOAD or SSTORE) — for ergs
+        // - is_cold_write_charged: cold write extra already paid this tx — for native
+        let is_warm_access = is_warm_read.0;
+        let is_cold_write_charged =
             addr_data.current().metadata().write_extra_charged_in_tx == Some(self.current_tx_id);
 
         self.resources_policy.charge_storage_write_extra(
@@ -277,7 +278,8 @@ impl<
             val_current,
             new_value,
             resources,
-            is_warm_write,
+            is_warm_access,
+            is_cold_write_charged,
             is_new_slot,
         )?;
 
@@ -300,7 +302,7 @@ impl<
         addr_data.update(|cache_record| {
             cache_record.update(|x, m| {
                 *x = new_value.clone();
-                if !is_warm_write {
+                if !is_cold_write_charged {
                     m.write_extra_charged_in_tx = Some(current_tx_id);
                 }
                 Ok(())
