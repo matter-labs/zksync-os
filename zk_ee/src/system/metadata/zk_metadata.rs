@@ -135,15 +135,15 @@ impl BasicMetadata<EthereumIOTypesConfig> for ZkMetadata {
 
 impl ZkSpecificMetadata for ZkMetadata {
     fn get_pubdata_price(&self) -> U256 {
-        self.block_level.pubdata_price
+        self.block_level.get_pubdata_price()
     }
 
     fn native_price(&self) -> U256 {
-        self.block_level.native_price
+        self.block_level.native_price()
     }
 
     fn get_pubdata_limit(&self) -> u64 {
-        self.block_level.pubdata_limit
+        self.block_level.get_pubdata_limit()
     }
 }
 
@@ -297,6 +297,20 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
 
     fn blob_base_fee_per_gas(&self) -> U256 {
         self.blob_fee
+    }
+}
+
+impl ZkSpecificMetadata for BlockMetadataFromOracle {
+    fn get_pubdata_price(&self) -> U256 {
+        self.pubdata_price
+    }
+
+    fn native_price(&self) -> U256 {
+        self.native_price
+    }
+
+    fn get_pubdata_limit(&self) -> u64 {
+        self.pubdata_limit
     }
 }
 
