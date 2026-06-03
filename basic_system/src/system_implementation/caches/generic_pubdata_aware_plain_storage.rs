@@ -302,7 +302,7 @@ impl<
         addr_data.update(|cache_record| {
             cache_record.update(|x, m| {
                 *x = new_value.clone();
-                if !is_cold_write_charged {
+                if !is_cold_write_charged && new_value != &old_value {
                     m.write_extra_charged_in_tx = Some(current_tx_id);
                 }
                 Ok(())
