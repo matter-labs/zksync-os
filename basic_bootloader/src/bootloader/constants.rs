@@ -200,8 +200,8 @@ const ACCOUNT_PERSIST_NEW_NATIVE_COST: u64 =
 //
 // Cold path: first call in a tx, contract storage is cold.
 // Warm path: subsequent calls in the same tx, contract storage is warm.
-const L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST: u64 = 2_043_860;
-const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
+pub const L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST: u64 = 2_043_860;
+pub const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
 
 pub const L1_TX_INTRINSIC_NATIVE_COST: u64 =
     // Pre-budgeted (not charged against inf_resources, but reserved upfront):
