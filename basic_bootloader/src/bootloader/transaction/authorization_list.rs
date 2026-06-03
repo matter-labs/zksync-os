@@ -219,14 +219,15 @@ fn compute_auth_message_signed_hash<S: EthereumLikeTypes>(
     let list_payload_len = rlp::estimate_number_encoding_len(&auth_chain_id.to_be_bytes::<32>())
         + rlp::ADDRESS_ENCODING_LEN
         + rlp::estimate_number_encoding_len(&auth_nonce.to_be_bytes());
-    let total_list_len = rlp::estimate_length_encoding_len(list_payload_len) + list_payload_len;
+    let total_list_len =
+        rlp::estimate_list_length_encoding_len(list_payload_len) + list_payload_len;
     let encoding_len = 1 + total_list_len;
     crate::bootloader::transaction::charge_keccak(encoding_len, resources)?;
     hasher.update([EIP7702_MAGIC]);
-    rlp::apply_list_length_encoding_to_hash(list_payload_len, hasher);
-    rlp::apply_number_encoding_to_hash(&auth_chain_id.to_be_bytes::<32>(), hasher);
-    rlp::apply_bytes_encoding_to_hash(delegation_address, hasher);
-    rlp::apply_number_encoding_to_hash(&auth_nonce.to_be_bytes(), hasher);
+    rlp::apply_list_length_encoding(list_payload_len, hasher);
+    rlp::apply_number_encoding(&auth_chain_id.to_be_bytes::<32>(), hasher);
+    rlp::apply_bytes_encoding(delegation_address, hasher);
+    rlp::apply_number_encoding(&auth_nonce.to_be_bytes(), hasher);
 
     Ok(hasher.finalize_reset())
 }

@@ -139,23 +139,23 @@ impl BlockHeader {
         total_list_len += rlp::estimate_number_encoding_len(&self.base_fee_per_gas.to_be_bytes());
 
         let mut hasher = Keccak256::new();
-        rlp::apply_list_length_encoding_to_hash(total_list_len, &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.parent_hash.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.ommers_hash.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(&self.beneficiary.to_be_bytes::<20>(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.state_root.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.transactions_root.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.receipts_root.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(&self.logs_bloom, &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.difficulty.to_be_bytes::<32>(), &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.number.to_be_bytes(), &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.gas_limit.to_be_bytes(), &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.gas_used.to_be_bytes(), &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.timestamp.to_be_bytes(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.extra_data.as_slice(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(self.mix_hash.as_u8_ref(), &mut hasher);
-        rlp::apply_bytes_encoding_to_hash(&self.nonce, &mut hasher);
-        rlp::apply_number_encoding_to_hash(&self.base_fee_per_gas.to_be_bytes(), &mut hasher);
+        rlp::apply_list_length_encoding(total_list_len, &mut hasher);
+        rlp::apply_bytes_encoding(self.parent_hash.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(self.ommers_hash.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(&self.beneficiary.to_be_bytes::<20>(), &mut hasher);
+        rlp::apply_bytes_encoding(self.state_root.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(self.transactions_root.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(self.receipts_root.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(&self.logs_bloom, &mut hasher);
+        rlp::apply_number_encoding(&self.difficulty.to_be_bytes::<32>(), &mut hasher);
+        rlp::apply_number_encoding(&self.number.to_be_bytes(), &mut hasher);
+        rlp::apply_number_encoding(&self.gas_limit.to_be_bytes(), &mut hasher);
+        rlp::apply_number_encoding(&self.gas_used.to_be_bytes(), &mut hasher);
+        rlp::apply_number_encoding(&self.timestamp.to_be_bytes(), &mut hasher);
+        rlp::apply_bytes_encoding(self.extra_data.as_slice(), &mut hasher);
+        rlp::apply_bytes_encoding(self.mix_hash.as_u8_ref(), &mut hasher);
+        rlp::apply_bytes_encoding(&self.nonce, &mut hasher);
+        rlp::apply_number_encoding(&self.base_fee_per_gas.to_be_bytes(), &mut hasher);
 
         hasher.finalize()
     }
