@@ -50,7 +50,7 @@ use self::{
     metadata::basic_metadata::{
         BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
     },
-    metadata::chain_config::{ChainConfig, ChainConfigMetadata, ConfigurableLimitU32},
+    metadata::chain_config::{ChainConfig, ChainConfigMetadata},
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -169,12 +169,12 @@ impl<S: SystemTypes> System<S> {
         self.metadata.chain_config()
     }
 
-    pub fn get_max_contract_size(&self) -> ConfigurableLimitU32 {
+    pub fn get_max_contract_size(&self) -> u32 {
         self.metadata.max_contract_size()
     }
 
     pub fn is_contract_size_allowed(&self, size: u32) -> bool {
-        self.get_max_contract_size().is_satisfied_by(size)
+        size <= self.get_max_contract_size()
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

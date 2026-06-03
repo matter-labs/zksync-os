@@ -81,10 +81,8 @@ Where chain state commitments are the same `blake2s` hashes of the state before 
 And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `used_chain_id`
 - `chain_config.fri_proof_verification_enabled`
-- `chain_config.max_contract_size.enabled`
-- `chain_config.max_contract_size.value`
-- `chain_config.max_tx_gas_limit.enabled`
-- `chain_config.max_tx_gas_limit.value`
+- `chain_config.max_contract_size`
+- `chain_config.max_tx_gas_limit`
 - `first_block_timestamp`
 - `last_block_timestamp`
 - `da_commitment_scheme`

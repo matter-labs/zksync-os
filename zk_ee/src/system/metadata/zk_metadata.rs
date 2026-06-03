@@ -82,12 +82,7 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for ZkMetadata {
         // EIP-7825: the per-tx gas cap is sourced from the static chain config
         // (committed into public input), not a compile-time feature flag.
         let block_gas_limit = self.block_level.block_gas_limit();
-        let max_tx_gas_limit = self.chain_config.max_tx_gas_limit();
-        if max_tx_gas_limit.is_enabled() {
-            core::cmp::min(block_gas_limit, max_tx_gas_limit.value())
-        } else {
-            block_gas_limit
-        }
+        core::cmp::min(block_gas_limit, self.chain_config.max_tx_gas_limit())
     }
 
     fn eip1559_basefee(&self) -> U256 {
