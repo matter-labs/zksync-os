@@ -370,6 +370,29 @@ where
         )?;
     }
 
+    // Verify that the L1 intrinsic native budget covers the actual
+    // post-execution inf_resources consumption.
+    #[cfg(feature = "verify_intrinsic_native")]
+    {
+        let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
+        let inf_remaining = inf_resources.native().as_u64();
+        let actual_used = inf_initial.saturating_sub(inf_remaining);
+        let formula = intrinsic_computational_native_charged;
+        system_log!(
+            system,
+            "L1 intrinsic native verification: formula={}, actually_used={}\n",
+            formula,
+            actual_used
+        );
+        assert!(
+            actual_used <= formula,
+            "L1 intrinsic computational native formula ({}) is not an upper bound \
+             on actual post-execution consumption ({})",
+            formula,
+            actual_used
+        );
+    }
+
     // Add back the intrinsic native charged in get_resources_for_tx,
     // as initial_resources doesn't include them.
     let computational_native_used = resources_before_refund
