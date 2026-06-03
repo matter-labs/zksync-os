@@ -92,7 +92,7 @@ And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `l2_logs_tree_root`
 - `upgrade_tx_hash`
 
-On the ZK path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. The legacy Ethereum metadata path still follows the compile-time `eip-7825` feature for the single-transaction gas cap.
+On the ZK metadata path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. `max_contract_size` is bounded to 20x the default EIP-170 deployed-code limit, and the EIP-3860 initcode-size limit is derived as `2 * max_contract_size`. For the single-transaction gas cap, the separate Ethereum metadata path is unchanged and still follows the compile-time `eip-7825` feature.
 
 This includes almost the same data as block(s) output, with 2 main differences:
 - `l2_logs_tree_root` instead `l2_to_l1_logs_hashes_blake2s_hash`, we'll build tree during batch processing.

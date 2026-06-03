@@ -5,7 +5,9 @@ use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
 use rig::ruint::aliases::U256;
-use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
+use rig::zk_ee::system::metadata::chain_config::{
+    ChainConfig, DEFAULT_MAX_CONTRACT_SIZE, DEFAULT_MAX_TX_GAS_LIMIT,
+};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{assert_tx_rejected, assert_tx_success};
@@ -62,6 +64,17 @@ fn chain_config_with_max_tx_gas_limit(max_tx_gas_limit: u64) -> ChainConfig {
         default.max_contract_size(),
         max_tx_gas_limit,
     )
+    .unwrap()
+}
+
+fn chain_config_with_max_contract_size(max_contract_size: u32) -> ChainConfig {
+    let default = ChainConfig::default();
+    ChainConfig::new(
+        default.fri_proof_verification_enabled(),
+        max_contract_size,
+        default.max_tx_gas_limit(),
+    )
+    .unwrap()
 }
 
 fn block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
@@ -197,6 +210,42 @@ fn simulation_skips_max_tx_gas_limit_admission_check() {
     );
 
     let output = tester.simulate_block(vec![tx]);
+    assert_tx_success!(output, 0);
+}
+
+#[test]
+fn default_initcode_size_limit_rejects_above_boundary() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let initcode = vec![0; (DEFAULT_MAX_CONTRACT_SIZE * 2 + 1) as usize];
+
+    let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
+    let tx = create_tx(signer, 1_000_000, initcode);
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(
+        matches!(
+            &output.tx_results[0],
+            Err(InvalidTransaction::CreateInitCodeSizeLimit)
+        ),
+        "expected CreateInitCodeSizeLimit, got {:?}",
+        output.tx_results[0]
+    );
+}
+
+#[test]
+fn custom_max_contract_size_raises_initcode_size_limit() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let initcode = vec![0; (DEFAULT_MAX_CONTRACT_SIZE * 2 + 1) as usize];
+    let chain_config = chain_config_with_max_contract_size(DEFAULT_MAX_CONTRACT_SIZE + 1);
+
+    let mut tester = new_tester()
+        .with_chain_config(chain_config)
+        .with_balance(sender, U256::from(DEFAULT_BALANCE));
+    let tx = create_tx(signer, 1_000_000, initcode);
+
+    let output = tester.execute_block(vec![tx]);
     assert_tx_success!(output, 0);
 }
 

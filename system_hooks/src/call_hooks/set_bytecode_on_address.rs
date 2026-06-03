@@ -162,7 +162,7 @@ where
 
     // Although this can be called as a part of protocol upgrade,
     // we are checking the next invariants, just in case
-    if !system.is_contract_size_allowed(bytecode_length) {
+    if !system.is_contract_size_allowed(bytecode_length as usize) {
         return Ok(Err(
             "Set bytecode on address failure: called with invalid bytecode(length exceeds chain-configured limit)",
         ));

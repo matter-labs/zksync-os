@@ -208,7 +208,8 @@ mod tests {
             false,
             DEFAULT_MAX_CONTRACT_SIZE + 1,
             DEFAULT_MAX_TX_GAS_LIMIT,
-        );
+        )
+        .unwrap();
 
         assert_ne!(default_hash, sample_batch_output(changed).hash());
     }
@@ -220,7 +221,8 @@ mod tests {
             false,
             DEFAULT_MAX_CONTRACT_SIZE,
             DEFAULT_MAX_TX_GAS_LIMIT * 2,
-        );
+        )
+        .unwrap();
 
         assert_ne!(default_hash, sample_batch_output(changed).hash());
     }

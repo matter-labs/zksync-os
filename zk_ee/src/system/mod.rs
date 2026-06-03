@@ -173,8 +173,16 @@ impl<S: SystemTypes> System<S> {
         self.metadata.max_contract_size()
     }
 
-    pub fn is_contract_size_allowed(&self, size: u32) -> bool {
-        size <= self.get_max_contract_size()
+    pub fn is_contract_size_allowed(&self, size: usize) -> bool {
+        size <= self.get_max_contract_size() as usize
+    }
+
+    pub fn get_max_initcode_size(&self) -> u32 {
+        self.metadata.max_initcode_size()
+    }
+
+    pub fn is_initcode_size_allowed(&self, size: usize) -> bool {
+        size <= self.get_max_initcode_size() as usize
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

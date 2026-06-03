@@ -16,6 +16,8 @@ impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>
         _allocator: S::Allocator,
         static_config: &crate::bootloader::config::BootloaderStaticConfig,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
+        static_config.chain_config.validate()?;
+
         let block_level_metadata: BlockMetadataFromOracle =
             oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
 

@@ -8,7 +8,7 @@ use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
+use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use tx_level_metadata::EthereumTransactionMetadata;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -29,10 +29,11 @@ fn create_resources_for_tx<S: EthereumLikeTypes>(
     is_deployment: bool,
     calldata_len: u64,
     calldata_tokens: u64,
+    max_initcode_size: u64,
 ) -> Result<ResourcesForEthereumTx<S>, TxError> {
     let mut intrinsic_overhead = TX_INTRINSIC_GAS;
     if is_deployment {
-        if calldata_len > MAX_INITCODE_SIZE as u64 {
+        if calldata_len > max_initcode_size {
             return Err(TxError::Validation(CreateInitCodeSizeLimit));
         }
         intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
@@ -184,6 +185,7 @@ where
         is_deployment,
         calldata.len() as u64,
         calldata_tokens,
+        system.get_max_initcode_size() as u64,
     )?;
 
     system_log!(
