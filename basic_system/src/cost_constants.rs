@@ -59,26 +59,26 @@ pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_00
 
 // BLS12-381 native costs (EIP-2537).
 // Measured via RISC-V cycle markers with non-trivial inputs.
-pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(193_000, 35_700, 0);
-pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(249_000, 39_000, 0);
+pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(194_000, 35_800, 0);
+pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(251_000, 39_100, 0);
 // MSM: worst case per point (single-point MSM with full 256-bit scalar).
 // Batching amortizes in practice but we charge worst case per point;
 // the EVM gas discount table handles batching.
 pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 =
-    native_with_delegations!(2_312_000, 279_900, 0);
+    native_with_delegations!(2_313_000, 280_000, 0);
 pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
-    native_with_delegations!(9_392_000, 784_000, 0);
+    native_with_delegations!(9_393_000, 784_100, 0);
 // Pairing: measured with non-trivial G1/G2 generator inputs (1, 2, 4 pairs).
 // Linear model fits with <0.01% error on cross-check.
 pub const BLS12_381_PAIRING_NATIVE_COST: u64 = native_with_delegations!(12_140_000, 835_600, 0);
 pub const BLS12_381_PAIRING_PER_PAIR_NATIVE_COST: u64 =
     native_with_delegations!(10_700_000, 830_500, 0);
 // Mapping: allocation-free isogeny with Montgomery's trick for batch inversion.
-pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_469_000, 246_300, 0);
+pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_478_000, 246_300, 0);
 pub const BLS12_381_MAP_FP2_TO_G2_NATIVE_COST: u64 =
-    native_with_delegations!(4_325_000, 541_600, 0);
+    native_with_delegations!(4_343_000, 541_700, 0);
 
 // Blake2f native costs (EIP-152).
 // Measured via RISC-V cycle markers. No delegations — pure RISC-V computation.
-pub const BLAKE2F_BASE_NATIVE_COST: u64 = 1_577;
-pub const BLAKE2F_PER_ROUND_NATIVE_COST: u64 = 672;
+pub const BLAKE2F_BASE_NATIVE_COST: u64 = 1_584;
+pub const BLAKE2F_PER_ROUND_NATIVE_COST: u64 = 673;
