@@ -90,7 +90,7 @@ fn run_base_system() {
             nonce: 0,
             max_fee_per_gas: 1000,
             max_priority_fee_per_gas: 1000,
-            gas_limit: 30_000,
+            gas_limit: 21_000,
             to: TxKind::Call(eoa_to),
             value: alloy::primitives::U256::from(100),
             access_list: Default::default(),
