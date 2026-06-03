@@ -370,8 +370,11 @@ where
         )?;
     }
 
-    // Verify that the L1 intrinsic native budget covers the actual
-    // post-execution inf_resources consumption.
+    // Verify that the L1 intrinsic native formula covers the actual
+    // post-execution inf_resources consumption. The formula also includes
+    // pre-budgeted costs (event log, rolling hash keccak) that are not
+    // charged to inf_resources, giving a small surplus (~4%). This matches
+    // the L2 verify_intrinsic_native pattern.
     #[cfg(feature = "verify_intrinsic_native")]
     {
         let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
