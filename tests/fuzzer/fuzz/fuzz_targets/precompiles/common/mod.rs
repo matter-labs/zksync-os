@@ -16,7 +16,10 @@ use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 ///
 /// The second call is just there to check consistency between forward and proof runs.
 pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
-    let gas = 1 << 27;
+    // Keep at or below the default ChainConfig per-tx gas cap (EIP-7825,
+    // `max_tx_gas_limit = 1 << 24`); a higher limit is rejected during
+    // validation. Ample for a single precompile call plus the forwarder.
+    let gas = 1 << 24;
     let mut chain = rig::Chain::empty(None);
     let wallet = chain.random_signer();
     let target = Address::from_slice(hex::decode(id).unwrap().as_slice());
