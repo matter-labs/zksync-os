@@ -195,13 +195,14 @@ const ACCOUNT_PERSIST_NEW_NATIVE_COST: u64 =
 // Covers intrinsic L1 tx work not charged as tx-body computation.
 //
 // Hardcoded component: L2AssetTracker contract execution native cost.
-// Measured directly by instrumenting notify_l2_asset_tracker and confirmed
-// across multiple tests (run_base_system, test_asset_tracker_called_on_deposit).
-//
 // Cold path: first call in a tx, contract storage is cold.
 // Warm path: subsequent calls in the same tx, contract storage is warm.
-pub const L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST: u64 = 2_043_860;
-pub const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
+//
+// To re-measure: run an L1 tx test without no_print and grep for
+// "L1 notify_l2_asset_tracker native" in the output. The first value
+// per tx is cold, subsequent values are warm.
+const L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST: u64 = 2_043_860;
+const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
 
 pub const L1_TX_INTRINSIC_NATIVE_COST: u64 =
     // Pre-budgeted (not charged against inf_resources, but reserved upfront):

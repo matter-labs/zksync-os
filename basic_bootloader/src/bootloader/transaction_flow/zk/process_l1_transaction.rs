@@ -871,6 +871,7 @@ where
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {
+        let notify_native_before = resources.native().as_u64();
         // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
         // selector 0x03117c8c + abi-encoded (fromChainId, amount)
         let mut calldata = [0u8; 68];
@@ -900,6 +901,12 @@ where
             *inf_ergs = resources_returned;
             Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
         })?;
+
+        let notify_native_used = notify_native_before - resources.native().as_u64();
+        system_log!(
+            system,
+            "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+        );
 
         if failed {
             system_log!(
