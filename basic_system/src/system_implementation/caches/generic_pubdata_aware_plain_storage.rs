@@ -263,7 +263,15 @@ impl<
 
         let val_at_tx_start = addr_data.committed().value();
         let val_current = addr_data.current().value();
-        let is_new_slot = addr_data.element_properties().is_new_element();
+        // Use NEW write-extra only for the first cold write to a truly new slot.
+        // Once any tx in the block has paid the insertion cost, subsequent txs
+        // pay EXISTING — the tree insertion is a one-time cost per block.
+        let is_new_slot = addr_data.element_properties().is_new_element()
+            && addr_data
+                .current()
+                .metadata()
+                .write_extra_charged_in_tx
+                .is_none();
 
         // Two separate warmness flags:
         // - is_warm_access: EIP-2929 access warmness (any prior SLOAD or SSTORE) — for ergs
