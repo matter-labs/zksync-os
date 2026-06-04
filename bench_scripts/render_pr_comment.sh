@@ -246,10 +246,10 @@ if [ -d head_fri_precompile_samples ] && [ -d head_fri_precompile_cycles ]; then
   join_opcode_args="$join_opcode_args --opcode-samples-dir /dev/null"
 fi
 # Test-crate run dumps opcode samples to a flat dir; per-block runs dump
-# under opcode_samples/head_${blk}. Pass the flat dir as the first
-# --opcode-samples-dir to align with the first join pair.
+# under opcode_samples/head_${blk}. Prepend (not overwrite) so the FRI
+# /dev/null entry above is preserved.
 if [ -d head_precompile_samples ]; then
-  join_opcode_args="--opcode-samples-dir opcode_samples"
+  join_opcode_args="--opcode-samples-dir opcode_samples $join_opcode_args"
 fi
 for dir in tests/instances/eth_runner/blocks/*; do
   blk=$(basename "$dir")
