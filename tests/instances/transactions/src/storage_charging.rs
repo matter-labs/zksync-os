@@ -493,12 +493,280 @@ fn test_sload_then_sstore_charges_cold_write_extra() {
     );
     let native_b = result_b.computational_native_used;
 
-    // SLOAD→SSTORE should cost at least as much native as standalone SSTORE.
+    // SLOAD→SSTORE should cost strictly more native than standalone SSTORE.
     // The SLOAD adds a warm read cost but the SSTORE still pays cold write extra.
     // If the SLOAD incorrectly discounted the write, native_a would be less than native_b.
     assert!(
-        native_a >= native_b,
-        "SLOAD→SSTORE (native={native_a}) should cost at least as much as \
-         standalone SSTORE (native={native_b}) — SLOAD must not discount write extra"
+        native_a > native_b,
+        "SLOAD→SSTORE (native={native_a}) should cost strictly more than \
+         standalone SSTORE (native={native_b}) — SLOAD adds warm read cost"
+    );
+}
+
+/// A no-op SSTORE (writing the same value) must NOT mark the slot as
+/// write-warm. A subsequent real SSTORE in the same tx must still pay
+/// cold write extra.
+#[test]
+fn test_noop_sstore_does_not_discount_next_write() {
+    let addr = address!("0000000000000000000000000000000000080001");
+
+    // Contract: SSTORE(0, 0) [no-op, slot already 0], then SSTORE(0, 42) [real write].
+    let bytecode_noop_then_real = BytecodeBuilder::new()
+        .push_u8(0)
+        .push_u8(0)
+        .sstore() // SSTORE(0, 0) — no-op
+        .push_u8(42)
+        .push_u8(0)
+        .sstore() // SSTORE(0, 42) — real write, must pay cold write extra
+        .return_empty()
+        .finish();
+
+    // Contract: single SSTORE(0, 42) — baseline cold write.
+    let bytecode_single_write = BytecodeBuilder::new()
+        .push_u8(42)
+        .push_u8(0)
+        .sstore()
+        .return_empty()
+        .finish();
+
+    let wallet_a = testing_signer(0);
+    let wallet_b = testing_signer(1);
+    let block_context = storage_test_block_context();
+
+    let mut tester_a = TestingFramework::new()
+        .with_evm_contract(addr, &bytecode_noop_then_real)
+        .with_balance(wallet_a.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context.clone());
+
+    let tx_a = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_a.clone())
+    };
+    let result_a = tester_a.execute_block(vec![tx_a]).tx_results[0]
+        .as_ref()
+        .expect("should process")
+        .clone();
+    assert!(result_a.is_success(), "no-op+real should succeed");
+
+    let addr_b = address!("0000000000000000000000000000000000080002");
+    let mut tester_b = TestingFramework::new()
+        .with_evm_contract(addr_b, &bytecode_single_write)
+        .with_balance(wallet_b.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context);
+
+    let tx_b = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr_b),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_b.clone())
+    };
+    let result_b = tester_b.execute_block(vec![tx_b]).tx_results[0]
+        .as_ref()
+        .expect("should process")
+        .clone();
+    assert!(result_b.is_success(), "single write should succeed");
+
+    // The no-op SSTORE should not have discounted the real write.
+    // Both should pay cold write extra, so native_a >= native_b.
+    // native_a is slightly more because of the extra SSTORE opcode overhead.
+    assert!(
+        result_a.computational_native_used >= result_b.computational_native_used,
+        "No-op SSTORE + real SSTORE (native={}) should cost at least as much as \
+         single SSTORE (native={}) — no-op must not discount the real write",
+        result_a.computational_native_used,
+        result_b.computational_native_used
+    );
+}
+
+/// Writing V0→V1→V0 (round-trip) in one tx: the second write should pay
+/// warm write extra (cold was already charged by the first write).
+#[test]
+fn test_roundtrip_sstore_second_write_is_warm() {
+    let addr_roundtrip = address!("0000000000000000000000000000000000090001");
+    let addr_two_cold = address!("0000000000000000000000000000000000090002");
+
+    // Contract A: SSTORE(0, 1) then SSTORE(0, 0) — round-trip, second write warm.
+    let bytecode_roundtrip = BytecodeBuilder::new()
+        .push_u8(1)
+        .push_u8(0)
+        .sstore()
+        .push_u8(0)
+        .push_u8(0)
+        .sstore()
+        .return_empty()
+        .finish();
+
+    // Contract B: SSTORE(0, 1) then SSTORE(1, 1) — two different slots, both cold.
+    let bytecode_two_cold = BytecodeBuilder::new()
+        .push_u8(1)
+        .push_u8(0)
+        .sstore()
+        .push_u8(1)
+        .push_u8(1)
+        .sstore()
+        .return_empty()
+        .finish();
+
+    let wallet_a = testing_signer(0);
+    let wallet_b = testing_signer(1);
+    let block_context = storage_test_block_context();
+
+    let mut tester_a = TestingFramework::new()
+        .with_evm_contract(addr_roundtrip, &bytecode_roundtrip)
+        .with_balance(wallet_a.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context.clone());
+    let tx_a = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr_roundtrip),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_a.clone())
+    };
+    let result_a = tester_a.execute_block(vec![tx_a]).tx_results[0]
+        .as_ref()
+        .expect("should process")
+        .clone();
+    assert!(result_a.is_success(), "round-trip should succeed");
+
+    let mut tester_b = TestingFramework::new()
+        .with_evm_contract(addr_two_cold, &bytecode_two_cold)
+        .with_balance(wallet_b.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context);
+    let tx_b = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr_two_cold),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet_b.clone())
+    };
+    let result_b = tester_b.execute_block(vec![tx_b]).tx_results[0]
+        .as_ref()
+        .expect("should process")
+        .clone();
+    assert!(result_b.is_success(), "two cold should succeed");
+
+    // Round-trip (1 cold + 1 warm write) should be cheaper than two cold writes.
+    let expected_min_savings =
+        COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST - WARM_STORAGE_WRITE_EXTRA_NATIVE_COST;
+    assert!(
+        result_a.computational_native_used < result_b.computational_native_used,
+        "Round-trip (native={}) should be cheaper than two cold writes (native={})",
+        result_a.computational_native_used,
+        result_b.computational_native_used
+    );
+    let savings = result_b.computational_native_used - result_a.computational_native_used;
+    assert!(
+        savings >= expected_min_savings,
+        "Expected at least {expected_min_savings} savings from warm second write, \
+         but only saved {savings}"
+    );
+}
+
+/// Same slot written in two different txs of one block: the second tx must
+/// pay cold write extra again (write_extra_charged_in_tx resets per-tx).
+#[test]
+fn test_cross_tx_write_charges_cold_again() {
+    let addr = address!("00000000000000000000000000000000000a0001");
+    let wallet = testing_signer(0);
+    let block_context = storage_test_block_context();
+
+    // Contract: SSTORE(0, 1).
+    let bytecode = BytecodeBuilder::new()
+        .push_u8(1)
+        .push_u8(0)
+        .sstore()
+        .return_empty()
+        .finish();
+
+    // Pre-populate slot 0 so both txs write to an EXISTING slot
+    // (avoids new-vs-existing cost difference between tx1 and tx2).
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(addr, &bytecode)
+        .with_storage_slot(addr, U256::ZERO, B256::from(U256::from(99)))
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(block_context);
+
+    let tx1 = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+    let tx2 = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 1,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+
+    let output = tester.execute_block(vec![tx1, tx2]);
+    let result1 = output.tx_results[0].as_ref().expect("tx1 ok").clone();
+    let result2 = output.tx_results[1].as_ref().expect("tx2 ok").clone();
+    assert!(result1.is_success(), "tx1 should succeed");
+    assert!(result2.is_success(), "tx2 should succeed");
+
+    // Both txs write to the same slot. The second tx must NOT get the warm
+    // discount from the first tx's write — write_extra_charged_in_tx resets
+    // per-tx. Both should have similar native costs (within 10% tolerance
+    // for minor differences like nonce/keccak).
+    let native1 = result1.computational_native_used;
+    let native2 = result2.computational_native_used;
+    let ratio = if native1 > native2 {
+        native1 as f64 / native2 as f64
+    } else {
+        native2 as f64 / native1 as f64
+    };
+    assert!(
+        ratio < 1.1,
+        "Tx1 (native={native1}) and tx2 (native={native2}) should have similar \
+         costs — write_extra_charged_in_tx must reset per-tx (ratio={ratio:.3})"
     );
 }
