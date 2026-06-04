@@ -186,9 +186,14 @@ impl<
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
+                let mut props =
+                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true);
+                if data_from_oracle.is_new_storage_slot {
+                    props.cold_new_read_charged = true;
+                }
                 Ok((
                     CacheRecord::new(data_from_oracle.initial_value.into()),
-                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true),
+                    props,
                 ))
             })
             .and_then(|mut x| {

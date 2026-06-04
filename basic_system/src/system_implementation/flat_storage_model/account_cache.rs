@@ -297,10 +297,11 @@ impl<
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                Ok((
-                    CacheRecord::new(acc_data),
-                    CacheElementProperties::new(empty_account, observe),
-                ))
+                let mut props = CacheElementProperties::new(empty_account, observe);
+                if empty_account {
+                    props.cold_new_read_charged = true;
+                }
+                Ok((CacheRecord::new(acc_data), props))
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed

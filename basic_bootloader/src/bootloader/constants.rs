@@ -86,7 +86,7 @@ pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
 // computational native consts
 /// Constant part of l2 tx intrinsic computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
-    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    EXISTING_COLD_ACCOUNT_READ_COST + // sender account read (sender exists — must have balance to pay gas; if funded in same block, prior tx already paid NEW read)
     ACCOUNT_UPDATE_COST + // nonce update
     keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
@@ -155,6 +155,11 @@ pub const PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
 pub const NEW_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
     + WARM_STORAGE_READ_NATIVE_COST
     + COLD_NEW_STORAGE_READ_NATIVE_COST;
+
+/// Account read native computational cost - cold, existing (present in the tree).
+const EXISTING_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_EXISTING_STORAGE_READ_NATIVE_COST;
 
 /// Account update native computational cost.
 pub const ACCOUNT_UPDATE_COST: u64 =
