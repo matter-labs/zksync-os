@@ -585,12 +585,13 @@ fn test_noop_sstore_does_not_discount_next_write() {
     assert!(result_b.is_success(), "single write should succeed");
 
     // The no-op SSTORE should not have discounted the real write.
-    // Both should pay cold write extra, so native_a >= native_b.
-    // native_a is slightly more because of the extra SSTORE opcode overhead.
+    // Both pay cold write extra. native_a is strictly more because the
+    // no-op SSTORE's materialize warms the slot, so the real SSTORE's
+    // materialize pays only a warm read (strictly positive cost).
     assert!(
-        result_a.computational_native_used >= result_b.computational_native_used,
-        "No-op SSTORE + real SSTORE (native={}) should cost at least as much as \
-         single SSTORE (native={}) — no-op must not discount the real write",
+        result_a.computational_native_used > result_b.computational_native_used,
+        "No-op SSTORE + real SSTORE (native={}) should cost strictly more than \
+         single SSTORE (native={}) — no-op adds warm read but must not discount write",
         result_a.computational_native_used,
         result_b.computational_native_used
     );
@@ -702,9 +703,12 @@ fn test_cross_tx_write_charges_cold_again() {
     let wallet = testing_signer(0);
     let block_context = storage_test_block_context();
 
-    // Contract: SSTORE(0, 1).
+    // Contract: SSTORE(0, CALLDATALOAD(0)) — writes first 32 bytes of
+    // calldata to slot 0. Lets us send different values per tx so neither
+    // write is a no-op.
     let bytecode = BytecodeBuilder::new()
-        .push_u8(1)
+        .push_u8(0)
+        .calldataload()
         .push_u8(0)
         .sstore()
         .return_empty()
@@ -718,6 +722,8 @@ fn test_cross_tx_write_charges_cold_again() {
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
         .with_block_context(block_context);
 
+    // tx1 writes value 1, tx2 writes value 2 — both are real writes
+    // (neither equals the previous value).
     let tx1 = {
         let tx = TxEip1559 {
             chain_id: 37u64,
@@ -727,7 +733,7 @@ fn test_cross_tx_write_charges_cold_again() {
             gas_limit: 200_000,
             to: TxKind::Call(addr),
             value: U256::ZERO,
-            input: Default::default(),
+            input: U256::from(1).to_be_bytes_vec().into(),
             access_list: Default::default(),
         };
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
@@ -741,7 +747,7 @@ fn test_cross_tx_write_charges_cold_again() {
             gas_limit: 200_000,
             to: TxKind::Call(addr),
             value: U256::ZERO,
-            input: Default::default(),
+            input: U256::from(2).to_be_bytes_vec().into(),
             access_list: Default::default(),
         };
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
@@ -753,20 +759,15 @@ fn test_cross_tx_write_charges_cold_again() {
     assert!(result1.is_success(), "tx1 should succeed");
     assert!(result2.is_success(), "tx2 should succeed");
 
-    // Both txs write to the same slot. The second tx must NOT get the warm
-    // discount from the first tx's write — write_extra_charged_in_tx resets
-    // per-tx. Both should have similar native costs (within 10% tolerance
-    // for minor differences like nonce/keccak).
+    // Both txs write different values to the same existing slot. The second
+    // tx must NOT get the warm discount from the first tx's write —
+    // write_extra_charged_in_tx resets per-tx. Both pay cold write extra,
+    // so costs should be equal.
     let native1 = result1.computational_native_used;
     let native2 = result2.computational_native_used;
-    let ratio = if native1 > native2 {
-        native1 as f64 / native2 as f64
-    } else {
-        native2 as f64 / native1 as f64
-    };
-    assert!(
-        ratio < 1.1,
-        "Tx1 (native={native1}) and tx2 (native={native2}) should have similar \
-         costs — write_extra_charged_in_tx must reset per-tx (ratio={ratio:.3})"
+    assert_eq!(
+        native1, native2,
+        "Tx1 and tx2 should have equal native costs — \
+         write_extra_charged_in_tx must reset per-tx"
     );
 }
