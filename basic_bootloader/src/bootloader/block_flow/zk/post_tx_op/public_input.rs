@@ -88,7 +88,6 @@ impl BatchOutput {
     ///
     /// Canonical chain config encoding, in order:
     /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
-    /// - `max_contract_size`: uint32 encoded as a 32-byte big-endian word.
     /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
@@ -97,7 +96,6 @@ impl BatchOutput {
             &mut hasher,
             self.chain_config.fri_proof_verification_enabled(),
         );
-        update_u32_word(&mut hasher, self.chain_config.max_contract_size());
         update_u64_word(&mut hasher, self.chain_config.max_tx_gas_limit());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
@@ -114,11 +112,6 @@ impl BatchOutput {
         hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
         hasher.finalize()
     }
-}
-
-fn update_u32_word(hasher: &mut Keccak256, value: u32) {
-    hasher.update([0u8; 28]);
-    hasher.update(value.to_be_bytes());
 }
 
 fn update_u64_word(hasher: &mut Keccak256, value: u64) {
@@ -159,9 +152,7 @@ impl BatchPublicInput {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
-    use zk_ee::system::metadata::chain_config::{
-        DEFAULT_MAX_CONTRACT_SIZE, DEFAULT_MAX_TX_GAS_LIMIT,
-    };
+    use zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
 
     fn sample_batch_output(chain_config: ChainConfig) -> BatchOutput {
         BatchOutput {
@@ -197,32 +188,14 @@ mod tests {
 
         assert_eq!(
             default_hash,
-            hex!("0fdb9cce2c8e62e69fdbfb0676dc1b396fd012c2dba216cf5eff13d27d1571c8")
+            hex!("35c09af3e028869e23d4e8fa6ec0dfcbc74b6f4ecc6bd7de61f835df9d97d072")
         );
-    }
-
-    #[test]
-    fn batch_output_hash_commits_to_max_contract_size() {
-        let default_hash = sample_batch_output(ChainConfig::default()).hash();
-        let changed = ChainConfig::new(
-            false,
-            DEFAULT_MAX_CONTRACT_SIZE + 1,
-            DEFAULT_MAX_TX_GAS_LIMIT,
-        )
-        .unwrap();
-
-        assert_ne!(default_hash, sample_batch_output(changed).hash());
     }
 
     #[test]
     fn batch_output_hash_commits_to_max_tx_gas_limit() {
         let default_hash = sample_batch_output(ChainConfig::default()).hash();
-        let changed = ChainConfig::new(
-            false,
-            DEFAULT_MAX_CONTRACT_SIZE,
-            DEFAULT_MAX_TX_GAS_LIMIT * 2,
-        )
-        .unwrap();
+        let changed = ChainConfig::new(false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
 
         assert_ne!(default_hash, sample_batch_output(changed).hash());
     }

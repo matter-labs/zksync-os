@@ -81,7 +81,6 @@ Where chain state commitments are the same `blake2s` hashes of the state before 
 And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `used_chain_id`
 - `chain_config.fri_proof_verification_enabled`
-- `chain_config.max_contract_size`
 - `chain_config.max_tx_gas_limit`
 - `first_block_timestamp`
 - `last_block_timestamp`
@@ -92,7 +91,7 @@ And `batch_output_hash` is `keccak256` of the following fields(concatenated):
 - `l2_logs_tree_root`
 - `upgrade_tx_hash`
 
-On the ZK metadata path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. `max_contract_size` is bounded to 20x the default EIP-170 deployed-code limit, and the EIP-3860 initcode-size limit is derived as `2 * max_contract_size`. For the single-transaction gas cap, the separate Ethereum metadata path is unchanged and still follows the compile-time `eip-7825` feature.
+On the ZK metadata path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. The EIP-170 deployed-code limit and the derived EIP-3860 initcode-size limit (`2 *` the deployed-code limit) are fixed compile-time constants and are not part of `ChainConfig`. For the single-transaction gas cap, the separate Ethereum metadata path is unchanged and still follows the compile-time `eip-7825` feature.
 
 This includes almost the same data as block(s) output, with 2 main differences:
 - `l2_logs_tree_root` instead `l2_to_l1_logs_hashes_blake2s_hash`, we'll build tree during batch processing.

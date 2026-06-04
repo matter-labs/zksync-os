@@ -59,22 +59,7 @@ fn create_tx(signer: PrivateKeySigner, gas_limit: u64, init_code: Vec<u8>) -> ZK
 
 fn chain_config_with_max_tx_gas_limit(max_tx_gas_limit: u64) -> ChainConfig {
     let default = ChainConfig::default();
-    ChainConfig::new(
-        default.fri_proof_verification_enabled(),
-        default.max_contract_size(),
-        max_tx_gas_limit,
-    )
-    .unwrap()
-}
-
-fn chain_config_with_max_contract_size(max_contract_size: u32) -> ChainConfig {
-    let default = ChainConfig::default();
-    ChainConfig::new(
-        default.fri_proof_verification_enabled(),
-        max_contract_size,
-        default.max_tx_gas_limit(),
-    )
-    .unwrap()
+    ChainConfig::new(default.fri_proof_verification_enabled(), max_tx_gas_limit).unwrap()
 }
 
 fn block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
@@ -231,22 +216,6 @@ fn default_initcode_size_limit_rejects_above_boundary() {
         "expected CreateInitCodeSizeLimit, got {:?}",
         output.tx_results[0]
     );
-}
-
-#[test]
-fn custom_max_contract_size_raises_initcode_size_limit() {
-    let signer = PrivateKeySigner::random();
-    let sender = signer.address();
-    let initcode = vec![0; (DEFAULT_MAX_CONTRACT_SIZE * 2 + 1) as usize];
-    let chain_config = chain_config_with_max_contract_size(DEFAULT_MAX_CONTRACT_SIZE + 1);
-
-    let mut tester = new_tester()
-        .with_chain_config(chain_config)
-        .with_balance(sender, U256::from(DEFAULT_BALANCE));
-    let tx = create_tx(signer, 1_000_000, initcode);
-
-    let output = tester.execute_block(vec![tx]);
-    assert_tx_success!(output, 0);
 }
 
 #[test]

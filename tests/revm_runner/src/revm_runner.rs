@@ -63,10 +63,6 @@ where
     /// ZKsync OS's `gas_used` as an override. Best combined with
     /// `unlimited_native` so that gas models are equivalent.
     independent_gas: bool,
-    /// Chain-configured EIP-170 deployed code-size limit. REVM derives the
-    /// EIP-3860 initcode-size limit as twice this value, matching ZKsync OS.
-    /// `None` keeps REVM's spec-derived defaults.
-    max_contract_size: Option<usize>,
 }
 
 impl<State> RevmRunner<State>
@@ -78,20 +74,11 @@ where
             state,
             spec: ZkSpecId::AtlasV3,
             independent_gas: false,
-            max_contract_size: None,
         }
     }
 
     pub fn with_spec(mut self, spec: ZkSpecId) -> Self {
         self.spec = spec;
-        self
-    }
-
-    /// Set the chain-configured EIP-170 deployed code-size limit. REVM derives
-    /// the EIP-3860 initcode-size limit as twice this value, so this keeps
-    /// REVM's deployment limits aligned with ZKsync OS's chain config.
-    pub fn with_max_contract_size(mut self, max_contract_size: u32) -> Self {
-        self.max_contract_size = Some(max_contract_size as usize);
         self
     }
 
@@ -174,15 +161,11 @@ where
         );
 
         let cache_db = CacheDB::new(state_provider);
-        let max_contract_size = self.max_contract_size;
         let mut evm = ZkContext::<EmptyDB>::default()
             .with_db(cache_db)
             .modify_cfg_chained(|cfg| {
                 cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
-                // Align REVM's EIP-170/EIP-3860 limits with the chain config.
-                // REVM derives the initcode limit as twice this value.
-                cfg.limit_contract_code_size = max_contract_size;
             })
             .modify_block_chained(|block| {
                 block.number = U256::from(block_context.block_number());

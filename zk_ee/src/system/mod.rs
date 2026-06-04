@@ -50,7 +50,9 @@ use self::{
     metadata::basic_metadata::{
         BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
     },
-    metadata::chain_config::{ChainConfig, ChainConfigMetadata},
+    metadata::chain_config::{
+        ChainConfig, ChainConfigMetadata, DEFAULT_MAX_CONTRACT_SIZE, DEFAULT_MAX_INITCODE_SIZE,
+    },
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -170,7 +172,7 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_max_contract_size(&self) -> u32 {
-        self.metadata.max_contract_size()
+        DEFAULT_MAX_CONTRACT_SIZE
     }
 
     pub fn is_contract_size_allowed(&self, size: usize) -> bool {
@@ -178,7 +180,7 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_max_initcode_size(&self) -> u32 {
-        self.metadata.max_initcode_size()
+        DEFAULT_MAX_INITCODE_SIZE
     }
 
     pub fn is_initcode_size_allowed(&self, size: usize) -> bool {

@@ -184,9 +184,10 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
 }
 
 pub const STACK_SIZE: usize = 1024;
-/// Default EIP-170 deployed bytecode limit. ZKsync chain config can override
-/// deployed-code enforcement sites at runtime.
+/// EIP-170 deployed bytecode size limit.
 pub const MAX_CODE_SIZE: usize = 0x6000;
+/// EIP-3860 initcode size limit, twice the deployed code limit.
+pub const MAX_INITCODE_SIZE: usize = MAX_CODE_SIZE * 2;
 pub const ERGS_PER_GAS: u64 = 256;
 pub const ERGS_PER_GAS_U256: ruint::aliases::U256 =
     ruint::aliases::U256::from_limbs([ERGS_PER_GAS, 0, 0, 0]);
