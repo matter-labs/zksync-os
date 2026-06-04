@@ -1609,6 +1609,111 @@ fn bench_bls_g2msm() {
     }
 }
 
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_pairing() {
+    let one_pair = format!("{BLS_G1}{BLS_G2}");
+    for num_pairs in [1, 2, 4, 8, 16, 32] {
+        cycle_marker::log_marker(format!("Params: pairs:{num_pairs}").as_str());
+        let input_hex: String = one_pair.repeat(num_pairs);
+        let input = hex::decode(&input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000f",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("pairing should succeed");
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_map_fp_to_g1() {
+    let cases: [(&str, &str); 3] = [
+        ("small", "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff"),
+        ("mid", "0000000000000000000000000000000000000000000000007fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff"),
+        ("large", "000000000000000000000000000000001a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa"),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "0000000000000000000000000000000000000010",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("map_fp_to_g1 should succeed");
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_map_fp2_to_g2() {
+    let cases: [(&str, String); 3] = [
+        ("small", format!("{}{}",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa")),
+        ("mid", format!("{}{}",
+            "0000000000000000000000000000000000000000000000007fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff",
+            "00000000000000000000000000000000000000000000000055555555555555555555555555555555555555555555555555555555555555555555555555555555")),
+        ("large", format!("{}{}",
+            "000000000000000000000000000000001a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa",
+            "0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "0000000000000000000000000000000000000011",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("map_fp2_to_g2 should succeed");
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_blake2f() {
+    for rounds in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
+        cycle_marker::log_marker(format!("Params: rounds:{rounds}").as_str());
+        let rounds_be = (rounds as u32).to_be_bytes();
+        let mut input = Vec::with_capacity(213);
+        input.extend_from_slice(&rounds_be);
+        input.extend_from_slice(&[0u8; 209]);
+        run_precompile_inner(
+            "0000000000000000000000000000000000000009",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("blake2f should succeed");
+    }
+}
+
 #[allow(clippy::large_const_arrays)]
 const P256_TESTS: [Test; 781] = [
     Test {
