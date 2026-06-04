@@ -314,20 +314,25 @@ impl<
                 }
                 if is_warm == false {
                     if initialized_element == false {
-                        // Element exists in cache, but wasn't touched in current tx yet
+                        // Element exists in cache, but wasn't touched in current tx yet.
                         Self::charge_ergs_for_cold_access(
                             ee_type,
                             resources,
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.element_properties().is_new_element();
+                        // Charge NEW only once — the non-membership proof is a one-time cost.
+                        let empty_account = x.element_properties().is_new_element()
+                            && !x.element_properties().cold_new_read_charged;
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
                             empty_account,
                             &storage.0.resources_policy,
                         )?;
+                        if empty_account {
+                            x.element_properties_mut().cold_new_read_charged = true;
+                        }
                     }
 
                     x.update(|cache_record| {

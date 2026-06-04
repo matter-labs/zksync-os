@@ -196,13 +196,18 @@ impl<
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
-                        let is_new_storage_slot = x.element_properties().is_new_element();
-                        // Element exists in cache, but wasn't touched in current tx yet
+                        // Element exists in cache, but wasn't touched in current tx yet.
+                        // Charge NEW only once — the non-membership proof is a one-time cost.
+                        let is_new_for_read = x.element_properties().is_new_element()
+                            && !x.element_properties().cold_new_read_charged;
                         resources_policy.charge_cold_storage_read_extra(
                             ee_type,
                             resources,
-                            is_new_storage_slot,
+                            is_new_for_read,
                         )?;
+                        if is_new_for_read {
+                            x.element_properties_mut().cold_new_read_charged = true;
+                        }
                     }
 
                     x.update(|cache_record| {
