@@ -1491,6 +1491,124 @@ fn test_pectra_bls12_381_mapping_precompiles() {
     );
 }
 
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g1add() {
+    let two_g1 = "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28";
+    let cases: [(&str, String); 3] = [
+        ("G+G", format!("{BLS_G1}{BLS_G1}")),
+        ("G+2G", format!("{BLS_G1}{two_g1}")),
+        ("2G+2G", format!("{two_g1}{two_g1}")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000b",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("g1 add should succeed");
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g2add() {
+    let two_g2 = "000000000000000000000000000000001638533957d540a9d2370f17cc7ed5863bc0b995b8825e0ee1ea1e1e4d00dbae81f14b0bf3611b78c952aacab827a053000000000000000000000000000000000a4edef9c1ed7f729f520e47730a124fd70662a904ba1074728114d1031e1572c6c886f6b57ec72a6178288c47c33577000000000000000000000000000000000468fb440d82b0630aeb8dca2b5256789a66da69bf91009cbfe6bd221e47aa8ae88dece9764bf3bd999d95d71e4c9899000000000000000000000000000000000f6d4552fa65dd2638b361543f887136a43253d9c66c411697003f7a13c308f5422e1aa0a59c8967acdefd8b6e36ccf3";
+    let cases: [(&str, String); 3] = [
+        ("G+G", format!("{BLS_G2}{BLS_G2}")),
+        ("G+2G", format!("{BLS_G2}{two_g2}")),
+        ("2G+2G", format!("{two_g2}{two_g2}")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000d",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("g2 add should succeed");
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g1msm() {
+    let scalars: [(&str, &str); 3] = [
+        ("small", SCALAR_SMALL),
+        ("medium", SCALAR_MEDIUM),
+        ("worst", SCALAR_WORST),
+    ];
+    for num_points in [1, 2, 4, 8, 16, 32] {
+        for (scalar_name, scalar) in &scalars {
+            cycle_marker::log_marker(
+                format!("Params: pts:{num_points}, scalar:{scalar_name}").as_str(),
+            );
+            let one_pair = format!("{BLS_G1}{scalar}");
+            let input_hex: String = one_pair.repeat(num_points);
+            let input = hex::decode(&input_hex).unwrap();
+            run_precompile_inner(
+                "000000000000000000000000000000000000000c",
+                None::<u64>,
+                &input,
+                true,
+            )
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect("g1 msm should succeed");
+        }
+    }
+}
+
+#[cfg(feature = "pectra")]
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g2msm() {
+    let scalars: [(&str, &str); 3] = [
+        ("small", SCALAR_SMALL),
+        ("medium", SCALAR_MEDIUM),
+        ("worst", SCALAR_WORST),
+    ];
+    for num_points in [1, 2, 4, 8, 16, 32] {
+        for (scalar_name, scalar) in &scalars {
+            cycle_marker::log_marker(
+                format!("Params: pts:{num_points}, scalar:{scalar_name}").as_str(),
+            );
+            let one_pair = format!("{BLS_G2}{scalar}");
+            let input_hex: String = one_pair.repeat(num_points);
+            let input = hex::decode(&input_hex).unwrap();
+            run_precompile_inner(
+                "000000000000000000000000000000000000000e",
+                None::<u64>,
+                &input,
+                true,
+            )
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect("g2 msm should succeed");
+        }
+    }
+}
+
 #[allow(clippy::large_const_arrays)]
 const P256_TESTS: [Test; 781] = [
     Test {
