@@ -189,10 +189,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .run_config
             .as_ref()
             .is_some_and(|c| c.revm_independent_gas);
+        let max_contract_size = pre_block_chain.chain_config().max_contract_size();
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
         })
-        .with_independent_gas(independent_gas);
+        .with_independent_gas(independent_gas)
+        .with_max_contract_size(max_contract_size);
 
         revm_runner
             .run(
