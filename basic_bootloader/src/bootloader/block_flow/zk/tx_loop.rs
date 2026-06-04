@@ -4,7 +4,7 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp,
     rlp::{CachingRLPEncodable, ReceiptEncoder},
-    transaction_flow::zk::ZkTransactionFlowOnlyEOA,
+    transaction_flow::{logs_bloom::LogsBloom, zk::ZkTransactionFlowOnlyEOA},
 };
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
@@ -275,11 +275,20 @@ where
             Item = GenericEventContentRef<'events, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
         > + Clone,
 {
-    // ZK receipts currently reserve the bloom field but commit a zeroed placeholder.
-    let bloom = [0u8; 256];
+    // Compute the receipt logs bloom over this tx's events. The bloom is the
+    // Ethereum-standard 2048-bit filter (keccak256 over the log address and each
+    // topic), independent of the blake2s hash used for the receipts tree.
+    let mut bloom = LogsBloom::default();
+    let mut bloom_hasher = crypto::sha3::Keccak256::new();
+    bloom.mark_events(&mut bloom_hasher, events.clone());
 
-    let mut receipt_encoder =
-        ReceiptEncoder::new_from_fields(tx_type, status, cumulative_gas_used, &bloom, events);
+    let mut receipt_encoder = ReceiptEncoder::new_from_fields(
+        tx_type,
+        status,
+        cumulative_gas_used,
+        bloom.as_bytes(),
+        events,
+    );
     let mut receipt_hasher = Blake2s256::new();
     receipt_encoder.encode_into(&mut receipt_hasher);
     Bytes32::from_array(receipt_hasher.finalize())
