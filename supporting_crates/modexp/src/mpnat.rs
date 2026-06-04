@@ -201,6 +201,23 @@ impl<A: Allocator + Clone> MPNat<A> {
             }
         }
 
+        // 0^exp mod m = 0 for any exp > 0 (exp > 0 guaranteed above)
+        if self.digits.iter().all(|&d| d == 0) {
+            return Self {
+                digits: vec_in!(allocator.clone(); 0),
+            };
+        }
+
+        // 1^exp mod m = 1 for any exp when m > 1 (when m == 1 the result is 0)
+        if self.digits.len() == 1
+            && self.digits[0] == 1
+            && !(modulus.digits.len() == 1 && modulus.digits[0] == 1)
+        {
+            return Self {
+                digits: vec_in!(allocator.clone(); 1),
+            };
+        }
+
         if exp.len() <= core::mem::size_of::<usize>() {
             let exp_as_number = {
                 let mut tmp: usize = 0;
