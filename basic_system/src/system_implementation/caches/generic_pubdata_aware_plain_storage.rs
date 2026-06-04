@@ -264,8 +264,7 @@ impl<
         let val_at_tx_start = addr_data.committed().value();
         let val_current = addr_data.current().value();
         // Use NEW write-extra only for the first cold write to a truly new slot.
-        // Tree insertion is a one-time cost in the slot's lifetime; once any tx
-        // has paid it, subsequent writes pay EXISTING.
+        // Once the insertion cost has been paid, subsequent txs pay EXISTING.
         let is_new_slot = addr_data.element_properties().is_new_element()
             && addr_data
                 .current()
