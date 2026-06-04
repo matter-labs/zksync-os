@@ -207,9 +207,12 @@ fn bls12_381_g1_msm_as_system_function_inner<
         &DISCOUNT_TABLE_G1_MSM,
     );
     let cost_ergs = Ergs(cost * ERGS_PER_GAS);
-    let num_points = input.len() / G1_MSM_PAIR_LEN;
-    let cost_native = crate::cost_constants::BLS12_381_G1MSM_PER_POINT_NATIVE_COST
-        .saturating_mul(num_points as u64);
+    let cost_native = compute_cost(
+        input.len(),
+        G1_MSM_PAIR_LEN,
+        crate::cost_constants::BLS12_381_G1MSM_PER_POINT_NATIVE_COST,
+        &DISCOUNT_TABLE_G1_MSM,
+    );
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
@@ -291,9 +294,12 @@ fn bls12_381_g2_msm_as_system_function_inner<
         &DISCOUNT_TABLE_G2_MSM,
     );
     let cost_ergs = Ergs(cost * ERGS_PER_GAS);
-    let num_points = input.len() / G2_MSM_PAIR_LEN;
-    let cost_native = crate::cost_constants::BLS12_381_G2MSM_PER_POINT_NATIVE_COST
-        .saturating_mul(num_points as u64);
+    let cost_native = compute_cost(
+        input.len(),
+        G2_MSM_PAIR_LEN,
+        crate::cost_constants::BLS12_381_G2MSM_PER_POINT_NATIVE_COST,
+        &DISCOUNT_TABLE_G2_MSM,
+    );
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),

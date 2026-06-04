@@ -62,8 +62,8 @@ pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_00
 pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(194_000, 35_800, 0);
 pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(251_000, 39_100, 0);
 // MSM: worst case per point (single-point MSM with all-ones 256-bit scalar).
-// Batching amortizes in practice but we charge worst case per point;
-// the EVM gas discount table handles batching.
+// Charged with the EVM gas discount table to account for Pippenger batching
+// amortization (same DISCOUNT_TABLE_G1_MSM / DISCOUNT_TABLE_G2_MSM arrays).
 pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 =
     native_with_delegations!(3_170_000, 398_300, 0);
 pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
