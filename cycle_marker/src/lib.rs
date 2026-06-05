@@ -296,12 +296,12 @@ pub fn revert(snap: Snapshot) {
 #[cfg(target_arch = "riscv32")]
 pub fn revert(_: Snapshot) {}
 
-/// Re-export `airbender_host` cycle marker types for use by the runner.
-#[cfg(feature = "use_riscv_transpiler")]
+/// Re-export host-side cycle marker snapshots from `airbender-host`.
+#[cfg(feature = "use_airbender_host")]
 pub use airbender_host::{CycleMarker, Mark};
 
 /// Per-opcode aggregated cycle statistics.
-#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
 #[derive(Debug, Clone)]
 pub struct OpcodeCycleStats {
     pub name: &'static str,
@@ -313,7 +313,7 @@ pub struct OpcodeCycleStats {
 }
 
 /// Results from processing cycle markers.
-#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
 pub struct CycleMarkerResults {
     pub block_effective: Option<u64>,
     pub opcode_cycle_stats: Vec<OpcodeCycleStats>,
@@ -324,7 +324,7 @@ pub struct CycleMarkerResults {
 ///
 /// Returns a `CycleMarkerResults` with the effective cycles for the block-wide
 /// label and per-opcode aggregated stats.
-#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
 pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;

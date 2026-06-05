@@ -51,6 +51,15 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
+/// FRI proof verification cost charged per submitted statement hash.
+/// Sized as an upper bound on the RISC-V `process_transaction` cycles for a
+/// single 100-bit FRI proof (~16.5M effective).
+pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 17_000_000;
+/// Per-statement intrinsic gas surcharge for `FriProofTx`.
+pub const FRI_PROOF_TX_INTRINSIC_GAS: u64 = 100_000;
+/// Current statement-hash version of FRI proof transactions.
+pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+
 /// Cost to convert zero byte of calldata into "token"
 pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 
@@ -119,6 +128,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
 /// L2 tx access list storage slot computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
     PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
+    WARM_STORAGE_READ_NATIVE_COST + // warm cache access always charged before the cold read (see materialize_element)
     COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
     33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
 

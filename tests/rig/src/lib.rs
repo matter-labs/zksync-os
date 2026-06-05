@@ -8,11 +8,12 @@
 //! while `Chain` is intended to remain a neutral in-memory state abstraction.
 //!
 use std::str::FromStr;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 pub mod assertions;
 pub mod chain;
 pub mod constants;
 pub mod evm_bytecode;
+pub mod fri;
 pub mod predeployed_contracts;
 pub mod revm_consistency_checker;
 pub mod run_config;
@@ -34,6 +35,7 @@ pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::system_types::ForwardRunningSystem;
+pub use fri::InMemoryFriProofSidecarSource;
 pub use log;
 pub use oracle_provider;
 pub use ruint;
@@ -46,15 +48,15 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
-use zksync_os_interface::types::BlockOutput;
 use zksync_os_revm_runner::revm_runner::RevmRunner;
 pub use zksync_os_runner::FlamegraphOptions;
 pub use zksync_os_tests_common;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
+use crate::chain::{DefaultOracleFactory, TestingOracleFactory};
+pub use crate::forward_system::run::output::BlockOutput;
 use crate::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
@@ -102,6 +104,8 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
     oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
+    fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+    fri_artifacts: Option<Arc<forward_system::run::FriVerifierArtifacts>>,
 }
 
 impl TestingFramework<true> {
@@ -120,6 +124,8 @@ impl TestingFramework<true> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -146,6 +152,8 @@ impl TestingFramework<false> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -217,15 +225,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     tracer,
                     validator,
                     oracle_factory.as_ref(),
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
             } else {
-                self.chain.run_block_with_extra_stats(
+                let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+                self.chain.run_block_with_extra_stats_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
                     Some(run_config),
                     tracer,
                     validator,
+                    &factory,
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
             };
 
@@ -281,13 +295,40 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
 
     /// Builder: sets default block context used by subsequent block execution.
     pub fn with_block_context(mut self, block_context: BlockContext) -> Self {
+        if block_context.is_gateway {
+            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        }
         self.block_context = Some(block_context);
+        self
+    }
+
+    /// Builder: enables Gateway mode for subsequent execution.
+    pub fn with_gateway_mode(mut self) -> Self {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
     /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
+        if block_context
+            .as_ref()
+            .is_some_and(|block_context| block_context.is_gateway)
+        {
+            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        }
         self.block_context = block_context;
+        self
+    }
+
+    /// Setter: enables Gateway mode for subsequent execution.
+    pub fn enable_gateway_mode(&mut self) -> &mut Self {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
@@ -328,6 +369,42 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> Self {
         self.oracle_factory = Some(Box::new(oracle_factory));
         self
+    }
+
+    /// Builder: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`. Each entry is a pair of the statement
+    /// hash and the raw (bincode-serialized) `UnrolledProgramProof`
+    /// bytes, exactly as the sequencer would receive them from the
+    /// Builder: installs a mock FRI sidecar source on the framework
+    /// and (optionally) the verifier artifacts needed for the
+    /// oracle-side `FriProofResponder` to decode and flatten raw
+    /// proof bytes.
+    ///
+    /// When `artifacts` is `None` the responder sees the bytes but
+    /// skips decoding, returning an empty response — useful for
+    /// negative-path tests that don't need a real verifier.
+    ///
+    /// Returns the framework alongside a shared counter that reports
+    /// how many times the bootloader queried the sidecar source
+    /// during this block's execution.
+    pub fn with_mock_fri_sidecars<I>(
+        mut self,
+        sidecars: I,
+        artifacts: Option<forward_system::run::FriVerifierArtifacts>,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicUsize>)
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
+            sidecars.into_iter().collect();
+        let counter = sidecar_source.lookup_counter();
+        self.fri_sidecar = sidecar_source;
+        self.fri_artifacts = artifacts.map(Arc::new);
+        (self, counter)
     }
 
     /// Builder: installs selected system contracts into the in-memory chain state.
@@ -426,6 +503,22 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
     ) -> &mut Self {
         self.oracle_factory = oracle_factory;
+        self
+    }
+
+    /// Setter: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`. Each entry carries the raw
+    /// (bincode-serialized) `UnrolledProgramProof` bytes.
+    pub fn set_mock_fri_sidecars<I>(&mut self, sidecars: I) -> &mut Self
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context
+            .get_or_insert_with(Default::default)
+            .is_gateway = true;
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        self.fri_sidecar = sidecars.into_iter().collect();
+        self.fri_artifacts = None;
         self
     }
 

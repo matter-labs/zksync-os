@@ -62,6 +62,27 @@ The core query ID definitions can be found in [`query_ids.rs`](../../../zk_ee/sr
 
 #### Preimage Queries (0x40020000)
 - **GENERIC_PREIMAGE_QUERY_ID** (`0x40020000`): Retrieves preimage data for a given hash
+- **FRI_PROOF_QUERY_ID** (`0x40020001`): Gateway-only. Resolves a claimed
+  `statement_versioned_hash` (declared in a `FriProofTx`) into the packed
+  verifier word stream the airbender unified verifier reads.
+  - **Query input:** the `statement_versioned_hash` bytes.
+  - **Sidecar storage:** raw bincode-serialized `UnrolledProgramProof`,
+    keyed by `statement_versioned_hash`, supplied to the responder via a
+    `FriProofSidecarSource`.
+  - **Host responder pipeline:** bincode-decode → flatten through
+    `execution_utils::flatten_proof_into_responses_for_unified_recursion`
+    into `Vec<u32>` → pack into the `usize` response stream. The first
+    response word is the verifier word count; verifier payload follows;
+    one zero-padding word is appended when `verifier_word_count` is
+    even, so the total `u32` response length
+    (`1 + verifier_word_count + padding`) packs cleanly into host
+    `usize` words.
+  - **Empty response:** signals "missing sidecar entry / decode failure /
+    missing verifier artifacts". The bootloader treats it as a
+    verification failure and the transaction is rejected.
+  - **Consumer:** on both host and RISC-V guest the bootloader feeds the stream to
+    the airbender unified verifier.
+  - See the [FRI precompile design](../../fri_precompile.md).
 
 #### Computational Advice Queries (0x40050000)
 - **MODEXP_ADVICE_QUERY_ID** (`0x40050010`): Provides computational advice for modular exponentiation operations

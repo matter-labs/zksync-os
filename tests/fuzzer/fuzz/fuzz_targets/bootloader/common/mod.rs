@@ -156,6 +156,8 @@ pub fn mock_oracle() -> (
             TxListSource {
                 transactions: VecDeque::new(),
             },
+            forward_system::run::NoFriProofSidecar,
+            None,
             init_data,
             None,
             true,
@@ -218,6 +220,8 @@ pub fn mock_oracle_balance(
             TxListSource {
                 transactions: VecDeque::new(),
             },
+            forward_system::run::NoFriProofSidecar,
+            None,
             init_data,
             None,
             true,

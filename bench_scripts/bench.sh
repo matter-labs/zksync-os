@@ -10,9 +10,19 @@ BLOCKS_DIR="$REPO_ROOT/tests/instances/eth_runner/blocks"
 QUICK_BLOCK="$(ls "$BLOCKS_DIR" | head -1)"
 
 FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+# Osaka block fixtures need the fusaka + latest-BPO blob schedule on the host.
+if grep -q '^fusaka-blobs = ' "$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"; then
+    FEATURES="$FEATURES,fusaka,fusaka-blobs"
+fi
 PRECOMPILE_FEATURES="rig/no_print,precompiles/cycle_marker,rig/unlimited_native"
+if grep -q "for-tests-benchmarking-pectra" "$REPO_ROOT/zksync_os/dump_bin.sh"; then
+    FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"
+else
+    FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
+fi
 ETH_RUNNER_MANIFEST="$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"
 PRECOMPILE_MANIFEST="$REPO_ROOT/tests/instances/precompiles/Cargo.toml"
+SYSTEM_HOOKS_MANIFEST="$REPO_ROOT/tests/instances/system_hooks/Cargo.toml"
 
 usage() {
     cat <<'EOF'
@@ -31,7 +41,13 @@ EOF
 }
 
 build_riscv_binary() {
-    echo "==> Building RISC-V benchmarking binary..."
+    echo "==> Building RISC-V test-crate benchmarking binary..."
+    if grep -q "for-tests-benchmarking-pectra" "$REPO_ROOT/zksync_os/dump_bin.sh"; then
+        (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type for-tests-benchmarking-pectra)
+    else
+        (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type for-tests-benchmarking)
+    fi
+    echo "==> Building RISC-V block-replay benchmarking binary..."
     (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type evm-replay-benchmarking)
 }
 
@@ -97,6 +113,29 @@ run_precompiles() {
         > "$output_dir/precompiles.out" 2>&1
 }
 
+run_fri_precompile() {
+    local output_dir="$1"
+
+    local samples_dir="$output_dir/precompile_samples/fri_precompile"
+    local cycles_dir="$output_dir/precompile_cycles/fri_precompile"
+
+    rm -rf "$samples_dir" "$cycles_dir"
+    mkdir -p "$samples_dir" "$cycles_dir"
+    rm -f "$output_dir/fri_precompile_stats.csv"
+
+    echo "==> Benchmarking FRI precompile..."
+    ZKSYNC_RISC_V_RUN=true \
+    MARKER_PATH="$output_dir/fri_precompile.bench" \
+    PRECOMPILE_STATS_PATH="$output_dir/fri_precompile_stats.csv" \
+    PRECOMPILE_SAMPLES_DIR="$samples_dir" \
+    LABEL_CYCLE_SAMPLES_DIR="$cycles_dir" \
+    cargo test --manifest-path "$SYSTEM_HOOKS_MANIFEST" \
+        --release -j 3 \
+        --features "$FRI_PRECOMPILE_FEATURES" \
+        -- fri_verifier_contract_returns_true_for_verified_proof \
+        > "$output_dir/fri_precompile.out" 2>&1
+}
+
 join_precompile_samples_run() {
     local output_dir="$1"
 
@@ -111,6 +150,17 @@ join_precompile_samples_run() {
         pairs+=("$tc_samples" "$tc_cycles")
         if [ -f "$output_dir/precompiles.bench" ]; then
             bench_args+=(--bench-file "$output_dir/precompiles.bench")
+        else
+            bench_args+=(--bench-file /dev/null)
+        fi
+    fi
+
+    local fri_samples="$output_dir/precompile_samples/fri_precompile"
+    local fri_cycles="$output_dir/precompile_cycles/fri_precompile"
+    if [ -d "$fri_samples" ] && [ -d "$fri_cycles" ]; then
+        pairs+=("$fri_samples" "$fri_cycles")
+        if [ -f "$output_dir/fri_precompile.bench" ]; then
+            bench_args+=(--bench-file "$output_dir/fri_precompile.bench")
         else
             bench_args+=(--bench-file /dev/null)
         fi
@@ -156,6 +206,7 @@ do_baseline() {
     build_riscv_binary
     run_all_blocks "$BASELINE_DIR"
     run_precompiles "$BASELINE_DIR"
+    run_fri_precompile "$BASELINE_DIR"
     join_precompile_samples_run "$BASELINE_DIR"
     echo "==> Baseline saved to $BASELINE_DIR"
 }
@@ -165,6 +216,7 @@ do_run() {
     build_riscv_binary
     run_all_blocks "$CURRENT_DIR"
     run_precompiles "$CURRENT_DIR"
+    run_fri_precompile "$CURRENT_DIR"
     join_precompile_samples_run "$CURRENT_DIR"
     echo "==> Results saved to $CURRENT_DIR"
 }
@@ -231,6 +283,15 @@ do_compare() {
         pairs="${pairs}(\"precompiles\", \"${base_precompiles}\", \"${head_precompiles}\")"
     fi
 
+    local base_fri_precompile="$BASELINE_DIR/fri_precompile.bench"
+    local head_fri_precompile="$CURRENT_DIR/fri_precompile.bench"
+    if [ -f "$base_fri_precompile" ] && [ -f "$head_fri_precompile" ]; then
+        if [ -n "$pairs" ]; then
+            pairs="${pairs},"
+        fi
+        pairs="${pairs}(\"fri_precompile\", \"${base_fri_precompile}\", \"${head_fri_precompile}\")"
+    fi
+
     if [ -z "$pairs" ]; then
         echo "ERROR: No matching benchmark files found to compare."
         exit 1
@@ -282,6 +343,12 @@ do_compare() {
         precompile_stats_args+=(
             "$BASELINE_DIR/precompile_stats.csv"
             "$CURRENT_DIR/precompile_stats.csv"
+        )
+    fi
+    if [ -f "$BASELINE_DIR/fri_precompile_stats.csv" ] && [ -f "$CURRENT_DIR/fri_precompile_stats.csv" ]; then
+        precompile_stats_args+=(
+            "$BASELINE_DIR/fri_precompile_stats.csv"
+            "$CURRENT_DIR/fri_precompile_stats.csv"
         )
     fi
     for dir in "$BLOCKS_DIR"/*/; do

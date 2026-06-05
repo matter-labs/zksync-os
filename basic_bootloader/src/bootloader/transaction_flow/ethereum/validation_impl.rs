@@ -19,6 +19,7 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::MAX_BLOBS_PER_TX;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
 use zk_ee::system_log;
 use zk_ee::utils::{u256_mul_by_word, u256_to_u64_saturated};
@@ -335,7 +336,7 @@ where
                 InvalidTransaction::BlobElementIsNotSupported,
             ));
         }
-        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+        match parse_blobs_list::<MAX_BLOBS_PER_TX>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);

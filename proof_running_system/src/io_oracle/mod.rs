@@ -79,7 +79,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             remaining_len -= 1;
         }
         assert!(remaining_len == 0);
-        // we can expect that length of the result is returned via read
+        // We can expect that length of the result is returned via read.
         let remaining_len = NDS::csr_read_impl();
         let it = CsrBasedIOOracleIterator::<NDS> {
             remaining: remaining_len,

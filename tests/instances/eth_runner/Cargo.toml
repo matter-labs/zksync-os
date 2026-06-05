@@ -18,6 +18,7 @@ serde_json = { workspace = true, features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"] }
 zk_ee = { path = "../../../zk_ee" }
 basic_system = { path = "../../../basic_system" }
+forward_system = { path = "../../../forward_system" }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = { workspace = true }
 ureq = { version = "3", features = ["json", "gzip"] }
@@ -34,6 +35,11 @@ airbender-host = { workspace = true }
 proving = []
 gpu = ["airbender-host/gpu-prover"]
 default = []
+# Forward the STF hardfork blob schedule so block.rs computes the blob base fee
+# with the matching update fraction. Pass these (not just rig/fusaka*) so the
+# eth_runner crate's own cfg sees the active schedule.
+fusaka = ["rig/fusaka"]
+fusaka-blobs = ["rig/fusaka-blobs"]
 
 # Fast-compile variant used by the bench CI for the host-side eth_runner
 # binary. Its runtime perf doesn't affect cycle measurements (cycles come
@@ -49,4 +55,3 @@ opt-level = 3
 lto = false
 codegen-units = 16
 debug = false
-

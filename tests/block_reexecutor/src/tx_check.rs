@@ -1,6 +1,7 @@
 use alloy::{hex, primitives::U256};
 use anyhow::Result;
-use rig::zksync_os_interface::types::{BlockOutput, TxOutput};
+use rig::zksync_os_interface::types::TxOutput;
+use rig::BlockOutput;
 
 use crate::rpc_client::{Block, TransactionReceipt};
 

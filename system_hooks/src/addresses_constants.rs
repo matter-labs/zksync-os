@@ -30,6 +30,13 @@ pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_
 pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
 pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
 
+// FRI proof verification hook (Gateway only, runtime-gated by `metadata.is_gateway`).
+// Looks up a `statement_versioned_hash` in tx-scoped state and returns a boolean
+// indicating whether it was verified earlier in the current tx.
+pub const FRI_PRECOMPILE_ADDRESS_LOW: u16 = 0x7003;
+pub const FRI_PRECOMPILE_ADDRESS: B160 =
+    B160::from_limbs([FRI_PRECOMPILE_ADDRESS_LOW as u64, 0, 0]);
+
 // L2 message root storage contract
 pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
 

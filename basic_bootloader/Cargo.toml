@@ -25,6 +25,14 @@ paste = { workspace = true }
 cfg-if = { workspace = true }
 serde-big-array = "0.5"
 
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_100", "modular_ops", "blake2_with_compression"] }
+
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+# Host-side verifier. `replace_csr` swaps the CSR-backed
+# non-determinism source for `nd_source_std::set_iterator`, and
+# `modular_ops` is intentionally omitted because it is riscv32-only.
+full_statement_verifier = { workspace = true, default-features = false, features = ["unified_verifier_only_security_100", "blake2_with_compression", "replace_csr"] }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }
@@ -33,13 +41,20 @@ alloy-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
 default = ["testing"]
 eip-2935 = []
 eip-7702 = []
 eip-7623 = []
 eip-4844 = ["system_hooks/point_eval_precompile"]
 pectra = ["eip-2935", "eip-7702", "eip-7623", "eip-4844", "zk_ee/pectra-blobs", "system_hooks/bls12_381", "system_hooks/blake2f"]
+eip-7825 = ["zk_ee/eip-7825"]
+eip-7934 = []
+eip-7918 = []
+# Latest blob-count schedule (BPO). Opt-in on top of `fusaka`; without it,
+# `fusaka` uses base-Osaka (Prague) blob counts. Production enables this.
+fusaka-blobs = ["zk_ee/fusaka-blobs"]
+fusaka = ["pectra", "eip-7825", "eip-7934", "eip-7918", "zk_ee/eip-7825", "basic_system/fusaka"]
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 resources_for_tester = []

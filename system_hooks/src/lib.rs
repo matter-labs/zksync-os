@@ -25,6 +25,7 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
+use crate::call_hooks::fri_precompile::fri_precompile_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
@@ -48,7 +49,10 @@ use zk_ee::system::base_system_functions::Bls12PrecompileErrors;
 use zk_ee::system::base_system_functions::P256VerifyErrors;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-#[cfg(feature = "mock-unsupported-precompiles")]
+#[cfg(all(
+    feature = "mock-unsupported-precompiles",
+    any(not(feature = "blake2f"), not(feature = "point_eval_precompile"))
+))]
 use zk_ee::system::MissingSystemFunctionErrors;
 use zk_ee::{
     memory::slice_vec::SliceVec,
@@ -301,6 +305,20 @@ where
     }
 
     Ok(())
+}
+
+/// Register the FRI proof verification hook at
+/// `FRI_PRECOMPILE_ADDRESS`.
+pub fn add_fri_proof_verification_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
+where
+    S::IO: IOSubsystemExt,
+{
+    hooks.add_call_hook(
+        FRI_PRECOMPILE_ADDRESS_LOW,
+        SystemCallHook::new(fri_precompile_hook),
+    )
 }
 
 pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(

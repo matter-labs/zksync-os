@@ -409,9 +409,8 @@ mod tests {
     use crate::alloy::consensus::Header;
     use crate::alloy::primitives::{Address, Sealable, U256};
     use crate::zksync_os_interface::error::InvalidTransaction;
-    use crate::zksync_os_interface::types::{
-        BlockOutput, ExecutionOutput, ExecutionResult, TxOutput,
-    };
+    use crate::zksync_os_interface::types::{ExecutionOutput, ExecutionResult, TxOutput};
+    use forward_system::run::output::BlockOutput;
 
     fn tx_output(
         execution_result: ExecutionResult,

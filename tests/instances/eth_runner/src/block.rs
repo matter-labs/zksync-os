@@ -13,14 +13,49 @@ pub struct Block {
     pub result: alloy::rpc::types::Block<alloy::rpc::types::Transaction, alloy::rpc::types::Header>,
 }
 
+// Blob base fee update fraction. Must match the STF's active blob schedule:
+// Cancun 3338477, Prague/base-Osaka 5007716, latest BPO (`fusaka-blobs`)
+// 11684671. Alloy's `Header::blob_fee()` uses a fixed fraction that does not
+// track the BPO schedule, so we compute the blob base fee ourselves from
+// `excessBlobGas` to keep the replay consistent with the built STF.
+#[cfg(feature = "fusaka-blobs")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 11_684_671;
+#[cfg(all(feature = "fusaka", not(feature = "fusaka-blobs")))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 5_007_716;
+#[cfg(not(any(feature = "fusaka", feature = "fusaka-blobs")))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 3_338_477;
+
+const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
+
+/// Approximation of `factor * e ** (numerator / denominator)` via Taylor expansion.
+fn fake_exponential(factor: u128, numerator: u128, denominator: u128) -> u128 {
+    let mut i = 1u128;
+    let mut output = 0u128;
+    let mut numerator_accum = factor * denominator;
+    while numerator_accum > 0 {
+        output += numerator_accum;
+        numerator_accum = (numerator_accum * numerator) / (denominator * i);
+        i += 1;
+    }
+    output / denominator
+}
+
 impl Block {
     pub fn get_block_context(&self) -> rig::BlockContext {
         let base_fee = U256::from(self.result.header.base_fee_per_gas.unwrap_or(1000));
+        // Compute the blob base fee with the fork-appropriate update fraction
+        // (alloy's `blob_fee()` does not track the BPO schedule).
         let blob_fee = self
             .result
             .header
-            .blob_fee()
-            .map(U256::from)
+            .excess_blob_gas
+            .map(|ebg| {
+                U256::from(fake_exponential(
+                    MIN_BASE_FEE_PER_BLOB_GAS,
+                    ebg as u128,
+                    BLOB_BASE_FEE_UPDATE_FRACTION,
+                ))
+            })
             .unwrap_or(U256::MAX);
         rig::BlockContext {
             timestamp: self.result.header.timestamp,
@@ -32,6 +67,7 @@ impl Block {
             pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
             blob_fee,
+            is_gateway: false,
         }
     }
 
@@ -53,7 +89,8 @@ impl Block {
                     // Skip unsupported txs or tx that call into unsupported precompiles
 
                     let transaction_type = tx.ty();
-                    let supported_tx_type = transaction_type <= 3;
+                    // Supported: legacy(0), 2930(1), 1559(2), 4844(3), 7702(4).
+                    let supported_tx_type = transaction_type <= 4;
                     let single_tx_cond = single_tx.is_none_or(|idx| idx as usize == i);
                     let unsupported_precompile =
                         calltrace.result.has_call_to_unsupported_precompile();

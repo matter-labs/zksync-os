@@ -124,6 +124,16 @@ pub enum InvalidTransaction {
     EmptyBlobList,
     /// Gas limit for tx is more than per-tx max limit
     CallerGasLimitMoreThanTxLimit,
+    /// FRI proof tx is only allowed in Gateway mode.
+    FriProofTxNotSupported,
+    /// FRI sidecar data could not be resolved for a referenced statement hash.
+    FriProofSidecarMissing,
+    /// FRI proof failed verification.
+    FriProofVerificationFailed,
+    /// FRI proof verified, but did not bind to the referenced statement hash.
+    FriProofStatementHashMismatch,
+    /// FRI proof tx carries more than `MAX_FRI_STATEMENTS_PER_TX` hashes.
+    TooManyFriStatements,
 }
 
 ///

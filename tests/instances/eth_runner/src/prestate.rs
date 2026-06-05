@@ -4,9 +4,7 @@ use ruint::{
     Bits,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-
-use crate::calltrace::CallTrace;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Deserialize, Serialize)]
@@ -143,51 +141,72 @@ impl Cache {
     }
 }
 
+/// Accounts created during the block (absent at block start). Identified from
+/// the diff trace: an account whose first appearance (in tx order) is in a tx's
+/// `post` but not its `pre` was created mid-block. The prestate tracer omits
+/// such accounts from their creating tx and first reports them in a later tx
+/// with a mid-block balance, so that later prestate must not be taken as the
+/// block-initial state.
+fn created_mid_block_accounts(diff: &DiffTrace) -> HashSet<B160> {
+    let mut seen: HashSet<B160> = HashSet::new();
+    let mut created: HashSet<B160> = HashSet::new();
+    for item in diff.result.iter() {
+        let d = &item.result;
+        for addr in d.pre.keys().chain(d.post.keys()) {
+            // Only judge each account at its first diff-trace appearance.
+            if seen.insert(addr.0) && d.post.contains_key(addr) && !d.pre.contains_key(addr) {
+                created.insert(addr.0);
+            }
+        }
+    }
+    created
+}
+
 pub fn populate_prestate<const RANDOMIZED_TREE: bool>(
     chain: &mut Chain<RANDOMIZED_TREE>,
     ps: PrestateTrace,
-    calltrace: &CallTrace,
+    diff: &DiffTrace,
 ) -> Cache {
     let mut cache = Cache::default();
-    ps.result
-        .into_iter()
-        .zip(calltrace.result.iter())
-        .for_each(|(item, tx_calltrace)| {
-            item.result.into_iter().for_each(|(address, account)| {
-                let account = cache.filter_pre_account_state(address.0, account);
-                // Set account properties
-                chain.set_account_properties(
-                    address.0,
-                    account.balance,
-                    account.nonce,
-                    account.code.map(|b| b.to_vec()),
-                );
-                // Set storage slots
-                if let Some(storage) = account.storage {
-                    storage
-                        .into_iter()
-                        .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
-                }
-            });
 
-            // Add an empty read for deployed contracts. If they had balance, they
-            // should have been part of the prestate trace.
-            // We only add to cache to prevent future reads to be considered
-            // initial reads.
-            tx_calltrace
-                .result
-                .get_deployed_addresses()
-                .into_iter()
-                .for_each(|address| {
-                    // Only insert if not cached already
-                    let _cache_el = cache
-                        .0
-                        .entry(ruint::aliases::B160::from_be_bytes(address.into()))
-                        .or_insert(AccountState {
-                            balance: Some(ruint::aliases::U256::ZERO),
-                            ..Default::default()
-                        });
-                })
+    let created = created_mid_block_accounts(diff);
+
+    // Pre-seed accounts created mid-block as empty (balance 0). This prevents a
+    // later tx's prestate (which reports their post-creation state) from being
+    // taken as the block-initial state — `filter_pre_account_state` fills each
+    // field only once. Cache-only: chain state stays empty for these accounts.
+    for address in &created {
+        cache.0.entry(*address).or_insert(AccountState {
+            balance: Some(ruint::aliases::U256::ZERO),
+            ..Default::default()
         });
+    }
+
+    ps.result.into_iter().for_each(|item| {
+        item.result.into_iter().for_each(|(address, mut account)| {
+            // A mid-block-created account had no storage at block start, so any
+            // storage a later prestate reports for it is post-creation. Drop it
+            // here so it isn't installed as block-initial state (the balance
+            // pre-seed above only blocks balance/nonce/code, not storage).
+            // Execution replays the writes, so the slots are rebuilt anyway.
+            if created.contains(&address.0) {
+                account.storage = None;
+            }
+            let account = cache.filter_pre_account_state(address.0, account);
+            // Set account properties
+            chain.set_account_properties(
+                address.0,
+                account.balance,
+                account.nonce,
+                account.code.map(|b| b.to_vec()),
+            );
+            // Set storage slots
+            if let Some(storage) = account.storage {
+                storage
+                    .into_iter()
+                    .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
+            }
+        });
+    });
     cache
 }

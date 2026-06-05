@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-benchmarking-fusaka|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -65,6 +65,13 @@ case "$TYPE" in
     FEATURES="$FEATURES,for_tests,benchmarking,pectra"
     APP_NAME="for_tests"
     ;;
+  for-tests-benchmarking-fusaka)
+    # Adds `fusaka` (a superset of `pectra`) on top of `for-tests-benchmarking`
+    # so the proving binary supports the Fusaka semantics (CLZ, modexp
+    # repricing, EIP-7825/7934/7918) in addition to the pectra precompiles.
+    FEATURES="$FEATURES,for_tests,benchmarking,fusaka"
+    APP_NAME="for_tests"
+    ;;
   for-tests-logging-enabled)
     FEATURES="$FEATURES,for_tests,print_debug_info"
     APP_NAME="for_tests"
@@ -81,8 +88,23 @@ case "$TYPE" in
     FEATURES="$FEATURES,eth_runner,benchmarking"
     APP_NAME="evm_replay"
     ;;
+  evm-replay-benchmarking-fusaka)
+    # `fusaka` for the proving binary already pulls in the latest BPO blob
+    # schedule (zksync_os's `fusaka` => proof_running_system/fusaka-blobs), so
+    # this single type covers Osaka replay including post-BPO blob txs (CLZ,
+    # modexp repricing, EIP-7825/7934/7918, BPO blob base fee).
+    # NOTE: the literal string `evm-replay-benchmarking-fusaka` is used as a
+    # `grep -q` fallback target by `.github/workflows/bench.yml` — if this
+    # case label is renamed, update the workflow too.
+    FEATURES="$FEATURES,eth_runner,benchmarking,fusaka"
+    APP_NAME="evm_replay"
+    ;;
   evm-tester)
-    FEATURES="$FEATURES,evm_tester"
+    # `fusaka` so the proving binary matches the host EVM tester, which now
+    # defaults to Fusaka (Osaka). Without it the nightly proof run would pair a
+    # pre-Osaka proving binary with Fusaka test selection (CLZ, modexp
+    # repricing, EIP-7825/7934 would diverge).
+    FEATURES="$FEATURES,evm_tester,fusaka"
     APP_NAME="evm_tester"
     ;;
   "")

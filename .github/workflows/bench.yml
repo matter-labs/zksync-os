@@ -84,7 +84,14 @@ jobs:
           else
             ./dump_bin.sh --type for-tests-benchmarking
           fi
-          ./dump_bin.sh --type evm-replay-benchmarking
+          # Osaka bench fixtures are post-BPO; use the fusaka replay binary
+          # (zksync_os's `fusaka` already pulls in the BPO blob schedule),
+          # falling back to non-fusaka for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
       - name: Run benchmarks
         shell: bash
         # Orchestration lives in `bench_scripts/run_bench_side.sh` — see
@@ -103,6 +110,8 @@ jobs:
             base_block_*_precompile_stats.csv
             base_precompiles.bench
             base_precompile_stats.csv
+            base_fri_precompile.bench
+            base_fri_precompile_stats.csv
             opcode_samples/
             opcode_cycles/
 
@@ -135,7 +144,14 @@ jobs:
           else
             ./dump_bin.sh --type for-tests-benchmarking
           fi
-          ./dump_bin.sh --type evm-replay-benchmarking
+          # Osaka bench fixtures are post-BPO; use the fusaka replay binary
+          # (zksync_os's `fusaka` already pulls in the BPO blob schedule),
+          # falling back to non-fusaka for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
       - name: Run benchmarks
         shell: bash
         # Same orchestration as bench-base, only the `head` side selector
@@ -153,6 +169,10 @@ jobs:
             head_block_*_precompile_stats.csv
             head_precompiles.bench
             head_precompile_stats.csv
+            head_fri_precompile.bench
+            head_fri_precompile_stats.csv
+            head_fri_precompile_samples/
+            head_fri_precompile_cycles/
             head_precompile_samples/
             head_precompile_cycles/
             opcode_samples/
@@ -195,6 +215,8 @@ jobs:
           cp head-results/head_block_*.bench head-results/head_block_*.out head-results/head_precompiles.bench . 2>/dev/null || true
           cp base-results/base_precompile_stats.csv . 2>/dev/null || true
           cp head-results/head_precompile_stats.csv . 2>/dev/null || true
+          cp base-results/base_fri_precompile.bench base-results/base_fri_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_fri_precompile.bench head-results/head_fri_precompile_stats.csv . 2>/dev/null || true
           cp base-results/base_block_*_precompile_stats.csv . 2>/dev/null || true
           cp head-results/head_block_*_precompile_stats.csv . 2>/dev/null || true
           cp head-results/head_block_*_opcode_stats.csv . 2>/dev/null || true
@@ -203,6 +225,8 @@ jobs:
           # consumes only the head-side data.
           cp -r head-results/head_precompile_samples . 2>/dev/null || true
           cp -r head-results/head_precompile_cycles . 2>/dev/null || true
+          cp -r head-results/head_fri_precompile_samples . 2>/dev/null || true
+          cp -r head-results/head_fri_precompile_cycles . 2>/dev/null || true
           # Merge opcode_samples and opcode_cycles directories
           mkdir -p opcode_samples opcode_cycles
           cp -r base-results/opcode_samples/* opcode_samples/ 2>/dev/null || true

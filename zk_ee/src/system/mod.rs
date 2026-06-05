@@ -48,7 +48,7 @@ use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::basic_metadata::{
-        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
     },
 };
 
@@ -164,6 +164,10 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_gas_limit()
     }
 
+    pub fn get_individual_tx_gas_limit(&self) -> u64 {
+        self.metadata.individual_tx_gas_limit()
+    }
+
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {
         self.metadata.tx_gas_price()
     }
@@ -218,7 +222,7 @@ impl<S: SystemTypes> System<S> {
 
 impl<S: SystemTypes> System<S>
 where
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificMetadata,
 {
     pub fn get_native_price(&self) -> ruint::aliases::U256 {
         self.metadata.native_price()

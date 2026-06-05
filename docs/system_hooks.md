@@ -14,6 +14,8 @@ System hooks have two distinct use cases:
   - ecmul
   - ecpairing
   - P256
+- Implementing Gateway-only precompiles:
+  - FRI proof verification (`0x7003`) — see the [FRI precompile design](./fri_precompile.md)
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook
@@ -69,3 +71,43 @@ We want to be able to perform upgrade with 1 tx, so we designed this method this
 It will be used only by protocol upgrade transactions, which are approved by governance.
 Bytecodes will be published separately with Ethereum calldata.
 Calls from unauthorized callers are treated as calls to an empty account: success with empty returndata, no writes, and no EVM gas burn.
+
+## FRI precompile (Gateway-only)
+
+The FRI precompile (at address `0x0000000000000000000000000000000000000101`)
+lets contracts ask whether a specific `statement_versioned_hash` is in the
+**current transaction's verified-statements list**, which is populated
+during `FriProofTx` validation.
+
+The precompile is a pure membership check on tx-scoped state. It does
+not itself run the FRI verifier and it does not re-derive any hash —
+the verification happens in the server and during sequencing, only transactions
+with valid FRI proofs are sequenced, so the precompile checks if the statement 
+versioned hash was supplied in the transaction.
+
+### Registration
+
+- Registered only when `system.metadata.is_gateway() == true`.
+- On non-Gateway chains the address is unregistered and behaves like an
+  empty account (success with empty returndata, no side effects, no
+  EVM gas burn).
+
+### Interface
+
+- **Calldata:** exactly **32 bytes** containing the
+  `statement_versioned_hash`.
+- **Value:** must be zero. A non-zero `value` returns failure.
+- **Bad length:** any calldata length other than 32 returns failure.
+- **Output:** 32-byte ABI-encoded `bool` — `0x00..01` if the hash is in
+  the current tx-scoped list, `0x00..00` if it is not. Missing sidecar
+  data or verifier rejection is handled before EVM execution in
+  admission and proving paths; those cases reject the tx rather than
+  making the precompile return `false`.
+
+### Lifecycle
+
+The verified-hash list is populated by the bootloader's `FriProofTx`
+validator before EVM execution begins and cleared at tx end. The
+precompile is the only way for EVM code to observe it.
+
+See [FRI precompile design](./fri_precompile.md) for the full flow.

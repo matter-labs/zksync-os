@@ -22,7 +22,7 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
-use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
@@ -30,7 +30,7 @@ use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
-use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
+use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_TX};
 use zk_ee::system_log;
 use zk_ee::{internal_error, out_of_native_resources};
 use zk_ee::{utils::*, wrap_error};
@@ -51,7 +51,7 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 ) -> Result<TxContextForPreAndPostProcessing<S>, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,
@@ -84,9 +84,10 @@ where
                 InvalidTransaction::BlockGasLimitTooHigh,
                 system
             )?;
+            let individual_limit = system.get_individual_tx_gas_limit();
             require!(
-                tx_gas_limit <= block_gas_limit,
-                InvalidTransaction::CallerGasLimitMoreThanBlock,
+                tx_gas_limit <= individual_limit,
+                InvalidTransaction::CallerGasLimitMoreThanTxLimit,
                 system
             )?;
         }
@@ -140,6 +141,10 @@ where
     let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
         .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
+    let statement_versioned_hashes_num = transaction
+        .statement_versioned_hashes()
+        .map(|hashes| hashes.count as u64)
+        .unwrap_or(0);
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
@@ -176,12 +181,14 @@ where
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
     );
     let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
         calldata.len() as u64,
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
         transaction.is_service(),
     );
     let intrinsic_pubdata =
@@ -288,6 +295,19 @@ where
         }
     };
     let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
+
+    // Charge the per-statement FRI verifier native budget against
+    // `intrinsic_resources` so `verify_intrinsic_native` exercises this
+    // portion of the intrinsic formula. The verifier itself runs later
+    // and is gated by this prepayment.
+    if statement_versioned_hashes_num > 0 {
+        intrinsic_resources.charge(&Resources::from_native(
+            <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF
+                    .saturating_mul(statement_versioned_hashes_num),
+            ),
+        ))?;
+    }
 
     // any IO starts here
 
@@ -396,7 +416,7 @@ where
             ));
         }
 
-        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+        match parse_blobs_list::<MAX_BLOBS_PER_TX>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);
@@ -438,10 +458,29 @@ where
         ));
     }
 
+    // FRI proof handling, split into two steps:
+    //
+    // 1. Structural admission (is_gateway, cap, dedup) always runs
+    //    and produces the hash list to install on tx-level metadata.
+    // 2. Oracle-driven verification runs only when
+    //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under
+    //    `BasicBootloaderProvingExecutionConfig` (the RISC-V guest
+    //    and the host prover-input recording pass that feeds it).
+    let verified_fri_statements = if transaction.is_fri_proof() {
+        super::fri::build_verified_fri_statements_list(system, transaction)?
+    } else {
+        arrayvec::ArrayVec::new()
+    };
+
+    if Config::VERIFY_FRI_PROOFS && transaction.is_fri_proof() {
+        super::fri::drive_fri_verification(system, &verified_fri_statements)?;
+    }
+
     system.set_tx_context(TxLevelMetadata {
         tx_origin: *transaction.from(),
         tx_gas_price: gas_price,
         blobs,
+        verified_fri_statements,
     });
 
     // But the fee to charge is based on current block context, and not worst case of max fee (backward-compatible manner)
@@ -497,6 +536,7 @@ where
         resources_before_refund: S::Resources::empty(),
         intrinsic_resources,
         authorization_list_num,
+        statement_versioned_hashes_num,
     })
 }
 

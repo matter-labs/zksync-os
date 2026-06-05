@@ -8,10 +8,12 @@ use alloy::{
 };
 
 use crate::zksync_tx::{
-    l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx, upgrade_tx::ZKsyncUpgradeTx,
+    fri_proof_tx::ZKsyncFriProofTx, l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx,
+    upgrade_tx::ZKsyncUpgradeTx,
 };
 
 pub mod encoding;
+pub mod fri_proof_tx;
 pub mod l1_tx;
 pub mod service_tx;
 pub mod upgrade_tx;
@@ -23,6 +25,8 @@ pub enum ZKsyncTxEnvelope {
     Ethereum(TxEnvelope, Address),
     /// ZKsync OS specific typed envelope.
     ZKsync(ZKsyncSpecificTxEnvelope),
+    /// Signed Gateway FRI proof typed envelope.
+    FriProof(ZKsyncFriProofTx),
     /// Raw request with an explicit type byte (used for negative/fuzz cases).
     Custom(u8, TransactionRequest),
 }
@@ -78,6 +82,7 @@ impl ZKsyncTxEnvelope {
         match &self {
             Self::Ethereum(env, _) => env.to(),
             Self::ZKsync(specific_envelope) => Some(specific_envelope.to()),
+            Self::FriProof(tx) => Some(tx.to),
             Self::Custom(_, req) => match req.to {
                 Some(to) => to.to().copied(),
                 None => None,
@@ -91,6 +96,7 @@ impl Typed2718 for ZKsyncTxEnvelope {
         match &self {
             Self::Ethereum(ethereum_tx_envelope, _) => ethereum_tx_envelope.ty(),
             Self::ZKsync(specific_envelope) => specific_envelope.ty(),
+            Self::FriProof(tx) => tx.ty(),
             Self::Custom(tx_type, _) => *tx_type,
         }
     }
@@ -111,6 +117,12 @@ impl From<ZKsyncUpgradeTx> for ZKsyncTxEnvelope {
 impl From<ZKsyncServiceTx> for ZKsyncTxEnvelope {
     fn from(val: ZKsyncServiceTx) -> Self {
         ZKsyncTxEnvelope::ZKsync(val.into())
+    }
+}
+
+impl From<ZKsyncFriProofTx> for ZKsyncTxEnvelope {
+    fn from(val: ZKsyncFriProofTx) -> Self {
+        ZKsyncTxEnvelope::FriProof(val)
     }
 }
 

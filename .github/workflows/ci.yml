@@ -11,6 +11,7 @@ env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
     ZKSYNC_USE_CUDA_STUBS: true
+    CARGO_PROFILE_RELEASE_DEBUG: "false"
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:

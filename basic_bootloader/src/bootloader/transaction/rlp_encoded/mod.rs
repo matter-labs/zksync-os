@@ -16,6 +16,7 @@ use crate::bootloader::transaction::rlp_encoded::{
     transaction_types::eip_2930_tx::EIP2930Tx,
     transaction_types::eip_4844_tx::EIP4844Tx,
     transaction_types::eip_7702_tx::EIP7702Tx,
+    transaction_types::fri_proof_tx::FriProofTx,
 };
 use zk_ee::utils::Bytes32;
 
@@ -40,6 +41,7 @@ pub(crate) enum RlpEncodedTxInner<'a> {
     EIP1559(EIP1559Tx<'a>, EIP2718SignatureData<'a>),
     EIP4844(EIP4844Tx<'a>, EIP2718SignatureData<'a>),
     EIP7702(EIP7702Tx<'a>, EIP2718SignatureData<'a>),
+    FriProof(FriProofTx<'a>, EIP2718SignatureData<'a>),
     Service(ServiceTx<'a>),
 }
 
@@ -99,6 +101,16 @@ impl<'a> RlpEncodedTxInner<'a> {
                         return Err(InvalidTransaction::InvalidChainId.into());
                     }
                     Ok((Self::EIP7702(tx, sig_data), sig_hash))
+                }
+                FriProofTx::TX_TYPE => {
+                    let (tx, sig_data, sig_hash) =
+                        EIP2718PayloadParser::<FriProofTx<'a>>::try_parse_and_hash_for_signature_verification(
+                            r.remaining()
+                        )?;
+                    if tx.chain_id != expected_chain_id {
+                        return Err(InvalidTransaction::InvalidChainId.into());
+                    }
+                    Ok((Self::FriProof(tx, sig_data), sig_hash))
                 }
                 ServiceTx::TX_TYPE => {
                     // Check that from provided by oracle is BOOTLOADER_FORMAL_ADDRESS

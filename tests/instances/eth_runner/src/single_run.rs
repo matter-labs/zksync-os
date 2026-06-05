@@ -11,13 +11,13 @@ use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer
 use rig::forward_system::system::tracers::pair::Pair;
 use rig::forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::log::info;
+use rig::BlockOutput;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
 use zk_ee::system::tracer::{NopTracer, Tracer};
 use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
-use zksync_os_interface::types::BlockOutput;
 
 #[allow(clippy::too_many_arguments)]
 fn run<const RANDOMIZED: bool>(
@@ -29,7 +29,6 @@ fn run<const RANDOMIZED: bool>(
     transactions: Vec<EncodedTx>,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
-    calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
     flamegraph: Option<String>,
@@ -41,7 +40,7 @@ fn run<const RANDOMIZED: bool>(
         chain.set_block_hashes(block_hashes.into_array(block_number))
     }
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &diff_trace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();
@@ -240,10 +239,13 @@ pub fn single_run(
     let diff_file = File::open(dir.join("difftrace.json"))?;
     let diff_reader = BufReader::new(diff_file);
     let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
-    let block_hashes: Option<BlockHashes> = block_hashes.map(|path| {
-        let hashes = fs::read_to_string(&path).expect("valid block hashes path");
-        serde_json::from_str(&hashes).expect("valid block hashes JSON")
-    });
+    // Prefer an explicit --block-hashes path; otherwise auto-load
+    // block_hashes.json from the block dir if present, so the BLOCKHASH opcode
+    // resolves against the real ancestor hashes instead of zero.
+    let block_hashes: Option<BlockHashes> = block_hashes
+        .map(|path| fs::read_to_string(&path).expect("valid block hashes path"))
+        .or_else(|| fs::read_to_string(dir.join("block_hashes.json")).ok())
+        .map(|hashes| serde_json::from_str(&hashes).expect("valid block hashes JSON"));
 
     let calltrace: CallTrace = serde_json::from_reader(calltrace_reader)?;
     let block: Block = serde_json::from_str(&block).expect("valid block JSON");
@@ -281,15 +283,6 @@ pub fn single_run(
             .collect(),
     };
 
-    let calltrace = CallTrace {
-        result: calltrace
-            .result
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-            .collect(),
-    };
-
     if randomized {
         let chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
         run(
@@ -301,7 +294,6 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,
@@ -318,7 +310,6 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,

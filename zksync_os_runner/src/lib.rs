@@ -1,8 +1,26 @@
-use airbender_host::{FlamegraphConfig, Program, Runner as _};
+//! ZKsync OS RISC-V runner.
+//!
+//! Wrapper around airbender-host's `TranspilerRunner` that plugs
+//! in our MOP-aware decoder.
+
+use airbender_host::{ExecutionResult, FlamegraphConfig, Program, Runner as _};
+use riscv_transpiler::ir::{DecodingOptions, FullUnsignedMachineDecoderConfig};
 use std::path::PathBuf;
 
+/// Decoder config used by the FRI-aware RISC-V runner.
+struct FullUnsignedMachineWithMopDecoderConfig;
+
+impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
+    const SUPPORT_MOP: bool = true;
+    const SUPPORT_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
+    const SUPPORT_SIGNED_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
+    const SUPPORT_SUBWORD_MEM_ACCESS: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
+}
+
 /// Default upper bound on RISC-V cycles used when the caller doesn't override it.
-/// This is large enough for any real block; individual tests can lower it.
 pub const DEFAULT_CYCLE_LIMIT: usize = 1 << 36;
 
 /// Flamegraph profiling options passed through to the transpiler VM.
@@ -76,40 +94,47 @@ impl Runner {
             )
         });
 
-        let mut builder = program.transpiler_runner().with_cycles(self.cycles);
+        let mut builder = program
+            .transpiler_runner()
+            .with_unstable_raw_decoder::<FullUnsignedMachineWithMopDecoderConfig>(
+                "zksync-os mop decoder",
+            )
+            .with_cycles(self.cycles);
 
-        if let Some(fg_options) = self.flamegraph {
-            let flamegraph_config = FlamegraphConfig {
-                output: fg_options.output_path,
-                sampling_rate: fg_options.frequency_recip,
+        if let Some(fg) = self.flamegraph {
+            builder = builder.with_flamegraph(FlamegraphConfig {
+                output: fg.output_path,
+                sampling_rate: fg.frequency_recip,
                 inverse: false,
                 elf_path: Some(self.dist_dir.join("app.elf")),
-            };
-            builder = builder.with_flamegraph(flamegraph_config);
+            });
         }
 
-        let runner = builder
-            .build()
-            .unwrap_or_else(|err| panic!("failed to build transpiler runner: {err}"));
-
-        let result = runner
+        let runner = builder.build().expect("failed to build transpiler runner");
+        let ExecutionResult {
+            receipt,
+            cycles_executed,
+            cycle_markers,
+            ..
+        } = runner
             .run(input_words)
-            .unwrap_or_else(|err| panic!("transpiler runner execution failed: {err}"));
+            .expect("transpiler runner execution failed");
 
         #[allow(unused_mut, unused_assignments)]
         let mut block_effective = None;
 
         #[cfg(feature = "cycle_marker")]
-        {
-            if let Some(cm) = result.cycle_markers {
-                let results = cycle_marker::print_cycle_markers(cm);
-                block_effective = results.block_effective;
-            }
+        if let Some(cm) = cycle_markers {
+            let results = cycle_marker::print_cycle_markers(cm);
+            block_effective = results.block_effective;
         }
 
+        #[cfg(not(feature = "cycle_marker"))]
+        let _ = cycle_markers;
+
         RunResult {
-            output: result.receipt.output,
-            block_effective,
+            output: receipt.output,
+            block_effective: block_effective.or(Some(cycles_executed as u64)),
         }
     }
 }

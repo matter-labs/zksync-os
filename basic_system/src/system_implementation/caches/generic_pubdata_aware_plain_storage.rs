@@ -103,11 +103,14 @@ impl<
         self.cache.commit();
         self.evm_refunds_counter =
             NonEmptyHistoryCounter::new_with_initial(self.alloc.clone(), R::empty());
-    }
-
-    pub fn finish_tx(&mut self) {
+        // Advance the warmth id at the start of each tx (not at finish) so that
+        // block-level system operations, which run before the first `begin_new_tx`,
+        // keep tx id 0 and are never considered warm by user transactions
+        // (which start at id 1). Matches the account cache, which bumps on begin.
         self.current_tx_id.0 += 1;
     }
+
+    pub fn finish_tx(&mut self) {}
 
     #[track_caller]
     pub fn start_frame(&mut self) -> StorageSnapshotId {

@@ -600,7 +600,6 @@ entries:
           test_wycheproof_valid.json:
             hash: '0x1a390d887079e2741e6b973118efc7de'
             enabled: true
-        hardforkOverride: Osaka
   paris:
     enabled: true
     entries:
@@ -750,6 +749,7 @@ entries:
             comment: 'TODO: currently alloy can not build and sign invalid 7702 transactions'
             skipNames:
             - tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_contract_create[fork_Prague-state_test]
+            - tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_contract_create[fork_Osaka-state_test]
           test_contract_storage_to_pointer_with_storage.json:
             hash: '0xbb5e413111558b1d613de2a126a22537'
             enabled: true
@@ -945,7 +945,6 @@ entries:
           test_valid_tx_invalid_chain_id.json:
             hash: '0x7796ccddb6c4116b7f6d55b4074cce45'
             enabled: true
-        hardforkOverride: Prague
   shanghai:
     enabled: true
     entries:
