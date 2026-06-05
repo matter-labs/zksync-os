@@ -85,7 +85,7 @@ impl<O: IOOracle, const PROOF_ENV: bool> EthereumLikeTypes for ForwardSystemType
 /// STF implementation for sequencing system
 impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, false> {
     /// ZKsync transaction data tracker with hash accumulators and resource counts
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator, Self::Allocator>;
     /// ZKsync blocks data tracker
     type BatchDataKeeper = ();
     /// Standard ZKsync block header format
@@ -105,7 +105,7 @@ impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, false> {
 /// STF implementation for prover input generating system
 impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, true> {
     /// ZKsync transaction data tracker with hash accumulators and resource counts
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher, Self::Allocator>;
     /// ZKsync blocks data tracker
     type BatchDataKeeper = ();
     /// Standard ZKsync block header format

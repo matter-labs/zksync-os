@@ -9,6 +9,7 @@ use crate::bootloader::{
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
 use zk_ee::common_structs::GenericEventContentRef;
+use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{IOTeardown, Resource, MAX_EVENT_TOPICS};
 use zk_ee::utils::Bytes32;
 
@@ -21,7 +22,7 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
     S::Metadata: ZkSpecificMetadata,
 {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA, S::Allocator>;
     // we write only enforced tx hashes to the batch data, so it can be anything that implements tx hashes accumulator
     type BatchDataKeeper = BatchEA;
 

@@ -1,36 +1,24 @@
 //! Fixed-height binary Merkle tree built from a full set of leaves.
 //!
-//! Unlike an incremental tree, the root is computed in one pass over all
-//! already-hashed leaves. Missing right-hand nodes at each level are filled
-//! with the corresponding empty-subtree hash, which is equivalent to padding
-//! the leaf layer up to the full `2^height` capacity with the empty leaf.
-//!
-//! This is the shared implementation behind the L2->L1 logs tree and the
-//! per-block transaction/receipt trees: each call site supplies its own hasher
-//! and its own table of empty-subtree hashes.
+//! Missing right-hand nodes at each level are filled with the corresponding
+//! empty-subtree hash, which is equivalent to padding the leaf layer up to
+//! the full `2^height` capacity with the empty leaf.
 
 use crate::utils::Bytes32;
-use alloc::vec::Vec;
-use core::alloc::Allocator;
 use crypto::MiniDigest;
 
-/// Computes the root of a fixed-height binary Merkle tree over `nodes`,
-/// folding the buffer in place.
+/// Returns the root of a fixed-height binary Merkle tree whose leaves are
+/// `nodes`, padded up to `2^height` with the empty leaf.
 ///
-/// `nodes.len()` is the number of leaves. `empty_subtree_hashes[i]` must be the
-/// root of an empty subtree of height `i`, so index `0` is the empty leaf hash
-/// and index `height` is the all-empty tree root; the slice length defines the
-/// tree height as `len - 1`.
+/// `nodes` is the leaf slice and is **overwritten** as scratch while folding;
+/// on return its contents are meaningless (only the returned root matters).
 ///
-/// Padding a level with `empty_subtree_hashes[level]` is equivalent to padding
-/// the leaf layer up to `2^height` with the empty leaf, so the result matches a
-/// full power-of-two tree over the same leaves.
+/// `empty_subtree_hashes[i]` is the root of an empty subtree of height `i`
+/// (index `0` = empty leaf, index `height` = all-empty root), and its length
+/// sets `height = len - 1`. Empty input returns `empty_subtree_hashes[height]`.
 ///
-/// On return only `nodes[0]` is meaningful (the rest is scratch). For an empty
-/// input the all-empty root `empty_subtree_hashes[height]` is returned.
-///
-/// Precondition: `nodes.len() <= 2^height`. Call sites bound the leaf count well
-/// below capacity (block/log limits), so this is not reachable from input.
+/// Precondition: `nodes.len() <= 2^height` (call sites bound leaves well below
+/// capacity, so this is not reachable from input).
 pub fn merkle_root_in_place<H>(nodes: &mut [Bytes32], empty_subtree_hashes: &[Bytes32]) -> Bytes32
 where
     H: MiniDigest<HashOutput = [u8; 32]>,
@@ -61,41 +49,32 @@ where
     nodes[0]
 }
 
-/// Precomputes empty-subtree hashes for a tree of the given height.
-///
-/// Returns `[empty_leaf, H(empty_leaf || empty_leaf), ...]` of length
-/// `height + 1`, where entry `i` is the root of an empty subtree of height `i`.
-/// The result is exactly the `empty_subtree_hashes` argument expected by
-/// [`merkle_root_in_place`].
-pub fn empty_subtree_hashes_in<H, A: Allocator>(
-    empty_leaf: Bytes32,
-    height: usize,
-    allocator: A,
-) -> Vec<Bytes32, A>
-where
-    H: MiniDigest<HashOutput = [u8; 32]>,
-{
-    let mut hashes = Vec::with_capacity_in(height + 1, allocator);
-    hashes.push(empty_leaf);
-
-    let mut hasher = H::new();
-    for level in 1..=height {
-        let prev = hashes[level - 1];
-        hasher.update(prev.as_u8_ref());
-        hasher.update(prev.as_u8_ref());
-        hashes.push(Bytes32::from_array(hasher.finalize_reset()));
-    }
-
-    hashes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::alloc::Global;
     use alloc::vec::Vec;
     use crypto::blake2s::Blake2s256;
     use crypto::sha3::Keccak256;
+
+    /// Test-only recomputation of the empty-subtree hashes. Production code uses
+    /// hardcoded tables; the tests regenerate the recurrence to lock those tables.
+    fn empty_subtree_hashes<H>(empty_leaf: Bytes32, height: usize) -> Vec<Bytes32>
+    where
+        H: MiniDigest<HashOutput = [u8; 32]>,
+    {
+        let mut hashes = Vec::with_capacity(height + 1);
+        hashes.push(empty_leaf);
+
+        let mut hasher = H::new();
+        for level in 1..=height {
+            let prev = hashes[level - 1];
+            hasher.update(prev.as_u8_ref());
+            hasher.update(prev.as_u8_ref());
+            hashes.push(Bytes32::from_array(hasher.finalize_reset()));
+        }
+
+        hashes
+    }
 
     fn hash_pair<H>(left: Bytes32, right: Bytes32) -> Bytes32
     where
@@ -141,7 +120,7 @@ mod tests {
         // Transitively proves equivalence with the removed incremental tree,
         // which was validated against the same full-padded reference.
         const HEIGHT: usize = 8;
-        let empty = empty_subtree_hashes_in::<Blake2s256, _>(Bytes32::ZERO, HEIGHT, Global);
+        let empty = empty_subtree_hashes::<Blake2s256>(Bytes32::ZERO, HEIGHT);
 
         let all_leaves: Vec<Bytes32> = (0..(1u32 << HEIGHT)).map(blake_leaf).collect();
         for count in 0..=all_leaves.len() {
@@ -156,7 +135,7 @@ mod tests {
     #[test]
     fn empty_and_single_leaf_edge_cases() {
         const HEIGHT: usize = 4;
-        let empty = empty_subtree_hashes_in::<Blake2s256, _>(Bytes32::ZERO, HEIGHT, Global);
+        let empty = empty_subtree_hashes::<Blake2s256>(Bytes32::ZERO, HEIGHT);
 
         let mut none: Vec<Bytes32> = Vec::new();
         assert_eq!(
@@ -182,8 +161,7 @@ mod tests {
         };
 
         let empty_leaf = Bytes32::from_array(Keccak256::digest([0u8; L2_TO_L1_LOG_SERIALIZE_SIZE]));
-        let generic =
-            empty_subtree_hashes_in::<Keccak256, _>(empty_leaf, L2_TO_L1_LOG_TREE_HEIGHT, Global);
+        let generic = empty_subtree_hashes::<Keccak256>(empty_leaf, L2_TO_L1_LOG_TREE_HEIGHT);
 
         let table: Vec<Bytes32> = L2_TO_L1_LOG_EMPTY_SUBTREE_HASHES
             .iter()

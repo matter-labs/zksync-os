@@ -35,7 +35,7 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     type PostTxLoopOpResult = ();
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator, S::Allocator>;
     type BatchDataKeeper = ();
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
 
