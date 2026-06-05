@@ -20,6 +20,8 @@ tests/instances/**/*.bench
 bench_results/
 bench_scripts/__pycache__/
 
+docs/superpowers
+
 .DS_Store
 .idea
 .claude
