@@ -42,18 +42,15 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
             return Err(internal_error!("block gas limit is too high"));
         }
 
-        // Chain id is sourced from the static chain config; the chain id parsed
-        // from the block header must agree.
-        if header.chain_id != static_config.chain_config.chain_id() {
-            return Err(internal_error!(
-                "block header chain id does not match chain config"
-            ));
-        }
+        // Ethereum block headers do not carry a chain id, so the Ethereum STF
+        // uses a fixed one (see `HeaderAndHistory`). Source the metadata chain
+        // config's chain id from it so `System::chain_id()` stays consistent.
+        let chain_config = static_config.chain_config.with_chain_id(header.chain_id);
 
         let metadata = EthereumBlockMetadata {
             block_level: header,
             tx_level: EthereumTransactionMetadata::empty(),
-            chain_config: static_config.chain_config,
+            chain_config,
             _marker: core::marker::PhantomData,
         };
 
