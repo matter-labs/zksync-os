@@ -82,18 +82,17 @@ impl FromInterface<InterfaceEvmError> for ZkEvmError {
 impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
     fn from_interface(value: B) -> Self {
         BlockMetadataFromOracle {
-            chain_id: value.chain_id,
-            block_number: value.block_number,
-            block_hashes: BlockHashes(value.block_hashes.0),
-            timestamp: value.timestamp,
-            eip1559_basefee: value.eip1559_basefee,
-            pubdata_price: value.pubdata_price,
-            native_price: value.native_price,
-            coinbase: ruint::aliases::B160::from_alloy(value.coinbase),
-            gas_limit: value.gas_limit,
-            pubdata_limit: value.pubdata_limit,
-            mix_hash: value.mix_hash,
-            blob_fee: value.blob_fee,
+            block_number: value.block_number(),
+            block_hashes: BlockHashes(*value.block_hashes()),
+            timestamp: value.timestamp(),
+            eip1559_basefee: value.eip1559_basefee(),
+            pubdata_price: value.pubdata_price(),
+            native_price: value.native_price(),
+            coinbase: ruint::aliases::B160::from_alloy(value.coinbase()),
+            gas_limit: value.gas_limit(),
+            pubdata_limit: value.pubdata_limit(),
+            mix_hash: value.mix_hash(),
+            blob_fee: value.blob_fee(),
         }
     }
 }

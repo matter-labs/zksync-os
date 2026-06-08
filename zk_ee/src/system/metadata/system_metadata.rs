@@ -16,6 +16,9 @@ pub struct SystemMetadata<
     /// Provider of metadata for the current transaction.
     pub tx_level: TX,
 
+    /// Static chain-level configuration.
+    pub chain_config: super::chain_config::ChainConfig,
+
     pub _marker: core::marker::PhantomData<IOTypes>,
 }
 
@@ -26,9 +29,6 @@ impl<
         TX: BasicTransactionMetadata<IOTypes>,
     > BasicBlockMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
 {
-    fn chain_id(&self) -> u64 {
-        self.block_level.chain_id()
-    }
     fn block_number(&self) -> u64 {
         self.block_level.block_number()
     }
@@ -95,6 +95,9 @@ impl<
         TX: BasicTransactionMetadata<IOTypes>,
     > ChainConfigMetadata for SystemMetadata<IOTypes, B, TX>
 {
+    fn chain_config(&self) -> super::chain_config::ChainConfig {
+        self.chain_config
+    }
 }
 
 /// Assumes that ZK-specific metadata is implemented at the block level.

@@ -35,6 +35,7 @@ pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use crypto;
+pub use evm_interpreter;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::run::test_impl::InMemoryBatchState;

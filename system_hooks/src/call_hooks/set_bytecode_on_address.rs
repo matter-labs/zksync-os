@@ -6,6 +6,7 @@
 use super::super::*;
 use crate::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, SET_BYTECODE_ON_ADDRESS_HOOK};
 use core::fmt::Write;
+use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
@@ -162,9 +163,10 @@ where
 
     // Although this can be called as a part of protocol upgrade,
     // we are checking the next invariants, just in case
-    if !system.is_contract_size_allowed(bytecode_length as usize) {
+    // EIP-170: reject code of length > 24576.
+    if bytecode_length as usize > MAX_CODE_SIZE {
         return Ok(Err(
-            "Set bytecode on address failure: called with invalid bytecode(length exceeds chain-configured limit)",
+            "Set bytecode on address failure: called with invalid bytecode(length > 24576)",
         ));
     }
     // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.

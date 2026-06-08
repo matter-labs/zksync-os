@@ -26,8 +26,10 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
     fn metadata_op<'a, Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         allocator: S::Allocator,
-        _static_config: &crate::bootloader::config::BootloaderStaticConfig,
+        static_config: &crate::bootloader::config::BootloaderStaticConfig,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
+        static_config.chain_config.validate()?;
+
         // make header's buffer, parse, make into our internal structure, save hash
         let header = HeaderAndHistory::new(oracle, allocator.clone())?;
 
@@ -40,9 +42,18 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
             return Err(internal_error!("block gas limit is too high"));
         }
 
+        // Chain id is sourced from the static chain config; the chain id parsed
+        // from the block header must agree.
+        if header.chain_id != static_config.chain_config.chain_id() {
+            return Err(internal_error!(
+                "block header chain id does not match chain config"
+            ));
+        }
+
         let metadata = EthereumBlockMetadata {
             block_level: header,
             tx_level: EthereumTransactionMetadata::empty(),
+            chain_config: static_config.chain_config,
             _marker: core::marker::PhantomData,
         };
 

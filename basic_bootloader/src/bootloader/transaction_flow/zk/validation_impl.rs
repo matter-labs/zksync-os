@@ -14,7 +14,7 @@ use crate::require;
 use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::ERGS_PER_GAS;
+use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
@@ -171,7 +171,7 @@ where
     let authorization_list_num = 0;
 
     let is_deployment = transaction.is_deployment().is_some();
-    if is_deployment && !system.is_initcode_size_allowed(calldata.len()) {
+    if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
         return Err(TxError::Validation(
             InvalidTransaction::CreateInitCodeSizeLimit,
         ));

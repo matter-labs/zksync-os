@@ -3,9 +3,6 @@ use ruint::aliases::U256;
 
 /// Block-level metadata required by the bootloader to execute transactions.
 pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
-    /// Identifier of the chain/network.
-    fn chain_id(&self) -> u64;
-
     /// Current block number.
     fn block_number(&self) -> u64;
 

@@ -4,10 +4,9 @@ use rig::alloy::consensus::TxEip1559;
 use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
+use rig::evm_interpreter::MAX_INITCODE_SIZE;
 use rig::ruint::aliases::U256;
-use rig::zk_ee::system::metadata::chain_config::{
-    ChainConfig, DEFAULT_MAX_CONTRACT_SIZE, DEFAULT_MAX_TX_GAS_LIMIT,
-};
+use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{assert_tx_rejected, assert_tx_success};
@@ -59,7 +58,12 @@ fn create_tx(signer: PrivateKeySigner, gas_limit: u64, init_code: Vec<u8>) -> ZK
 
 fn chain_config_with_max_tx_gas_limit(max_tx_gas_limit: u64) -> ChainConfig {
     let default = ChainConfig::default();
-    ChainConfig::new(default.fri_proof_verification_enabled(), max_tx_gas_limit).unwrap()
+    ChainConfig::new(
+        TEST_CHAIN_ID,
+        default.fri_proof_verification_enabled(),
+        max_tx_gas_limit,
+    )
+    .unwrap()
 }
 
 fn block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
@@ -202,7 +206,7 @@ fn simulation_skips_max_tx_gas_limit_admission_check() {
 fn default_initcode_size_limit_rejects_above_boundary() {
     let signer = PrivateKeySigner::random();
     let sender = signer.address();
-    let initcode = vec![0; (DEFAULT_MAX_CONTRACT_SIZE * 2 + 1) as usize];
+    let initcode = vec![0; MAX_INITCODE_SIZE + 1];
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
     let tx = create_tx(signer, 1_000_000, initcode);

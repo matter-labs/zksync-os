@@ -87,6 +87,8 @@ impl BatchOutput {
     /// Calculate keccak256 hash of public input
     ///
     /// Canonical chain config encoding, in order:
+    /// - `chain_id`: uint256 (the chain config's chain id), encoded as a 32-byte
+    ///   big-endian word and committed as the leading field.
     /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
     /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
@@ -195,7 +197,7 @@ mod tests {
     #[test]
     fn batch_output_hash_commits_to_max_tx_gas_limit() {
         let default_hash = sample_batch_output(ChainConfig::default()).hash();
-        let changed = ChainConfig::new(false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
+        let changed = ChainConfig::new(0, false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
 
         assert_ne!(default_hash, sample_batch_output(changed).hash());
     }

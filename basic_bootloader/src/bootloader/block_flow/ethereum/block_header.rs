@@ -152,9 +152,6 @@ pub struct HeaderAndHistory {
 }
 
 impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
-    fn chain_id(&self) -> u64 {
-        self.chain_id
-    }
     fn block_number(&self) -> u64 {
         self.header.number
     }

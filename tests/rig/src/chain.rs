@@ -365,7 +365,7 @@ impl Chain<false> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
-            chain_config: ChainConfig::default(),
+            chain_config: ChainConfig::default().with_chain_id(chain_id.unwrap_or(37)),
         }
     }
 }
@@ -389,7 +389,7 @@ impl Chain<true> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
-            chain_config: ChainConfig::default(),
+            chain_config: ChainConfig::default().with_chain_id(chain_id.unwrap_or(37)),
         }
     }
 }
@@ -633,6 +633,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_config(&mut self, chain_config: ChainConfig) {
         self.chain_config = chain_config;
+        // Keep the block-level chain id (used to build block metadata) in sync
+        // with the chain config, which is now the source of truth.
+        self.chain_id = chain_config.chain_id();
     }
 
     pub fn set_fri_proof_verification_enabled(&mut self, enabled: bool) {
@@ -655,6 +658,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
+        self.chain_config = self.chain_config.with_chain_id(chain_id);
     }
 
     /// Build the batch pre-state passed to the batch prover-input runner.
@@ -727,7 +731,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_context = block_context.unwrap_or_default();
         let chain_config = self.chain_config;
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -1003,7 +1006,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_context = block_context.unwrap_or_default();
         let chain_config = self.chain_config;
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
