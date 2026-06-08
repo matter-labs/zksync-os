@@ -186,14 +186,9 @@ impl<
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                let mut props =
-                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true);
-                if data_from_oracle.is_new_storage_slot {
-                    props.cold_new_read_charged = true;
-                }
                 Ok((
                     CacheRecord::new(data_from_oracle.initial_value.into()),
-                    props,
+                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true),
                 ))
             })
             .and_then(|mut x| {
@@ -201,18 +196,10 @@ impl<
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
-                        // Element exists in cache, but wasn't touched in current tx yet.
-                        // Charge NEW only once — the non-membership proof is a one-time cost.
-                        let is_new_for_read = x.element_properties().is_new_element()
-                            && !x.element_properties().cold_new_read_charged;
-                        resources_policy.charge_cold_storage_read_extra(
-                            ee_type,
-                            resources,
-                            is_new_for_read,
-                        )?;
-                        if is_new_for_read {
-                            x.element_properties_mut().cold_new_read_charged = true;
-                        }
+                        // Element is in cache from a prior access — that access already
+                        // paid the NEW read cost if the slot was new. Charge EXISTING.
+                        resources_policy
+                            .charge_cold_storage_read_extra(ee_type, resources, false)?;
                     }
 
                     x.update(|cache_record| {

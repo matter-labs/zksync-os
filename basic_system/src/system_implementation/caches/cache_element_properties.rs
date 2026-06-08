@@ -22,7 +22,6 @@ enum CacheElementValueStatus {
 pub struct CacheElementProperties {
     persistent_storage_status: CacheElementPersistenceStatus,
     cache_value_status: CacheElementValueStatus,
-    pub cold_new_read_charged: bool,
 }
 
 impl CacheElementProperties {
@@ -42,7 +41,6 @@ impl CacheElementProperties {
         Self {
             persistent_storage_status,
             cache_value_status,
-            cold_new_read_charged: false,
         }
     }
 

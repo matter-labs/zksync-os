@@ -297,11 +297,10 @@ impl<
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                let mut props = CacheElementProperties::new(empty_account, observe);
-                if empty_account {
-                    props.cold_new_read_charged = true;
-                }
-                Ok((CacheRecord::new(acc_data), props))
+                Ok((
+                    CacheRecord::new(acc_data),
+                    CacheElementProperties::new(empty_account, observe),
+                ))
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
@@ -315,25 +314,20 @@ impl<
                 }
                 if is_warm == false {
                     if initialized_element == false {
-                        // Element exists in cache, but wasn't touched in current tx yet.
+                        // Element is in cache from a prior access — that access already
+                        // paid the NEW read cost if the account was new. Charge EXISTING.
                         Self::charge_ergs_for_cold_access(
                             ee_type,
                             resources,
                             address,
                             is_selfdestruct,
                         )?;
-                        // Charge NEW only once — the non-membership proof is a one-time cost.
-                        let empty_account = x.element_properties().is_new_element()
-                            && !x.element_properties().cold_new_read_charged;
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
-                            empty_account,
+                            false,
                             &storage.0.resources_policy,
                         )?;
-                        if empty_account {
-                            x.element_properties_mut().cold_new_read_charged = true;
-                        }
                     }
 
                     x.update(|cache_record| {
