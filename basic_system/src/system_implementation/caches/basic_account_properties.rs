@@ -11,6 +11,9 @@ pub struct BasicAccountPropertiesMetadata {
     pub last_touched_in_tx: Option<u32>,
     /// Marks if account is marked for deconstruction is transaction
     pub is_marked_for_deconstruction: bool,
+    /// Transaction where the persist cost (0x8003 write + preimage hash) was
+    /// proactively charged. None means not yet charged in the current block.
+    pub persist_charged_in_tx: Option<u32>,
 }
 
 impl BasicAccountPropertiesMetadata {

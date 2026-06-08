@@ -370,6 +370,32 @@ where
         )?;
     }
 
+    // Verify that the L1 intrinsic native formula covers the actual
+    // post-execution inf_resources consumption. The formula also includes
+    // pre-budgeted costs (event log, rolling hash keccak) that are not
+    // charged to inf_resources, giving a small surplus (~4%). This matches
+    // the L2 verify_intrinsic_native pattern.
+    #[cfg(feature = "verify_intrinsic_native")]
+    {
+        let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
+        let inf_remaining = inf_resources.native().as_u64();
+        let actual_used = inf_initial.saturating_sub(inf_remaining);
+        let formula = intrinsic_computational_native_charged;
+        system_log!(
+            system,
+            "L1 intrinsic native verification: formula={}, actually_used={}\n",
+            formula,
+            actual_used
+        );
+        assert!(
+            actual_used <= formula,
+            "L1 intrinsic computational native formula ({}) is not an upper bound \
+             on actual post-execution consumption ({})",
+            formula,
+            actual_used
+        );
+    }
+
     // Add back the intrinsic native charged in get_resources_for_tx,
     // as initial_resources doesn't include them.
     let computational_native_used = resources_before_refund
@@ -871,6 +897,7 @@ where
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {
+        let notify_native_before = resources.native().as_u64();
         // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
         // selector 0x03117c8c + abi-encoded (fromChainId, amount)
         let mut calldata = [0u8; 68];
@@ -900,6 +927,12 @@ where
             *inf_ergs = resources_returned;
             Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
         })?;
+
+        let notify_native_used = notify_native_before - resources.native().as_u64();
+        system_log!(
+            system,
+            "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+        );
 
         if failed {
             system_log!(

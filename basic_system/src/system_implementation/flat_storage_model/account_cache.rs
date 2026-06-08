@@ -169,6 +169,51 @@ impl<
         Ok(())
     }
 
+    fn charge_account_persist_cost_if_needed(
+        current_tx_id: u32,
+        account_data: &mut AddressItem<'_, A>,
+        resources: &mut R,
+    ) -> Result<(), SystemError> {
+        let already_charged = account_data
+            .current()
+            .metadata()
+            .basic
+            .persist_charged_in_tx
+            == Some(current_tx_id);
+        if already_charged {
+            return Ok(());
+        }
+
+        // Use NEW cost only for the first persist charge on a truly new account.
+        // Once the insertion cost has been paid (by any tx in this block), subsequent
+        // txs pay EXISTING — the tree insertion is a one-time cost per block.
+        let is_new = account_data.element_properties().is_new_element()
+            && account_data
+                .current()
+                .metadata()
+                .basic
+                .persist_charged_in_tx
+                .is_none();
+        let write_cost = if is_new {
+            ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST
+        } else {
+            ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST
+        };
+        let preimage_hash_cost = blake2s_native_cost(AccountProperties::ENCODED_SIZE);
+        let total = write_cost + preimage_hash_cost;
+
+        resources.charge(&R::from_native(R::Native::from_computational(total)))?;
+
+        account_data.update(|cache_record| {
+            cache_record.update_metadata(|m| {
+                m.basic.persist_charged_in_tx = Some(current_tx_id);
+                Ok(())
+            })
+        })?;
+
+        Ok(())
+    }
+
     /// Read element and initialize it if needed
     fn materialize_element<const PROOF_ENV: bool>(
         &mut self,
@@ -269,18 +314,18 @@ impl<
                 }
                 if is_warm == false {
                     if initialized_element == false {
-                        // Element exists in cache, but wasn't touched in current tx yet
+                        // Element is in cache from a prior access — that access already
+                        // paid the NEW read cost if the account was new. Charge EXISTING.
                         Self::charge_ergs_for_cold_access(
                             ee_type,
                             resources,
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.element_properties().is_new_element();
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
-                            empty_account,
+                            false,
                             &storage.0.resources_policy,
                         )?;
                     }
@@ -308,6 +353,7 @@ impl<
         is_selfdestruct: bool,
         fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError> {
+        let cur_tx = self.current_tx_id;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -319,12 +365,16 @@ impl<
             true,
         )?;
 
-        resources.charge(&R::from_native(R::Native::from_computational(
-            WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
-        )))?;
-
         let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
+
+        if new != cur {
+            Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
+            resources.charge(&R::from_native(R::Native::from_computational(
+                WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+            )))?;
+        }
+
         account_data.update(|cache_record| {
             cache_record.update(|v, m| {
                 v.balance = new;
@@ -675,6 +725,7 @@ impl<
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<u64, NonceSubsystemError> {
+        let cur_tx = self.current_tx_id;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -685,6 +736,8 @@ impl<
             false,
             true,
         )?;
+
+        Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -821,6 +874,8 @@ impl<
             )
         })?;
 
+        Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
+
         // compute observable and true hashes of bytecode
         let observable_bytecode_hash = match from_ee {
             ExecutionEnvironmentType::NoEE => {
@@ -936,6 +991,8 @@ impl<
             true,
         )?;
 
+        Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
+
         let request = PreimageRequest {
             hash: code_hash,
             expected_preimage_len_in_bytes: unpadded_bytecode_len,
@@ -1019,6 +1076,7 @@ impl<
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
+        let cur_tx = self.current_tx_id;
         let mut account_data = resources.with_infinite_ergs(|inf_resources| {
             self.materialize_element::<PROOF_ENV>(
                 ExecutionEnvironmentType::EVM,
@@ -1031,6 +1089,8 @@ impl<
                 true,
             )
         })?;
+
+        Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
 
         let (
             observable_bytecode_hash,
@@ -1149,6 +1209,9 @@ impl<
             true,
             false,
         )?;
+
+        Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
+
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
