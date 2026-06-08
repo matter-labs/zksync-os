@@ -254,6 +254,16 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
         let gas_used = self.gas_before.saturating_sub(gas_after);
         let native_used = self.native_before.saturating_sub(native_after);
 
+        // Skip OOG executions: STEP_NATIVE_COST is charged before the
+        // opcode handler runs. If the handler's own spend_gas_and_native
+        // fails (OOG), only the STEP charge is deducted. Detect this by
+        // checking native_used == STEP_NATIVE_COST (20) for opcodes that
+        // should charge more. STOP (native cost 10) has total 30, so 20
+        // is never a legitimate full charge for any opcode.
+        if native_used == evm_interpreter::native_resource_constants::STEP_NATIVE_COST as u64 {
+            return;
+        }
+
         stat.total_gas += gas_used;
         stat.total_native += native_used;
         stat.gas_samples.push(gas_used);
