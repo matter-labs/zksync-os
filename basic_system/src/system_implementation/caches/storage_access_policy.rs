@@ -25,6 +25,10 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
     /// This cost is added to the cost of reading.
     /// We assume writing is always at least as expensive
     /// as reading.
+    ///
+    /// `is_warm_access`: EIP-2929 access warmness (any prior access in this tx).
+    /// `is_cold_write_charged`: whether cold write extra (native merkle paths)
+    ///   was already charged for this slot in this tx.
     fn charge_storage_write_extra(
         &self,
         ee_type: ExecutionEnvironmentType,
@@ -32,7 +36,8 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
         current_value: &V,
         new_value: &V,
         resources: &mut R,
-        is_warm_write: bool,
+        is_warm_access: bool,
+        is_cold_write_charged: bool,
         is_new_slot: bool,
     ) -> Result<(), SystemError>;
 

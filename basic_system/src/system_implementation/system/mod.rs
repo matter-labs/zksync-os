@@ -73,7 +73,8 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         current_value: &Bytes32,
         new_value: &Bytes32,
         resources: &mut R,
-        is_warm_write: bool,
+        is_warm_access: bool,
+        is_cold_write_charged: bool,
         is_new_slot: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
@@ -95,19 +96,31 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 let total_cost =
                     // In EVM spec there's a discrepancy for cold read and cold write costs. Cold
                     // writes add another 100 from thin air.
-                    if is_warm_write == false { total_cost + 100 }
+                    // Uses access warmness (EIP-2929): warm after any SLOAD or SSTORE.
+                    if is_warm_access == false { total_cost + 100 }
                     else { total_cost };
 
                 Ergs(total_cost * ERGS_PER_GAS)
             }
         };
-        let native = if is_new_slot {
+        // Native uses write-specific warmness: only discount if cold write extra
+        // was already charged this tx. A prior SLOAD warms the access but doesn't
+        // pay for write merkle paths. No-op writes (same value) skip the charge
+        // entirely — the tree won't do any work for unchanged slots.
+        let native = if new_value == current_value {
+            R::Native::from_computational(0)
+        } else if is_cold_write_charged {
+            R::Native::from_computational(
+                crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
+            )
+        } else if is_new_slot {
             R::Native::from_computational(
                 crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-          crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,
+            )
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }

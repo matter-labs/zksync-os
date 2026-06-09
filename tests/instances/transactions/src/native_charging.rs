@@ -11,7 +11,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 const TO: alloy::primitives::Address = address!("0000000000000000000000000000000000010002");
 
 const AVG_RATIO: u64 = 150;
-const LOW_RATIO: u64 = 20;
+const LOW_RATIO: u64 = 25;
 const HIGH_RATIO: u64 = 1_000_000;
 
 fn run_tx(

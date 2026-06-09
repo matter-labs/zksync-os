@@ -49,8 +49,9 @@ fn bls12_381_pairing_as_system_function_inner<
         ((num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS)
             * ERGS_PER_GAS,
     );
-    // TODO(EVM-1237): add native model
-    let cost_native = 0;
+    let cost_native = crate::cost_constants::BLS12_381_PAIRING_NATIVE_COST
+        + crate::cost_constants::BLS12_381_PAIRING_PER_PAIR_NATIVE_COST
+            .saturating_mul(num_pairs as u64);
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
