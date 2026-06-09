@@ -196,7 +196,6 @@ where
         let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let batch_output = BatchOutput {
-            chain_id: U256::from(metadata.chain_config.chain_id()),
             chain_config: metadata.chain_config,
             first_block_timestamp: metadata.block_timestamp(),
             last_block_timestamp: metadata.block_timestamp(),

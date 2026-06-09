@@ -51,9 +51,8 @@ impl ChainStateCommitment {
 ///
 #[derive(Debug)]
 pub struct BatchOutput {
-    /// Chain id used during execution of the blocks.
-    pub chain_id: U256,
-    /// Static chain-level execution rules used during execution.
+    /// Static chain-level execution rules used during execution (includes the
+    /// chain id).
     pub chain_config: ChainConfig,
     /// First block timestamp.
     pub first_block_timestamp: u64,
@@ -93,7 +92,7 @@ impl BatchOutput {
     /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
-        hasher.update(self.chain_id.to_be_bytes::<32>());
+        hasher.update(U256::from(self.chain_config.chain_id()).to_be_bytes::<32>());
         update_bool_word(
             &mut hasher,
             self.chain_config.fri_proof_verification_enabled(),
@@ -158,8 +157,7 @@ mod tests {
 
     fn sample_batch_output(chain_config: ChainConfig) -> BatchOutput {
         BatchOutput {
-            chain_id: U256::from(37u64),
-            chain_config,
+            chain_config: chain_config.with_chain_id(37),
             first_block_timestamp: 1,
             last_block_timestamp: 2,
             da_commitment_scheme: DACommitmentScheme::BlobsAndPubdataKeccak256,
@@ -200,5 +198,17 @@ mod tests {
         let changed = ChainConfig::new(0, false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
 
         assert_ne!(default_hash, sample_batch_output(changed).hash());
+    }
+
+    #[test]
+    fn batch_output_hash_commits_to_chain_id() {
+        // `sample_batch_output` overrides chain id to 37; bypass it to vary the
+        // chain id directly.
+        let mut base = sample_batch_output(ChainConfig::default());
+        base.chain_config = base.chain_config.with_chain_id(1);
+        let mut other = sample_batch_output(ChainConfig::default());
+        other.chain_config = other.chain_config.with_chain_id(2);
+
+        assert_ne!(base.hash(), other.hash());
     }
 }
