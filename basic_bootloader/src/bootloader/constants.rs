@@ -84,14 +84,31 @@ pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
 
 // computational native consts
+/// Account read native cost for an existing cold account (present in the tree).
+pub const EXISTING_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_EXISTING_STORAGE_READ_NATIVE_COST;
+
 /// Constant part of l2 tx intrinsic computational native cost.
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
+/// Uses worst-case (new cold) sender when `free_native` is true, and
+/// existing cold sender when `free_native` is false (sender must have
+/// paid gas, so they must already exist in the tree).
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE: u64 = ECRECOVER_NATIVE_COST +
     NEW_COLD_ACCOUNT_READ_COST + // worst case sender account read (new on free-native chains)
     ACCOUNT_UPDATE_COST + // nonce update
     keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
     ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1) + // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
     ACCOUNT_PERSIST_NEW_NATIVE_COST + // sender persist (worst case: new on free-native chains)
+    ACCOUNT_PERSIST_EXISTING_NATIVE_COST; // coinbase persist (operator ensures coinbase exists)
+
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST +
+    EXISTING_COLD_ACCOUNT_READ_COST + // sender must exist (paid gas)
+    ACCOUNT_UPDATE_COST + // nonce update
+    keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
+    ACCOUNT_UPDATE_COST + // balance change for fee prepayment
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1) + // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_PERSIST_EXISTING_NATIVE_COST + // sender persist (sender exists)
     ACCOUNT_PERSIST_EXISTING_NATIVE_COST; // coinbase persist (operator ensures coinbase exists)
 
 /// Service tx intrinsic computational native cost.
