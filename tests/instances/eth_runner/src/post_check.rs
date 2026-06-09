@@ -2,12 +2,13 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use forward_system::run::output::BlockOutput;
-use rig::crypto::MiniDigest;
+use rig::basic_bootloader::bootloader::block_flow::zk::zk_block_tx_tree_root_in_place;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::log::{error, info};
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -16,7 +17,7 @@ pub enum PostCheckError {
     TxShouldHaveFailed { id: TxId },
     IncorrectLogs { id: TxId },
     GasMismatch { id: TxId },
-    BadTxRollingHash,
+    BadTransactionsRoot,
     Internal { msg: String },
 }
 
@@ -333,19 +334,15 @@ fn zksync_os_output_into_account_state(
     Ok(updates)
 }
 
-fn compute_tx_rolling_hash_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
-    let mut hasher = rig::crypto::sha3::Keccak256::new();
-    let mut tx_rolling_hash = [
-        0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03,
-        0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85,
-        0xa4, 0x70,
-    ];
-    for receipt in receipts.iter() {
-        hasher.update(tx_rolling_hash);
-        hasher.update(receipt.transaction_hash);
-        tx_rolling_hash = hasher.finalize_reset();
-    }
-    tx_rolling_hash
+/// Reproduces the header `transactions_root`: a Blake2s simple Merkle tree over
+/// the block's transaction hashes (in execution order), matching the ZKsync OS
+/// `block_data` scheme.
+fn compute_transactions_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
+    let mut leaves: Vec<Bytes32> = receipts
+        .iter()
+        .map(|receipt| Bytes32::from_array(receipt.transaction_hash.0))
+        .collect();
+    zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
 }
 
 pub fn post_check(
@@ -358,15 +355,15 @@ pub fn post_check(
         zk_ee::utils::u256_to_u64_saturated(src) as usize
     }
 
-    let reference_rolling_tx_hash = compute_tx_rolling_hash_for_receipts(&receipts);
-    let zksync_os_tx_rolling_hash = output.header.inner().transactions_root.0;
-    if reference_rolling_tx_hash != zksync_os_tx_rolling_hash {
+    let reference_transactions_root = compute_transactions_root_for_receipts(&receipts);
+    let zksync_os_transactions_root = output.header.inner().transactions_root.0;
+    if reference_transactions_root != zksync_os_transactions_root {
         error!(
-            "Transaction rolling hash mismatch, reference {}, got {}",
-            hex::encode(reference_rolling_tx_hash),
-            hex::encode(zksync_os_tx_rolling_hash)
+            "Transactions root mismatch, reference {}, got {}",
+            hex::encode(reference_transactions_root),
+            hex::encode(zksync_os_transactions_root)
         );
-        return Err(PostCheckError::BadTxRollingHash);
+        return Err(PostCheckError::BadTransactionsRoot);
     }
 
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {

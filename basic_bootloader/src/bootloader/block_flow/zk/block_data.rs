@@ -185,17 +185,25 @@ const ZK_BLOCK_TX_EMPTY_SUBTREE_HASHES: [[u8; 32]; ZK_BLOCK_TX_TREE_DEPTH + 1] =
     ],
 ];
 
-/// Computes the root of a per-block Blake2s Merkle tree over `leaves`, padding
-/// up to [`ZK_BLOCK_TX_TREE_DEPTH`] with the zero empty leaf. The leaves are
-/// copied into a contiguous scratch buffer, so the caller's storage is left
-/// intact and the chunked `ListVec` backing is flattened for the in-place root.
-fn block_tx_tree_root<A: Allocator + Clone + Default>(leaves: &ListVec<Bytes32, 32, A>) -> Bytes32 {
+/// Folds `leaves` into the per-block tx/receipt Merkle root (Blake2s, depth
+/// [`ZK_BLOCK_TX_TREE_DEPTH`], zero empty leaf, padded to capacity).
+///
+/// `leaves` is **overwritten** as scratch while folding (its contents are
+/// meaningless on return). Public and allocator-free so external consumers
+/// (e.g. block-replay validation) can reproduce the header's `transactions_root`
+/// / `receipts_root` from a flat leaf list.
+pub fn zk_block_tx_tree_root_in_place(leaves: &mut [Bytes32]) -> Bytes32 {
     let empty_hashes = ZK_BLOCK_TX_EMPTY_SUBTREE_HASHES.map(Bytes32::from_array);
-    // Flatten the chunked `ListVec` into a contiguous buffer (sized exactly, so
-    // no reallocation) backed by a fresh allocator — no global allocator use.
+    merkle_root_in_place::<Blake2s256>(leaves, &empty_hashes)
+}
+
+/// Flattens the chunked `ListVec` backing into a contiguous buffer (sized
+/// exactly, so no reallocation) backed by a fresh allocator — no global
+/// allocator use — and folds it into the tx/receipt Merkle root.
+fn block_tx_tree_root<A: Allocator + Clone + Default>(leaves: &ListVec<Bytes32, 32, A>) -> Bytes32 {
     let mut scratch = Vec::with_capacity_in(leaves.len(), A::default());
     scratch.extend(leaves.iter().copied());
-    merkle_root_in_place::<Blake2s256>(&mut scratch, &empty_hashes)
+    zk_block_tx_tree_root_in_place(&mut scratch)
 }
 
 /// ZKsync-specific block data keeper.
