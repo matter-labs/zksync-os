@@ -57,10 +57,9 @@ pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(46_000, 1650, 
 pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(600_000, 41_000, 0);
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
-#[cfg(not(feature = "modexp-repricing"))]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;
-#[cfg(feature = "modexp-repricing")]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 500;
+pub const MODEXP_BASE_NATIVE_COST: u64 = 20_000;
+pub const MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST: u64 = 340;
+pub const MODEXP_PER_OP_OVERHEAD_NATIVE_COST: u64 = 400;
 pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
 // TODO(EVM-1178) Add more vectors and benchmark cost better
 pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_000, 3_301_000, 0);
