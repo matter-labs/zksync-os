@@ -219,6 +219,9 @@ pub fn run_proving_inner<
             .into_public_input(L::default(), &mut oracle)
             .hash(),
     );
+    // The multiblock post-op is re-entered once per block and cannot know when
+    // the batch is complete, so the final disconnect has to be emitted by the
+    // outer runner.
     <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
         .expect("disconnect query must not fail");
 

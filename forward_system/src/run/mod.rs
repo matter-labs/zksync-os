@@ -378,6 +378,8 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     );
     oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
 
+    // Keep a single witness stream across all block re-entries so the final
+    // prover input matches the guest-side multiblock flow.
     let mut oracle = ReadWitnessSource::new(oracle);
     let mut tracer = NopTracer::default();
     let mut validator = NopTxValidator;
@@ -397,6 +399,8 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
         )
         .map_err(|e| wrap_error!(e))?;
 
+        // `result_keeper` accumulates batch-wide pubdata across re-entries, but
+        // `forward_running_rk` contains only the just-finished block output.
         let current_forward_result = std::mem::replace(
             &mut result_keeper.forward_running_rk,
             ForwardRunningResultKeeper::new(NoopTxCallback),
@@ -417,8 +421,13 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
         block_outputs.push(block_output);
     }
 
+    // At this point `batch_data` contains the canonical batch PI/output, while
+    // `result_keeper.pubdata` contains the concatenated pubdata for the whole
+    // batch.
     let (batch_public_input, batch_output) =
         batch_data.into_public_input_and_output(NullLogger, &mut oracle);
+    // Multiblock proving cannot emit the final disconnect from the per-block
+    // post-op: only the outer runner knows when the last block has finished.
     <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
         .expect("disconnect query must not fail");
     let mut prover_input = Vec::with_capacity(1 + oracle.get_read_items().borrow().len());

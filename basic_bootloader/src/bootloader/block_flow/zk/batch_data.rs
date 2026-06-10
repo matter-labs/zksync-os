@@ -15,12 +15,18 @@ use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
 
 ///
-/// Batch data keeper, it allows applying blocks info one by one to persist data needed for the batch PI.
+/// Batch data keeper for multiblock proving.
+///
+/// It is updated block by block and retains the data needed to finalize the
+/// batch public input/output, plus the proof data that the caller should reuse
+/// as the pre-state of the next block.
 ///
 pub struct ZKBatchDataKeeper<A: alloc::alloc::Allocator, O: IOOracle> {
     is_first_block: bool,
     initial_state_commitment: Option<Bytes32>,
     current_state_commitment: Option<Bytes32>,
+    // Proof data after the most recently applied block. The host runner uses it
+    // to seed the next block without reconstructing it from scratch.
     current_proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     first_block_timestamp: Option<u64>,
     current_block_timestamp: Option<u64>,
@@ -62,7 +68,13 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
 
     ///
     /// Apply information about a processed block.
-    /// Please note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
+    ///
+    /// This updates the batch-level aggregates and stores `next_proof_data` so
+    /// the caller can feed it into the next block in the batch.
+    ///
+    /// Please note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment
+    /// should be handled separately using corresponding public fields of this
+    /// structure.
     ///
     pub fn apply_block<'a>(
         &mut self,
@@ -134,7 +146,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
     }
 
     ///
-    /// Create public input and batch output for a batch that contains previously added blocks.
+    /// Create the final batch public input/output from the blocks accumulated so
+    /// far.
     ///
     pub fn into_public_input_and_output(
         self,
