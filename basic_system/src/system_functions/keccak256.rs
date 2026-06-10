@@ -30,7 +30,7 @@ impl<R: Resources> SystemFunction<R, Keccak256Errors> for Keccak256Impl {
 
 pub fn keccak256_native_cost_u64(len: usize) -> u64 {
     // +1 accounts for keccak padding which always adds at least one byte.
-    let rounds = core::cmp::max(1, (len + 1).div_ceil(KECCAK256_CHUNK_SIZE));
+    let rounds = core::cmp::max(1, len.saturating_add(1).div_ceil(KECCAK256_CHUNK_SIZE));
     keccak256_native_cost_for_rounds_u64(rounds)
 }
 
