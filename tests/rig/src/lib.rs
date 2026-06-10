@@ -20,6 +20,7 @@ pub mod run_config;
 pub mod testing_utils;
 pub mod utils;
 
+use crate::zksync_os_interface::traits::TxListSource;
 pub use alloy;
 use alloy::primitives::address;
 use alloy::signers::local::PrivateKeySigner;
@@ -28,12 +29,15 @@ pub use alloy_sol_types;
 pub use basic_bootloader;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 pub use basic_system;
+use basic_system::system_implementation::flat_storage_model::{FlatStorageCommitment, TREE_HEIGHT};
 pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
+use forward_system::run::test_impl::InMemoryBatchState;
+use forward_system::run::BatchBlockInput;
 use forward_system::system::system_types::ForwardRunningSystem;
 pub use fri::InMemoryFriProofSidecarSource;
 pub use log;
@@ -42,6 +46,7 @@ pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
+use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
@@ -533,6 +538,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: ensures the account exists in chain state by creating an empty account if needed.
+    pub fn ensure_account_exists(&mut self, address: ruint::aliases::B160) -> &mut Self {
+        self.chain.ensure_account_exists(address);
+        self
+    }
+
     /// Setter: deploys EVM bytecode at the provided address.
     pub fn set_evm_contract(
         &mut self,
@@ -622,6 +633,32 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Returns the block context that will be used for the next block execution.
     pub fn block_context(&self) -> Option<&BlockContext> {
         self.block_context.as_ref()
+    }
+
+    /// Returns the batch pre-state passed to the batch prover-input runner.
+    pub fn prepare_batch_initial_proof_data(
+        &self,
+    ) -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        self.chain.prepare_batch_initial_proof_data()
+    }
+
+    /// Returns the mutable batch-start state used by batch prover-input tests.
+    pub fn prepare_batch_state(&self) -> InMemoryBatchState<RANDOMIZED_TREE> {
+        self.chain.prepare_batch_state()
+    }
+
+    /// Builds one batch input from framework-level transactions and block context.
+    pub fn prepare_batch_block_input(
+        &self,
+        transactions: Vec<ZKsyncTxEnvelope>,
+        block_context: Option<BlockContext>,
+    ) -> BatchBlockInput<TxListSource> {
+        let encoded_txs = transactions
+            .into_iter()
+            .map(ZKsyncTxEnvelope::encode)
+            .collect::<Vec<_>>();
+        self.chain
+            .prepare_batch_block_input(encoded_txs, block_context)
     }
 
     /// Builds and executes an ERC20 transfer block using default fee settings.

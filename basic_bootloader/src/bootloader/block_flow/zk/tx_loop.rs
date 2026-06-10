@@ -202,6 +202,9 @@ where
                                     block_data
                                         .enforced_transaction_hashes_accumulator
                                         .add_tx_hash(&tx_processing_result.tx_hash);
+                                    // In the multiblock proving path the per-block enforced-tx
+                                    // accumulator may be a no-op, but batch_data still collects
+                                    // these hashes for the batch-level priority hash/count.
                                     batch_data.add_tx_hash(&tx_processing_result.tx_hash);
                                 }
                                 if tx_processing_result.is_upgrade_tx {
