@@ -444,20 +444,25 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         ))
     }
 
-    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
-        // NOTE: it's not "returndatacopy", but if there was a "call" that did set up non-empty buffer for returndata,
-        // it'll be automatically copied there
+    pub(crate) fn copy_returndata_to_heap(
+        &mut self,
+        returndata_region: &'ee [u8],
+    ) -> Result<(), ExitCode> {
         if !self.returndata_location.is_empty() {
-            unsafe {
-                let to_copy =
-                    core::cmp::min(returndata_region.len(), self.returndata_location.len());
-                let src = returndata_region.as_ptr();
-                let dst = self.heap.as_mut_ptr().add(self.returndata_location.start);
-                core::ptr::copy_nonoverlapping(src, dst, to_copy);
+            let to_copy = core::cmp::min(returndata_region.len(), self.returndata_location.len());
+            if to_copy > 0 {
+                let (_, native_cost) = gas::gas_utils::copy_cost(to_copy as u64)?;
+                self.gas.spend_gas_and_native(0, native_cost)?;
+                unsafe {
+                    let src = returndata_region.as_ptr();
+                    let dst = self.heap.as_mut_ptr().add(self.returndata_location.start);
+                    core::ptr::copy_nonoverlapping(src, dst, to_copy);
+                }
             }
         }
 
         self.returndata = returndata_region;
+        Ok(())
     }
 
     pub fn derive_address_for_deployment_create(
