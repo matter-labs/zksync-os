@@ -2,11 +2,13 @@ use std::alloc::Global;
 
 use basic_bootloader::bootloader::block_flow::TransactionsRollingKeccakHasher;
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
+use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingSingleblockBatch;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
 use basic_bootloader::bootloader::block_flow::{
-    NopTxHashesAccumulator, ZKBasicBlockDataKeeper, ZKHeaderStructurePostTxOpSequencing,
+    NopTxHashesAccumulator, ZKBasicBlockDataKeeper, ZKBatchDataKeeper,
+    ZKHeaderStructurePostTxOpSequencing,
 };
 use basic_bootloader::bootloader::stf::BasicSTF;
 use basic_bootloader::bootloader::stf::EthereumLikeBasicSTF;
@@ -40,6 +42,7 @@ type Logger = zk_ee::system::NullLogger;
 /// (capture oracle outputs). Otherwise, the system is used for sequencing.
 /// The oracle parameter `O` provides transaction data and block metadata.
 pub struct ForwardSystemTypes<O, const PROOF_ENV: bool>(O);
+pub struct BatchProverInputSystemTypes<O>(O);
 
 /// Native resource implementation that decreases during execution
 type Native = zk_ee::reference_implementations::DecreasingNative;
@@ -126,6 +129,56 @@ impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, true> {
 impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, true> {}
 impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, false> {}
 
+impl<O: IOOracle> SystemTypes for BatchProverInputSystemTypes<O> {
+    type IOTypes = EthereumIOTypesConfig;
+    type Resources = BaseResources<Native>;
+    type IO = FullIO<
+        Self::Allocator,
+        Self::Resources,
+        EthereumLikeStorageAccessCostModel,
+        VecStackFactory,
+        0,
+        O,
+        FlatTreeWithAccountsUnderHashesStorageModel<
+            Self::Allocator,
+            Self::Resources,
+            EthereumLikeStorageAccessCostModel,
+            VecStackFactory,
+            0,
+            true,
+        >,
+        true,
+    >;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
+    type Allocator = Global;
+    type Logger = Logger;
+    type Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+}
+
+impl<O: IOOracle> EthereumLikeTypes for BatchProverInputSystemTypes<O> {}
+
+impl<O: IOOracle> BasicSTF for BatchProverInputSystemTypes<O> {
+    // This only disables the per-block enforced-tx accumulator. In the batch
+    // prover-input path, priority/enforced tx hashes are still accumulated via
+    // the TxLoopOp's BatchDataKeeper = ZKBatchDataKeeper, which turns them into
+    // the batch-level priority_operations_hash / number_of_layer_1_txs. Block
+    // headers still get their transactions_root from ZKBasicBlockDataKeeper's
+    // separate transaction_hashes_accumulator, which is always a rolling
+    // Keccak hasher.
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
+    type BatchDataKeeper = ZKBatchDataKeeper<Self::Allocator, O>;
+    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
+    type PostSystemInitOp = ZKHeaderPostInitOp;
+    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<NopTxHashesAccumulator>;
+    type TxLoopOp =
+        ZKHeaderStructureTxLoop<NopTxHashesAccumulator, ZKBatchDataKeeper<Self::Allocator, O>>;
+    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingMultiblockBatch;
+}
+
+impl<O: IOOracle> EthereumLikeBasicSTF for BatchProverInputSystemTypes<O> {}
+
 /// Forward execution system used in sequencing mode
 /// Uses dummy memory source for oracle data storage
 pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
@@ -135,6 +188,7 @@ pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource, fal
 
 /// Prover input system
 pub type ProverInputSystem = ForwardSystemTypes<oracle_provider::ReadWitnessSource, true>;
+pub type BatchProverInputSystem = BatchProverInputSystemTypes<oracle_provider::ReadWitnessSource>;
 
 /// Bootloader for forward execution using ZK transaction flow (EOA only)
 pub type ForwardBootloader =
@@ -147,3 +201,5 @@ pub type CallSimulationBootloader =
 /// Bootloader for prover input generation with ZK transaction flow (EOA only)
 pub type ProverInputBootloader =
     BasicBootloader<ProverInputSystem, ZkTransactionFlowOnlyEOA<ProverInputSystem>>;
+pub type BatchProverInputBootloader =
+    BasicBootloader<BatchProverInputSystem, ZkTransactionFlowOnlyEOA<BatchProverInputSystem>>;

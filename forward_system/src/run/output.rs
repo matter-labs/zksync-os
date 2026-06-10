@@ -152,8 +152,8 @@ impl<TR: TxResultCallback>
             storage_writes,
             account_diffs,
             published_preimages,
-            computational_native_used: block_computational_native_used,
             pubdata_used: block_pubdata_used,
+            computational_native_used: block_computational_native_used,
         }
     }
 }

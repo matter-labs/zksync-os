@@ -12,6 +12,7 @@ pub type BlobHashesList<'a> = FixedList<'a, &'a [u8; 32]>;
 
 /// EIP-4844 payload (type 0x03) layout: [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to(20 bytes, not zero), value, data, accessList, maxFeePerBlobGas, blobVersionedHashes(32-byte items)]
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(feature = "eip-4844"), allow(dead_code))]
 pub(crate) struct EIP4844Tx<'a> {
     #[cfg_attr(
         not(feature = "eip-4844"),

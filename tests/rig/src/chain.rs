@@ -29,7 +29,10 @@ use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::result_keeper::ProverInputResultKeeper;
-use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::test_impl::{
+    InMemoryBatchState, InMemoryPreimageSource, InMemoryTree, NoopTxCallback,
+};
+use forward_system::run::BatchBlockInput;
 use forward_system::run::FriVerifierArtifacts;
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
@@ -518,6 +521,10 @@ fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
         "block computational_native_used mismatch between forward and prover-input runs"
     );
     assert_eq!(
+        actual.pubdata_used, expected.pubdata_used,
+        "block pubdata_used mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
         actual.published_preimages, expected.published_preimages,
         "published preimages mismatch between forward and prover-input runs"
     );
@@ -610,6 +617,65 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
+    }
+
+    /// Build the batch pre-state passed to the batch prover-input runner.
+    pub fn prepare_batch_initial_proof_data(
+        &self,
+    ) -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
+            root: *self.state_tree.storage_tree.root(),
+            next_free_slot: self.state_tree.storage_tree.next_free_slot,
+        };
+
+        ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: self.block_timestamp,
+        }
+    }
+
+    /// Build the per-block inputs that remain external to the batch runner.
+    ///
+    /// This snapshots the chain metadata at the current height. It does not
+    /// advance the chain, so repeated calls on the same `Chain` will reuse the
+    /// same block number and block hashes unless the caller first mutates the
+    /// chain state (e.g. by executing a block).
+    pub fn prepare_batch_block_input(
+        &self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+    ) -> BatchBlockInput<TxListSource> {
+        let block_context = block_context.unwrap_or_default();
+        let block_metadata = BlockMetadataFromOracle {
+            chain_id: self.chain_id,
+            block_number: self.next_block_number(),
+            block_hashes: BlockHashes(self.block_hashes),
+            timestamp: block_context.timestamp,
+            eip1559_basefee: block_context.eip1559_basefee,
+            pubdata_price: block_context.pubdata_price,
+            native_price: block_context.native_price,
+            coinbase: block_context.coinbase,
+            gas_limit: block_context.gas_limit,
+            pubdata_limit: block_context.pubdata_limit,
+            mix_hash: block_context.mix_hash,
+            blob_fee: block_context.blob_fee,
+            is_gateway: block_context.is_gateway,
+        };
+
+        BatchBlockInput {
+            block_context: block_metadata,
+            tx_source: TxListSource {
+                transactions: transactions.into(),
+            },
+        }
+    }
+
+    /// Clone the batch-start state used by batch prover-input tests.
+    pub fn prepare_batch_state(&self) -> InMemoryBatchState<RANDOMIZED_TREE> {
+        InMemoryBatchState {
+            tree: self.state_tree.clone(),
+            preimage_source: self.preimage_source.clone(),
+        }
     }
 
     ///

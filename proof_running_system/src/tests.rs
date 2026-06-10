@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::talc::TalcWrapper;
 use alloc::vec;
 use core::alloc::GlobalAlloc;
@@ -24,7 +26,7 @@ impl PartialOrd for WarmStorageKey {
 
 impl Ord for WarmStorageKey {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        match self.address.as_limbs().cmp(&other.address.as_limbs()) {
+        match self.address.as_limbs().cmp(other.address.as_limbs()) {
             core::cmp::Ordering::Equal => self.key.cmp(&other.key),
             a => a,
         }
@@ -121,7 +123,7 @@ fn benchmark_allocator(allocator: &dyn GlobalAlloc, name: &str) {
         }
 
         let size = fastrand::usize(1..1 << 22);
-        let align = 8 << fastrand::u16(..).trailing_zeros() / 2;
+        let align = 8 << (fastrand::u16(..).trailing_zeros() / 2);
         let layout = Layout::from_size_align(size, align).unwrap();
 
         let alloc_begin = Instant::now();
@@ -205,7 +207,7 @@ fn remove_outliers_sorted(data: &[f64]) -> &[f64] {
         }
     }
 
-    &data
+    data
 }
 
 #[test]
@@ -239,7 +241,7 @@ fn heap_efficiency(allocator: &dyn GlobalAlloc, heap_size: usize) -> f64 {
                 0..=4 => {
                     let size = fastrand::usize(1..1 << 21);
                     let align =
-                        std::mem::align_of::<usize>() << fastrand::u16(..).trailing_zeros() / 2;
+                        std::mem::align_of::<usize>() << (fastrand::u16(..).trailing_zeros() / 2);
 
                     if let Some(allocation) = AllocationWrapper::new(size, align, allocator) {
                         v.push(allocation);
