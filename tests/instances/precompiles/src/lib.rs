@@ -1242,26 +1242,20 @@ const KZG_TESTS: [Test; 1] = [
 ];
 
 /// Run a slice of precompile test vectors, asserting each returns its expected output.
-///
-/// `disable_revm_consistency_checker` is set for precompiles the revm spec used for
-/// cross-checking doesn't have enabled (the KZG point-eval and Pectra precompiles).
-fn run_test_vectors(tests: &[Test], disable_revm_consistency_checker: bool) {
+/// Every vector is cross-checked against revm, whose AtlasV4 spec covers all the
+/// precompiles exercised here (incl. point evaluation and the Pectra precompiles).
+fn run_test_vectors(tests: &[Test]) {
     for test in tests.iter() {
         let input = hex::decode(test.input).unwrap();
         let expected = hex::decode(test.expected).unwrap();
         dbg!(test.name);
 
-        let tx_result = run_precompile_inner(
-            test.precompile_id,
-            None::<u64>,
-            &input,
-            disable_revm_consistency_checker,
-        )
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
+        let tx_result = run_precompile(test.precompile_id, None::<u64>, &input)
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect("Tx should have succeeded");
 
         assert_eq!(
             expected,
@@ -1274,19 +1268,18 @@ fn run_test_vectors(tests: &[Test], disable_revm_consistency_checker: bool) {
 
 #[test]
 fn test_kzg_regression() {
-    // Cross-checked against revm: the AtlasV4 spec enables point evaluation (0x0a).
-    run_test_vectors(&KZG_TESTS, false);
+    run_test_vectors(&KZG_TESTS);
 }
 
 #[test]
 fn test_precompiles() {
-    run_test_vectors(&TESTS, false);
+    run_test_vectors(&TESTS);
 
     // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompiles are only registered under the
-    // `pectra` feature. They are cross-checked against revm, whose AtlasV4 spec enables
-    // the same Pectra precompiles.
+    // `pectra` feature; their vectors (incl. the MAP_FP*_TO_G* mappings) are cross-checked
+    // against revm's AtlasV4 spec just like the rest.
     #[cfg(feature = "pectra")]
-    run_test_vectors(&PECTRA_TESTS, false);
+    run_test_vectors(&PECTRA_TESTS);
 }
 
 // BLS12-381 generator and scalar constants shared across PECTRA test and bench functions.
@@ -1403,57 +1396,6 @@ const PECTRA_TESTS: [Test; 13] = [
         precompile_id: "0000000000000000000000000000000000000011",
     },
 ];
-
-/// Test BLS12-381 mapping precompiles (MAP_FP_TO_G1, MAP_FP2_TO_G2).
-/// These use an allocation-free isogeny map implementation and must work
-/// in proving mode (RISC-V) without global-alloc.
-#[cfg(feature = "pectra")]
-#[test]
-fn test_pectra_bls12_381_mapping_precompiles() {
-    // MAP_FP_TO_G1: 64-byte input (one Fp element)
-    let fp_input = hex::decode(
-        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
-    ).unwrap();
-    let g1_result = run_precompile_inner(
-        "0000000000000000000000000000000000000010",
-        None::<u64>,
-        &fp_input,
-        true,
-    )
-    .tx_results
-    .first()
-    .unwrap()
-    .clone()
-    .expect("MAP_FP_TO_G1 should succeed");
-    assert!(g1_result.is_success(), "MAP_FP_TO_G1 should not revert");
-    assert_eq!(
-        g1_result.as_returned_bytes().len(),
-        128,
-        "MAP_FP_TO_G1 should return a 128-byte G1 point"
-    );
-
-    // MAP_FP2_TO_G2: 128-byte input (one Fp2 element)
-    let fp2_input = hex::decode(
-        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa",
-    ).unwrap();
-    let g2_result = run_precompile_inner(
-        "0000000000000000000000000000000000000011",
-        None::<u64>,
-        &fp2_input,
-        true,
-    )
-    .tx_results
-    .first()
-    .unwrap()
-    .clone()
-    .expect("MAP_FP2_TO_G2 should succeed");
-    assert!(g2_result.is_success(), "MAP_FP2_TO_G2 should not revert");
-    assert_eq!(
-        g2_result.as_returned_bytes().len(),
-        256,
-        "MAP_FP2_TO_G2 should return a 256-byte G2 point"
-    );
-}
 
 #[cfg(feature = "pectra")]
 #[test]
