@@ -237,6 +237,12 @@ pub struct RunConfig {
     /// When true, REVM computes gas independently instead of using
     /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
     pub revm_independent_gas: bool,
+    /// Per-transaction gas limit cap passed to the REVM consistency checker
+    /// (`CfgEnv::tx_gas_limit_cap`). `None` uses REVM's spec-derived default
+    /// (EIP-7825: 2^24 on Osaka+). Defaults to `Some(u64::MAX)` so the checker
+    /// never rejects a transaction that ZKsync OS accepts (no per-tx cap unless
+    /// the `eip-7825` feature, i.e. Fusaka, is enabled).
+    pub revm_tx_gas_limit_cap: Option<u64>,
     pub update_state_after_block_execution: bool,
 }
 
@@ -273,6 +279,7 @@ impl Default for RunConfig {
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
             revm_independent_gas: false,
+            revm_tx_gas_limit_cap: Some(u64::MAX),
             flamegraph: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
@@ -1010,6 +1017,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             check_storage_diff_hashes,
             check_revm_consistency: _,
             revm_independent_gas: _,
+            revm_tx_gas_limit_cap: _,
             update_state_after_block_execution,
         } = run_config;
 

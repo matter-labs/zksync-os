@@ -1274,8 +1274,8 @@ fn run_test_vectors(tests: &[Test], disable_revm_consistency_checker: bool) {
 
 #[test]
 fn test_kzg_regression() {
-    // The KZG precompile isn't enabled in the revm spec used for consistency checks.
-    run_test_vectors(&KZG_TESTS, true);
+    // Cross-checked against revm: the AtlasV4 spec enables point evaluation (0x0a).
+    run_test_vectors(&KZG_TESTS, false);
 }
 
 #[test]
@@ -1283,10 +1283,10 @@ fn test_precompiles() {
     run_test_vectors(&TESTS, false);
 
     // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompiles are only registered under the
-    // `pectra` feature, and the revm spec used for consistency checks doesn't have them,
-    // so they run with the consistency check disabled.
+    // `pectra` feature. They are cross-checked against revm, whose AtlasV4 spec enables
+    // the same Pectra precompiles.
     #[cfg(feature = "pectra")]
-    run_test_vectors(&PECTRA_TESTS, true);
+    run_test_vectors(&PECTRA_TESTS, false);
 }
 
 // BLS12-381 generator and scalar constants shared across PECTRA test and bench functions.
