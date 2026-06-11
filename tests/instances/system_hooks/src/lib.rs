@@ -2571,20 +2571,23 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         "contract_deployer hook (0x8006) must be cold"
     );
 
-    // blake2f (0x09) is not enabled in test/production builds, so it must be cold
+    // blake2f (0x09) is not enabled in this for_tests build, so it must be cold.
+    // Skip the REVM consistency check: the AtlasV4 spec warms blake2f (a Pectra
+    // precompile) while this build does not enable it, so the warm/cold cost
+    // legitimately differs between the two.
     let blake2f = address!("0000000000000000000000000000000000000009");
     assert_eq!(
-        measure_balance_gas_cost(blake2f),
+        measure_balance_gas_cost_without_revm_check(blake2f),
         COLD_BALANCE,
         "blake2f (0x09) must be cold"
     );
 
-    // point_eval (0x0a) is enabled via eip-4844 feature in test builds, so it is warm here.
+    // point_eval (0x0a) is enabled via the eip-4844 feature in test builds, so it is warm.
     // Note: in production builds point_eval is NOT enabled, so it would be cold there.
-    // Skip REVM consistency check because REVM does not warm point_eval.
+    // The AtlasV4 REVM spec warms point_eval too, so the consistency check holds.
     let point_eval = address!("000000000000000000000000000000000000000a");
     assert_eq!(
-        measure_balance_gas_cost_without_revm_check(point_eval),
+        measure_balance_gas_cost(point_eval),
         WARM_BALANCE,
         "point_eval (0x0a) must be warm (enabled via eip-4844 in test builds)"
     );
