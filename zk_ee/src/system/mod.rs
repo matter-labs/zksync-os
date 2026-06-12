@@ -48,9 +48,10 @@ use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::basic_metadata::{
-        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ChainConfigMetadata,
+        ZkSpecificMetadata,
     },
-    metadata::chain_config::{ChainConfig, ChainConfigMetadata},
+    metadata::chain_config::ChainConfig,
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -170,7 +171,10 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_individual_tx_gas_limit(&self) -> u64 {
-        self.metadata.individual_tx_gas_limit()
+        core::cmp::min(
+            self.metadata.block_gas_limit(),
+            self.metadata.max_tx_gas_limit(),
+        )
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

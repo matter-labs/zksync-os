@@ -3,8 +3,9 @@ use zk_ee::{
     internal_error,
     oracle::IOOracle,
     system::{
-        errors::internal::InternalError, metadata::system_metadata::SystemMetadata, SystemTypes,
-        MAX_BLOBS_PER_TX, MAX_BLOCK_GAS_LIMIT,
+        errors::internal::InternalError, metadata::chain_config::ChainConfig,
+        metadata::system_metadata::SystemMetadata, SystemTypes, MAX_BLOBS_PER_TX,
+        MAX_BLOCK_GAS_LIMIT,
     },
     types_config::EthereumIOTypesConfig,
 };
@@ -20,6 +21,7 @@ pub type EthereumBlockMetadata = SystemMetadata<
     EthereumIOTypesConfig,
     HeaderAndHistory,
     EthereumTransactionMetadata<{ MAX_BLOBS_PER_TX }>,
+    ChainConfig,
 >;
 
 impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for EthereumMetadataOp {
@@ -45,7 +47,12 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
         // Ethereum block headers do not carry a chain id, so the Ethereum STF
         // uses a fixed one (see `HeaderAndHistory`). Source the metadata chain
         // config's chain id from it so `System::chain_id()` stays consistent.
-        let chain_config = static_config.chain_config.with_chain_id(header.chain_id);
+        let base_config = static_config.chain_config;
+        let chain_config = ChainConfig::new(
+            header.chain_id,
+            base_config.fri_proof_verification_enabled(),
+            base_config.max_tx_gas_limit(),
+        )?;
 
         let metadata = EthereumBlockMetadata {
             block_level: header,

@@ -1,10 +1,9 @@
 //! TODO: this actually belongs to the bootloader, just for the ZK STF.
 //! We will move it in future PRs.
 
-use super::basic_metadata::{
-    BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
-};
-use super::chain_config::{ChainConfig, ChainConfigMetadata};
+use super::basic_metadata::{BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificMetadata};
+use super::chain_config::ChainConfig;
+use super::system_metadata::SystemMetadata;
 use crate::system::constants::*;
 use crate::system::errors::internal::InternalError;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
@@ -15,12 +14,12 @@ use crate::{
 };
 use ruint::aliases::{B160, U256};
 
-pub struct ZkMetadata {
-    pub block_level: BlockMetadataFromOracle,
-    pub tx_level: TxLevelMetadata<EthereumIOTypesConfig>,
-    pub chain_config: ChainConfig,
-    pub _marker: core::marker::PhantomData<EthereumIOTypesConfig>,
-}
+pub type ZkMetadata = SystemMetadata<
+    EthereumIOTypesConfig,
+    BlockMetadataFromOracle,
+    TxLevelMetadata<EthereumIOTypesConfig>,
+    ChainConfig,
+>;
 
 #[derive(Clone, Debug, Default)]
 pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
@@ -46,106 +45,6 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
     fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
         self.verified_fri_statements
             .contains(statement_versioned_hash)
-    }
-}
-
-impl BasicBlockMetadata<EthereumIOTypesConfig> for ZkMetadata {
-    fn block_number(&self) -> u64 {
-        self.block_level.block_number()
-    }
-
-    fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
-        self.block_level.block_historical_hash(depth)
-    }
-
-    fn block_timestamp(&self) -> u64 {
-        self.block_level.block_timestamp()
-    }
-
-    fn block_randomness(&self) -> Option<Bytes32> {
-        self.block_level.block_randomness()
-    }
-
-    fn coinbase(&self) -> B160 {
-        self.block_level.coinbase()
-    }
-
-    fn block_gas_limit(&self) -> u64 {
-        self.block_level.block_gas_limit()
-    }
-
-    fn individual_tx_gas_limit(&self) -> u64 {
-        // EIP-7825: the per-tx gas cap is sourced from the static chain config
-        // (committed into public input), not a compile-time feature flag.
-        let block_gas_limit = self.block_level.block_gas_limit();
-        core::cmp::min(block_gas_limit, self.chain_config.max_tx_gas_limit())
-    }
-
-    fn eip1559_basefee(&self) -> U256 {
-        self.block_level.eip1559_basefee()
-    }
-
-    fn max_blobs(&self) -> usize {
-        self.block_level.max_blobs()
-    }
-
-    fn blobs_gas_limit(&self) -> u64 {
-        self.block_level.blobs_gas_limit()
-    }
-
-    fn blob_base_fee_per_gas(&self) -> U256 {
-        self.block_level.blob_base_fee_per_gas()
-    }
-}
-
-impl BasicTransactionMetadata<EthereumIOTypesConfig> for ZkMetadata {
-    fn tx_origin(&self) -> B160 {
-        self.tx_level.tx_origin()
-    }
-
-    fn tx_gas_price(&self) -> U256 {
-        self.tx_level.tx_gas_price()
-    }
-
-    fn num_blobs(&self) -> usize {
-        self.tx_level.num_blobs()
-    }
-
-    fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
-        self.tx_level.get_blob_hash(idx)
-    }
-
-    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
-        self.tx_level
-            .is_fri_statement_verified(statement_versioned_hash)
-    }
-}
-
-impl BasicMetadata<EthereumIOTypesConfig> for ZkMetadata {
-    type TransactionMetadata = TxLevelMetadata<EthereumIOTypesConfig>;
-
-    fn set_transaction_metadata(&mut self, tx_level_metadata: Self::TransactionMetadata) {
-        self.tx_level = tx_level_metadata;
-    }
-}
-
-impl ZkSpecificMetadata for ZkMetadata {
-    fn get_pubdata_price(&self) -> U256 {
-        self.block_level.get_pubdata_price()
-    }
-
-    fn native_price(&self) -> U256 {
-        self.block_level.native_price()
-    }
-
-    fn get_pubdata_limit(&self) -> u64 {
-        self.block_level.get_pubdata_limit()
-    }
-}
-
-impl ChainConfigMetadata for ZkMetadata {
-    fn chain_config(&self) -> ChainConfig {
-        self.chain_config
     }
 }
 
@@ -262,12 +161,6 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     }
 
     fn block_gas_limit(&self) -> u64 {
-        self.gas_limit
-    }
-
-    fn individual_tx_gas_limit(&self) -> u64 {
-        // The EIP-7825 per-tx gas cap is applied at the `ZkMetadata` level from
-        // the static chain config. Block-level metadata reports the raw limit.
         self.gas_limit
     }
 

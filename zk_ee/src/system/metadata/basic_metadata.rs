@@ -1,3 +1,4 @@
+use super::chain_config::ChainConfig;
 use crate::{types_config::SystemIOTypesConfig, utils::Bytes32};
 use ruint::aliases::U256;
 
@@ -20,9 +21,6 @@ pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Per-block gas limit for computation.
     fn block_gas_limit(&self) -> u64;
-
-    /// Max gas allowed for an individual transaction’s computation.
-    fn individual_tx_gas_limit(&self) -> u64;
 
     /// Base fee per execution gas unit (EIP-1559 style), if supported.
     fn eip1559_basefee(&self) -> U256;
@@ -68,6 +66,25 @@ pub trait ZkSpecificMetadata {
 
     /// Price in base token of 1 byte of pubdata.
     fn get_pubdata_price(&self) -> U256;
+}
+
+/// Metadata types that expose static chain-level execution configuration.
+pub trait ChainConfigMetadata {
+    fn chain_config(&self) -> ChainConfig {
+        ChainConfig::default()
+    }
+
+    fn config_chain_id(&self) -> u64 {
+        self.chain_config().chain_id()
+    }
+
+    fn fri_proof_verification_enabled(&self) -> bool {
+        self.chain_config().fri_proof_verification_enabled()
+    }
+
+    fn max_tx_gas_limit(&self) -> u64 {
+        self.chain_config().max_tx_gas_limit()
+    }
 }
 
 /// Convenience super-trait for environments that expose both block- and tx-level

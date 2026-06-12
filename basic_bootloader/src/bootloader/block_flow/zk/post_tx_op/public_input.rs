@@ -47,13 +47,10 @@ impl ChainStateCommitment {
 /// - pubdata: to make sure that it's published and state is recoverable
 /// - executed priority ops: to process them on the settlement layer
 /// - l2 to l1 logs tree root: to be able to open them on the settlement layer
-/// - extra inputs to validate on the settlement layer(timestamp and chain id)
+/// - extra inputs to validate on the settlement layer(timestamp and settlement layer chain id)
 ///
 #[derive(Debug)]
 pub struct BatchOutput {
-    /// Static chain-level execution rules used during execution (includes the
-    /// chain id).
-    pub chain_config: ChainConfig,
     /// First block timestamp.
     pub first_block_timestamp: u64,
     /// Last block timestamp.
@@ -85,19 +82,8 @@ impl BatchOutput {
     ///
     /// Calculate keccak256 hash of public input
     ///
-    /// Canonical chain config encoding, in order:
-    /// - `chain_id`: uint256 (the chain config's chain id), encoded as a 32-byte
-    ///   big-endian word and committed as the leading field.
-    /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
-    /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
-        hasher.update(U256::from(self.chain_config.chain_id()).to_be_bytes::<32>());
-        update_bool_word(
-            &mut hasher,
-            self.chain_config.fri_proof_verification_enabled(),
-        );
-        update_u64_word(&mut hasher, self.chain_config.max_tx_gas_limit());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         // Encode DA commitment scheme as U256 BE
@@ -125,6 +111,12 @@ fn update_bool_word(hasher: &mut Keccak256, value: bool) {
     hasher.update([u8::from(value)]);
 }
 
+fn update_chain_config(hasher: &mut Keccak256, chain_config: ChainConfig) {
+    hasher.update(U256::from(chain_config.chain_id()).to_be_bytes::<32>());
+    update_bool_word(hasher, chain_config.fri_proof_verification_enabled());
+    update_u64_word(hasher, chain_config.max_tx_gas_limit());
+}
+
 #[derive(Debug)]
 pub struct BatchPublicInput {
     /// State commitment before the batch.
@@ -132,6 +124,8 @@ pub struct BatchPublicInput {
     pub state_before: Bytes32,
     /// State commitment after the batch.
     pub state_after: Bytes32,
+    /// Static chain-level execution rules used during execution.
+    pub chain_config: ChainConfig,
     /// Batch output to be opened on the settlement layer, needed to process DA, l1 <> l2 messaging, validate inputs.
     pub batch_output: Bytes32,
 }
@@ -140,10 +134,15 @@ impl BatchPublicInput {
     ///
     /// Calculate keccak256 hash of public input
     ///
+    /// Canonical chain config encoding, in order:
+    /// - `chain_id`: uint256, encoded as a 32-byte big-endian word.
+    /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
+    /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(self.state_before.as_u8_ref());
         hasher.update(self.state_after.as_u8_ref());
+        update_chain_config(&mut hasher, self.chain_config);
         hasher.update(self.batch_output.as_u8_ref());
         hasher.finalize()
     }
@@ -155,9 +154,12 @@ mod tests {
     use alloy_primitives::hex;
     use zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
 
-    fn sample_batch_output(chain_config: ChainConfig) -> BatchOutput {
+    fn sample_chain_config() -> ChainConfig {
+        ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap()
+    }
+
+    fn sample_batch_output() -> BatchOutput {
         BatchOutput {
-            chain_config: chain_config.with_chain_id(37),
             first_block_timestamp: 1,
             last_block_timestamp: 2,
             da_commitment_scheme: DACommitmentScheme::BlobsAndPubdataKeccak256,
@@ -172,43 +174,52 @@ mod tests {
         }
     }
 
+    fn sample_public_input(chain_config: ChainConfig) -> BatchPublicInput {
+        let batch_output = sample_batch_output();
+
+        BatchPublicInput {
+            state_before: Bytes32::ZERO,
+            state_after: Bytes32::ZERO,
+            chain_config,
+            batch_output: batch_output.hash().into(),
+        }
+    }
+
     #[test]
-    fn batch_output_hash_commits_to_chain_config() {
-        let default_hash = sample_batch_output(ChainConfig::default()).hash();
-        let fri_hash =
-            sample_batch_output(ChainConfig::default().with_fri_proof_verification_enabled(true))
-                .hash();
+    fn batch_public_input_hash_commits_to_chain_config() {
+        let default_hash = sample_public_input(sample_chain_config()).hash();
+        let fri = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let fri_hash = sample_public_input(fri).hash();
 
         assert_ne!(default_hash, fri_hash);
     }
 
     #[test]
-    fn batch_output_hash_default_config_golden_vector() {
-        let default_hash = sample_batch_output(ChainConfig::default()).hash();
+    fn batch_output_hash_golden_vector() {
+        let default_hash = sample_batch_output().hash();
 
         assert_eq!(
             default_hash,
-            hex!("35c09af3e028869e23d4e8fa6ec0dfcbc74b6f4ecc6bd7de61f835df9d97d072")
+            hex!("1c24f398aa0701f9348912ecca748ba93bfb84bfe4f283c16514311419f4f658")
         );
     }
 
     #[test]
-    fn batch_output_hash_commits_to_max_tx_gas_limit() {
-        let default_hash = sample_batch_output(ChainConfig::default()).hash();
-        let changed = ChainConfig::new(0, false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
+    fn batch_public_input_hash_commits_to_max_tx_gas_limit() {
+        let default_hash = sample_public_input(sample_chain_config()).hash();
+        let changed = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
 
-        assert_ne!(default_hash, sample_batch_output(changed).hash());
+        assert_ne!(default_hash, sample_public_input(changed).hash());
     }
 
     #[test]
-    fn batch_output_hash_commits_to_chain_id() {
-        // `sample_batch_output` overrides chain id to 37; bypass it to vary the
-        // chain id directly.
-        let mut base = sample_batch_output(ChainConfig::default());
-        base.chain_config = base.chain_config.with_chain_id(1);
-        let mut other = sample_batch_output(ChainConfig::default());
-        other.chain_config = other.chain_config.with_chain_id(2);
+    fn batch_public_input_hash_commits_to_chain_id() {
+        let base = ChainConfig::new(1, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let other = ChainConfig::new(2, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
 
-        assert_ne!(base.hash(), other.hash());
+        assert_ne!(
+            sample_public_input(base).hash(),
+            sample_public_input(other).hash()
+        );
     }
 }

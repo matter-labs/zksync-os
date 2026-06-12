@@ -28,8 +28,13 @@ impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>
             _marker: core::marker::PhantomData,
         };
 
+        let individual_tx_gas_limit = core::cmp::min(
+            metadata.block_gas_limit(),
+            metadata.chain_config.max_tx_gas_limit(),
+        );
+
         if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT
-            || metadata.individual_tx_gas_limit() > MAX_TX_GAS_LIMIT
+            || individual_tx_gas_limit > MAX_TX_GAS_LIMIT
         {
             return Err(internal_error!("block or tx gas limit is too high"));
         }

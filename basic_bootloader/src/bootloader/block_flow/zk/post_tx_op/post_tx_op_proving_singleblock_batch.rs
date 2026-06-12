@@ -196,7 +196,6 @@ where
         let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let batch_output = BatchOutput {
-            chain_config: metadata.chain_config,
             first_block_timestamp: metadata.block_timestamp(),
             last_block_timestamp: metadata.block_timestamp(),
             da_commitment_scheme: io.da_commitment_scheme.unwrap(),
@@ -214,6 +213,7 @@ where
         let public_input = BatchPublicInput {
             state_before: chain_state_commitment_before.hash().into(),
             state_after: chain_state_commitment_after.hash().into(),
+            chain_config: metadata.chain_config,
             batch_output: batch_output.hash().into(),
         };
         logger_log!(

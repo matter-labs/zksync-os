@@ -77,8 +77,8 @@ where
     // can estimate with a high gas ceiling.
     if !Config::SIMULATION && !transaction.is_service() {
         {
-            // Validate that the transaction's gas limit is not larger than
-            // the block's gas limit.
+            // Validate that the transaction's gas limit is not larger than the
+            // effective per-tx limit.
             let block_gas_limit = system.get_gas_limit();
             // First, check block gas limit can be represented as ergs.
             require!(

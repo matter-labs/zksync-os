@@ -1,14 +1,21 @@
+use crate::internal_error;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::utils::exact_size_chain::ExactSizeChain;
 
-/// Default EIP-7825 single-transaction gas limit (2^24).
+use super::basic_metadata::ChainConfigMetadata;
+
+/// EIP-7825 single-transaction gas limit (2^24). This is both the default
+/// per-tx gas cap and the lower bound for any chain-configured value: a chain
+/// may raise the cap above Ethereum's limit but must not set it below.
 pub const DEFAULT_MAX_TX_GAS_LIMIT: u64 = 1 << 24;
 
-/// Static chain-level execution rules committed into the batch public input.
+/// Chain-level execution rules committed into the batch public input.
 ///
-/// Changing this value is a protocol-upgrade boundary and batches must not span
-/// configurations.
+/// These values are fixed for the duration of a batch (a batch must not span
+/// different configurations), but they are not immutable: they can change
+/// between batches via, e.g., a migration (`fri_proof_verification_enabled`)
+/// or a chain admin action (`max_tx_gas_limit`).
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChainConfig {
@@ -73,22 +80,17 @@ impl ChainConfig {
         Ok(config)
     }
 
+    /// Canonical default configuration: chain id `0`, FRI proof verification
+    /// off, and the per-tx gas cap at the EIP-7825 limit. This is the `const`
+    /// equivalent of [`Default::default`] (which forwards here) and is the
+    /// default used by the forward-run entrypoints; callers that need specific
+    /// values construct via [`ChainConfig::new`].
     pub const fn default_for_chain() -> Self {
         Self {
             chain_id: 0,
             fri_proof_verification_enabled: false,
             max_tx_gas_limit: DEFAULT_MAX_TX_GAS_LIMIT,
         }
-    }
-
-    pub const fn with_chain_id(mut self, chain_id: u64) -> Self {
-        self.chain_id = chain_id;
-        self
-    }
-
-    pub const fn with_fri_proof_verification_enabled(mut self, enabled: bool) -> Self {
-        self.fri_proof_verification_enabled = enabled;
-        self
     }
 
     pub const fn chain_id(&self) -> u64 {
@@ -104,6 +106,13 @@ impl ChainConfig {
     }
 
     pub fn validate(&self) -> Result<(), InternalError> {
+        // The per-tx gas cap must not be configured below Ethereum's EIP-7825
+        // single-transaction gas limit; a chain may only raise it.
+        if self.max_tx_gas_limit < DEFAULT_MAX_TX_GAS_LIMIT {
+            return Err(internal_error!(
+                "max_tx_gas_limit must be at least the EIP-7825 single-tx gas limit"
+            ));
+        }
         Ok(())
     }
 }
@@ -149,22 +158,9 @@ impl UsizeDeserializable for ChainConfig {
     }
 }
 
-/// Metadata types that expose static chain-level execution configuration.
-pub trait ChainConfigMetadata {
+impl ChainConfigMetadata for ChainConfig {
     fn chain_config(&self) -> ChainConfig {
-        ChainConfig::default()
-    }
-
-    fn config_chain_id(&self) -> u64 {
-        self.chain_config().chain_id()
-    }
-
-    fn fri_proof_verification_enabled(&self) -> bool {
-        self.chain_config().fri_proof_verification_enabled()
-    }
-
-    fn max_tx_gas_limit(&self) -> u64 {
-        self.chain_config().max_tx_gas_limit()
+        *self
     }
 }
 
@@ -174,9 +170,7 @@ mod tests {
 
     #[test]
     fn chain_config_roundtrips_through_usize_serialization() {
-        let original = ChainConfig::default_for_chain()
-            .with_chain_id(37)
-            .with_fri_proof_verification_enabled(true);
+        let original = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
         let serialized: Vec<usize> = original.iter().collect();
         let mut iter = serialized.into_iter();
         let deserialized = ChainConfig::from_iter(&mut iter).unwrap();
@@ -191,5 +185,25 @@ mod tests {
         assert_eq!(config.chain_id(), 37);
         assert!(config.fri_proof_verification_enabled());
         assert_eq!(config.max_tx_gas_limit(), DEFAULT_MAX_TX_GAS_LIMIT + 1);
+    }
+
+    #[test]
+    fn chain_config_accepts_max_tx_gas_limit_at_eip7825_floor() {
+        assert!(ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).is_ok());
+    }
+
+    #[test]
+    fn chain_config_rejects_max_tx_gas_limit_below_eip7825_floor() {
+        assert!(ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT - 1).is_err());
+    }
+
+    #[test]
+    fn chain_config_usize_deserialization_rejects_below_eip7825_floor() {
+        let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
+        // Last field is max_tx_gas_limit; drop it below the floor.
+        *serialized.last_mut().unwrap() = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
+        let mut iter = serialized.into_iter();
+
+        assert!(ChainConfig::from_iter(&mut iter).is_err());
     }
 }

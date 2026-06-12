@@ -55,7 +55,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
-use zk_ee::system::metadata::chain_config::ChainConfig;
+use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -365,7 +365,8 @@ impl Chain<false> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
-            chain_config: ChainConfig::default().with_chain_id(chain_id.unwrap_or(37)),
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -389,7 +390,8 @@ impl Chain<true> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
-            chain_config: ChainConfig::default().with_chain_id(chain_id.unwrap_or(37)),
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -639,9 +641,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     pub fn set_fri_proof_verification_enabled(&mut self, enabled: bool) {
-        self.chain_config = self
-            .chain_config
-            .with_fri_proof_verification_enabled(enabled);
+        self.chain_config = ChainConfig::new(
+            self.chain_config.chain_id(),
+            enabled,
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
     }
 
     pub fn block_hashes(&self) -> [U256; 256] {
@@ -658,7 +663,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
-        self.chain_config = self.chain_config.with_chain_id(chain_id);
+        self.chain_config = ChainConfig::new(
+            chain_id,
+            self.chain_config.fri_proof_verification_enabled(),
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
     }
 
     /// Build the batch pre-state passed to the batch prover-input runner.

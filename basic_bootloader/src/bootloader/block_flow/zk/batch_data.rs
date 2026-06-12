@@ -173,8 +173,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         if has_upgrade_tx {
             number_of_layer_2_txs -= U256::ONE;
         }
+        let chain_config = self.chain_config.unwrap();
         let batch_output = BatchOutput {
-            chain_config: self.chain_config.unwrap(),
             first_block_timestamp: self.first_block_timestamp.unwrap(),
             last_block_timestamp: self.current_block_timestamp.unwrap(),
             da_commitment_scheme: self.da_commitment_scheme.unwrap(),
@@ -190,6 +190,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),
             state_after: self.current_state_commitment.unwrap(),
+            chain_config,
             batch_output: batch_output.hash().into(),
         };
 
