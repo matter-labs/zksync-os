@@ -55,7 +55,6 @@ pub struct BlockContextInterface {
     pub mix_hash: U256,
     pub execution_version: u32,
     pub blob_fee: U256,
-    pub is_gateway: bool,
 }
 
 impl AnyBlockContext for BlockContextInterface {
@@ -108,7 +107,7 @@ impl AnyBlockContext for BlockContextInterface {
     }
 
     fn is_gateway(&self) -> bool {
-        self.is_gateway
+        false
     }
 }
 

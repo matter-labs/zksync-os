@@ -738,6 +738,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
         let chain_config = self.chain_config;
+
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
@@ -1013,6 +1016,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let block_context = block_context.unwrap_or_default();
         let chain_config = self.chain_config;
+
+        // Intrinsic cost formulas assume coinbase is an existing account.
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),

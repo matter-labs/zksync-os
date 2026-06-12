@@ -48,6 +48,7 @@ pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
+use zk_ee::common_structs::ProofData;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -312,6 +313,11 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     pub fn with_chain_config(mut self, chain_config: ChainConfig) -> Self {
         self.chain.set_chain_config(chain_config);
         self
+    }
+
+    /// Returns the chain-level execution config used for block execution.
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain.chain_config()
     }
 
     /// Builder: sets the 256 previous block hashes exposed to execution.

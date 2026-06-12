@@ -307,7 +307,7 @@ pub fn generate_proof_input_with_chain_config<
 /// whole batch, so the batch input keeps the first response and removes the
 /// duplicate responses after asserting they are byte-for-byte equal.
 ///
-pub fn generate_batch_proof_input(
+pub fn generate_legacy_batch_proof_input(
     blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
@@ -431,76 +431,43 @@ fn chain_config_response_len_in_u32_words() -> usize {
     1 + ChainConfig::USIZE_LEN * 2
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{chain_config_response_len_in_u32_words, generate_batch_proof_input};
-    use zk_ee::common_structs::DACommitmentScheme;
+/// Execute a whole batch and return canonical batch prover input and pubdata.
+///
+/// The caller provides:
+/// - the batch pre-state as `initial_proof_data`
+/// - the mutable batch state before block 1
+/// - per-block metadata and transaction sources
+///
+/// The runner derives later `ProofData` values internally and mutates the batch
+/// state between blocks using the observed `BlockOutput`, so the next block sees
+/// the correct pre-state.
+pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
+    initial_proof_data: ProofData<StorageCommitment>,
+    batch_state: BS,
+    blocks: Vec<BatchBlockInput<TS>>,
+    da_commitment_scheme: DACommitmentScheme,
+    chain_config: ChainConfig,
+) -> Result<BatchRunOutput, ForwardSubsystemError> {
+    assert!(
+        !blocks.is_empty(),
+        "batch prover input requires at least one block",
+    );
 
-    fn chain_config_response() -> Vec<u32> {
-        let len = chain_config_response_len_in_u32_words();
-        let mut response = vec![0; len];
-        response[0] = (len - 1) as u32;
-        response
-    }
-
-    #[test]
-    fn preserves_disconnect_marker_when_replacing_blob_advice() {
-        let mut block_proof_input = chain_config_response();
-        block_proof_input.extend_from_slice(&[11, 12, 24]);
-        let mut block_proof_input = block_proof_input
-            .into_iter()
-            .chain(100..124)
-            .collect::<Vec<_>>();
-        block_proof_input.push(0);
+    let batch_len = blocks.len();
+    let batch_index = batch::BatchIndex::new(batch_len);
 
     let mut block_metadata = Vec::with_capacity(batch_len);
     let mut tx_sources = Vec::with_capacity(batch_len);
 
-        let prefix_len = chain_config_response_len_in_u32_words();
-        assert_eq!(batch_input[0], 1);
-        assert_eq!(
-            &batch_input[1 + prefix_len..1 + prefix_len + 3],
-            &[11, 12, 0]
-        );
-    }
-
-    #[test]
-    fn multiblock_batch_input_contains_chain_config_once() {
-        let mut first = chain_config_response();
-        first.extend_from_slice(&[11, 12, 0]);
-        let mut second = chain_config_response();
-        second.extend_from_slice(&[21, 22, 0]);
-
-        let batch_input = generate_batch_proof_input(
-            vec![first.as_slice(), second.as_slice()],
-            DACommitmentScheme::PubdataKeccak256,
-            vec![&[], &[]],
-        );
-
-        let prefix_len = chain_config_response_len_in_u32_words();
-        assert_eq!(batch_input[0], 2);
-        assert_eq!(&batch_input[1 + prefix_len..], &[11, 12, 0, 21, 22, 0]);
-    }
-
-    #[test]
-    #[should_panic(expected = "multiblock proof input cannot span different chain configs")]
-    fn multiblock_batch_input_rejects_different_chain_configs() {
-        let mut first = chain_config_response();
-        first.extend_from_slice(&[11, 12, 0]);
-        let mut second = chain_config_response();
-        second[1] = 1;
-        second.extend_from_slice(&[21, 22, 0]);
-
-        generate_batch_proof_input(
-            vec![first.as_slice(), second.as_slice()],
-            DACommitmentScheme::PubdataKeccak256,
-            vec![&[], &[]],
-        );
+    for block in blocks {
+        block_metadata.push(block.block_context);
+        tx_sources.push(block.tx_source);
     }
     let proof_data = batch::SharedProofData::new(initial_proof_data);
     let batch_state = batch::BatchStateHandle::new(batch_state);
 
     let mut oracle = ZkEENonDeterminismSource::default();
+    oracle.add_external_processor(ChainConfigResponder { chain_config });
     oracle.add_external_processor(batch::BatchBlockMetadataResponder::new(
         block_metadata,
         batch_index.clone(),
@@ -530,6 +497,9 @@ mod tests {
     // Keep a single witness stream across all block re-entries so the final
     // prover input matches the guest-side multiblock flow.
     let mut oracle = ReadWitnessSource::new(oracle);
+    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)
+        .map_err(BootloaderSubsystemError::from)
+        .map_err(wrap_error!())?;
     let mut tracer = NopTracer::default();
     let mut validator = NopTxValidator;
     let mut result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
@@ -539,14 +509,17 @@ mod tests {
     for block_idx in 0..batch_len {
         // Re-enter the proving bootloader for the next block while preserving the
         // shared witness stream and the multiblock batch keeper.
-        oracle = BatchProverInputBootloader::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+        oracle = BatchProverInputBootloader::run_prepared_with_static_config::<
+            BasicBootloaderProvingExecutionConfig,
+        >(
             oracle,
             &mut batch_data,
             &mut result_keeper,
             &mut tracer,
             &mut validator,
+            &static_config,
         )
-        .map_err(|e| wrap_error!(e))?;
+        .map_err(wrap_error!())?;
 
         // `result_keeper` accumulates batch-wide pubdata across re-entries, but
         // `forward_running_rk` contains only the just-finished block output.
@@ -1041,13 +1014,19 @@ mod tests {
     use super::*;
     use zk_ee::common_structs::DACommitmentScheme;
 
+    fn chain_config_response() -> Vec<u32> {
+        let len = chain_config_response_len_in_u32_words();
+        let mut response = vec![0; len];
+        response[0] = (len - 1) as u32;
+        response
+    }
+
     #[test]
     fn replaces_per_block_disconnect_with_single_final_disconnect() {
-        let block_proof_input = vec![11, 12, 24];
-        let mut block_proof_input = block_proof_input
-            .into_iter()
-            .chain(100..124)
-            .collect::<Vec<_>>();
+        let chain_config = chain_config_response();
+        let mut block_proof_input = chain_config.clone();
+        block_proof_input.extend_from_slice(&[11, 12, 24]);
+        block_proof_input.extend(100..124);
         block_proof_input.push(0);
 
         let batch_input = generate_legacy_batch_proof_input(
@@ -1056,7 +1035,9 @@ mod tests {
             vec![&[1, 2, 3]],
         );
 
-        let mut expected = vec![1, 11, 12];
+        let mut expected = vec![1];
+        expected.extend_from_slice(&chain_config);
+        expected.extend_from_slice(&[11, 12]);
         expected.extend_from_slice(&blob_advice(&[1, 2, 3]));
         expected.push(0);
 
@@ -1091,8 +1072,10 @@ mod tests {
 
     #[test]
     fn legacy_batch_input_handles_empty_blob_pubdata() {
+        let chain_config = chain_config_response();
         let block_witness_payload = [11, 22, 33];
-        let mut single_block_witness = block_witness_payload.to_vec();
+        let mut single_block_witness = chain_config.clone();
+        single_block_witness.extend_from_slice(&block_witness_payload);
         single_block_witness.extend_from_slice(&[100; 25]);
         single_block_witness.push(0);
 
@@ -1103,10 +1086,48 @@ mod tests {
         );
 
         let mut expected = vec![1];
+        expected.extend_from_slice(&chain_config);
         expected.extend_from_slice(&block_witness_payload);
         expected.extend_from_slice(&blob_advice(&[]));
         expected.push(0);
 
         assert_eq!(batch_witness, expected);
+    }
+
+    #[test]
+    fn legacy_batch_input_contains_chain_config_once() {
+        let chain_config = chain_config_response();
+        let mut first = chain_config.clone();
+        first.extend_from_slice(&[11, 12, 0]);
+        let mut second = chain_config.clone();
+        second.extend_from_slice(&[21, 22, 0]);
+
+        let batch_input = generate_legacy_batch_proof_input(
+            vec![first.as_slice(), second.as_slice()],
+            DACommitmentScheme::PubdataKeccak256,
+            vec![&[], &[]],
+        );
+
+        let mut expected = vec![2];
+        expected.extend_from_slice(&chain_config);
+        expected.extend_from_slice(&[11, 12, 21, 22, 0]);
+
+        assert_eq!(batch_input, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "multiblock proof input cannot span different chain configs")]
+    fn legacy_batch_input_rejects_different_chain_configs() {
+        let mut first = chain_config_response();
+        first.extend_from_slice(&[11, 12, 0]);
+        let mut second = chain_config_response();
+        second[1] = 1;
+        second.extend_from_slice(&[21, 22, 0]);
+
+        generate_legacy_batch_proof_input(
+            vec![first.as_slice(), second.as_slice()],
+            DACommitmentScheme::PubdataKeccak256,
+            vec![&[], &[]],
+        );
     }
 }
