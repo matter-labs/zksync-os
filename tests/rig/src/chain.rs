@@ -699,7 +699,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ) -> BatchBlockInput<TxListSource> {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -711,7 +710,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
 
         BatchBlockInput {
