@@ -1,4 +1,3 @@
-#![feature(slice_as_array)]
 #![recursion_limit = "1024"]
 
 use clap::{Parser, Subcommand};

@@ -851,7 +851,7 @@ fn run_prover(csr_reads: &[u32]) {
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
     let mut binary = vec![];
-    for el in buffer.array_chunks::<4>() {
+    for el in buffer.as_chunks::<4>().0.iter() {
         binary.push(u32::from_le_bytes(*el));
     }
 

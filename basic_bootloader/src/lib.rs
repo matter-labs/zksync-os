@@ -2,7 +2,6 @@
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
-#![feature(array_chunks)]
 #![feature(get_mut_unchecked)]
 #![feature(const_type_id)]
 #![feature(vec_push_within_capacity)]

@@ -54,7 +54,7 @@ fn bn254_ecmul_as_system_function_inner<
         *dst = *src;
     }
 
-    let mut it = buffer.array_chunks::<32>();
+    let mut it = buffer.as_chunks::<32>().0.iter();
     let serialized_result = unsafe {
         let x0 = it.next().unwrap_unchecked();
         let y0 = it.next().unwrap_unchecked();
