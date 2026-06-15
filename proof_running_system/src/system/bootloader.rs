@@ -1,14 +1,13 @@
 use super::*;
 use crate::io_oracle::NonDeterminismCSRSourceImplementation;
 use alloc::alloc::{GlobalAlloc, Layout};
-use basic_bootloader::bootloader::config::{
-    BasicBootloaderProvingExecutionConfig, BootloaderStaticConfig,
-};
+use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
@@ -173,12 +172,12 @@ pub fn run_proving_inner<
 ) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
 
-    let static_config =
-        BootloaderStaticConfig::read_from_oracle(&mut oracle).expect("must read chain config");
+    let chain_config =
+        ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
 
     // Load all transactions from oracle and apply them.
     let (_oracle, public_input, _batch_output) =
-        ProvingBootloader::<O, L>::run_prepared_with_static_config::<
+        ProvingBootloader::<O, L>::run_prepared_with_chain_config::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,
@@ -186,7 +185,7 @@ pub fn run_proving_inner<
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
-            &static_config,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
 
@@ -213,11 +212,11 @@ pub fn run_proving_inner<
     // Batch proof input stores exactly one chain-config oracle response after
     // the block count. Forward batch-input generation asserts per-block
     // responses are equal, then compacts them to match this read pattern.
-    let static_config =
-        BootloaderStaticConfig::read_from_oracle(&mut oracle).expect("must read chain config");
+    let chain_config =
+        ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
-        oracle = ProvingBootloader::<O, L>::run_prepared_with_static_config::<
+        oracle = ProvingBootloader::<O, L>::run_prepared_with_chain_config::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,
@@ -225,7 +224,7 @@ pub fn run_proving_inner<
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
-            &static_config,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
     }

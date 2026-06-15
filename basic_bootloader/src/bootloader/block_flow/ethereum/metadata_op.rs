@@ -28,9 +28,9 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
     fn metadata_op<'a, Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         allocator: S::Allocator,
-        static_config: &crate::bootloader::config::BootloaderStaticConfig,
+        base_chain_config: ChainConfig,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
-        static_config.chain_config.validate()?;
+        base_chain_config.validate()?;
 
         // make header's buffer, parse, make into our internal structure, save hash
         let header = HeaderAndHistory::new(oracle, allocator.clone())?;
@@ -47,11 +47,10 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
         // Ethereum block headers do not carry a chain id, so the Ethereum STF
         // uses a fixed one (see `HeaderAndHistory`). Source the metadata chain
         // config's chain id from it so `System::chain_id()` stays consistent.
-        let base_config = static_config.chain_config;
         let chain_config = ChainConfig::new(
             header.chain_id,
-            base_config.fri_proof_verification_enabled(),
-            base_config.max_tx_gas_limit(),
+            base_chain_config.fri_proof_verification_enabled(),
+            base_chain_config.max_tx_gas_limit(),
         )?;
 
         let metadata = EthereumBlockMetadata {

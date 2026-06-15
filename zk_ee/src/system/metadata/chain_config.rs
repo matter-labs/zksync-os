@@ -1,5 +1,6 @@
 use crate::internal_error;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::{query_ids::CHAIN_CONFIG_QUERY_ID, IOOracle};
 use crate::system::errors::internal::InternalError;
 use crate::utils::exact_size_chain::ExactSizeChain;
 
@@ -37,6 +38,13 @@ fn default_max_tx_gas_limit() -> u64 {
 }
 
 impl ChainConfig {
+    /// Reads the run-frozen chain config from the oracle. Sourced once per run
+    /// and reused by execution and public-input construction. Deserialization
+    /// is a pure parse; the limitation is enforced separately via [`Self::validate`].
+    pub fn read_from_oracle(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
+        oracle.query_with_empty_input(CHAIN_CONFIG_QUERY_ID)
+    }
+
     pub fn new(
         chain_id: u64,
         fri_proof_verification_enabled: bool,

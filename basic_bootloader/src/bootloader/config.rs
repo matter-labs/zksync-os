@@ -1,8 +1,3 @@
-use zk_ee::oracle::query_ids::CHAIN_CONFIG_QUERY_ID;
-use zk_ee::oracle::IOOracle;
-use zk_ee::system::errors::internal::InternalError;
-use zk_ee::system::metadata::chain_config::ChainConfig;
-
 pub trait BasicBootloaderExecutionConfig: 'static + Clone + Copy + core::fmt::Debug {
     /// Flag to disable EOA signature validation.
     /// It can be used to optimize forward run.
@@ -11,18 +6,6 @@ pub trait BasicBootloaderExecutionConfig: 'static + Clone + Copy + core::fmt::De
     const SIMULATION: bool;
     /// Flag to disable FRI proof verification. Disabled for sequencing.
     const VERIFY_FRI_PROOFS: bool;
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct BootloaderStaticConfig {
-    pub chain_config: ChainConfig,
-}
-
-impl BootloaderStaticConfig {
-    pub fn read_from_oracle(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
-        let chain_config = oracle.query_with_empty_input(CHAIN_CONFIG_QUERY_ID)?;
-        Ok(Self { chain_config })
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

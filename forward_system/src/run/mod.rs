@@ -38,7 +38,7 @@ use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::block_flow::public_input::{BatchOutput, BatchPublicInput};
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
-    BasicBootloaderProvingExecutionConfig, BootloaderStaticConfig,
+    BasicBootloaderProvingExecutionConfig,
 };
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use errors::ForwardSubsystemError;
@@ -497,7 +497,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     // Keep a single witness stream across all block re-entries so the final
     // prover input matches the guest-side multiblock flow.
     let mut oracle = ReadWitnessSource::new(oracle);
-    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle)
         .map_err(BootloaderSubsystemError::from)
         .map_err(wrap_error!())?;
     let mut tracer = NopTracer::default();
@@ -509,7 +509,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     for block_idx in 0..batch_len {
         // Re-enter the proving bootloader for the next block while preserving the
         // shared witness stream and the multiblock batch keeper.
-        oracle = BatchProverInputBootloader::run_prepared_with_static_config::<
+        oracle = BatchProverInputBootloader::run_prepared_with_chain_config::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,
@@ -517,7 +517,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
             &mut result_keeper,
             &mut tracer,
             &mut validator,
-            &static_config,
+            chain_config,
         )
         .map_err(wrap_error!())?;
 
@@ -993,16 +993,16 @@ pub fn simulate_tx_with_chain_config<S: ReadStorage, PS: PreimageSource>(
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-    let static_config = BootloaderStaticConfig::read_from_oracle(&mut oracle)
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle)
         .map_err(BootloaderSubsystemError::from)
         .map_err(wrap_error!())?;
-    CallSimulationBootloader::run_prepared_with_static_config::<BasicBootloaderCallSimulationConfig>(
+    CallSimulationBootloader::run_prepared_with_chain_config::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut (),
         &mut result_keeper,
         tracer,
         validator,
-        &static_config,
+        chain_config,
     )
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();

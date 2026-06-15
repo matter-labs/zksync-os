@@ -7,7 +7,6 @@ use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
-use basic_bootloader::bootloader::config::BootloaderStaticConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
@@ -1563,8 +1562,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 withdrawals,
             );
             let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
-            let static_config = BootloaderStaticConfig::read_from_oracle(&mut copy_source)
-                .expect("must read bootloader static config");
+            let chain_config = ChainConfig::read_from_oracle(&mut copy_source)
+                .expect("must read chain config");
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
@@ -1573,13 +1572,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 BasicBootloader::<
                     EthereumStorageSystemTypesWithPostOps<_>,
                     EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-                >::run_prepared_with_static_config::<BasicBootloaderForwardETHLikeConfig>(
+                >::run_prepared_with_chain_config::<BasicBootloaderForwardETHLikeConfig>(
                     copy_source,
                     &mut (),
                     &mut pi_result_keeper,
                     &mut pi_tracer,
                     &mut pi_validator,
-                    &static_config,
+                    chain_config,
                 )
                 .expect("prover-input forward run must succeed");
 
