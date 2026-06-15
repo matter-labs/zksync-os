@@ -8,7 +8,7 @@ pub struct SystemMetadata<
     IOTypes: SystemIOTypesConfig,
     B: BasicBlockMetadata<IOTypes>,
     TX: BasicTransactionMetadata<IOTypes>,
-    C: ChainConfigMetadata = super::chain_config::ChainConfig,
+    C: ChainConfigMetadata,
 > {
     /// Provider of block-scoped metadata.
     pub block_level: B,
