@@ -191,10 +191,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .run_config
             .as_ref()
             .is_some_and(|c| c.revm_independent_gas);
-        let tx_gas_limit_cap = self
-            .run_config
-            .as_ref()
-            .and_then(|c| c.revm_tx_gas_limit_cap);
+        // Mirror ZKsync OS's per-tx gas cap so the consistency checker enforces
+        // the same EIP-7825 limit and never diverges on tx admission. Tests
+        // raise it via `with_max_tx_gas_limit` on both sides at once.
+        let tx_gas_limit_cap = Some(self.chain_config().max_tx_gas_limit());
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
         })
@@ -413,16 +413,6 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
-    /// Builder: sets the per-transaction gas limit cap used by the REVM consistency
-    /// checker. `None` uses REVM's spec-derived default (EIP-7825); `Some(u64::MAX)`
-    /// disables the cap. See [`RunConfig::revm_tx_gas_limit_cap`].
-    pub fn with_revm_tx_gas_limit_cap(mut self, cap: Option<u64>) -> Self {
-        self.run_config
-            .get_or_insert_with(Default::default)
-            .revm_tx_gas_limit_cap = cap;
-        self
-    }
-
     /// Builder: installs a custom oracle factory for forward/proof runs.
     /// Can be used for testing cases with corrupted or malicious oracles
     pub fn with_custom_oracle_factory(
@@ -554,15 +544,6 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.run_config
             .get_or_insert_with(Default::default)
             .disable_revm_consistency_check();
-        self
-    }
-
-    /// Setter: sets the per-transaction gas limit cap used by the REVM consistency
-    /// checker for subsequent block executions. See [`RunConfig::revm_tx_gas_limit_cap`].
-    pub fn set_revm_tx_gas_limit_cap(&mut self, cap: Option<u64>) -> &mut Self {
-        self.run_config
-            .get_or_insert_with(Default::default)
-            .revm_tx_gas_limit_cap = cap;
         self
     }
 

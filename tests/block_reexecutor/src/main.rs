@@ -237,7 +237,6 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
         update_state_after_block_execution: false,
         check_revm_consistency: false,
         revm_independent_gas: false,
-        revm_tx_gas_limit_cap: Some(u64::MAX),
         check_storage_diff_hashes: false,
     });
 
