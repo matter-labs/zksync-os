@@ -109,7 +109,11 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             self.current_proof_data = Some(next_proof_data);
             self.current_block_timestamp = Some(block_timestamp);
             // chain_config equality also covers chain id.
-            assert_eq!(self.chain_config.unwrap(), chain_config);
+            assert_eq!(
+                self.chain_config.unwrap(),
+                chain_config,
+                "multiblock batch cannot span different chain configs"
+            );
             assert!(upgrade_tx_hash.is_zero());
             assert_eq!(
                 self.settlement_layer_chain_id,
@@ -380,5 +384,61 @@ mod tests {
         keeper.upgrade_tx_hash = Some(Bytes32::from_byte_fill(1));
 
         assert!(keeper.has_upgrade_tx());
+    }
+
+    fn dummy_proof_data() -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        ProofData {
+            state_root_view: FlatStorageCommitment::<TREE_HEIGHT> {
+                root: Bytes32::ZERO,
+                next_free_slot: 0,
+            },
+            last_block_timestamp: 0,
+        }
+    }
+
+    /// The chain config is frozen for the whole batch: the second block must
+    /// carry the same config as the first, otherwise `apply_block` rejects it.
+    #[test]
+    #[should_panic(expected = "multiblock batch cannot span different chain configs")]
+    fn apply_block_rejects_differing_chain_config_across_blocks() {
+        let mut keeper = ZKBatchDataKeeper::<Global, DummyOracle>::new();
+        let state_a = Bytes32::from_byte_fill(1);
+        let state_b = Bytes32::from_byte_fill(2);
+        let config = ChainConfig::default();
+        // Same fields but a different chain id => a different config.
+        let other_config = ChainConfig::new(
+            config.chain_id() + 1,
+            config.fri_proof_verification_enabled(),
+            config.max_tx_gas_limit(),
+        )
+        .unwrap();
+
+        // First block freezes the batch chain config.
+        keeper.apply_block(
+            state_a,
+            state_b,
+            dummy_proof_data(),
+            100,
+            config,
+            Bytes32::ZERO,
+            Bytes32::ZERO,
+            core::iter::empty(),
+            U256::from(1u64),
+            0,
+        );
+
+        // Second block continues the state chain but carries a different config.
+        keeper.apply_block(
+            state_b,
+            Bytes32::from_byte_fill(3),
+            dummy_proof_data(),
+            101,
+            other_config,
+            Bytes32::ZERO,
+            Bytes32::ZERO,
+            core::iter::empty(),
+            U256::from(1u64),
+            0,
+        );
     }
 }
