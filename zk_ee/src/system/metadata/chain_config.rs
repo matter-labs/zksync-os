@@ -3,6 +3,9 @@ use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use crate::oracle::{query_ids::CHAIN_CONFIG_QUERY_ID, IOOracle};
 use crate::system::errors::internal::InternalError;
 use crate::utils::exact_size_chain::ExactSizeChain;
+use crypto::sha3::Keccak256;
+use crypto::MiniDigest;
+use ruint::aliases::U256;
 
 use super::basic_metadata::ChainConfigMetadata;
 
@@ -83,6 +86,26 @@ impl ChainConfig {
 
     pub const fn max_tx_gas_limit(&self) -> u64 {
         self.max_tx_gas_limit
+    }
+
+    /// Canonical keccak256 commitment to the chain config.
+    ///
+    /// Committed into the batch public input so that the public-input layout
+    /// stays fixed (a single 32-byte word) even as the config's field set
+    /// evolves. Encoding, in order:
+    /// - `chain_id`: uint256 big-endian (32-byte word)
+    /// - `fri_proof_verification_enabled`: 32-byte word, last byte `0`/`1`
+    /// - `max_tx_gas_limit`: uint64 big-endian, right-aligned in a 32-byte word
+    pub fn hash(&self) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update(U256::from(self.chain_id).to_be_bytes::<32>());
+        let mut fri_word = [0u8; 32];
+        fri_word[31] = u8::from(self.fri_proof_verification_enabled);
+        hasher.update(fri_word);
+        let mut gas_word = [0u8; 32];
+        gas_word[24..].copy_from_slice(&self.max_tx_gas_limit.to_be_bytes());
+        hasher.update(gas_word);
+        hasher.finalize()
     }
 
     /// Checks chain-level limitations on the config. This is enforced at the

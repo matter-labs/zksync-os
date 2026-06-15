@@ -213,7 +213,7 @@ where
         let public_input = BatchPublicInput {
             state_before: chain_state_commitment_before.hash().into(),
             state_after: chain_state_commitment_after.hash().into(),
-            chain_config: metadata.chain_config,
+            chain_config_hash: metadata.chain_config.hash().into(),
             batch_output: batch_output.hash().into(),
         };
         logger_log!(

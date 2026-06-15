@@ -75,23 +75,32 @@ The batch public input is generated when using the multiblock-batch feature.
 It equals to `keccak256` hash of(concatenation):
 - `chain_state_commitment_before`
 - `chain_state_commitment_after`
+- `chain_config_hash`
 - `batch_output_hash`
 
 Where chain state commitments are the same `blake2s` hashes of the state before and after as for block(s) PI.
+
+`chain_config_hash` is `keccak256` of the chain-level execution rules(concatenated):
+- `chain_id`
+- `fri_proof_verification_enabled`
+- `max_tx_gas_limit`
+
+The chain config is committed as a hash (rather than inlined) so the batch public input layout stays fixed as the `ChainConfig` field set evolves.
+
 And `batch_output_hash` is `keccak256` of the following fields(concatenated):
-- `used_chain_id`
-- `chain_config.fri_proof_verification_enabled`
-- `chain_config.max_tx_gas_limit`
 - `first_block_timestamp`
 - `last_block_timestamp`
 - `da_commitment_scheme`
-- `da_commitment`
+- `pubdata_commitment`
 - `number_of_layer_1_txs`
-- `rolling_l1_txs_keccak256`
+- `number_of_layer_2_txs`
+- `priority_operations_hash`
 - `l2_logs_tree_root`
 - `upgrade_tx_hash`
+- `interop_roots_rolling_hash`
+- `settlement_layer_chain_id`
 
-On the ZK metadata path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage. The EIP-170 deployed-code limit and the derived EIP-3860 initcode-size limit (`2 *` the deployed-code limit) are fixed compile-time constants and are not part of `ChainConfig`. For the single-transaction gas cap, the separate Ethereum metadata path is unchanged and still follows the compile-time `eip-7825` feature.
+On the ZK metadata path, runtime `ChainConfig` is the source of truth for these chain-level rules and is committed into the public-input preimage via `chain_config_hash`. The EIP-170 deployed-code limit and the derived EIP-3860 initcode-size limit (`2 *` the deployed-code limit) are fixed compile-time constants and are not part of `ChainConfig`. For the single-transaction gas cap, the separate Ethereum metadata path is unchanged and still follows the compile-time `eip-7825` feature.
 
 This includes almost the same data as block(s) output, with 2 main differences:
 - `l2_logs_tree_root` instead `l2_to_l1_logs_hashes_blake2s_hash`, we'll build tree during batch processing.

@@ -190,7 +190,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),
             state_after: self.current_state_commitment.unwrap(),
-            chain_config,
+            chain_config_hash: chain_config.hash().into(),
             batch_output: batch_output.hash().into(),
         };
 

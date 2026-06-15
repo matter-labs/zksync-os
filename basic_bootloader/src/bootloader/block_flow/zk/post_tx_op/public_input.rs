@@ -2,7 +2,6 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::utils::Bytes32;
 
 ///
@@ -101,22 +100,6 @@ impl BatchOutput {
     }
 }
 
-fn update_u64_word(hasher: &mut Keccak256, value: u64) {
-    hasher.update([0u8; 24]);
-    hasher.update(value.to_be_bytes());
-}
-
-fn update_bool_word(hasher: &mut Keccak256, value: bool) {
-    hasher.update([0u8; 31]);
-    hasher.update([u8::from(value)]);
-}
-
-fn update_chain_config(hasher: &mut Keccak256, chain_config: ChainConfig) {
-    hasher.update(U256::from(chain_config.chain_id()).to_be_bytes::<32>());
-    update_bool_word(hasher, chain_config.fri_proof_verification_enabled());
-    update_u64_word(hasher, chain_config.max_tx_gas_limit());
-}
-
 #[derive(Debug)]
 pub struct BatchPublicInput {
     /// State commitment before the batch.
@@ -124,8 +107,10 @@ pub struct BatchPublicInput {
     pub state_before: Bytes32,
     /// State commitment after the batch.
     pub state_after: Bytes32,
-    /// Static chain-level execution rules used during execution.
-    pub chain_config: ChainConfig,
+    /// keccak256 commitment to the chain-level execution rules used during
+    /// execution (see [`ChainConfig::hash`]). Committed as a hash so this
+    /// layout stays fixed as the config's field set evolves.
+    pub chain_config_hash: Bytes32,
     /// Batch output to be opened on the settlement layer, needed to process DA, l1 <> l2 messaging, validate inputs.
     pub batch_output: Bytes32,
 }
@@ -134,15 +119,11 @@ impl BatchPublicInput {
     ///
     /// Calculate keccak256 hash of public input
     ///
-    /// Canonical chain config encoding, in order:
-    /// - `chain_id`: uint256, encoded as a 32-byte big-endian word.
-    /// - `fri_proof_verification_enabled`: bool encoded as a 32-byte word with the last byte 0/1.
-    /// - `max_tx_gas_limit`: uint64 encoded as a 32-byte big-endian word.
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(self.state_before.as_u8_ref());
         hasher.update(self.state_after.as_u8_ref());
-        update_chain_config(&mut hasher, self.chain_config);
+        hasher.update(self.chain_config_hash.as_u8_ref());
         hasher.update(self.batch_output.as_u8_ref());
         hasher.finalize()
     }
@@ -152,7 +133,7 @@ impl BatchPublicInput {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
-    use zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
+    use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 
     fn sample_chain_config() -> ChainConfig {
         ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap()
@@ -180,7 +161,7 @@ mod tests {
         BatchPublicInput {
             state_before: Bytes32::ZERO,
             state_after: Bytes32::ZERO,
-            chain_config,
+            chain_config_hash: chain_config.hash().into(),
             batch_output: batch_output.hash().into(),
         }
     }
