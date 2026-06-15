@@ -33,7 +33,6 @@ use crate::bootloader::block_flow::{
 };
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use zk_ee::system::metadata::chain_config::ChainConfig;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -41,6 +40,7 @@ use crate::bootloader::stf::EthereumLikeBasicSTF;
 use crate::bootloader::transaction_flow::{BasicTransactionFlow, ExecutionOutput, ExecutionResult};
 use alloc::boxed::Box;
 use core::fmt::Write;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 
 pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
 pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB

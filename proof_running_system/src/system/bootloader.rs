@@ -172,14 +172,11 @@ pub fn run_proving_inner<
 ) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
 
-    let chain_config =
-        ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
 
     // Load all transactions from oracle and apply them.
     let (_oracle, public_input, _batch_output) =
-        ProvingBootloader::<O, L>::run_prepared::<
-            BasicBootloaderProvingExecutionConfig,
-        >(
+        ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut (),
             &mut NopResultKeeper::default(),
@@ -212,13 +209,10 @@ pub fn run_proving_inner<
     // Batch proof input stores exactly one chain-config oracle response after
     // the block count. Forward batch-input generation asserts per-block
     // responses are equal, then compacts them to match this read pattern.
-    let chain_config =
-        ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
-        oracle = ProvingBootloader::<O, L>::run_prepared::<
-            BasicBootloaderProvingExecutionConfig,
-        >(
+        oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut batch_data,
             &mut NopResultKeeper::default(),

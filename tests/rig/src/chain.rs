@@ -1563,25 +1563,24 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 withdrawals,
             );
             let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
-            let chain_config = ChainConfig::read_from_oracle(&mut copy_source)
-                .expect("must read chain config");
+            let chain_config =
+                ChainConfig::read_from_oracle(&mut copy_source).expect("must read chain config");
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
             let mut pi_validator = NopTxValidator;
-            let (returned_oracle, _, _) =
-                BasicBootloader::<
-                    EthereumStorageSystemTypesWithPostOps<_>,
-                    EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-                >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
-                    copy_source,
-                    &mut (),
-                    &mut pi_result_keeper,
-                    &mut pi_tracer,
-                    &mut pi_validator,
-                    chain_config,
-                )
-                .expect("prover-input forward run must succeed");
+            let (returned_oracle, _, _) = BasicBootloader::<
+                EthereumStorageSystemTypesWithPostOps<_>,
+                EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+                copy_source,
+                &mut (),
+                &mut pi_result_keeper,
+                &mut pi_tracer,
+                &mut pi_validator,
+                chain_config,
+            )
+            .expect("prover-input forward run must succeed");
 
             assert_eq!(
                 result_keeper.storage_writes, pi_result_keeper.storage_writes,

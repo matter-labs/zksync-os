@@ -509,9 +509,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     for block_idx in 0..batch_len {
         // Re-enter the proving bootloader for the next block while preserving the
         // shared witness stream and the multiblock batch keeper.
-        oracle = BatchProverInputBootloader::run_prepared::<
-            BasicBootloaderProvingExecutionConfig,
-        >(
+        oracle = BatchProverInputBootloader::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut batch_data,
             &mut result_keeper,
