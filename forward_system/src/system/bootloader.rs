@@ -30,7 +30,7 @@ pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
 ) {
     let chain_config = ChainConfig::read_from_oracle(&mut oracle)
         .unwrap_or_else(|err| panic!("Failed to read chain config: {err}"));
-    if let Err(err) = ForwardBootloader::run_prepared_with_chain_config::<Config>(
+    if let Err(err) = ForwardBootloader::run_prepared::<Config>(
         oracle,
         &mut (),
         result_keeper,
@@ -52,7 +52,7 @@ pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<(), BootloaderSubsystemError> {
     let chain_config = ChainConfig::read_from_oracle(&mut oracle)?;
-    ForwardBootloader::run_prepared_with_chain_config::<Config>(
+    ForwardBootloader::run_prepared::<Config>(
         oracle,
         &mut (),
         result_keeper,
@@ -86,7 +86,7 @@ pub fn run_prover_input_with_batch_output_no_panic<Config: BasicBootloaderExecut
     validator: &mut impl TxValidator<ProverInputSystem>,
 ) -> Result<(Vec<u32>, BatchOutput), BootloaderSubsystemError> {
     let chain_config = ChainConfig::read_from_oracle(&mut oracle)?;
-    ProverInputBootloader::run_prepared_with_chain_config::<Config>(
+    ProverInputBootloader::run_prepared::<Config>(
         oracle,
         &mut (),
         result_keeper,

@@ -177,7 +177,7 @@ pub fn run_proving_inner<
 
     // Load all transactions from oracle and apply them.
     let (_oracle, public_input, _batch_output) =
-        ProvingBootloader::<O, L>::run_prepared_with_chain_config::<
+        ProvingBootloader::<O, L>::run_prepared::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,
@@ -216,7 +216,7 @@ pub fn run_proving_inner<
         ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
-        oracle = ProvingBootloader::<O, L>::run_prepared_with_chain_config::<
+        oracle = ProvingBootloader::<O, L>::run_prepared::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,

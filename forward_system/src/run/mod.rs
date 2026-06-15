@@ -509,7 +509,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     for block_idx in 0..batch_len {
         // Re-enter the proving bootloader for the next block while preserving the
         // shared witness stream and the multiblock batch keeper.
-        oracle = BatchProverInputBootloader::run_prepared_with_chain_config::<
+        oracle = BatchProverInputBootloader::run_prepared::<
             BasicBootloaderProvingExecutionConfig,
         >(
             oracle,
@@ -996,7 +996,7 @@ pub fn simulate_tx_with_chain_config<S: ReadStorage, PS: PreimageSource>(
     let chain_config = ChainConfig::read_from_oracle(&mut oracle)
         .map_err(BootloaderSubsystemError::from)
         .map_err(wrap_error!())?;
-    CallSimulationBootloader::run_prepared_with_chain_config::<BasicBootloaderCallSimulationConfig>(
+    CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut (),
         &mut result_keeper,

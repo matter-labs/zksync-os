@@ -1541,12 +1541,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         BasicBootloader::<
             EthereumStorageSystemTypes<_>,
             EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
-        >::run_prepared_with_default_config::<BasicBootloaderForwardETHLikeConfig>(
+        >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
             oracle,
             &mut (),
             &mut result_keeper,
             &mut nop_tracer,
             &mut nop_validator,
+            ChainConfig::default(),
         )
         .expect("must succeed");
         let proof_input = if only_forward {
@@ -1572,7 +1573,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 BasicBootloader::<
                     EthereumStorageSystemTypesWithPostOps<_>,
                     EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-                >::run_prepared_with_chain_config::<BasicBootloaderForwardETHLikeConfig>(
+                >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
                     copy_source,
                     &mut (),
                     &mut pi_result_keeper,
