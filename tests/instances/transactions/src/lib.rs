@@ -39,10 +39,12 @@ mod validation_failures;
 fn last_prover_input_batch_output<const RANDOMIZED_TREE: bool>(
     tester: &TestingFramework<RANDOMIZED_TREE>,
 ) -> &BatchOutput {
-    &tester
+    tester
         .last_executed_block_info()
         .expect("must have last executed block info")
         .prover_input_batch_output
+        .as_ref()
+        .expect("prover-input batch output must exist")
 }
 
 fn l1_tx_hash(tx: ZKsyncTxEnvelope) -> rig::zk_ee::utils::Bytes32 {

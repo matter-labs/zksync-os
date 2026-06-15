@@ -227,10 +227,12 @@ fn assert_single_successful_call(output: &BlockOutput, expected_logs: usize) {
 fn last_prover_input_batch_output<const RANDOMIZED_TREE: bool>(
     tester: &TestingFramework<RANDOMIZED_TREE>,
 ) -> &BatchOutput {
-    &tester
+    tester
         .last_executed_block_info()
         .expect("must have last executed block info")
         .prover_input_batch_output
+        .as_ref()
+        .expect("prover-input batch output must exist")
 }
 
 fn expected_interop_roots_rolling_hash(interop_roots: &[StoredInteropRoot]) -> Bytes32 {

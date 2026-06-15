@@ -882,12 +882,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let (proof_input, pubdata) = prover_input
                 .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
                 .unwrap_or_else(|| (vec![], vec![]));
-            (
-                block_output,
-                block_extra_stats,
-                proof_input,
-                pubdata,
-            )
+            (block_output, block_extra_stats, proof_input, pubdata)
         })
     }
 
@@ -952,12 +947,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let (proof_input, pubdata) = prover_input
                 .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
                 .unwrap_or_else(|| (vec![], vec![]));
-            (
-                block_output,
-                block_extra_stats,
-                proof_input,
-                pubdata,
-            )
+            (block_output, block_extra_stats, proof_input, pubdata)
         })
     }
 
@@ -1114,7 +1104,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 // LABELS now contains only this run's proving-mode labels.
                 let result = run_prover_input_with_batch_output_no_panic::<
                     BasicBootloaderProvingExecutionConfig,
-                >(copy_source, &mut result_keeper_prover_input, &mut tracer, &mut validator);
+                >(
+                    copy_source,
+                    &mut result_keeper_prover_input,
+                    &mut tracer,
+                    &mut validator,
+                );
                 result?
             };
 
