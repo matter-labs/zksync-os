@@ -18,7 +18,7 @@ use super::element_with_history::ElementWithHistory;
 /// fits within a small handful of cache lines for the K/V types in use
 /// (~24-52 B keys, ~32 B head/initial/first/committed pointers, plus
 /// optional element properties).
-const ELEMENT_PAGE_CAPACITY: usize = 32;
+pub(crate) const ELEMENT_PAGE_CAPACITY: usize = 32;
 
 pub struct ElementWithHistoryArena<K, V, A: Allocator + Clone, KP> {
     buffer: ListVec<ElementWithHistory<K, V, A, KP>, ELEMENT_PAGE_CAPACITY, A>,

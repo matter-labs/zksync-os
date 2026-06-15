@@ -723,4 +723,90 @@ mod tests {
         assert_eq!(*restored.initial(), 3);
         assert_eq!(*restored.current(), 3);
     }
+
+    /// Regression test for the arena variant: pointers stored in the BTreeMap and
+    /// the pending-updates list must stay valid across `ListVec` page appends.
+    ///
+    /// The other unit tests only ever insert a single key, so they live entirely
+    /// within the first arena page and never trigger a page append. Here we insert
+    /// well over one page worth of keys, then update entries on *both* the first
+    /// page (small keys) and the latest pages (large keys): if a page append had
+    /// invalidated an earlier page's pointer, those entries would observe a stale
+    /// or wrong value. Finally we roll back, re-apply + commit, and clear — each
+    /// path walks pointers into every page.
+    #[test]
+    fn spans_multiple_arena_pages() {
+        use super::element_with_history_arena::ELEMENT_PAGE_CAPACITY;
+
+        // Span several pages, with a partially-filled final page (the `+ 1`),
+        // so both the full-page and the new-node-append branches of
+        // `push_returning_ref` are hit. Derived from the real capacity so the
+        // test keeps spanning multiple pages if the constant is retuned.
+        let count = ELEMENT_PAGE_CAPACITY * 3 + 1;
+
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+
+        // Initial values: key k -> k, materialized across many arena pages.
+        for k in 0..count {
+            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+        }
+
+        // Snapshot we will roll back to.
+        let ss = map.snapshot();
+
+        // Update every entry (old and new pages alike). A page append that had
+        // invalidated an earlier page's pointer would make the small-k writes
+        // here land in the wrong slot, which the assertions below would catch.
+        for k in 0..count {
+            let mut v = map.get_mut(&k).expect("key present");
+            v.update::<_, ()>(|x| {
+                *x = k + 1000;
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        // Every entry, on every page, reflects its update.
+        for k in 0..count {
+            let item = map.get(&k).expect("key present");
+            assert_eq!(*item.initial(), k);
+            assert_eq!(*item.current(), k + 1000);
+        }
+
+        // Roll back the bulk update; every entry returns to its initial value,
+        // proving the pending-list pointers into every page were followed.
+        map.rollback(ss).expect("valid snapshot");
+        for k in 0..count {
+            assert_eq!(*map.get(&k).expect("key present").current(), k);
+        }
+        // Nothing remains pending after a full rollback.
+        map.apply_to_all_updated_elements::<_, ()>(|_, _, _| {
+            panic!("all updates were rolled back");
+        })
+        .unwrap();
+
+        // Re-apply across all pages and commit; committed values must stick.
+        map.snapshot();
+        for k in 0..count {
+            let mut v = map.get_mut(&k).expect("key present");
+            v.update::<_, ()>(|x| {
+                *x = k + 2000;
+                Ok(())
+            })
+            .unwrap();
+        }
+        map.commit();
+        for k in 0..count {
+            let item = map.get(&k).expect("key present");
+            assert_eq!(*item.committed(), k + 2000);
+            assert_eq!(*item.current(), k + 2000);
+        }
+
+        // Clear releases every page; afterwards the map is empty and reusable.
+        map.clear();
+        assert_eq!(map.iter().len(), 0);
+        for k in 0..count {
+            assert!(map.get(&k).is_none());
+        }
+    }
 }
