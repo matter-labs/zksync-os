@@ -16,7 +16,7 @@ pub const DEFAULT_MAX_TX_GAS_LIMIT: u64 = 1 << 24;
 /// different configurations), but they are not immutable: they can change
 /// between batches via, e.g., a migration (`fri_proof_verification_enabled`)
 /// or a chain admin action (`max_tx_gas_limit`).
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChainConfig {
     /// Chain id. This is a static chain-level rule, so it lives here rather
@@ -25,37 +25,10 @@ pub struct ChainConfig {
     fri_proof_verification_enabled: bool,
     /// EIP-7825 single-transaction gas limit. The effective per-tx limit is
     /// `min(block_gas_limit, max_tx_gas_limit)`.
+    // Defaults to the behavior-preserving EIP-7825 cap so that older dumps
+    // without this field deserialize to current behavior.
+    #[cfg_attr(feature = "serde", serde(default = "default_max_tx_gas_limit"))]
     max_tx_gas_limit: u64,
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for ChainConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct RawChainConfig {
-            chain_id: u64,
-            fri_proof_verification_enabled: bool,
-            // Defaults to the behavior-preserving EIP-7825 cap so that older
-            // dumps without this field deserialize to current behavior.
-            #[serde(default = "default_max_tx_gas_limit")]
-            max_tx_gas_limit: u64,
-        }
-
-        let raw = <RawChainConfig as serde::Deserialize>::deserialize(deserializer)?;
-        let config = Self {
-            chain_id: raw.chain_id,
-            fri_proof_verification_enabled: raw.fri_proof_verification_enabled,
-            max_tx_gas_limit: raw.max_tx_gas_limit,
-        };
-        config
-            .validate()
-            .map_err(|_| serde::de::Error::custom("invalid chain config"))?;
-
-        Ok(config)
-    }
 }
 
 #[cfg(feature = "serde")]
@@ -104,6 +77,9 @@ impl ChainConfig {
         self.max_tx_gas_limit
     }
 
+    /// Checks chain-level limitations on the config. This is enforced at the
+    /// system boundary (when the config is loaded for block execution), not
+    /// during (de)serialization, so deserialization stays a pure parse.
     pub fn validate(&self) -> Result<(), InternalError> {
         // The per-tx gas cap must not be configured below Ethereum's EIP-7825
         // single-transaction gas limit; a chain may only raise it.
@@ -146,14 +122,11 @@ impl UsizeDeserializable for ChainConfig {
         let fri_proof_verification_enabled = UsizeDeserializable::from_iter(src)?;
         let max_tx_gas_limit = UsizeDeserializable::from_iter(src)?;
 
-        let config = Self {
+        Ok(Self {
             chain_id,
             fri_proof_verification_enabled,
             max_tx_gas_limit,
-        };
-        config.validate()?;
-
-        Ok(config)
+        })
     }
 }
 
@@ -197,12 +170,16 @@ mod tests {
     }
 
     #[test]
-    fn chain_config_usize_deserialization_rejects_below_eip7825_floor() {
+    fn usize_deserialization_does_not_validate() {
+        // Validation is enforced at the system boundary, not during
+        // deserialization, so a below-floor value parses successfully and is
+        // only rejected by an explicit `validate()`.
         let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
         // Last field is max_tx_gas_limit; drop it below the floor.
         *serialized.last_mut().unwrap() = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
         let mut iter = serialized.into_iter();
 
-        assert!(ChainConfig::from_iter(&mut iter).is_err());
+        let config = ChainConfig::from_iter(&mut iter).expect("deserialization must not validate");
+        assert!(config.validate().is_err());
     }
 }
