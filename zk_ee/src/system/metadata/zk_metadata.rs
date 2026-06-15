@@ -185,11 +185,9 @@ impl ZkSpecificMetadata for BlockMetadataFromOracle {
     fn get_pubdata_price(&self) -> U256 {
         self.pubdata_price
     }
-
     fn native_price(&self) -> U256 {
         self.native_price
     }
-
     fn get_pubdata_limit(&self) -> u64 {
         self.pubdata_limit
     }

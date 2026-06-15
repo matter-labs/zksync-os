@@ -25,7 +25,6 @@ pub struct ChainConfig {
     fri_proof_verification_enabled: bool,
     /// EIP-7825 single-transaction gas limit. The effective per-tx limit is
     /// `min(block_gas_limit, max_tx_gas_limit)`.
-    #[cfg_attr(feature = "serde", serde(default = "default_max_tx_gas_limit"))]
     max_tx_gas_limit: u64,
 }
 

@@ -321,24 +321,9 @@ pub fn single_run(
 pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
     use rig::alloy_rlp::Encodable;
     use rig::zksync_os_tests_common::zksync_tx::encoding::encode_alloy_rpc_tx;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
-    let input_dir = Path::new(&block_dir);
-    let dir = if input_dir.exists() {
-        input_dir.to_path_buf()
-    } else if input_dir.is_relative() {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let candidates = [
-            manifest_dir.join(input_dir),
-            manifest_dir.join("blocks").join(input_dir),
-        ];
-        candidates
-            .into_iter()
-            .find(|candidate| candidate.exists())
-            .unwrap_or_else(|| input_dir.to_path_buf())
-    } else {
-        input_dir.to_path_buf()
-    };
+    let dir = Path::new(&block_dir);
     let block = fs::read_to_string(dir.join("block.json"))?;
     let witness_file = File::open(dir.join("witness.json"))?;
     let witness_reader = BufReader::new(witness_file);

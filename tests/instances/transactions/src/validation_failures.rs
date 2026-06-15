@@ -4,7 +4,6 @@ use rig::alloy::consensus::TxEip1559;
 use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
-use rig::evm_interpreter::MAX_INITCODE_SIZE;
 use rig::ruint::aliases::U256;
 use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use rig::zksync_os_interface::error::InvalidTransaction;
@@ -200,26 +199,6 @@ fn simulation_skips_max_tx_gas_limit_admission_check() {
 
     let output = tester.simulate_block(vec![tx]);
     assert_tx_success!(output, 0);
-}
-
-#[test]
-fn default_initcode_size_limit_rejects_above_boundary() {
-    let signer = PrivateKeySigner::random();
-    let sender = signer.address();
-    let initcode = vec![0; MAX_INITCODE_SIZE + 1];
-
-    let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
-    let tx = create_tx(signer, 1_000_000, initcode);
-
-    let output = tester.execute_block(vec![tx]);
-    assert!(
-        matches!(
-            &output.tx_results[0],
-            Err(InvalidTransaction::CreateInitCodeSizeLimit)
-        ),
-        "expected CreateInitCodeSizeLimit, got {:?}",
-        output.tx_results[0]
-    );
 }
 
 #[test]

@@ -332,7 +332,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
-        // EIP-3860 initcode-size limit.
+        // Create code size is limited
         if len > MAX_INITCODE_SIZE {
             return Err(EvmError::CreateInitcodeSizeLimit.into());
         }
