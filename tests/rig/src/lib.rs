@@ -315,6 +315,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: overrides the per-tx gas cap (`max_tx_gas_limit`) in the chain
+    /// config, keeping the other chain-config fields. Panics if the value is
+    /// below the EIP-7825 floor (use a crafted oracle response to test that).
+    pub fn with_max_tx_gas_limit(self, max_tx_gas_limit: u64) -> Self {
+        let current = self.chain_config();
+        self.with_chain_config(
+            ChainConfig::new(
+                current.chain_id(),
+                current.fri_proof_verification_enabled(),
+                max_tx_gas_limit,
+            )
+            .expect("max_tx_gas_limit below the EIP-7825 floor"),
+        )
+    }
+
     /// Returns the chain-level execution config used for block execution.
     pub fn chain_config(&self) -> ChainConfig {
         self.chain.chain_config()

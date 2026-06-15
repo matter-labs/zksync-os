@@ -5,7 +5,7 @@ use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
 use rig::ruint::aliases::U256;
-use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
+use rig::zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{assert_tx_rejected, assert_tx_success};
@@ -53,16 +53,6 @@ fn create_tx(signer: PrivateKeySigner, gas_limit: u64, init_code: Vec<u8>) -> ZK
         input: init_code.into(),
     };
     ZKsyncTxEnvelope::from_eth_tx(tx, signer)
-}
-
-fn chain_config_with_max_tx_gas_limit(max_tx_gas_limit: u64) -> ChainConfig {
-    let default = ChainConfig::default();
-    ChainConfig::new(
-        TEST_CHAIN_ID,
-        default.fri_proof_verification_enabled(),
-        max_tx_gas_limit,
-    )
-    .unwrap()
 }
 
 fn block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
@@ -155,10 +145,9 @@ fn custom_max_tx_gas_limit_allows_above_default_boundary() {
     let sender = signer.address();
     let recipient = address!("0000000000000000000000000000000000000002");
     let gas_limit = DEFAULT_MAX_TX_GAS_LIMIT + 1;
-    let chain_config = chain_config_with_max_tx_gas_limit(gas_limit);
 
     let mut tester = new_tester()
-        .with_chain_config(chain_config)
+        .with_max_tx_gas_limit(gas_limit)
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_block_context(block_context_with_gas_limit(gas_limit));
     let tx = call_tx(
