@@ -124,10 +124,20 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if op3.is_zero() {
             return Ok(());
         }
+        // Fast path: modulus = 1 → result is always 0. EVM spec for MULMOD.
+        if op3.is_one() {
+            U256::write_zero(op3);
+            return Ok(());
+        }
         // Compute a * b -> (product_lo, product_hi)
         let mut product_lo = U256::from_limbs(*op1.as_limbs());
         let mut product_hi = U256::from_limbs(*op1.as_limbs());
         product_lo.widening_mul_assign_into(&mut product_hi, op2);
+        // Fast path: modulus = 2^256 - 1. Skip the oracle-backed wide div_rem.
+        if op3.as_limbs() == &[u64::MAX; 4] {
+            reduce_mod_max(&mut product_lo, &product_hi, op3);
+            return Ok(());
+        }
         // Wide div_rem: divisor (op3) receives remainder
         S::SystemFunctionsExt::u256_wide_div_rem(
             &mut product_lo,
@@ -174,6 +184,29 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 }
 
+/// Reduce a 512-bit product modulo `2^256 - 1`, given the widening product as
+/// `(product_lo, product_hi)`. Writes the 256-bit result into `out`.
+///
+/// Math: since `2^256 ≡ 1 (mod 2^256 - 1)`, we have
+///   `lo + hi * 2^256 ≡ lo + hi (mod 2^256 - 1)`.
+/// A single carry-aware add reduces, with a final normalization step that maps
+/// `2^256 - 1 ≡ 0`.
+#[inline]
+fn reduce_mod_max(product_lo: &mut U256, product_hi: &U256, out: &mut U256) {
+    let carry = product_lo.overflowing_add_assign(product_hi);
+    if carry {
+        // The wrapped 2^256 ≡ 1 (mod 2^256 - 1), so account for it by adding 1.
+        // This cannot itself overflow: `lo + hi <= 2*(2^256 - 1) = 2^257 - 2`, so
+        // when carry was set the wrapped value is `<= 2^256 - 2`.
+        product_lo.overflowing_add_assign(&U256::ONE);
+    }
+    if product_lo.as_limbs() == &[u64::MAX; 4] {
+        U256::write_zero(out);
+    } else {
+        core::mem::swap(out, product_lo);
+    }
+}
+
 pub fn exp_cost(power: &U256) -> Option<(u64, u64)> {
     if power.is_zero() {
         Some((gas_constants::EXP, EXP_BASE_NATIVE_COST))
@@ -187,5 +220,51 @@ pub fn exp_cost(power: &U256) -> Option<(u64, u64)> {
         let native_cost =
             EXP_BASE_NATIVE_COST.checked_add(EXP_PER_BYTE_NATIVE_COST.checked_mul(num_bytes)?)?;
         Some((gas_cost, native_cost))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reduce_mod_max;
+    use ruint::aliases::U256 as HostU256;
+    use u256::U256;
+
+    fn run_reduce_mod_max(a: HostU256, b: HostU256) -> HostU256 {
+        let a_u: U256 = a.into();
+        let b_u: U256 = b.into();
+        let mut lo = U256::from_limbs(*a_u.as_limbs());
+        let mut hi = U256::from_limbs(*a_u.as_limbs());
+        lo.widening_mul_assign_into(&mut hi, &b_u);
+        let mut out = U256::from_limbs([0u64; 4]);
+        reduce_mod_max(&mut lo, &hi, &mut out);
+        out.into()
+    }
+
+    fn assert_matches_reference(a: HostU256, b: HostU256) {
+        let actual = run_reduce_mod_max(a, b);
+        let expected = a.mul_mod(b, HostU256::MAX);
+        assert_eq!(actual, expected, "(a, b) = ({:#x}, {:#x})", a, b);
+    }
+
+    #[test]
+    fn reduce_mod_max_matches_ruint_reference() {
+        let max = HostU256::MAX;
+        let zero = HostU256::ZERO;
+        let one = HostU256::from(1u64);
+        let two = HostU256::from(2u64);
+        let half_max = HostU256::from_limbs([u64::MAX, u64::MAX, 0, 0]);
+        let high_limb = HostU256::from_limbs([0, 0, 0, 0xdead_beef_cafe_babe]);
+        let mixed = HostU256::from_limbs([
+            0x0123_4567_89ab_cdef,
+            0xfedc_ba98_7654_3210,
+            0x0011_2233_4455_6677,
+            0x7f00_0000_0000_0000,
+        ]);
+
+        for a in [zero, one, two, half_max, high_limb, mixed, max] {
+            for b in [zero, one, two, half_max, high_limb, mixed, max] {
+                assert_matches_reference(a, b);
+            }
+        }
     }
 }
