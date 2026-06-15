@@ -5,9 +5,7 @@ use crate::run::output::BlockOutput;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::validator_impl::ValidatorWrapped;
-use crate::run::{
-    run_block_with_chain_config, simulate_tx_with_chain_config, FriVerifierArtifacts,
-};
+use crate::run::{run_block, simulate_tx, FriVerifierArtifacts};
 use std::sync::Arc;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
@@ -53,7 +51,7 @@ impl RunBlock for RunBlockForward {
         let evm_tx_validator = validator
             .as_evm()
             .expect("only EVM validators are supported");
-        run_block_with_chain_config(
+        run_block(
             config,
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
@@ -92,7 +90,7 @@ impl SimulateTx for RunBlockForward {
         let evm_tx_validator = validator
             .as_evm()
             .expect("only EVM validators are supported");
-        simulate_tx_with_chain_config(
+        simulate_tx(
             config,
             transaction,
             BlockMetadataFromOracle::from_interface(block_context),

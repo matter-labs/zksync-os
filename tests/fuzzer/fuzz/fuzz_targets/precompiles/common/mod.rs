@@ -1,5 +1,6 @@
 use forward_system::run::output::BlockOutput;
 use rig::forward_system::run::convert_alloy::FromAlloy;
+use zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
 use rig::BlockContext;
 use rig::{
     alloy::consensus::TxLegacy,
@@ -17,9 +18,9 @@ use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 /// The second call is just there to check consistency between forward and proof runs.
 pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
     // Keep at or below the default ChainConfig per-tx gas cap (EIP-7825,
-    // `max_tx_gas_limit = 1 << 24`); a higher limit is rejected during
-    // validation. Ample for a single precompile call plus the forwarder.
-    let gas = 1 << 24;
+    // `max_tx_gas_limit = DEFAULT_MAX_TX_GAS_LIMIT`); a higher limit is rejected
+    // during validation. Ample for a single precompile call plus the forwarder.
+    let gas = DEFAULT_MAX_TX_GAS_LIMIT;
     let mut chain = rig::Chain::empty(None);
     let wallet = chain.random_signer();
     let target = Address::from_slice(hex::decode(id).unwrap().as_slice());

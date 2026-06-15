@@ -108,37 +108,6 @@ pub fn run_block<
     FS: FriProofSidecarSource,
     TR: TxResultCallback,
 >(
-    block_context: BlockContext,
-    tree: T,
-    preimage_source: PS,
-    tx_source: TS,
-    fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
-    tx_result_callback: TR,
-    tracer: &mut impl Tracer<ForwardRunningSystem>,
-    validator: &mut impl TxValidator<ForwardRunningSystem>,
-) -> Result<BlockOutput, ForwardSubsystemError> {
-    run_block_with_chain_config(
-        ChainConfig::default(),
-        block_context,
-        tree,
-        preimage_source,
-        tx_source,
-        fri_proof_sidecar,
-        fri_verifier_artifacts,
-        tx_result_callback,
-        tracer,
-        validator,
-    )
-}
-
-pub fn run_block_with_chain_config<
-    T: ReadStorageTree,
-    PS: PreimageSource,
-    TS: TxSource,
-    FS: FriProofSidecarSource,
-    TR: TxResultCallback,
->(
     chain_config: ChainConfig,
     block_context: BlockContext,
     tree: T,
@@ -186,39 +155,8 @@ pub fn run_block_with_chain_config<
     Ok(result_keeper.into())
 }
 
-pub fn generate_proof_input<
-    T: ReadStorageTree,
-    PS: PreimageSource,
-    TS: TxSource,
-    FS: FriProofSidecarSource,
-    TR: TxResultCallback,
->(
-    block_context: BlockContext,
-    proof_data: ProofData<StorageCommitment>,
-    da_commitment_scheme: DACommitmentScheme,
-    tree: T,
-    preimage_source: PS,
-    tx_source: TS,
-    fri_proof_sidecar: FS,
-    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
-    tx_result_callback: TR,
-) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
-    generate_proof_input_with_chain_config(
-        ChainConfig::default(),
-        block_context,
-        proof_data,
-        da_commitment_scheme,
-        tree,
-        preimage_source,
-        tx_source,
-        fri_proof_sidecar,
-        fri_verifier_artifacts,
-        tx_result_callback,
-    )
-}
-
 // Returns (prover_input, block_output, pubdata)
-pub fn generate_proof_input_with_chain_config<
+pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
@@ -933,25 +871,6 @@ pub fn run_block_from_oracle_dump<
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
-    transaction: EncodedTx,
-    block_context: BlockContext,
-    storage: S,
-    preimage_source: PS,
-    tracer: &mut impl Tracer<CallSimulationSystem>,
-    validator: &mut impl TxValidator<CallSimulationSystem>,
-) -> Result<TxResult, ForwardSubsystemError> {
-    simulate_tx_with_chain_config(
-        ChainConfig::default(),
-        transaction,
-        block_context,
-        storage,
-        preimage_source,
-        tracer,
-        validator,
-    )
-}
-
-pub fn simulate_tx_with_chain_config<S: ReadStorage, PS: PreimageSource>(
     chain_config: ChainConfig,
     transaction: EncodedTx,
     block_context: BlockContext,
