@@ -67,8 +67,7 @@ fn test_l1_tx_avg_ratio() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
@@ -85,8 +84,7 @@ fn test_l1_tx_high_ratio() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
@@ -348,8 +346,7 @@ fn test_0_gas_limit() {
         .gas_price(gas_price.into())
         .gas_limit(0)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
 }
@@ -384,8 +381,7 @@ fn test_0_gas_price() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx.clone(), gas_price, native_price, true, false)
 }
 

@@ -7,7 +7,10 @@ mod bytecodes;
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, Address, TxKind, B256 as AlloyB256};
+use rig::basic_bootloader::bootloader::block_flow::calculate_interop_roots_rolling_hash;
+use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SET_INTEROP_FEE_SELECTOR;
+use rig::crypto::sha3::Keccak256;
 use rig::crypto::MiniDigest;
 use rig::ruint::aliases::{B160, B256, U256};
 use rig::system_hooks::addresses_constants::{
@@ -221,6 +224,21 @@ fn assert_single_successful_call(output: &BlockOutput, expected_logs: usize) {
     assert_eq!(tx_result.logs.len(), expected_logs);
 }
 
+fn last_prover_input_batch_output<const RANDOMIZED_TREE: bool>(
+    tester: &TestingFramework<RANDOMIZED_TREE>,
+) -> &BatchOutput {
+    tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .prover_input_batch_output
+        .as_ref()
+        .expect("prover-input batch output must exist")
+}
+
+fn expected_interop_roots_rolling_hash(interop_roots: &[StoredInteropRoot]) -> Bytes32 {
+    calculate_interop_roots_rolling_hash(Bytes32::ZERO, interop_roots.iter(), &mut Keccak256::new())
+}
+
 fn run_interop_roots_test_inner(
     interop_roots: Vec<StoredInteropRoot>,
 ) -> (TestingFramework, BlockOutput) {
@@ -239,14 +257,16 @@ fn run_processes_one_interop_root() {
         chain_id: U256::ONE,
     }];
 
-    let (mut tester, output) = run_interop_roots_test_inner(interop_roots);
+    let (mut tester, output) = run_interop_roots_test_inner(interop_roots.clone());
     assert_single_successful_call(&output, 1);
     assert_eq!(
         read_interop_root_slot(&mut tester, U256::ONE, U256::from(42)),
         Some(Bytes32::from_u256_be(&U256::ONE))
     );
-    // TODO(EVM-1227): when batch commitment extraction from prover input is exposed in
-    // `TestingFramework`, assert interop_roots_rolling_hash for this block.
+    assert_eq!(
+        last_prover_input_batch_output(&tester).interop_roots_rolling_hash,
+        expected_interop_roots_rolling_hash(&interop_roots),
+    );
 }
 
 #[test]
@@ -285,14 +305,16 @@ fn run_processes_several_interop_roots() {
 
     let (mut tester, output) = run_interop_roots_test_inner(interop_roots.clone());
     assert_single_successful_call(&output, 20);
-    for root in interop_roots {
+    for root in &interop_roots {
         assert_eq!(
             read_interop_root_slot(&mut tester, root.chain_id, root.block_or_batch_number),
             Some(root.root)
         );
     }
-    // TODO(EVM-1227): when batch commitment extraction from prover input is exposed in
-    // `TestingFramework`, assert interop_roots_rolling_hash for multi-root import.
+    assert_eq!(
+        last_prover_input_batch_output(&tester).interop_roots_rolling_hash,
+        expected_interop_roots_rolling_hash(&interop_roots),
+    );
 }
 
 #[test]
@@ -303,8 +325,10 @@ fn run_processes_empty_interop_roots() {
         read_interop_root_slot(&mut tester, U256::ONE, U256::ONE),
         None
     );
-    // TODO(EVM-1227): once batch output is available in tests, assert that
-    // interop_roots_rolling_hash remains unchanged for empty input.
+    assert_eq!(
+        last_prover_input_batch_output(&tester).interop_roots_rolling_hash,
+        Bytes32::ZERO,
+    );
 }
 
 #[test]
@@ -329,14 +353,16 @@ fn run_processes_interop_roots_max_amount() {
 
     let (mut tester, output) = run_interop_roots_test_inner(interop_roots.clone());
     assert_single_successful_call(&output, 3);
-    for root in interop_roots {
+    for root in &interop_roots {
         assert_eq!(
             read_interop_root_slot(&mut tester, root.chain_id, root.block_or_batch_number),
             Some(root.root)
         );
     }
-    // TODO(EVM-1227): once batch output is exposed in the testing framework, verify
-    // rolling-hash accumulation with max-valued roots.
+    assert_eq!(
+        last_prover_input_batch_output(&tester).interop_roots_rolling_hash,
+        expected_interop_roots_rolling_hash(&interop_roots),
+    );
 }
 
 #[test]
@@ -354,6 +380,10 @@ fn test_new_sl_chain_id_no_update() {
     let output = tester.execute_block(vec![simple_tx(0)]);
     assert_single_tx_succeeded(&output);
     assert_eq!(read_sl_chain_id_slot(&mut tester), U256::from(sl_chain_id));
+    assert_eq!(
+        last_prover_input_batch_output(&tester).settlement_layer_chain_id,
+        U256::from(sl_chain_id),
+    );
 }
 
 #[test]
@@ -371,6 +401,10 @@ fn test_new_sl_chain_id_one_update() {
     let output = tester.execute_block(vec![set_sl_chain_id_tx(new_sl_chain_id, 0)]);
     assert_single_successful_call(&output, 1);
     assert_eq!(read_sl_chain_id_slot(&mut tester), new_sl_chain_id);
+    assert_eq!(
+        last_prover_input_batch_output(&tester).settlement_layer_chain_id,
+        new_sl_chain_id,
+    );
 }
 
 #[test]
@@ -403,14 +437,18 @@ fn test_set_sl_chain_id_first_block_batch() {
     tester.set_block_context(Some(service_block_context()));
     let block1_output = tester.execute_block(vec![set_sl_chain_id_tx(U256::from(42), 0)]);
     assert_single_successful_call(&block1_output, 1);
+    let block1_settlement_layer_chain_id =
+        last_prover_input_batch_output(&tester).settlement_layer_chain_id;
+    assert_eq!(block1_settlement_layer_chain_id, U256::from(42));
 
     tester.set_block_context(None);
     let block2_output = tester.execute_block(vec![simple_tx(0)]);
     assert_single_tx_succeeded(&block2_output);
     assert_eq!(read_sl_chain_id_slot(&mut tester), U256::from(42));
-
-    // TODO(EVM-1227): replace this forward-only smoke test with a real multiblock-batch
-    // commitment check once prover-input batch commitment extraction is available.
+    assert_eq!(
+        last_prover_input_batch_output(&tester).settlement_layer_chain_id,
+        U256::from(42),
+    );
 }
 
 #[test]

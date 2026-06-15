@@ -27,6 +27,7 @@ use alloy::signers::local::PrivateKeySigner;
 pub use alloy_rlp;
 pub use alloy_sol_types;
 pub use basic_bootloader;
+use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 pub use basic_system;
 use basic_system::system_implementation::flat_storage_model::{FlatStorageCommitment, TREE_HEIGHT};
@@ -93,7 +94,12 @@ mod colors {
 }
 
 pub struct LastExecutedBlockInfo {
+    /// Forward-run block output returned by the sequencer-style execution.
     pub block_output: BlockOutput,
+    /// Block output reconstructed from the prover-input replay of the same block, when available.
+    pub prover_input_block_output: Option<BlockOutput>,
+    /// Public batch-level fields returned by the single-block prover-input post-op, when available.
+    pub prover_input_batch_output: Option<BatchOutput>,
     pub block_extra_stats: BlockExtraStats,
     pub proof_input: Vec<u32>,
     pub pubdata: Vec<u8>,
@@ -220,9 +226,9 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
 
-        let (block_output, block_extra_stats, proof_input, pubdata) =
-            if let Some(oracle_factory) = &self.oracle_factory {
-                self.chain.run_block_with_extra_stats_with_oracle_factory(
+        let executed_block = if let Some(oracle_factory) = &self.oracle_factory {
+            self.chain
+                .run_block_with_execution_artifacts_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
@@ -233,9 +239,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     self.fri_sidecar.clone(),
                     self.fri_artifacts.clone(),
                 )?
-            } else {
-                let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
-                self.chain.run_block_with_extra_stats_with_oracle_factory(
+        } else {
+            let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+            self.chain
+                .run_block_with_execution_artifacts_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
@@ -246,10 +253,28 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     self.fri_sidecar.clone(),
                     self.fri_artifacts.clone(),
                 )?
+        };
+
+        let crate::chain::ExecutedBlockArtifacts {
+            block_output,
+            block_extra_stats,
+            prover_input,
+        } = executed_block;
+        let (prover_input_block_output, prover_input_batch_output, proof_input, pubdata) =
+            match prover_input {
+                Some(prover_input) => (
+                    Some(prover_input.block_output),
+                    Some(prover_input.batch_output),
+                    prover_input.proof_input,
+                    prover_input.pubdata,
+                ),
+                None => (None, None, vec![], vec![]),
             };
 
         self.last_executed_block_info = Some(LastExecutedBlockInfo {
             block_output: block_output.clone(),
+            prover_input_block_output,
+            prover_input_batch_output,
             block_extra_stats,
             proof_input,
             pubdata,
