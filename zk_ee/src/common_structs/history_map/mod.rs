@@ -3,13 +3,14 @@
 mod element_pool;
 pub(crate) mod element_with_history;
 mod element_with_history_arena;
+mod ptr_arena;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
-use core::{alloc::Allocator, fmt::Debug, ops::Bound, ptr::NonNull};
+use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
 pub(crate) use element_pool::ElementPool;
 use element_with_history::ElementWithHistory;
 use element_with_history_arena::ElementWithHistoryArena;
@@ -126,13 +127,14 @@ where
     pub fn get_mut(&mut self, key: &K) -> Option<HistoryMapItemRefMut<'_, K, V, A, KP>> {
         let ptr = *self.btree.get(key)?;
         Some(HistoryMapItemRefMut {
-            // Safety: pointer is valid for the lifetime of `&mut self`. We borrow
-            // the arena element via the raw pointer rather than re-entering the
-            // BTreeMap so that `cache_state` and `records_memory_pool` can be
-            // borrowed mutably alongside.
-            history: unsafe { &mut *ptr.as_ptr() },
+            // Pointer is valid for the lifetime of `&mut self`. We carry the raw
+            // arena pointer rather than re-entering the BTreeMap so that
+            // `cache_state` and `records_memory_pool` can be borrowed mutably
+            // alongside.
+            element: ptr,
             cache_state: &mut self.state,
             records_memory_pool: &mut self.records_memory_pool,
+            _element_borrow: PhantomData,
         })
     }
 
@@ -158,10 +160,11 @@ where
         };
 
         Ok(HistoryMapItemRefMut {
-            // Safety: pointer is valid for the lifetime of `&mut self`.
-            history: unsafe { &mut *ptr.as_ptr() },
+            // Pointer is valid for the lifetime of `&mut self`.
+            element: ptr,
             cache_state: &mut self.state,
             records_memory_pool: &mut self.records_memory_pool,
+            _element_borrow: PhantomData,
         })
     }
 
@@ -258,10 +261,11 @@ where
     {
         for (_k, ptr) in self.btree.range_mut(range) {
             do_fn(HistoryMapItemRefMut {
-                // Safety: pointer is valid for the lifetime of `&mut self`.
-                history: unsafe { &mut *ptr.as_ptr() },
+                // Pointer is valid for the lifetime of `&mut self`.
+                element: *ptr,
                 cache_state: &mut self.state,
                 records_memory_pool: &mut self.records_memory_pool,
+                _element_borrow: PhantomData,
             })?
         }
 
@@ -354,9 +358,16 @@ where
 
 /// External mutable reference to element's history
 pub struct HistoryMapItemRefMut<'a, K, V, A: Allocator + Clone, KP = ()> {
-    history: &'a mut ElementWithHistory<K, V, A, KP>,
+    /// Canonical arena pointer to the element — the *same* pointer the BTreeMap
+    /// stores. We keep the raw pointer (rather than a `&mut`) so that the
+    /// pointer pushed into the pending-updates list shares the arena's
+    /// provenance: a fresh `&mut`-derived pointer would be invalidated before
+    /// the later commit/rollback writes through it. Borrowed for `'a` via the
+    /// `&'a mut` fields below (and the marker).
+    element: NonNull<ElementWithHistory<K, V, A, KP>>,
     cache_state: &'a mut HistoryMapState<K, V, A, KP>,
     records_memory_pool: &'a mut ElementPool<V, A>,
+    _element_borrow: PhantomData<&'a mut ElementWithHistory<K, V, A, KP>>,
 }
 
 impl<'a, K, V, A, KP> HistoryMapItemRefMut<'a, K, V, A, KP>
@@ -365,29 +376,31 @@ where
     A: Allocator + Clone,
 {
     pub fn current(&self) -> &V {
-        unsafe { &self.history.head.as_ref().value }
+        // Safety: `element` is a valid arena pointer borrowed for `'a`; each
+        // access goes through a transient borrow tied to `&self`.
+        unsafe { &self.element.as_ref().head.as_ref().value }
     }
 
     pub fn initial(&self) -> &V {
-        unsafe { &self.history.initial.as_ref().value }
+        unsafe { &self.element.as_ref().initial.as_ref().value }
     }
 
     pub fn committed(&self) -> &V {
-        unsafe { &self.history.committed.as_ref().value }
+        unsafe { &self.element.as_ref().committed.as_ref().value }
     }
 
     pub fn element_properties(&self) -> &KP {
-        &self.history.element_properties
+        unsafe { &self.element.as_ref().element_properties }
     }
 
     pub fn element_properties_mut(&mut self) -> &mut KP {
-        &mut self.history.element_properties
+        unsafe { &mut self.element.as_mut().element_properties }
     }
 
     #[allow(dead_code)]
     /// Returns (initial_value, current_value) if any
     pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
-        self.history.get_initial_and_last_values()
+        unsafe { self.element.as_ref() }.get_initial_and_last_values()
     }
 
     #[must_use]
@@ -396,17 +409,21 @@ where
     where
         F: FnOnce(&mut V) -> Result<(), E>,
     {
-        let last_history_record = unsafe { self.history.head.as_mut() };
+        // Copy of the current head link; the record lives in the records pool,
+        // a separate allocation from the element, so transient borrows of one
+        // don't conflict with `&mut`-borrows of the other.
+        let head_link = unsafe { self.element.as_ref() }.head;
 
-        if last_history_record.touch_ss_id == self.cache_state.next_snapshot_id {
+        if unsafe { head_link.as_ref() }.touch_ss_id == self.cache_state.next_snapshot_id {
             // We're in the context of the current snapshot: there are changes that we will simply override
-            f(&mut last_history_record.value)
+            let head_record = unsafe { &mut *head_link.as_ptr() };
+            f(&mut head_record.value)
         } else {
             // The item was last updated before the current snapshot.
 
             let mut new = self.records_memory_pool.create_element(
-                last_history_record.value.clone(),
-                Some(self.history.head),
+                unsafe { head_link.as_ref() }.value.clone(),
+                Some(head_link),
                 self.cache_state.next_snapshot_id,
             );
 
@@ -414,15 +431,15 @@ where
                 f(&mut new.as_mut().value)?;
             }
 
-            self.history.add_new_record(new);
+            unsafe { self.element.as_mut() }.add_new_record(new);
 
-            // Stable arena pointer to this element; valid until `HistoryMap::clear`,
-            // which also resets the pending list.
-            let element_ptr = NonNull::from(&mut *self.history);
-
+            // Push the *canonical* arena pointer (the one the BTreeMap holds):
+            // it shares the arena's provenance, so it stays valid for the writes
+            // performed later by `commit`/`rollback`. Valid until
+            // `HistoryMap::clear`, which also resets the pending list.
             self.cache_state
                 .pending_updated_elements
-                .push((element_ptr, self.cache_state.next_snapshot_id));
+                .push((self.element, self.cache_state.next_snapshot_id));
 
             Ok(())
         }
@@ -739,9 +756,9 @@ mod tests {
         use super::element_with_history_arena::ELEMENT_PAGE_CAPACITY;
 
         // Span several pages, with a partially-filled final page (the `+ 1`),
-        // so both the full-page and the new-node-append branches of
-        // `push_returning_ref` are hit. Derived from the real capacity so the
-        // test keeps spanning multiple pages if the constant is retuned.
+        // so both the same-page and new-page branches of the arena's `push` are
+        // hit. Derived from the real capacity so the test keeps spanning
+        // multiple pages if the constant is retuned.
         let count = ELEMENT_PAGE_CAPACITY * 3 + 1;
 
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);

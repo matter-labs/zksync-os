@@ -1,11 +1,9 @@
-use crate::{common_structs::skip_list_quasi_vec::ListVec, memory::stack_trait::Stack};
-
 use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
+    ptr_arena::PtrArena,
     CacheSnapshotId,
 };
-use core::mem::MaybeUninit;
-use core::{alloc::Allocator, ptr::NonNull};
+use core::alloc::Allocator;
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
 pub struct ElementPool<V, A: Allocator + Clone> {
@@ -13,7 +11,9 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
-    buffer: ListVec<MaybeUninit<HistoryRecord<V>>, 50, A>,
+    /// Stable-address, stable-provenance storage for the records. Handed-out
+    /// `HistoryRecordLink`s stay valid for writes across later allocations.
+    buffer: PtrArena<HistoryRecord<V>, 50, A>,
 }
 
 impl<V, A: Allocator + Clone> ElementPool<V, A> {
@@ -21,7 +21,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
         Self {
             head: Default::default(),
             last: Default::default(),
-            buffer: ListVec::new_in(alloc.clone()),
+            buffer: PtrArena::new_in(alloc),
         }
     }
 
@@ -34,16 +34,15 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
     ) -> HistoryRecordLink<V> {
         match self.head {
             None => {
-                self.buffer.push(MaybeUninit::uninit());
-                let new_element = self.buffer.top_mut().unwrap();
-
-                new_element.write(HistoryRecord {
+                // Bump-allocate a fresh record. The returned pointer carries
+                // page-wide provenance (see `PtrArena`) so later `as_mut()`
+                // writes through it — here, in `reuse_memory`, `rollback`,
+                // `commit` — are sound.
+                self.buffer.push(HistoryRecord {
                     touch_ss_id: snapshot_id,
                     value,
                     previous,
-                });
-
-                unsafe { NonNull::from_ref(new_element.assume_init_ref()) }
+                })
             }
             Some(mut elem) => {
                 // Reuse old allocation
