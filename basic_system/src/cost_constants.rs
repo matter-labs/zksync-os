@@ -29,12 +29,8 @@ pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(240_000, 32_000,
 const KECCAK_DELEGATIONS_PER_ROUND: u64 = 649;
 /// Per-round RISC-V overhead for absorbing input into the keccak state.
 const KECCAK_RISC_V_CYCLES_PER_ROUND: u64 = 1_250;
-/// Fixed RISC-V overhead per keccak256 invocation (syscall entry, input slice
-/// setup, delegation dispatch, output materialization), independent of round
-/// count. The 10-block sweep showed a ~720-cycle fixed gap per call (1-round
-/// SHA3 ratio 1.16, amortizing toward ~1.0 as rounds grow) that the previous
-/// 400 left undercharged; the per-round slope (KECCAK256_ROUND_NATIVE_COST)
-/// was already correct, so the correction lands here in the base.
+/// Fixed RISC-V overhead per keccak256 invocation (syscall entry, input setup,
+/// delegation dispatch, output materialization), independent of round count.
 pub const KECCAK256_BASE_NATIVE_COST: u64 = 1_150;
 pub const KECCAK256_ROUND_NATIVE_COST: u64 = KECCAK_DELEGATIONS_PER_ROUND
     * zk_ee::system::constants::KECCAK_DELEGATION_COEFFICIENT
@@ -59,14 +55,10 @@ pub const fn blake2s_native_cost(len: usize) -> u64 {
         .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
         .saturating_add(BLAKE2S_BASE_NATIVE_COST)
 }
-// 10-block sweep: max effective ~55.2k (ecadd) / ~771.9k (ecmul) cyc; raw bumped for ~5% margin.
 pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(51_400, 1650, 0);
 pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(647_000, 41_000, 0);
-// Pairing is `base + per_pair * num_pairs`. The 10-block sweep shows a strong
-// fixed component (final exponentiation, done once): effective ~= 5.95M + 6.58M*pairs.
-// The earlier per-pair-only model under-charged low pair counts (1 pair = 1.89x).
-// Both terms carry ~5% margin. NOTE: pairing inputs in the fixtures are sparse
-// (pair counts {1,2,3,10}); revisit if heavier pairing workloads appear.
+// Pairing cost = base + per_pair * num_pairs: a one-time final-exponentiation
+// base plus a per-pair Miller-loop cost.
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(6_244_000, 0, 0);
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = native_with_delegations!(5_572_000, 334_000, 0);
 pub const MODEXP_BASE_NATIVE_COST: u64 = 20_000;
