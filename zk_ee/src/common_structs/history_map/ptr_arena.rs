@@ -63,6 +63,10 @@ impl<T, const N: usize, A: Allocator> PtrArena<T, N, A> {
     where
         A: Clone,
     {
+        // Page capacity must be non-zero: a zero-length page would allocate a
+        // size-0 (dangling) payload, and `push` would write through it (UB).
+        // Enforced at compile time so misuse can't even build.
+        const { assert!(N > 0, "PtrArena page capacity N must be non-zero") };
         Self {
             pages: LinkedList::new_in(alloc.clone()),
             alloc,
