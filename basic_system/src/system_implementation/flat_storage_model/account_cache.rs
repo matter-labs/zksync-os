@@ -51,10 +51,12 @@ use zk_ee::{
 };
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
-type AddressItem<'a, A> = HistoryMapItemRefMut<
+type AddressItem<'a, SF, const M: usize, A> = HistoryMapItemRefMut<
     'a,
     BitsOrd<160, 3>,
     CacheRecord<AccountProperties, AccountPropertiesMetadata>,
+    SF,
+    M,
     A,
 >;
 
@@ -66,7 +68,7 @@ pub struct NewModelAccountCache<
     const M: usize,
 > {
     pub(crate) cache:
-        HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
+        HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, SF, M, A>,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: u32,
     alloc: A,
@@ -159,7 +161,7 @@ impl<
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         is_access_list: bool,
-    ) -> Result<AddressItem<A>, SystemError> {
+    ) -> Result<AddressItem<'_, SF, M, A>, SystemError> {
         let ergs = match ee_type {
             ExecutionEnvironmentType::NoEE => {
                 if is_access_list {

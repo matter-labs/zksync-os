@@ -3,10 +3,11 @@
 use std::alloc::Global;
 
 use zk_ee::common_structs::history_map::*;
+use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
 
 #[test]
 fn miri_rollback_reuse() {
-    let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+    let mut map = HistoryMap::<usize, usize, VecStackFactory, 0, Global>::new(Global);
 
     map.snapshot();
 

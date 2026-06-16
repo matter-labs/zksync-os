@@ -5,7 +5,10 @@ pub mod element_with_history;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
-use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
+use crate::{
+    memory::stack_trait::{Stack, StackFactory},
+    system::errors::internal::InternalError,
+};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, ops::Bound};
@@ -30,26 +33,27 @@ impl CacheSnapshotId {
 ///
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
-pub struct HistoryMap<K, V, A: Allocator + Clone> {
+pub struct HistoryMap<K, V, SF: StackFactory<M>, const M: usize, A: Allocator + Clone> {
     /// Map from key to history of an element
     btree: BTreeMap<K, ElementWithHistory<V, A>, A>,
-    state: HistoryMapState<K, A>,
+    state: HistoryMapState<K, SF, M, A>,
     /// Manages memory allocations for history records, reuses old allocations for optimization
     records_memory_pool: ElementPool<V, A>,
 }
 
-struct HistoryMapState<K, A: Allocator + Clone> {
+struct HistoryMapState<K, SF: StackFactory<M>, const M: usize, A: Allocator + Clone> {
     next_snapshot_id: CacheSnapshotId,
     /// State can't be rolled back further than frozen snapshot id. Useful for transactions boundaries
     frozen_snapshot_id: CacheSnapshotId,
     /// List of updated elements that were not yet "frozen"
-    pending_updated_elements: StackLinkedList<(K, CacheSnapshotId), A>,
+    pending_updated_elements: SF::Stack<(K, CacheSnapshotId), M, A>,
     alloc: A,
 }
 
-impl<K, V, A> HistoryMap<K, V, A>
+impl<K, V, SF, const M: usize, A> HistoryMap<K, V, SF, M, A>
 where
     K: Ord + Clone + Debug,
+    SF: StackFactory<M>,
     A: Allocator + Clone,
 {
     pub fn new(alloc: A) -> Self {
@@ -60,7 +64,7 @@ where
                 // Initial values will be associated with snapshot 0 (so they can't be reverted)
                 next_snapshot_id: CacheSnapshotId(1),
                 frozen_snapshot_id: CacheSnapshotId(0),
-                pending_updated_elements: StackLinkedList::empty(alloc.clone()),
+                pending_updated_elements: SF::new_in(alloc.clone()),
             },
             records_memory_pool: ElementPool::new(alloc),
         }
@@ -74,7 +78,10 @@ where
     }
 
     /// Get history of an element by key, mutable
-    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
+    pub fn get_mut<'s>(
+        &'s mut self,
+        key: &'s K,
+    ) -> Option<HistoryMapItemRefMut<'s, K, V, SF, M, A>> {
         self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
             key,
             history: ec,
@@ -88,7 +95,7 @@ where
         &'s mut self,
         key: &'s K,
         spawn_v: impl FnOnce() -> Result<V, E>,
-    ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
+    ) -> Result<HistoryMapItemRefMut<'s, K, V, SF, M, A>, E> {
         let entry = self.btree.entry(key.clone());
 
         let v = match entry {
@@ -178,7 +185,7 @@ where
         }
 
         // We've committed, so we don't need those changes anymore.
-        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+        self.state.pending_updated_elements.clear();
     }
 
     /// Applies callback `do_fn` to all pairs (initial_value, current_value) that have more than 1 (initial) record
@@ -202,7 +209,7 @@ where
         mut do_fn: F,
     ) -> Result<(), InternalError>
     where
-        F: FnMut(HistoryMapItemRefMut<K, V, A>) -> Result<(), InternalError>,
+        F: FnMut(HistoryMapItemRefMut<K, V, SF, M, A>) -> Result<(), InternalError>,
     {
         for (k, v) in self.btree.range_mut(range) {
             do_fn(HistoryMapItemRefMut {
@@ -289,17 +296,25 @@ where
 }
 
 /// External mutable reference to element's history
-pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone> {
+pub struct HistoryMapItemRefMut<
+    'a,
+    K: Clone,
+    V,
+    SF: StackFactory<M>,
+    const M: usize,
+    A: Allocator + Clone,
+> {
     history: &'a mut ElementWithHistory<V, A>,
-    cache_state: &'a mut HistoryMapState<K, A>,
+    cache_state: &'a mut HistoryMapState<K, SF, M, A>,
     records_memory_pool: &'a mut ElementPool<V, A>,
     key: &'a K,
 }
 
-impl<'a, K, V, A> HistoryMapItemRefMut<'a, K, V, A>
+impl<'a, K, V, SF, const M: usize, A> HistoryMapItemRefMut<'a, K, V, SF, M, A>
 where
     K: Clone + Debug,
     V: Clone,
+    SF: StackFactory<M>,
     A: Allocator + Clone,
 {
     pub fn current(&self) -> &V {
@@ -360,10 +375,13 @@ mod tests {
     use std::alloc::Global;
 
     use super::HistoryMap;
+    use crate::memory::stack_implementations::vec_stack::VecStackFactory;
+
+    type TestHistoryMap<K, V> = HistoryMap<K, V, VecStackFactory, 0, Global>;
 
     #[test]
     fn miri_retrieve_single_elem() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         let v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -372,7 +390,7 @@ mod tests {
 
     #[test]
     fn miri_diff_elem_total() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -392,7 +410,7 @@ mod tests {
 
     #[test]
     fn miri_diff_tree_total() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -416,7 +434,7 @@ mod tests {
 
     #[test]
     fn miri_commit_1() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -432,7 +450,7 @@ mod tests {
 
     #[test]
     fn miri_commit_2() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -458,7 +476,7 @@ mod tests {
 
     #[test]
     fn miri_commit_3() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -494,7 +512,7 @@ mod tests {
 
     #[test]
     fn miri_rollback() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 
@@ -532,7 +550,7 @@ mod tests {
 
     #[test]
     fn miri_rollback_reuse() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        let mut map = TestHistoryMap::<usize, usize>::new(Global);
 
         map.snapshot();
 

@@ -17,7 +17,7 @@ pub struct GenericTransientStorage<
     const M: usize,
     A: Allocator + Clone = Global,
 > {
-    cache: HistoryMap<K, V, A>,
+    cache: HistoryMap<K, V, SF, M, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<SF>,
     alloc: A,
@@ -55,9 +55,9 @@ impl<
 
     /// Read element and initialize it if needed
     fn materialize_element<'a>(
-        cache: &'a mut HistoryMap<K, V, A>,
+        cache: &'a mut HistoryMap<K, V, SF, M, A>,
         key: &'a K,
-    ) -> Result<HistoryMapItemRefMut<'a, K, V, A>, SystemError>
+    ) -> Result<HistoryMapItemRefMut<'a, K, V, SF, M, A>, SystemError>
     where
         V: Default,
     {
