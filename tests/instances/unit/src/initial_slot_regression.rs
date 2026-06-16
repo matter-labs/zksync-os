@@ -15,8 +15,8 @@ use rig::basic_system::system_implementation::flat_storage_model::{
 use rig::chain::TestingOracleFactory;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::run::query_processors::{
-    BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder, TxDataResponder,
-    ZKProofDataResponder,
+    BlockMetadataResponder, ChainConfigResponder, DACommitmentSchemeResponder,
+    GenericPreimageResponder, TxDataResponder, ZKProofDataResponder,
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
@@ -30,6 +30,7 @@ use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::system::metadata::chain_config::ChainConfig;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
@@ -127,6 +128,7 @@ impl InvalidInitialValueOracleFactory {
     fn build_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -155,6 +157,7 @@ impl InvalidInitialValueOracleFactory {
 
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(block_metadata_responder);
+        oracle.add_external_processor(ChainConfigResponder { chain_config });
         oracle.add_external_processor(tx_data_responder);
         oracle.add_external_processor(preimage_responder);
         oracle.add_external_processor(malicious_storage_responder);
@@ -169,6 +172,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -181,6 +185,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
+            chain_config,
             state_tree,
             preimage_source,
             tx_source,
@@ -192,6 +197,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -204,6 +210,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
+            chain_config,
             state_tree,
             preimage_source,
             tx_source,

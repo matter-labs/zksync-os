@@ -87,7 +87,7 @@ versioned hash was supplied in the transaction.
 
 ### Registration
 
-- Registered only when `system.metadata.is_gateway() == true`.
+- Registered only when `system.get_chain_config().fri_proof_verification_enabled() == true`.
 - On non-Gateway chains the address is unregistered and behaves like an
   empty account (success with empty returndata, no side effects, no
   EVM gas burn).

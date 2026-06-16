@@ -35,6 +35,7 @@ pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use crypto;
+pub use evm_interpreter;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::run::test_impl::InMemoryBatchState;
@@ -48,6 +49,7 @@ pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
 use zk_ee::common_structs::ProofData;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
@@ -307,6 +309,32 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: sets static chain-level execution config for subsequent execution.
+    pub fn with_chain_config(mut self, chain_config: ChainConfig) -> Self {
+        self.chain.set_chain_config(chain_config);
+        self
+    }
+
+    /// Builder: overrides the per-tx gas cap (`max_tx_gas_limit`) in the chain
+    /// config, keeping the other chain-config fields. Panics if the value is
+    /// below the EIP-7825 floor (use a crafted oracle response to test that).
+    pub fn with_max_tx_gas_limit(self, max_tx_gas_limit: u64) -> Self {
+        let current = self.chain_config();
+        self.with_chain_config(
+            ChainConfig::new(
+                current.chain_id(),
+                current.fri_proof_verification_enabled(),
+                max_tx_gas_limit,
+            )
+            .expect("max_tx_gas_limit below the EIP-7825 floor"),
+        )
+    }
+
+    /// Returns the chain-level execution config used for block execution.
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain.chain_config()
+    }
+
     /// Builder: sets the 256 previous block hashes exposed to execution.
     pub fn with_block_hashes(mut self, block_hashes: [ruint::aliases::U256; 256]) -> Self {
         self.chain.set_block_hashes(block_hashes);
@@ -325,39 +353,28 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
 
     /// Builder: sets default block context used by subsequent block execution.
     pub fn with_block_context(mut self, block_context: BlockContext) -> Self {
-        if block_context.is_gateway {
-            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
-        }
         self.block_context = Some(block_context);
         self
     }
 
     /// Builder: enables Gateway mode for subsequent execution.
     pub fn with_gateway_mode(mut self) -> Self {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
         crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
     /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
-        if block_context
-            .as_ref()
-            .is_some_and(|block_context| block_context.is_gateway)
-        {
-            crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
-        }
         self.block_context = block_context;
         self
     }
 
     /// Setter: enables Gateway mode for subsequent execution.
     pub fn enable_gateway_mode(&mut self) -> &mut Self {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
         crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
@@ -425,9 +442,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     where
         I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
     {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
         crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
             sidecars.into_iter().collect();
@@ -536,6 +552,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: sets static chain-level execution config for subsequent execution.
+    pub fn set_chain_config(&mut self, chain_config: ChainConfig) -> &mut Self {
+        self.chain.set_chain_config(chain_config);
+        self
+    }
+
     /// Setter: installs a mock Gateway-side FRI sidecar source keyed by
     /// `statement_versioned_hash`. Each entry carries the raw
     /// (bincode-serialized) `UnrolledProgramProof` bytes.
@@ -543,9 +565,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     where
         I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
     {
-        self.block_context
-            .get_or_insert_with(Default::default)
-            .is_gateway = true;
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
         crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self.fri_sidecar = sidecars.into_iter().collect();
         self.fri_artifacts = None;

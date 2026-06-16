@@ -152,9 +152,6 @@ pub struct HeaderAndHistory {
 }
 
 impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
-    fn chain_id(&self) -> u64 {
-        self.chain_id
-    }
     fn block_number(&self) -> u64 {
         self.header.number
     }
@@ -185,18 +182,6 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
     }
     fn block_gas_limit(&self) -> u64 {
         self.header.gas_limit
-    }
-    fn individual_tx_gas_limit(&self) -> u64 {
-        #[cfg(feature = "eip-7825")]
-        {
-            // EIP-7825: cap individual transaction gas at 2^24
-            const EIP_7825_SINGLE_TX_GAS_LIMIT: u64 = 1 << 24;
-            core::cmp::min(self.block_gas_limit(), EIP_7825_SINGLE_TX_GAS_LIMIT)
-        }
-        #[cfg(not(feature = "eip-7825"))]
-        {
-            self.block_gas_limit()
-        }
     }
     fn eip1559_basefee(&self) -> U256 {
         U256::from(self.header.base_fee_per_gas)

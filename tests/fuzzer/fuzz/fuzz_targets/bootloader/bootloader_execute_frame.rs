@@ -50,9 +50,6 @@ fn fuzz(input: FuzzInput) {
         System::<ForwardRunningSystem>::init_from_metadata_and_oracle(metadata, oracle)
             .expect("Failed to initialize the mock system");
 
-    // wrap calldata
-    let calldata = input.raw_calldata;
-
     let mut bytecode = Vec::<u8>::new();
     bytecode.push(0x7f); // PUSH32
     bytecode.extend_from_slice(&input.args[..32]);

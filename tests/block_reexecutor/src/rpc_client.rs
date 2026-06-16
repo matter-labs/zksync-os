@@ -335,7 +335,6 @@ impl Block {
             pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
             blob_fee: U256::ONE,
-            is_gateway: false,
         }
     }
 

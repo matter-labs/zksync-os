@@ -25,7 +25,9 @@ use crate::run::query_processors::ReadTreeResponder;
 use crate::run::query_processors::TxDataResponder;
 use crate::run::query_processors::UARTPrintResponder;
 use crate::run::query_processors::ZKProofDataResponder;
-use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
+use crate::run::query_processors::{
+    BlockMetadataResponder, ChainConfigResponder, DACommitmentSchemeResponder,
+};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
 use crate::system::bootloader::run_prover_input_no_panic;
@@ -38,6 +40,7 @@ use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,
 };
+use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use errors::ForwardSubsystemError;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
@@ -78,6 +81,7 @@ pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
 use zksync_os_interface::traits::TxListSource;
 
@@ -104,6 +108,7 @@ pub fn run_block<
     FS: FriProofSidecarSource,
     TR: TxResultCallback,
 >(
+    chain_config: ChainConfig,
     block_context: BlockContext,
     tree: T,
     preimage_source: PS,
@@ -117,6 +122,7 @@ pub fn run_block<
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
+    let chain_config_responder = ChainConfigResponder { chain_config };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -132,6 +138,7 @@ pub fn run_block<
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -148,6 +155,7 @@ pub fn run_block<
     Ok(result_keeper.into())
 }
 
+// Returns (prover_input, block_output, pubdata)
 pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
@@ -155,6 +163,7 @@ pub fn generate_proof_input<
     FS: FriProofSidecarSource,
     TR: TxResultCallback,
 >(
+    chain_config: ChainConfig,
     block_context: BlockContext,
     proof_data: ProofData<StorageCommitment>,
     da_commitment_scheme: DACommitmentScheme,
@@ -168,6 +177,7 @@ pub fn generate_proof_input<
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
+    let chain_config_responder = ChainConfigResponder { chain_config };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -189,6 +199,7 @@ pub fn generate_proof_input<
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
@@ -227,6 +238,12 @@ pub fn generate_proof_input<
 ///
 /// Important: `da_commitment_scheme` must match the scheme used for the
 /// per-block proof input generation.
+///
+/// Single-block prover-input recording includes one chain-config oracle response
+/// at the beginning of every block input. The multiblock proving guest reads
+/// chain config once after the block count and reuses that frozen value for the
+/// whole batch, so the batch input keeps the first response and removes the
+/// duplicate responses after asserting they are byte-for-byte equal.
 ///
 pub fn generate_legacy_batch_proof_input(
     blocks_proof_inputs: Vec<&[u32]>,
@@ -299,6 +316,7 @@ pub fn generate_legacy_batch_proof_input(
             vec![]
         }
     };
+    keep_single_chain_config_response(&mut trimmed_blocks_proof_inputs);
     let mut proof_input = Vec::with_capacity(
         trimmed_blocks_proof_inputs
             .iter()
@@ -317,6 +335,40 @@ pub fn generate_legacy_batch_proof_input(
     proof_input
 }
 
+fn keep_single_chain_config_response(blocks_proof_inputs: &mut [Vec<u32>]) {
+    let Some((first, rest)) = blocks_proof_inputs.split_first_mut() else {
+        return;
+    };
+    let prefix_len = chain_config_response_len_in_u32_words();
+    assert!(
+        first.len() >= prefix_len,
+        "block proof input is too short to contain chain config response"
+    );
+    assert_eq!(
+        first[0],
+        (ChainConfig::USIZE_LEN * 2) as u32,
+        "expected block proof input to start with chain config response length"
+    );
+    let expected_prefix = first[..prefix_len].to_vec();
+
+    for block_proof_input in rest {
+        assert!(
+            block_proof_input.len() >= prefix_len,
+            "block proof input is too short to contain chain config response"
+        );
+        assert_eq!(
+            &block_proof_input[..prefix_len],
+            expected_prefix.as_slice(),
+            "multiblock proof input cannot span different chain configs"
+        );
+        block_proof_input.drain(..prefix_len);
+    }
+}
+
+fn chain_config_response_len_in_u32_words() -> usize {
+    1 + ChainConfig::USIZE_LEN * 2
+}
+
 /// Execute a whole batch and return canonical batch prover input and pubdata.
 ///
 /// The caller provides:
@@ -332,6 +384,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     batch_state: BS,
     blocks: Vec<BatchBlockInput<TS>>,
     da_commitment_scheme: DACommitmentScheme,
+    chain_config: ChainConfig,
 ) -> Result<BatchRunOutput, ForwardSubsystemError> {
     assert!(
         !blocks.is_empty(),
@@ -352,6 +405,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     let batch_state = batch::BatchStateHandle::new(batch_state);
 
     let mut oracle = ZkEENonDeterminismSource::default();
+    oracle.add_external_processor(ChainConfigResponder { chain_config });
     oracle.add_external_processor(batch::BatchBlockMetadataResponder::new(
         block_metadata,
         batch_index.clone(),
@@ -381,6 +435,9 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     // Keep a single witness stream across all block re-entries so the final
     // prover input matches the guest-side multiblock flow.
     let mut oracle = ReadWitnessSource::new(oracle);
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle)
+        .map_err(BootloaderSubsystemError::from)
+        .map_err(wrap_error!())?;
     let mut tracer = NopTracer::default();
     let mut validator = NopTxValidator;
     let mut result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
@@ -396,8 +453,9 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
             &mut result_keeper,
             &mut tracer,
             &mut validator,
+            chain_config,
         )
-        .map_err(|e| wrap_error!(e))?;
+        .map_err(wrap_error!())?;
 
         // `result_keeper` accumulates batch-wide pubdata across re-entries, but
         // `forward_running_rk` contains only the just-finished block output.
@@ -460,7 +518,41 @@ pub fn make_oracle_for_proofs_and_dumps<
     add_uart: bool,
     use_native_callable_oracles: bool,
 ) -> ZkEENonDeterminismSource {
-    make_oracle_for_proofs_and_dumps_for_init_data(
+    make_oracle_for_proofs_and_dumps_with_chain_config(
+        ChainConfig::default(),
+        block_context,
+        tree,
+        preimage_source,
+        tx_source,
+        fri_proof_sidecar,
+        fri_verifier_artifacts,
+        proof_data,
+        da_commitment_scheme,
+        add_uart,
+        use_native_callable_oracles,
+    )
+}
+
+pub fn make_oracle_for_proofs_and_dumps_with_chain_config<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    FS: FriProofSidecarSource,
+>(
+    chain_config: ChainConfig,
+    block_context: BlockContext,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+    fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
+    proof_data: Option<ProofData<StorageCommitment>>,
+    da_commitment_scheme: Option<DACommitmentScheme>,
+    add_uart: bool,
+    use_native_callable_oracles: bool,
+) -> ZkEENonDeterminismSource {
+    make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config(
+        chain_config,
         block_context,
         tree,
         preimage_source,
@@ -491,9 +583,43 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     add_uart: bool,
     use_native_callable_oracles: bool,
 ) -> ZkEENonDeterminismSource {
+    make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config(
+        ChainConfig::default(),
+        block_context,
+        tree,
+        preimage_source,
+        tx_source,
+        fri_proof_sidecar,
+        fri_verifier_artifacts,
+        proof_data,
+        da_commitment_scheme,
+        add_uart,
+        use_native_callable_oracles,
+    )
+}
+
+pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    FS: FriProofSidecarSource,
+>(
+    chain_config: ChainConfig,
+    block_context: BlockContext,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+    fri_proof_sidecar: FS,
+    fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
+    proof_data: Option<ProofData<StorageCommitment>>,
+    da_commitment_scheme: Option<DACommitmentScheme>,
+    add_uart: bool,
+    use_native_callable_oracles: bool,
+) -> ZkEENonDeterminismSource {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
+    let chain_config_responder = ChainConfigResponder { chain_config };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -513,6 +639,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -589,9 +716,43 @@ pub fn run_block_with_oracle_dump_ext<
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
+    run_block_with_oracle_dump_ext_with_chain_config::<T, PS, TS, TR, Config>(
+        ChainConfig::default(),
+        block_context,
+        tree,
+        preimage_source,
+        tx_source,
+        tx_result_callback,
+        proof_data,
+        da_commitment_scheme,
+        tracer,
+        validator,
+    )
+}
+
+#[cfg(feature = "testing")]
+pub fn run_block_with_oracle_dump_ext_with_chain_config<
+    T: ReadStorageTree + Clone + serde::Serialize,
+    PS: PreimageSource + Clone + serde::Serialize,
+    TS: TxSource + Clone + serde::Serialize,
+    TR: TxResultCallback,
+    Config: basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig,
+>(
+    chain_config: ChainConfig,
+    block_context: BlockContext,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+    tx_result_callback: TR,
+    proof_data: Option<ProofData<StorageCommitment>>,
+    da_commitment_scheme: Option<DACommitmentScheme>,
+    tracer: &mut impl Tracer<ForwardRunningSystem>,
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
+) -> Result<BlockOutput, ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
+    let chain_config_responder = ChainConfigResponder { chain_config };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -613,6 +774,7 @@ pub fn run_block_with_oracle_dump_ext<
         let dump = crate::run::query_processors::ForwardRunningOracleDump {
             zk_proof_data_responder: zk_proof_data_responder.clone(),
             da_commitment_scheme_responder: da_commitment_scheme_responder.clone(),
+            chain_config_responder,
             block_metadata_responder,
             tree_responder: tree_responder.clone(),
             tx_data_responder: tx_data_responder.clone(),
@@ -624,6 +786,7 @@ pub fn run_block_with_oracle_dump_ext<
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -666,6 +829,7 @@ pub fn run_block_from_oracle_dump<
     let crate::run::query_processors::ForwardRunningOracleDump {
         zk_proof_data_responder,
         da_commitment_scheme_responder,
+        chain_config_responder,
         block_metadata_responder,
         tree_responder,
         tx_data_responder,
@@ -674,6 +838,7 @@ pub fn run_block_from_oracle_dump<
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -706,6 +871,7 @@ pub fn run_block_from_oracle_dump<
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
+    chain_config: ChainConfig,
     transaction: EncodedTx,
     block_context: BlockContext,
     storage: S,
@@ -720,6 +886,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
+    let chain_config_responder = ChainConfigResponder { chain_config };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -735,6 +902,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
+    oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(storage_responder);
@@ -742,12 +910,16 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle)
+        .map_err(BootloaderSubsystemError::from)
+        .map_err(wrap_error!())?;
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut (),
         &mut result_keeper,
         tracer,
         validator,
+        chain_config,
     )
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();
@@ -759,13 +931,19 @@ mod tests {
     use super::*;
     use zk_ee::common_structs::DACommitmentScheme;
 
+    fn chain_config_response() -> Vec<u32> {
+        let len = chain_config_response_len_in_u32_words();
+        let mut response = vec![0; len];
+        response[0] = (len - 1) as u32;
+        response
+    }
+
     #[test]
     fn replaces_per_block_disconnect_with_single_final_disconnect() {
-        let block_proof_input = vec![11, 12, 24];
-        let mut block_proof_input = block_proof_input
-            .into_iter()
-            .chain(100..124)
-            .collect::<Vec<_>>();
+        let chain_config = chain_config_response();
+        let mut block_proof_input = chain_config.clone();
+        block_proof_input.extend_from_slice(&[11, 12, 24]);
+        block_proof_input.extend(100..124);
         block_proof_input.push(0);
 
         let batch_input = generate_legacy_batch_proof_input(
@@ -774,7 +952,9 @@ mod tests {
             vec![&[1, 2, 3]],
         );
 
-        let mut expected = vec![1, 11, 12];
+        let mut expected = vec![1];
+        expected.extend_from_slice(&chain_config);
+        expected.extend_from_slice(&[11, 12]);
         expected.extend_from_slice(&blob_advice(&[1, 2, 3]));
         expected.push(0);
 
@@ -809,8 +989,10 @@ mod tests {
 
     #[test]
     fn legacy_batch_input_handles_empty_blob_pubdata() {
+        let chain_config = chain_config_response();
         let block_witness_payload = [11, 22, 33];
-        let mut single_block_witness = block_witness_payload.to_vec();
+        let mut single_block_witness = chain_config.clone();
+        single_block_witness.extend_from_slice(&block_witness_payload);
         single_block_witness.extend_from_slice(&[100; 25]);
         single_block_witness.push(0);
 
@@ -821,10 +1003,48 @@ mod tests {
         );
 
         let mut expected = vec![1];
+        expected.extend_from_slice(&chain_config);
         expected.extend_from_slice(&block_witness_payload);
         expected.extend_from_slice(&blob_advice(&[]));
         expected.push(0);
 
         assert_eq!(batch_witness, expected);
+    }
+
+    #[test]
+    fn legacy_batch_input_contains_chain_config_once() {
+        let chain_config = chain_config_response();
+        let mut first = chain_config.clone();
+        first.extend_from_slice(&[11, 12, 0]);
+        let mut second = chain_config.clone();
+        second.extend_from_slice(&[21, 22, 0]);
+
+        let batch_input = generate_legacy_batch_proof_input(
+            vec![first.as_slice(), second.as_slice()],
+            DACommitmentScheme::PubdataKeccak256,
+            vec![&[], &[]],
+        );
+
+        let mut expected = vec![2];
+        expected.extend_from_slice(&chain_config);
+        expected.extend_from_slice(&[11, 12, 21, 22, 0]);
+
+        assert_eq!(batch_input, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "multiblock proof input cannot span different chain configs")]
+    fn legacy_batch_input_rejects_different_chain_configs() {
+        let mut first = chain_config_response();
+        first.extend_from_slice(&[11, 12, 0]);
+        let mut second = chain_config_response();
+        second[1] = 1;
+        second.extend_from_slice(&[21, 22, 0]);
+
+        generate_legacy_batch_proof_input(
+            vec![first.as_slice(), second.as_slice()],
+            DACommitmentScheme::PubdataKeccak256,
+            vec![&[], &[]],
+        );
     }
 }

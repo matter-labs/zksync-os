@@ -15,8 +15,8 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::ProofData;
-use zk_ee::system::metadata::system_metadata::SystemMetadata;
-use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata};
+use zk_ee::system::metadata::chain_config::ChainConfig;
+use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata, ZkMetadata};
 use zk_ee::utils::Bytes32;
 use zk_ee::utils::UsizeAlignedByteBox;
 
@@ -139,9 +139,10 @@ pub fn mock_oracle() -> (
     let block_level = BlockMetadataFromOracle::new_for_test();
     let tx_level = TxLevelMetadata::default();
 
-    let system_metadata = SystemMetadata {
+    let system_metadata = ZkMetadata {
         block_level: block_level.clone(),
-        tx_level: tx_level,
+        tx_level,
+        chain_config: ChainConfig::default(),
         _marker: std::marker::PhantomData,
     };
 
@@ -206,9 +207,10 @@ pub fn mock_oracle_balance(
 
     let block_level = BlockMetadataFromOracle::new_for_test();
     let tx_level = TxLevelMetadata::default();
-    let system_metadata = SystemMetadata {
+    let system_metadata = ZkMetadata {
         block_level: block_level.clone(),
-        tx_level: tx_level,
+        tx_level,
+        chain_config: ChainConfig::default(),
         _marker: std::marker::PhantomData,
     };
     (

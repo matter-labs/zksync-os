@@ -6,6 +6,7 @@ use forward_system::system::system_types::ForwardRunningSystem;
 use forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
+use rig::zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
 use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::{
@@ -65,7 +66,7 @@ fn run_precompile_inner(
     input: &[u8],
     disable_revm_consistency_checker: bool,
 ) -> BlockOutput {
-    let gas = gas.unwrap_or(1 << 27);
+    let gas = gas.unwrap_or(DEFAULT_MAX_TX_GAS_LIMIT);
 
     let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
