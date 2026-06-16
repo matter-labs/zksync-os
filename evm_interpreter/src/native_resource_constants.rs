@@ -74,7 +74,15 @@ pub const MSTORE_NATIVE_COST: u64 = 250;
 pub const MSTORE8_NATIVE_COST: u64 = 80;
 pub const MCOPY_NATIVE_COST: u64 = 200;
 pub const COPY_BASE_NATIVE_COST: u64 = 80;
-pub const COPY_BYTE_NATIVE_COST: u64 = 1;
+// Per-byte copy cost. The underlying `memcpy` (copy_and_zeropad_nonoverlapping)
+// is alignment-dependent on RISC-V: ~0.7 cyc/byte when src/dst share alignment,
+// but ~1.4+ cyc/byte on the misaligned byte/shift path. A flat rate cannot
+// distinguish the two, so we charge the misaligned worst case (rounded up to 2)
+// rather than leave it undercharged — at the cost of over-charging the aligned
+// common case. Block-level impact ~+0.14% proving cost, ~+0.17% per avg tx.
+// NOTE: also feeds the L1/L2 intrinsic per-calldata-byte native cost (same
+// memcpy exposure during calldata processing).
+pub const COPY_BYTE_NATIVE_COST: u64 = 2;
 pub const SLOAD_NATIVE_COST: u64 = 100;
 pub const SSTORE_NATIVE_COST: u64 = 100;
 pub const TLOAD_NATIVE_COST: u64 = 100;
