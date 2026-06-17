@@ -612,59 +612,77 @@ where
         .checked_sub(max_fee_commitment)
         .ok_or(internal_error!("td-mfc"))?;
 
-    // Transfer value from treasury to sender (the deposit minus max fee).
-    // We want to ensure that the simulation of a transaction
-    // never underestimates gas/pubdata compared to the actual execution
-    // of said transaction.
-    // During simulation the gas price is typically set to 0. So we need
-    // to be conservative about operations that incur in gas/pubdata depending
-    // on the value of the fee. For that reason, we always perform the
-    // following transfer on simulation, and avoid compressing the pubdata
-    // for the balance changes resulting from it.
-    //
-    // Mint the value portion of the deposit (total deposited minus max fee)
-    // to the sender inside the execution frame, it does not
-    // persist if the main tx body reverts.
-    //
+    // The first asset-tracker notification is part of the value-mint path,
+    // but unlike the post-execution notifications we treat its revert as an
+    // ordinary L1 transaction revert rather than a fatal bootloader error.
+    // This call is forced even when `to_transfer == 0` so the tx-level failure
+    // mode is exercised consistently for the initial notification.
     // Use with_infinite_ergs so the call cannot fail due to out-of-gas,
     // but native consumption is still tracked against the user's resources.
-    if to_transfer > U256::ZERO || Config::SIMULATION {
-        resources
-            .with_infinite_ergs(|inf_resources| {
-                mint_base_token::<S, Config>(
+    let initial_asset_tracker_reverted = resources
+        .with_infinite_ergs(|inf_resources| {
+            call_l2_asset_tracker::<S>(
+                system,
+                system_functions,
+                memories.reborrow(),
+                to_transfer,
+                l1_chain_id,
+                inf_resources,
+                tracer,
+                validator,
+            )
+        })
+        .map_err(|e| match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                system_log!(
                     system,
-                    system_functions,
-                    memories.reborrow(),
-                    &to_transfer,
-                    &from,
-                    l1_chain_id,
-                    inf_resources,
-                    tracer,
-                    validator,
-                )
-            })
-            .map_err(|e| match e.root_cause() {
-                RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                    system_log!(
-                        system,
-                        "Out of ergs on infinite ergs: inner error was {e:?}"
-                    );
-                    BootloaderSubsystemError::LeafDefect(internal_error!(
-                        "Out of ergs on infinite ergs"
-                    ))
-                }
-                _ => e,
-            })?;
-    }
+                    "Out of ergs on infinite ergs: inner error was {e:?}"
+                );
+                BootloaderSubsystemError::LeafDefect(internal_error!(
+                    "Out of ergs on infinite ergs"
+                ))
+            }
+            _ => e,
+        })?;
 
-    let resources_for_tx = resources.clone();
+    let (reverted, mut returndata) = if initial_asset_tracker_reverted {
+        system_log!(
+            system,
+            "Initial L2AssetTracker notification reverted for amount {to_transfer:?}\n"
+        );
+        system.finish_global_frame(Some(&rollback_handle))?;
+        (true, Vec::new_in(system.get_allocator()))
+    } else {
+        // Transfer value from treasury to sender (the deposit minus max fee).
+        // We want to ensure that the simulation of a transaction
+        // never underestimates gas/pubdata compared to the actual execution
+        // of said transaction.
+        // During simulation the gas price is typically set to 0. So we need
+        // to be conservative about operations that incur in gas/pubdata depending
+        // on the value of the fee. For that reason, we always perform the
+        // following transfer on simulation, and avoid compressing the pubdata
+        // for the balance changes resulting from it.
+        //
+        // Mint the value portion of the deposit (total deposited minus max fee)
+        // to the sender inside the execution frame, it does not
+        // persist if the main tx body reverts.
+        if to_transfer > U256::ZERO || Config::SIMULATION {
+            transfer_from_treasury::<S>(
+                system,
+                &to_transfer,
+                &from,
+                resources,
+                Config::SIMULATION,
+            )?;
+        }
 
-    // transaction is in managed region, so we can recast it back
-    let calldata = transaction.calldata();
+        let resources_for_tx = resources.clone();
 
-    // TODO: add support for deployment transactions,
-    // probably unify with execution logic for EOA
-    let (reverted, mut returndata) =
+        // transaction is in managed region, so we can recast it back
+        let calldata = transaction.calldata();
+
+        // TODO: add support for deployment transactions,
+        // probably unify with execution logic for EOA
         match BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
             system,
             system_functions,
@@ -697,7 +715,8 @@ where
                 system.finish_global_frame(Some(&rollback_handle))?;
                 return Err(e);
             }
-        };
+        }
+    };
 
     system_log!(system, "Main TX body successful = {}\n", !reverted);
 
@@ -838,20 +857,64 @@ where
 /// Calls handleFinalizeBaseTokenBridgingOnL2(uint256 _fromChainId, uint256 _amount)
 /// as L2_BASE_TOKEN_ADDRESS (0x800a) to pass the onlyBaseTokenHolderOrL2BaseToken modifier.
 ///
-/// This is called separately for each token movement (value mint, operator
-/// payment, refund) so that the asset tracker's accounting stays correct even
-/// if the main transaction body reverts.
+/// This low-level helper executes a single notification call and returns
+/// whether the callee reverted. Callers decide both whether to skip zero
+/// amounts and whether a revert should be treated as fatal.
 ///
-/// Resource usage depends on the caller — value-mint tracks native against user resources;
-/// operator-fee and refund use FORMAL_INFINITE.
-///
-/// Failure halts block processing — if the asset tracker reverts, the
-/// chain's token accounting would be inconsistent, so we treat it as
-/// fatal rather than silently continuing with incorrect bookkeeping.
+/// Resource usage depends on the caller — value-mint tracks native against
+/// user resources; operator-fee and refund use FORMAL_INFINITE.
 ///
 /// If no contract is deployed at L2AssetTracker, the call succeeds silently
 /// (a call to an empty address returns success with no returndata in EVM).
 /// However, we are certain that L2AssetTracker is available after the upgrade.
+fn call_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
+    system: &mut System<S>,
+    system_functions: &mut HooksStorage<S, S::Allocator>,
+    memories: RunnerMemoryBuffers<'a>,
+    amount: U256,
+    l1_chain_id: U256,
+    resources: &mut S::Resources,
+    tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
+) -> Result<bool, BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificPricingMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
+    // selector 0x03117c8c + abi-encoded (fromChainId, amount)
+    let mut calldata = [0u8; 68];
+    calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
+    calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
+    calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
+
+    let failed = resources.with_infinite_ergs(|inf_ergs| {
+        let CompletedExecution {
+            resources_returned,
+            result: asset_tracker_result,
+        } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+            system,
+            system_functions,
+            memories,
+            &calldata,
+            &L2_BASE_TOKEN_ADDRESS,
+            &L2_ASSET_TRACKER_ADDRESS,
+            inf_ergs.clone(),
+            &U256::ZERO,
+            true, // should_make_frame - isolate state changes
+            tracer,
+            validator,
+        )?;
+        // Overwrite resources inside the closure so that
+        // with_infinite_ergs correctly restores ergs afterwards.
+        *inf_ergs = resources_returned;
+        Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
+    })?;
+
+    Ok(failed)
+}
+
 fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -868,35 +931,16 @@ where
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {
-        // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
-        // selector 0x03117c8c + abi-encoded (fromChainId, amount)
-        let mut calldata = [0u8; 68];
-        calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
-        calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
-        calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
-
-        let failed = resources.with_infinite_ergs(|inf_ergs| {
-            let CompletedExecution {
-                resources_returned,
-                result: asset_tracker_result,
-            } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
-                system,
-                system_functions,
-                memories,
-                &calldata,
-                &L2_BASE_TOKEN_ADDRESS,
-                &L2_ASSET_TRACKER_ADDRESS,
-                inf_ergs.clone(),
-                &U256::ZERO,
-                true, // should_make_frame - isolate state changes
-                tracer,
-                validator,
-            )?;
-            // Overwrite resources inside the closure so that
-            // with_infinite_ergs correctly restores ergs afterwards.
-            *inf_ergs = resources_returned;
-            Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
-        })?;
+        let failed = call_l2_asset_tracker::<S>(
+            system,
+            system_functions,
+            memories,
+            amount,
+            l1_chain_id,
+            resources,
+            tracer,
+            validator,
+        )?;
 
         if failed {
             system_log!(

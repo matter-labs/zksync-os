@@ -5,8 +5,9 @@
 //! When an L1 transaction deposits base tokens (total_deposited > 0), the
 //! bootloader calls handleFinalizeBaseTokenBridgingOnL2(uint256, uint256)
 //! on the real L2AssetTracker contract up to three times — once for the
-//! value mint, once for the operator fee, and once for the refund. If any
-//! of these amounts is zero the corresponding call is skipped.
+//! value mint, once for the operator fee, and once for the refund. The
+//! initial value-mint notification is always attempted, even when its amount
+//! is zero. Later notifications are still skipped when their amount is zero.
 //!
 //! When the source chain matches `L1_CHAIN_ID` and the current settlement
 //! layer also matches `L1_CHAIN_ID`, the contract records the aggregate
@@ -74,6 +75,60 @@ fn read_l1_chain_id_tx(nonce: u64) -> ZKsyncTxEnvelope {
         input: L1_CHAIN_IDCall {}.abi_encode().into(),
     };
     ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
+}
+
+fn asset_tracker_reverts_when_amount_matches(amount: U256) -> Vec<u8> {
+    BytecodeBuilder::new()
+        .push_bytes(&amount.to_be_bytes::<32>())
+        .push_u8(0x24)
+        .calldataload()
+        .eq()
+        .push_u8(0x2b)
+        .jumpi()
+        .push0()
+        .push0()
+        .return_()
+        .jumpdest()
+        .push0()
+        .push0()
+        .revert()
+        .finish()
+}
+
+fn asset_tracker_reverts_when_amount_is_zero() -> Vec<u8> {
+    asset_tracker_reverts_when_amount_matches(U256::ZERO)
+}
+
+fn asset_tracker_reverts_when_amount_is_nonzero() -> Vec<u8> {
+    BytecodeBuilder::new()
+        .push_u8(0x24)
+        .calldataload()
+        .push0()
+        .eq()
+        .push_u8(0x0b)
+        .jumpi()
+        .push0()
+        .push0()
+        .revert()
+        .jumpdest()
+        .push0()
+        .push0()
+        .return_()
+        .finish()
+}
+
+fn assert_l1_tx_reverted(output: &rig::zksync_os_interface::types::BlockOutput) {
+    assert_eq!(output.tx_results.len(), 1);
+    let tx_result = output.tx_results[0].as_ref().expect("tx should not error");
+    assert!(
+        !tx_result.is_success(),
+        "L1 tx should revert, got {tx_result:?}"
+    );
+    assert!(
+        matches!(&tx_result.execution_result, ExecutionResult::Revert(_)),
+        "L1 tx should return a revert execution result, got {:?}",
+        &tx_result.execution_result
+    );
 }
 
 fn assert_reverted_deposit_asset_tracker(
@@ -195,9 +250,9 @@ fn test_asset_tracker_predeploy_is_usable_in_l1_flow() {
     }
 }
 
-/// Verify that no deposit is recorded when total_deposited == 0.
+/// Verify that a zero-deposit L1 tx does not change recorded bridged totals.
 #[test]
-fn test_asset_tracker_not_called_without_deposit() {
+fn test_zero_deposit_does_not_change_asset_tracker_totals() {
     let from = address!("1234000000000000000000000000000000000000");
     let to = address!("abcd000000000000000000000000000000000000");
     let gas_price: u128 = 0;
@@ -339,4 +394,94 @@ fn test_asset_tracker_oog_body_still_notifies_fee_and_refund() {
 
     let output = tester.execute_block(vec![tx]);
     assert_reverted_deposit_asset_tracker(&mut tester, &output, to_mint);
+}
+
+#[test]
+fn test_asset_tracker_initial_revert_reverts_l1_tx() {
+    let from = address!("1234000000000000000000000000000000000000");
+    let to = address!("abcd000000000000000000000000000000000000");
+    let gas_price: u128 = 1000;
+    let gas_limit: u128 = 50_000;
+    let value_mint_amount = rig::alloy::primitives::U256::from(1_000_000u64);
+    let to_mint = rig::alloy::primitives::U256::from(gas_limit * gas_price) + value_mint_amount;
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(
+            asset_tracker_address(),
+            &asset_tracker_reverts_when_amount_matches(U256::from(1_000_000u64)),
+        )
+        .with_balance(from, U256::from(u64::MAX));
+
+    let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(gas_price)
+        .gas_limit(gas_limit)
+        .value(rig::alloy::primitives::U256::ZERO)
+        .to_mint(to_mint)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+    assert_l1_tx_reverted(&output);
+}
+
+#[test]
+fn test_asset_tracker_zero_amount_initial_notification_is_forced() {
+    let from = address!("1234000000000000000000000000000000000000");
+    let to = address!("abcd000000000000000000000000000000000000");
+    let gas_price: u128 = 1000;
+    let gas_limit: u128 = 50_000;
+    let to_mint = rig::alloy::primitives::U256::from(gas_limit * gas_price);
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(
+            asset_tracker_address(),
+            &asset_tracker_reverts_when_amount_is_zero(),
+        )
+        .with_balance(from, U256::from(u64::MAX));
+
+    let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(gas_price)
+        .gas_limit(gas_limit)
+        .value(rig::alloy::primitives::U256::ZERO)
+        .to_mint(to_mint)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+    assert_l1_tx_reverted(&output);
+}
+
+#[test]
+fn test_asset_tracker_post_execution_revert_remains_fatal() {
+    let from = address!("1234000000000000000000000000000000000000");
+    let to = address!("abcd000000000000000000000000000000000000");
+    let gas_price: u128 = 1000;
+    let gas_limit: u128 = 50_000;
+    let to_mint = rig::alloy::primitives::U256::from(gas_limit * gas_price);
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(
+            asset_tracker_address(),
+            &asset_tracker_reverts_when_amount_is_nonzero(),
+        )
+        .with_balance(from, U256::from(u64::MAX));
+
+    let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(gas_price)
+        .gas_limit(gas_limit)
+        .value(rig::alloy::primitives::U256::ZERO)
+        .to_mint(to_mint)
+        .build();
+
+    let err = tester
+        .execute_block_no_panic(vec![tx])
+        .expect_err("post-execution asset tracker revert should still fail block execution");
+    assert!(
+        format!("{err:?}").contains("L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted"),
+        "unexpected error for post-execution asset tracker revert: {err:?}"
+    );
 }
