@@ -179,7 +179,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::SHL => self.shl(),
                     opcodes::SHR => self.shr(),
                     opcodes::SAR => self.sar(),
-                    #[cfg(feature = "clz")]
                     opcodes::CLZ => self.clz(),
                     opcodes::SHA3 => self.sha3(system),
                     opcodes::ADDRESS => self.address(),

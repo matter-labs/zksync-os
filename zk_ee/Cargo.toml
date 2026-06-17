@@ -35,7 +35,5 @@ error_origins = []
 detailed_errors = []
 prevrandao = []
 delegation = ["u256/delegation"]
-pectra-blobs = []
-fusaka-blobs = []
 
 [dev-dependencies]

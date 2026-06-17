@@ -222,15 +222,9 @@ impl Test {
 
         let mut tests = vec![];
 
-        // Default test-selection hardfork follows the hardfork the STF was
-        // compiled for, so fixtures are validated against the matching post-state.
-        let default_hardfork = if cfg!(feature = "evm_tester_fusaka") {
-            "Osaka"
-        } else if cfg!(feature = "evm_tester_pectra") {
-            "Prague"
-        } else {
-            "Cancun"
-        };
+        // The STF always targets the Fusaka hardfork (Osaka EL), so fixtures are
+        // validated against the matching post-state by default.
+        let default_hardfork = "Osaka";
         let hardfork = hardfork_override.unwrap_or(default_hardfork.to_string());
 
         for (test_name, test_definition) in test_structure {
