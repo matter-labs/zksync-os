@@ -35,6 +35,9 @@ airbender-host = { workspace = true }
 proving = []
 gpu = ["airbender-host/gpu-prover"]
 default = []
+# Selects the BPO2 blob-count schedule; default is base-Osaka. Forward this so
+# block.rs computes the blob base fee with the matching update fraction.
+fusaka-bpo-2 = ["rig/fusaka-bpo-2"]
 
 # Fast-compile variant used by the bench CI for the host-side eth_runner
 # binary. Its runtime perf doesn't affect cycle measurements (cycles come

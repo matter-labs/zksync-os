@@ -37,8 +37,11 @@ const WITHDRAWAL_REQUEST_CONTRACT: Address = address!("0x00000961Ef480Eb55e80D19
 const CONSOLIDATION_REQUEST_CONTRACT: Address =
     address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
 
-/// Blob base fee update fraction.
-/// Must match the STF's active blob schedule (latest BPO / Osaka EIP-7918): 11684671.
+/// Blob base fee update fraction. Must match the STF's active blob schedule:
+/// base-Osaka 5007716, or BPO2 (`fusaka-bpo-2`) 11684671.
+#[cfg(not(feature = "fusaka-bpo-2"))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5_007_716;
+#[cfg(feature = "fusaka-bpo-2")]
 const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11_684_671;
 
 const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;

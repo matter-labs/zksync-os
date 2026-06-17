@@ -24,10 +24,20 @@ use super::utils::fake_exponential;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser;
 
 pub const MIN_BASE_FEE_PER_BLOB_GAS: u64 = 1;
-// Blob count schedule (latest BPO).
+// Blob count schedule. Default is base-Osaka (Prague counts); `fusaka-bpo-2`
+// selects the BPO2 schedule.
+#[cfg(not(feature = "fusaka-bpo-2"))]
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5007716;
+#[cfg(feature = "fusaka-bpo-2")]
 pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11684671;
 
+#[cfg(not(feature = "fusaka-bpo-2"))]
+const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "fusaka-bpo-2")]
 const MAX_BLOBS_PER_BLOCK: usize = 21;
+#[cfg(not(feature = "fusaka-bpo-2"))]
+const TARGET_BLOBS_PER_BLOCK: u64 = 6;
+#[cfg(feature = "fusaka-bpo-2")]
 const TARGET_BLOBS_PER_BLOCK: u64 = 14;
 const TARGET_BLOB_GAS_PER_BLOCK: u64 = GAS_PER_BLOB * TARGET_BLOBS_PER_BLOCK;
 const BLOB_BASE_COST: u64 = 1 << 13;

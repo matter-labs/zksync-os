@@ -43,6 +43,8 @@ alloy-primitives = { workspace = true, features = ["arbitrary"] }
 serde = ["dep:serde", "ruint/serde"]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
 default = ["testing"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["zk_ee/fusaka-bpo-2"]
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 disable_system_contracts = []

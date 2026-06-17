@@ -56,6 +56,8 @@ eth_stf = ["proof_running_system/eth_stf"]
 evm_tester = ["proof_running_system/evm_tester"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["proof_running_system/fusaka-bpo-2"]
 
 
 # [patch."https://github.com/matter-labs/zksync-airbender"]

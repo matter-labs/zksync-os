@@ -30,6 +30,11 @@ pub const MAX_NATIVE_COMPUTATIONAL: u64 = 1 << 35;
 pub const EIP7702_DELEGATION_MARKER: [u8; 3] = [0xef, 0x01, 0x00];
 
 pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
+// Blob count schedule. The default is base-Osaka (Prague counts); the
+// `fusaka-bpo-2` feature selects the BPO2 schedule. TODO: move to fork params.
+#[cfg(not(feature = "fusaka-bpo-2"))]
+pub const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "fusaka-bpo-2")]
 pub const MAX_BLOBS_PER_BLOCK: usize = 21;
 pub const MAX_BLOBS_PER_TX: usize = 6;
 pub const GAS_PER_BLOB: u64 = 1 << 17;

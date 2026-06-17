@@ -13,10 +13,14 @@ pub struct Block {
     pub result: alloy::rpc::types::Block<alloy::rpc::types::Transaction, alloy::rpc::types::Header>,
 }
 
-// Blob base fee update fraction. Must match the STF's active blob schedule
-// (latest BPO / Osaka): 11684671. Alloy's `Header::blob_fee()` uses a fixed
-// fraction that does not track the BPO schedule, so we compute the blob base
-// fee ourselves from `excessBlobGas` to keep the replay consistent with the STF.
+// Blob base fee update fraction. Must match the STF's active blob schedule:
+// base-Osaka 5007716, or BPO2 (`fusaka-bpo-2`) 11684671. Alloy's
+// `Header::blob_fee()` uses a fixed fraction that does not track the BPO
+// schedule, so we compute the blob base fee ourselves from `excessBlobGas`
+// to keep the replay consistent with the built STF.
+#[cfg(not(feature = "fusaka-bpo-2"))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 5_007_716;
+#[cfg(feature = "fusaka-bpo-2")]
 const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 11_684_671;
 
 const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;

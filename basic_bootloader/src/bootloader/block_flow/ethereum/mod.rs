@@ -5,9 +5,15 @@ use crate::bootloader::block_flow::post_tx_loop_op::PostTxLoopOp;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
 use zk_ee::common_structs::WarmStorageKey;
 
-// Blob count schedule (latest BPO).
-// TODO: move to fork params
+// Blob count schedule. Default is base-Osaka (Prague counts); `fusaka-bpo-2`
+// selects the BPO2 schedule. TODO: move to fork params
+#[cfg(not(feature = "fusaka-bpo-2"))]
+pub const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "fusaka-bpo-2")]
 pub const MAX_BLOBS_PER_BLOCK: usize = 21;
+#[cfg(not(feature = "fusaka-bpo-2"))]
+pub const TARGET_BLOBS_PER_BLOCK: usize = 6;
+#[cfg(feature = "fusaka-bpo-2")]
 pub const TARGET_BLOBS_PER_BLOCK: usize = 14;
 pub const GAS_PER_BLOB: u64 = 1 << 17;
 pub const TARGET_BLOBS_GAS_PER_BLOCK: u64 = (TARGET_BLOBS_PER_BLOCK as u64) * GAS_PER_BLOB;

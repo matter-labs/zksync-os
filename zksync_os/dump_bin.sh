@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -68,6 +68,16 @@ case "$TYPE" in
     ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,eth_runner,benchmarking"
+    APP_NAME="evm_replay"
+    ;;
+  evm-replay-benchmarking-fusaka)
+    # Adds `fusaka-bpo-2` (the BPO2 blob-count schedule) on top of
+    # `evm-replay-benchmarking` so the proving binary can replay post-BPO Osaka
+    # blocks (BPO blob base fee + higher blob count).
+    # NOTE: the literal string `evm-replay-benchmarking-fusaka` is used as a
+    # `grep -q` fallback target by `.github/workflows/bench.yml` — if this
+    # case label is renamed, update the workflow too.
+    FEATURES="$FEATURES,eth_runner,benchmarking,fusaka-bpo-2"
     APP_NAME="evm_replay"
     ;;
   evm-tester)

@@ -41,3 +41,6 @@ zksync_os_rig = { package = "rig", path = "../../tests/rig", features = ["evm_te
 
 [features]
 default = []
+# Selects the BPO2 blob-count schedule; default is base-Osaka (matches the EF
+# Osaka state-test fixtures, which assume base-Osaka blob counts).
+fusaka-bpo-2 = ["zksync_os_forward_system/fusaka-bpo-2"]

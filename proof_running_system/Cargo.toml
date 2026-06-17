@@ -43,8 +43,11 @@ state-diffs-pi = []
 
 # A feature for every specific use case
 
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["basic_bootloader/fusaka-bpo-2"]
+
 # Features used for production, by both the singleblock_batch and multiblock_batch binaries.
-production = []
+production = ["fusaka-bpo-2"]
 
 # Features used for tests.
 # Note: cycle_marker is intentionally excluded — binaries with marker CSRs
