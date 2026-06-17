@@ -191,10 +191,15 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .run_config
             .as_ref()
             .is_some_and(|c| c.revm_independent_gas);
+        // Mirror ZKsync OS's per-tx gas cap so the consistency checker enforces
+        // the same EIP-7825 limit and never diverges on tx admission. Tests
+        // raise it via `with_max_tx_gas_limit` on both sides at once.
+        let tx_gas_limit_cap = Some(self.chain_config().max_tx_gas_limit());
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
         })
-        .with_independent_gas(independent_gas);
+        .with_independent_gas(independent_gas)
+        .with_tx_gas_limit_cap(tx_gas_limit_cap);
 
         revm_runner
             .run(

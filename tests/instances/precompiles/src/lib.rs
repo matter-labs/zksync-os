@@ -1241,39 +1241,11 @@ const KZG_TESTS: [Test; 1] = [
     },
 ];
 
-#[test]
-fn test_kzg_regression() {
-    for test in KZG_TESTS.iter() {
-        let input = hex::decode(test.input).unwrap();
-        let expected = hex::decode(test.expected).unwrap();
-        dbg!(test.name);
-
-        // TODO: currently the KZG precompile is not enabled in production, so we should skip Revm consistency check
-        let disable_revm_consistency_checker = true;
-        let tx_result = run_precompile_inner(
-            test.precompile_id,
-            None::<u64>,
-            &input,
-            disable_revm_consistency_checker,
-        )
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
-
-        assert_eq!(
-            expected,
-            tx_result.as_returned_bytes(),
-            "{} failed",
-            test.name
-        );
-    }
-}
-
-#[test]
-fn test_precompiles() {
-    for test in TESTS.iter() {
+/// Run a slice of precompile test vectors, asserting each returns its expected output.
+/// Every vector is cross-checked against revm, whose AtlasV4 spec covers all the
+/// precompiles exercised here (incl. point evaluation and the Pectra precompiles).
+fn run_test_vectors(tests: &[Test]) {
+    for test in tests.iter() {
         let input = hex::decode(test.input).unwrap();
         let expected = hex::decode(test.expected).unwrap();
         dbg!(test.name);
@@ -1294,6 +1266,22 @@ fn test_precompiles() {
     }
 }
 
+#[test]
+fn test_kzg_regression() {
+    run_test_vectors(&KZG_TESTS);
+}
+
+#[test]
+fn test_precompiles() {
+    run_test_vectors(&TESTS);
+
+    // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompiles are only registered under the
+    // `pectra` feature; their vectors (incl. the MAP_FP*_TO_G* mappings) are cross-checked
+    // against revm's AtlasV4 spec just like the rest.
+    #[cfg(feature = "pectra")]
+    run_test_vectors(&PECTRA_TESTS);
+}
+
 // BLS12-381 generator and scalar constants shared across PECTRA test and bench functions.
 #[cfg(feature = "pectra")]
 const BLS_G1: &str = "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1";
@@ -1312,8 +1300,8 @@ const SCALAR_WORST: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 // Test vectors for precompiles gated behind the `pectra` feature (EIP-152 BLAKE2F and
 // EIP-2537 BLS12-381). Values come from the EIP specifications and well-known group identities
-// (G + 0 = G, G * 1 = G, e(0, 0) = 1).
-// TODO(EVM-1409): merge with precompiles tests
+// (G + 0 = G, G * 1 = G, e(0, 0) = 1). Exercised by `test_precompiles` when the `pectra`
+// feature is enabled.
 #[cfg(feature = "pectra")]
 const PECTRA_TESTS: [Test; 13] = [
     // BLAKE2F: EIP-152 test vector (rounds = 12, message = "abc" padded, f = 1).
@@ -1408,89 +1396,6 @@ const PECTRA_TESTS: [Test; 13] = [
         precompile_id: "0000000000000000000000000000000000000011",
     },
 ];
-
-// TODO(EVM-1409): merge with precompiles tests
-#[cfg(feature = "pectra")]
-#[test]
-fn test_pectra_precompiles() {
-    for test in PECTRA_TESTS.iter() {
-        let input = hex::decode(test.input).unwrap();
-        let expected = hex::decode(test.expected).unwrap();
-        dbg!(test.name);
-
-        // Pectra precompiles aren't enabled in the revm spec used for consistency checks.
-        let disable_revm_consistency_checker = true;
-        let tx_result = run_precompile_inner(
-            test.precompile_id,
-            None::<u64>,
-            &input,
-            disable_revm_consistency_checker,
-        )
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
-
-        assert_eq!(
-            expected,
-            tx_result.as_returned_bytes(),
-            "{} failed",
-            test.name
-        );
-    }
-}
-
-/// Test BLS12-381 mapping precompiles (MAP_FP_TO_G1, MAP_FP2_TO_G2).
-/// These use an allocation-free isogeny map implementation and must work
-/// in proving mode (RISC-V) without global-alloc.
-#[cfg(feature = "pectra")]
-#[test]
-fn test_pectra_bls12_381_mapping_precompiles() {
-    // MAP_FP_TO_G1: 64-byte input (one Fp element)
-    let fp_input = hex::decode(
-        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
-    ).unwrap();
-    let g1_result = run_precompile_inner(
-        "0000000000000000000000000000000000000010",
-        None::<u64>,
-        &fp_input,
-        true,
-    )
-    .tx_results
-    .first()
-    .unwrap()
-    .clone()
-    .expect("MAP_FP_TO_G1 should succeed");
-    assert!(g1_result.is_success(), "MAP_FP_TO_G1 should not revert");
-    assert_eq!(
-        g1_result.as_returned_bytes().len(),
-        128,
-        "MAP_FP_TO_G1 should return a 128-byte G1 point"
-    );
-
-    // MAP_FP2_TO_G2: 128-byte input (one Fp2 element)
-    let fp2_input = hex::decode(
-        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa",
-    ).unwrap();
-    let g2_result = run_precompile_inner(
-        "0000000000000000000000000000000000000011",
-        None::<u64>,
-        &fp2_input,
-        true,
-    )
-    .tx_results
-    .first()
-    .unwrap()
-    .clone()
-    .expect("MAP_FP2_TO_G2 should succeed");
-    assert!(g2_result.is_success(), "MAP_FP2_TO_G2 should not revert");
-    assert_eq!(
-        g2_result.as_returned_bytes().len(),
-        256,
-        "MAP_FP2_TO_G2 should return a 256-byte G2 point"
-    );
-}
 
 #[cfg(feature = "pectra")]
 #[test]
