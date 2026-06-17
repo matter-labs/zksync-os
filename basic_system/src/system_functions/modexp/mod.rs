@@ -247,6 +247,20 @@ fn modexp_as_system_function_inner<
         U256::from_be_bytes(out)
     };
 
+    // Gate the operand allocations on available resources *before* allocating
+    // and zero-filling. Both ergs (length-derived) and a conservative native
+    // upper bound (worst-case exponent) are computable from the header lengths
+    // and `exp_highp` alone, without materializing the operands. This prevents
+    // an input declaring large lengths with a minimal payload from forcing
+    // large allocations / zero-fills before any commensurate charge (relevant
+    // when the EIP-7823 length cap is not enabled).
+    let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    let conservative_native =
+        native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    if !resources.has_enough(&R::from_ergs_and_native(ergs, conservative_native)) {
+        return Err(out_of_ergs_error!().into());
+    }
+
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     read_padded(&mut base, &mut input, base_len);
@@ -259,7 +273,9 @@ fn modexp_as_system_function_inner<
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     read_padded(&mut modulus, &mut input, mod_len);
 
-    let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    // Charge the exact native (scans the materialized exponent's set bits).
+    // It never exceeds `conservative_native` checked above, so it cannot fail
+    // after the gate passed.
     let native = native_cost_from_exp_data::<R>(base_len as u64, &exponent, mod_len as u64)?;
     resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
@@ -405,9 +421,10 @@ pub fn native_cost_from_exp_data<R: Resources>(
     Ok(<R::Native as Computational>::from_computational(cost))
 }
 
-/// Conservative native cost without scanning the full exponent.
-/// Assumes worst case (all exponent bits set).
-pub fn native_cost<R: Resources>(
+/// Conservative native cost without scanning the full exponent (assumes the
+/// worst case of all exponent bits set). Used to gate operand allocation
+/// before the exact cost can be computed from the materialized exponent.
+fn native_cost<R: Resources>(
     base_size: u64,
     exp_size: u64,
     mod_size: u64,
