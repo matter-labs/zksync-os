@@ -1292,10 +1292,9 @@ const SCALAR_MEDIUM: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfefff
 
 const SCALAR_WORST: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
-// Test vectors for precompiles gated behind the `pectra` feature (EIP-152 BLAKE2F and
-// EIP-2537 BLS12-381). Values come from the EIP specifications and well-known group identities
-// (G + 0 = G, G * 1 = G, e(0, 0) = 1). Exercised by `test_precompiles` when the `pectra`
-// feature is enabled.
+// Test vectors for the Pectra precompiles (EIP-152 BLAKE2F and EIP-2537 BLS12-381),
+// which are always registered. Values come from the EIP specifications and well-known
+// group identities (G + 0 = G, G * 1 = G, e(0, 0) = 1). Always exercised by `test_precompiles`.
 const PECTRA_TESTS: [Test; 13] = [
     // BLAKE2F: EIP-152 test vector (rounds = 12, message = "abc" padded, f = 1).
     Test {
