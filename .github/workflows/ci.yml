@@ -102,6 +102,13 @@ jobs:
 
     eth_stf_run:
         name: eth_stf_run
+        # Disabled: the eth-stf `eth-run` fixture (block 23846054) is a pre-Fusaka
+        # (Prague) mainnet block, but the STF is now unconditionally Fusaka, so
+        # replaying it diverges (e.g. EIP-7883 modexp repricing -> receipts root
+        # mismatch). Re-enable once an Osaka mainnet `eth-run` fixture (block.json
+        # + debug_executionWitness witness.json) is available; the eth-stf binary
+        # will then also need `fusaka-bpo-2` for the post-BPO blob schedule.
+        if: false
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
