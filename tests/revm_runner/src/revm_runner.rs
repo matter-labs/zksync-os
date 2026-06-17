@@ -200,6 +200,7 @@ where
             block_context.gas_limit(),
             settlement_layer_chain_id,
             self.independent_gas,
+            self.tx_gas_limit_cap,
         )?;
 
         let mut call_traces = Vec::with_capacity(transactions.len());
@@ -288,6 +289,7 @@ where
         block_gas_limit: u64,
         settlement_layer_chain_id: U256,
         independent_gas: bool,
+        tx_gas_limit_cap: Option<u64>,
     ) -> anyhow::Result<Vec<ReplayTx>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -324,6 +326,7 @@ where
                     force_fail,
                     block_gas_limit,
                     Some(settlement_layer_chain_id),
+                    tx_gas_limit_cap,
                 )
                 .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))?;
 
@@ -345,6 +348,7 @@ where
                         false,
                         block_gas_limit,
                         Some(settlement_layer_chain_id),
+                        tx_gas_limit_cap,
                     )
                     .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
                     .map(|tx| ReplayTx {
