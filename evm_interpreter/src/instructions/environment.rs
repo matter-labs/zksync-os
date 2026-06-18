@@ -93,7 +93,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn blobhash(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::BLOBHASH, 100)?;
+            .spend_gas_and_native(gas_constants::BLOBHASH, BLOBHASH_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         if let Some(index) = (*stack_top).try_to_usize() {
             if let Some(blob_hash) = system.get_blob_hash(index) {
@@ -109,7 +109,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn blobbasefee(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, 100)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, BLOBBASEFEE_NATIVE_COST)?;
         // blob_base_fee returns ruint::aliases::U256, convert
         let fee = U256::from(system.get_blob_base_fee_per_gas());
         self.stack.push(&fee)

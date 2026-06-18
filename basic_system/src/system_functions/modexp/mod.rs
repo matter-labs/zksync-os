@@ -1,6 +1,5 @@
 use super::*;
 
-use crate::cost_constants::{MODEXP_MINIMAL_COST_ERGS, MODEXP_WORST_CASE_NATIVE_PER_GAS};
 use alloc::vec::Vec;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
@@ -17,6 +16,50 @@ use zk_ee::{
         Computational, Ergs, ModExpInterfaceError,
     },
 };
+
+use crate::cost_constants::{
+    MODEXP_BASE_NATIVE_COST, MODEXP_MINIMAL_COST_ERGS, MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST,
+    MODEXP_PER_OP_OVERHEAD_NATIVE_COST,
+};
+
+/// Count the bit length and popcount of a big-endian byte slice,
+/// skipping leading zero bytes.
+fn exp_bit_len_and_popcount(exp: &[u8]) -> (u64, u64) {
+    let mut bit_len: u64 = 0;
+    let mut popcount: u64 = 0;
+    let mut leading = true;
+    for &byte in exp {
+        if leading {
+            if byte == 0 {
+                continue;
+            }
+            leading = false;
+            bit_len = 8 - byte.leading_zeros() as u64;
+            popcount = byte.count_ones() as u64;
+        } else {
+            bit_len += 8;
+            popcount += byte.count_ones() as u64;
+        }
+    }
+    (bit_len, popcount)
+}
+
+/// Compute the native cost from the number of square-and-multiply
+/// operations and the operand digit count.
+///
+/// The prover performs one modular squaring per exponent bit (after the
+/// leading 1) and one modular multiplication per set bit (excluding the
+/// leading 1). Each operation does a schoolbook multiply of `digits x digits`
+/// pairs, each producing bigint delegations at a fixed effective-cycle cost.
+fn modexp_native_from_ops(total_ops: u64, digits: u64) -> u64 {
+    MODEXP_BASE_NATIVE_COST
+        .saturating_add(total_ops.saturating_mul(MODEXP_PER_OP_OVERHEAD_NATIVE_COST))
+        .saturating_add(
+            total_ops
+                .saturating_mul(digits.saturating_mul(digits))
+                .saturating_mul(MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST),
+        )
+}
 
 // Query ID for modular exponentiation advice from oracle
 pub const MODEXP_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x10;
@@ -81,16 +124,6 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, ModExpErrors>
     }
 }
 
-/// Get resources from ergs, with native being ergs * constant
-fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
-    let native = <R::Native as Computational>::from_computational(
-        ergs.0
-            .saturating_div(ERGS_PER_GAS)
-            .saturating_mul(MODEXP_WORST_CASE_NATIVE_PER_GAS),
-    );
-    R::from_ergs_and_native(ergs, native)
-}
-
 fn read_padded(dst: &mut Vec<u8, impl Allocator>, src: &mut &[u8], provided_len: usize) {
     let source_len = src.len();
     let to_take = core::cmp::min(source_len, provided_len);
@@ -123,7 +156,8 @@ fn modexp_as_system_function_inner<
     allocator: A,
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
-    let minimal_resources = resources_from_ergs::<R>(MODEXP_MINIMAL_COST_ERGS);
+    let minimal_native = <R::Native as Computational>::from_computational(MODEXP_BASE_NATIVE_COST);
+    let minimal_resources = R::from_ergs_and_native(MODEXP_MINIMAL_COST_ERGS, minimal_native);
     if !resources.has_enough(&minimal_resources) {
         return Err(out_of_ergs_error!().into());
     }
@@ -213,10 +247,19 @@ fn modexp_as_system_function_inner<
         U256::from_be_bytes(out)
     };
 
-    // Check if we have enough gas.
+    // Gate the operand allocations on available resources *before* allocating
+    // and zero-filling. Both ergs (length-derived) and a conservative native
+    // upper bound (worst-case exponent) are computable from the header lengths
+    // and `exp_highp` alone, without materializing the operands. This prevents
+    // an input declaring large lengths with a minimal payload from forcing
+    // large allocations / zero-fills before any commensurate charge (relevant
+    // when the EIP-7823 length cap is not enabled).
     let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
-    let native = native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
-    resources.charge(&R::from_ergs_and_native(ergs, native))?;
+    let conservative_native =
+        native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    if !resources.has_enough(&R::from_ergs_and_native(ergs, conservative_native)) {
+        return Err(out_of_ergs_error!().into());
+    }
 
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
@@ -229,6 +272,12 @@ fn modexp_as_system_function_inner<
     let mut modulus = Vec::try_with_capacity_in(mod_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     read_padded(&mut modulus, &mut input, mod_len);
+
+    // Charge the exact native (scans the materialized exponent's set bits).
+    // It never exceeds `conservative_native` checked above, so it cannot fail
+    // after the gate passed.
+    let native = native_cost_from_exp_data::<R>(base_len as u64, &exponent, mod_len as u64)?;
+    resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
     debug_assert_eq!(base.len(), base_len);
     debug_assert_eq!(exponent.len(), exp_len);
@@ -358,26 +407,40 @@ pub fn ergs_cost(
     Ok(Ergs(ergs))
 }
 
-/// Computes the native cost for modexp.
-/// Returns an OOG error if there's an arithmetic overflow.
-pub fn native_cost<R: Resources>(
+/// Computes the native cost for modexp by scanning the exponent.
+pub fn native_cost_from_exp_data<R: Resources>(
+    base_size: u64,
+    exp_data: &[u8],
+    mod_size: u64,
+) -> Result<R::Native, SystemError> {
+    let digits = core::cmp::max(1, core::cmp::max(base_size, mod_size).div_ceil(32));
+    let (bit_len, popcount) = exp_bit_len_and_popcount(exp_data);
+    let squares = bit_len.saturating_sub(1);
+    let multiplies = popcount.saturating_sub(1);
+    let cost = modexp_native_from_ops(squares + multiplies, digits);
+    Ok(<R::Native as Computational>::from_computational(cost))
+}
+
+/// Conservative native cost without scanning the full exponent (assumes the
+/// worst case of all exponent bits set). Used to gate operand allocation
+/// before the exact cost can be computed from the materialized exponent.
+fn native_cost<R: Resources>(
     base_size: u64,
     exp_size: u64,
     mod_size: u64,
     exp_highp: &U256,
 ) -> Result<R::Native, SystemError> {
-    // Use ergs for native calculation but with the next multiple of 256 for modulus,
-    // since we use bigint delegations.
-    let ergs = ergs_cost(
-        base_size,
-        exp_size,
-        mod_size.next_multiple_of(32),
-        exp_highp,
-    )?;
-    let native = <R::Native as Computational>::from_computational(
-        ergs.0
-            .saturating_div(ERGS_PER_GAS)
-            .saturating_mul(MODEXP_WORST_CASE_NATIVE_PER_GAS),
-    );
-    Ok(native)
+    let digits = core::cmp::max(1, core::cmp::max(base_size, mod_size).div_ceil(32));
+    let bit_len = if exp_size <= 32 && exp_highp.is_zero() {
+        0u64
+    } else if exp_size <= 32 {
+        exp_highp.bit_len() as u64
+    } else {
+        8u64.saturating_mul(exp_size.saturating_sub(32))
+            .saturating_add(core::cmp::max(1, exp_highp.bit_len() as u64))
+    };
+    // Worst case: all bits set → squares = multiplies = bit_len - 1.
+    let total_ops = 2u64.saturating_mul(bit_len.saturating_sub(1));
+    let cost = modexp_native_from_ops(total_ops, digits);
+    Ok(<R::Native as Computational>::from_computational(cost))
 }

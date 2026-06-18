@@ -192,6 +192,7 @@ where
         authorization_list_num,
         statement_versioned_hashes_num,
         transaction.is_service(),
+        native_per_gas == 0,
     );
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());

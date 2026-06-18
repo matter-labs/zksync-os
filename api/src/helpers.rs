@@ -450,6 +450,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         authorization_list_num,
         statement_versioned_hashes_num,
         false,
+        false, // not free-native (base_fee == 0 returned early above)
     );
 
     native_limit
