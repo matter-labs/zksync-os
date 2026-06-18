@@ -57,8 +57,8 @@ case "$TYPE" in
   for-tests-benchmarking-pectra)
     # Adds `pectra` on top of `for-tests-benchmarking` so the proving binary
     # supports BLS12-381 + BLAKE2F + P256. Required by the precompiles bench
-    # CI when it exercises `test_pectra_precompiles` (BLS12-381 + BLAKE2F)
-    # and `test_kzg_regression` (point_evaluation) in proof mode.
+    # CI when it exercises `test_precompiles` (incl. the BLS12-381 + BLAKE2F
+    # vectors) and `test_kzg_regression` (point_evaluation) in proof mode.
     # NOTE: the literal string `for-tests-benchmarking-pectra` is used as
     # a `grep -q` fallback target by `.github/workflows/bench.yml` — if
     # this case label is renamed, update the workflow too.

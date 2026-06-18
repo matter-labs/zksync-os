@@ -35,9 +35,13 @@ type AddressItem<'a, K, V, A> =
 
 #[derive(Default, Clone)]
 pub struct StorageElementMetadata {
-    /// Transaction where this account was last accessed.
-    /// Considered warm if equal to Some(current_tx)
+    /// Transaction where this slot was last accessed (read or write).
+    /// Considered warm if equal to Some(current_tx).
     pub last_touched_in_tx: Option<TransactionId>,
+    /// Transaction where cold write extra was last charged for this slot.
+    /// Used to distinguish "warm because previously written" (write paths paid)
+    /// from "warm because previously read" (only read paths paid).
+    pub write_extra_charged_in_tx: Option<TransactionId>,
 }
 
 impl StorageElementMetadata {
@@ -192,13 +196,10 @@ impl<
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
-                        let is_new_storage_slot = x.element_properties().is_new_element();
-                        // Element exists in cache, but wasn't touched in current tx yet
-                        resources_policy.charge_cold_storage_read_extra(
-                            ee_type,
-                            resources,
-                            is_new_storage_slot,
-                        )?;
+                        // Element is in cache from a prior access — that access already
+                        // paid the NEW read cost if the slot was new. Charge EXISTING.
+                        resources_policy
+                            .charge_cold_storage_read_extra(ee_type, resources, false)?;
                     }
 
                     x.update(|cache_record| {
@@ -259,7 +260,21 @@ impl<
 
         let val_at_tx_start = addr_data.committed().value();
         let val_current = addr_data.current().value();
-        let is_new_slot = addr_data.element_properties().is_new_element();
+        // Use NEW write-extra only for the first cold write to a truly new slot.
+        // Once the insertion cost has been paid, subsequent txs pay EXISTING.
+        let is_new_slot = addr_data.element_properties().is_new_element()
+            && addr_data
+                .current()
+                .metadata()
+                .write_extra_charged_in_tx
+                .is_none();
+
+        // Two separate warmness flags:
+        // - is_warm_access: EIP-2929 access warmness (any prior SLOAD or SSTORE) — for ergs
+        // - is_cold_write_charged: cold write extra already paid this tx — for native
+        let is_warm_access = is_warm_read.0;
+        let is_cold_write_charged =
+            addr_data.current().metadata().write_extra_charged_in_tx == Some(self.current_tx_id);
 
         self.resources_policy.charge_storage_write_extra(
             ee_type,
@@ -267,7 +282,8 @@ impl<
             val_current,
             new_value,
             resources,
-            is_warm_read.0,
+            is_warm_access,
+            is_cold_write_charged,
             is_new_slot,
         )?;
 
@@ -285,10 +301,14 @@ impl<
 
         // Detach owned old_value from addr_data's borrow before the update.
         let old_value = val_current.clone();
+        let current_tx_id = self.current_tx_id;
 
         addr_data.update(|cache_record| {
-            cache_record.update(|x, _| {
+            cache_record.update(|x, m| {
                 *x = new_value.clone();
+                if !is_cold_write_charged && new_value != &old_value {
+                    m.write_extra_charged_in_tx = Some(current_tx_id);
+                }
                 Ok(())
             })
         })?;

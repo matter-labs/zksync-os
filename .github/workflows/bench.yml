@@ -261,10 +261,13 @@ jobs:
           # send stderr to the log so failures are visible during debug.
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            # Combined gas+native+cycles stats CSV
-            python3 bench_scripts/join_opcode_stats.py \
-              head_block_${blk}.out head_block_${blk}.bench \
-              --csv bench_results/head_block_${blk}_joined_stats.csv || true
+            # Combined gas+native+cycles stats CSV with per-execution ratios
+            if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
+              python3 bench_scripts/join_opcode_stats.py \
+                head_block_${blk}.out head_block_${blk}.bench \
+                opcode_samples/head_${blk} opcode_cycles/head_${blk} \
+                --csv bench_results/head_block_${blk}_joined_stats.csv || true
+            fi
             # Per-execution joined CSVs
             if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
               python3 bench_scripts/join_samples.py \

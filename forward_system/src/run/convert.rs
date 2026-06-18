@@ -82,7 +82,6 @@ impl FromInterface<InterfaceEvmError> for ZkEvmError {
 impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
     fn from_interface(value: B) -> Self {
         BlockMetadataFromOracle {
-            chain_id: value.chain_id(),
             block_number: value.block_number(),
             block_hashes: BlockHashes(*value.block_hashes()),
             timestamp: value.timestamp(),
@@ -94,7 +93,6 @@ impl<B: AnyBlockContext> FromInterface<B> for BlockMetadataFromOracle {
             pubdata_limit: value.pubdata_limit(),
             mix_hash: value.mix_hash(),
             blob_fee: value.blob_fee(),
-            is_gateway: value.is_gateway(),
         }
     }
 }
@@ -123,7 +121,6 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidChainId => { InvalidTransaction::InvalidChainId }
             basic_bootloader::bootloader::errors::InvalidTransaction::AccessListNotSupported => { InvalidTransaction::AccessListNotSupported }
             basic_bootloader::bootloader::errors::InvalidTransaction::PubdataPriceTooHigh => { InvalidTransaction::PubdataPriceTooHigh }
-            basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitTooHigh => { InvalidTransaction::BlockGasLimitTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::UpgradeTxNotFirst => { InvalidTransaction::UpgradeTxNotFirst }
             basic_bootloader::bootloader::errors::InvalidTransaction::ReceivedInsufficientFees { received, required } => { InvalidTransaction::ReceivedInsufficientFees { received, required } }
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidMagic => { InvalidTransaction::InvalidMagic }

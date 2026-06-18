@@ -92,7 +92,7 @@ impl ZKsyncOS {
         let context = BlockContext {
             eip1559_basefee: ruint::Uint::from_str(&system_context.base_fee.to_string())
                 .expect("Invalid basefee"),
-            native_price: ruint::aliases::U256::from(1),
+            native_price: ruint::aliases::U256::from(0), // native resources will be unlimited
             pubdata_price: Default::default(),
             timestamp: system_context.block_timestamp as u64,
             gas_limit,
@@ -101,7 +101,6 @@ impl ZKsyncOS {
                 .expect("Invalid coinbase"),
             mix_hash: system_context.mix_hash,
             blob_fee: system_context.blob_fee,
-            is_gateway: false,
         };
 
         let run_config = RunConfig {

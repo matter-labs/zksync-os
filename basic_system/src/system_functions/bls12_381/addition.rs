@@ -33,8 +33,7 @@ fn bls12_381_g1_add_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     let cost_ergs = Ergs(BLS12_381_G1_ADDITION_GAS * ERGS_PER_GAS);
-    // TODO(EVM-1237): add native model
-    let cost_native = 0;
+    let cost_native = crate::cost_constants::BLS12_381_G1ADD_NATIVE_COST;
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
@@ -88,8 +87,7 @@ fn bls12_381_g2_add_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     let cost_ergs = Ergs(BLS12_381_G2_ADDITION_GAS * ERGS_PER_GAS);
-    // TODO(EVM-1237): add native model
-    let cost_native = 0;
+    let cost_native = crate::cost_constants::BLS12_381_G2ADD_NATIVE_COST;
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),

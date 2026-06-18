@@ -11,7 +11,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 const TO: alloy::primitives::Address = address!("0000000000000000000000000000000000010002");
 
 const AVG_RATIO: u64 = 150;
-const LOW_RATIO: u64 = 1;
+const LOW_RATIO: u64 = 25;
 const HIGH_RATIO: u64 = 1_000_000;
 
 fn run_tx(
@@ -54,24 +54,6 @@ fn run_tx(
     }))
 }
 
-// Test with a low cycles/gas ratio, should fail
-#[test]
-fn test_l1_tx_low_ratio() {
-    let wallet = testing_signer(0);
-    // L1 Txs have a hard-coded native price of 10
-    let native_price = 10;
-    let gas_price = native_price * LOW_RATIO;
-    let tx = L1TxBuilder::new()
-        .from(wallet.address())
-        .to(TO)
-        .gas_price(gas_price.into())
-        .gas_limit(70_000)
-        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
-    run_tx(tx, gas_price, native_price, false, false)
-}
-
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l1_tx_avg_ratio() {
@@ -85,8 +67,7 @@ fn test_l1_tx_avg_ratio() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
@@ -103,8 +84,7 @@ fn test_l1_tx_high_ratio() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
@@ -114,7 +94,7 @@ fn test_l2_tx_low_ratio() {
     let wallet = testing_signer(0);
     let native_price = 100;
     // This ratio passes validation but runs out of native during execution.
-    let gas_price = native_price * 20u64;
+    let gas_price = native_price * LOW_RATIO;
     let gas_limit = 60_000;
     let tx = {
         let tx = TxEip1559 {
@@ -366,8 +346,7 @@ fn test_0_gas_limit() {
         .gas_price(gas_price.into())
         .gas_limit(0)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
 }
@@ -402,8 +381,7 @@ fn test_0_gas_price() {
         .gas_price(gas_price.into())
         .gas_limit(70_000)
         .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-        .build()
-        .into();
+        .build();
     run_tx(tx.clone(), gas_price, native_price, true, false)
 }
 

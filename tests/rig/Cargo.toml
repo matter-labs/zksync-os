@@ -43,7 +43,6 @@ testing = []
 e2e_proving = ["airbender-host"]
 no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
-unlimited_native = ["forward_system/unlimited_native"]
 production = ["forward_system/production"]
 # Features for test instances
 for_tests = ["forward_system/for_tests", "callable_oracles/testing"]
@@ -57,6 +56,3 @@ evm_tester_pectra = ["forward_system/evm_tester_pectra"]
 fusaka = ["forward_system/fusaka"]
 fusaka-blobs = ["forward_system/fusaka-blobs"]
 evm_tester_fusaka = ["forward_system/evm_tester_fusaka"]
-# Features used for legacy evm_tester. Only defined in forward system,
-# as the legacy evm_tester does not perform a proof run.
-evm_tester_legacy = ["forward_system/evm_tester_legacy"]

@@ -34,8 +34,14 @@ impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCh
             let num_pairs = src.len() / 192;
             let ergs_cost = BN254_PAIRING_STATIC_COST_ERGS
                 + BN254_PAIRING_COST_PER_PAIR_ERGS.times(num_pairs as u64);
-            let native_cost = (num_pairs as u64) * BN254_PAIRING_PER_PAIR_NATIVE_COST
-                + BN254_PAIRING_BASE_NATIVE_COST;
+            // Pairing has a large fixed cost (final exponentiation) charged once
+            // when there is any pairing work, plus a per-pair Miller-loop cost.
+            let native_cost = if num_pairs == 0 {
+                0
+            } else {
+                BN254_PAIRING_BASE_NATIVE_COST
+                    + (num_pairs as u64) * BN254_PAIRING_PER_PAIR_NATIVE_COST
+            };
 
             resources.charge(&R::from_ergs_and_native(
                 ergs_cost,

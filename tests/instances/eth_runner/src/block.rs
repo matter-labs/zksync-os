@@ -61,13 +61,12 @@ impl Block {
             timestamp: self.result.header.timestamp,
             eip1559_basefee: base_fee,
             pubdata_price: U256::ZERO,
-            native_price: (base_fee / U256::from(100)).max(U256::ONE),
+            native_price: U256::ZERO,
             coinbase: B160::from_alloy(self.result.header.beneficiary),
             gas_limit: self.result.header.gas_limit,
             pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
             blob_fee,
-            is_gateway: false,
         }
     }
 

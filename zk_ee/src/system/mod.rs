@@ -48,8 +48,10 @@ use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::basic_metadata::{
-        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificMetadata,
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ChainConfigMetadata,
+        ZkSpecificMetadata,
     },
+    metadata::chain_config::ChainConfig,
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -74,7 +76,7 @@ pub trait SystemTypes {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
-    type Metadata: BasicMetadata<Self::IOTypes>;
+    type Metadata: BasicMetadata<Self::IOTypes> + ChainConfigMetadata;
 }
 
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
@@ -141,7 +143,7 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_chain_id(&self) -> u64 {
-        self.metadata.chain_id()
+        self.metadata.chain_config().chain_id()
     }
 
     pub fn get_coinbase(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
@@ -164,8 +166,15 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_gas_limit()
     }
 
+    pub fn get_chain_config(&self) -> ChainConfig {
+        self.metadata.chain_config()
+    }
+
     pub fn get_individual_tx_gas_limit(&self) -> u64 {
-        self.metadata.individual_tx_gas_limit()
+        core::cmp::min(
+            self.metadata.block_gas_limit(),
+            self.metadata.max_tx_gas_limit(),
+        )
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

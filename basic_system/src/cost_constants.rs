@@ -22,15 +22,25 @@ pub const BN254_PAIRING_COST_PER_PAIR_ERGS: Ergs = Ergs(34000 * ERGS_PER_GAS);
 pub const POINT_EVALUATION_COST_ERGS: Ergs = Ergs(50_000 * ERGS_PER_GAS);
 pub const EVM_BYTECODE_MAX_ROUNDS_TO_DECOMMIT: Ergs = Ergs(180);
 
-pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(350_000, 43_000, 0);
-pub const KECCAK256_BASE_NATIVE_COST: u64 = 2_500;
-pub const KECCAK256_ROUND_NATIVE_COST: u64 = 17_500;
+pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(240_000, 32_000, 0);
+/// Native costs for keccak256 hashing.
+/// Each keccak f1600 permutation produces this many delegations
+/// (mirrors NUM_DELEGATION_CALLS_FOR_KECCAK_F1600 from common_constants).
+const KECCAK_DELEGATIONS_PER_ROUND: u64 = 649;
+/// Per-round RISC-V overhead for absorbing input into the keccak state.
+const KECCAK_RISC_V_CYCLES_PER_ROUND: u64 = 1_250;
+/// Fixed RISC-V overhead per keccak256 invocation (syscall entry, input setup,
+/// delegation dispatch, output materialization), independent of round count.
+pub const KECCAK256_BASE_NATIVE_COST: u64 = 1_150;
+pub const KECCAK256_ROUND_NATIVE_COST: u64 = KECCAK_DELEGATIONS_PER_ROUND
+    * zk_ee::system::constants::KECCAK_DELEGATION_COEFFICIENT
+    + KECCAK_RISC_V_CYCLES_PER_ROUND;
 pub const KECCAK256_CHUNK_SIZE: usize = 136;
 pub const SHA256_BASE_NATIVE_COST: u64 = 1_600;
 pub const SHA256_ROUND_NATIVE_COST: u64 = 4_200;
 pub const SHA256_CHUNK_SIZE: usize = 64;
-pub const RIPEMD160_BASE_NATIVE_COST: u64 = 1_600;
-pub const RIPEMD160_ROUND_NATIVE_COST: u64 = 4_200;
+pub const RIPEMD160_BASE_NATIVE_COST: u64 = 800;
+pub const RIPEMD160_ROUND_NATIVE_COST: u64 = 2_500;
 pub const RIPEMD160_CHUNK_SIZE: usize = 64;
 /// Native costs for blake2s hashing.
 /// NOTE: To recompute if the blake coefficient changes.
@@ -45,14 +55,41 @@ pub const fn blake2s_native_cost(len: usize) -> u64 {
         .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
         .saturating_add(BLAKE2S_BASE_NATIVE_COST)
 }
-pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(46_000, 1650, 0);
-pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(600_000, 41_000, 0);
-pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);
-pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
-#[cfg(not(feature = "modexp-repricing"))]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;
-#[cfg(feature = "modexp-repricing")]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 500;
+pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(51_400, 1650, 0);
+pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(647_000, 41_000, 0);
+// Pairing cost = base + per_pair * num_pairs: a one-time final-exponentiation
+// base plus a per-pair Miller-loop cost.
+pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(6_244_000, 0, 0);
+pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = native_with_delegations!(5_572_000, 334_000, 0);
+pub const MODEXP_BASE_NATIVE_COST: u64 = 20_000;
+pub const MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST: u64 = 340;
+pub const MODEXP_PER_OP_OVERHEAD_NATIVE_COST: u64 = 400;
 pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
 // TODO(EVM-1178) Add more vectors and benchmark cost better
 pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_000, 3_301_000, 0);
+
+// BLS12-381 native costs (EIP-2537).
+// Measured via RISC-V cycle markers with non-trivial inputs.
+pub const BLS12_381_G1ADD_NATIVE_COST: u64 = native_with_delegations!(194_000, 35_800, 0);
+pub const BLS12_381_G2ADD_NATIVE_COST: u64 = native_with_delegations!(251_000, 39_100, 0);
+// MSM: worst case per point (single-point MSM with all-ones 256-bit scalar).
+// Charged with the EVM gas discount table to account for Pippenger batching
+// amortization (same DISCOUNT_TABLE_G1_MSM / DISCOUNT_TABLE_G2_MSM arrays).
+pub const BLS12_381_G1MSM_PER_POINT_NATIVE_COST: u64 =
+    native_with_delegations!(3_170_000, 398_300, 0);
+pub const BLS12_381_G2MSM_PER_POINT_NATIVE_COST: u64 =
+    native_with_delegations!(13_283_000, 1_126_200, 0);
+// Pairing: measured with non-trivial G1/G2 generator inputs (1, 2, 4 pairs).
+// Linear model fits with <0.01% error on cross-check.
+pub const BLS12_381_PAIRING_NATIVE_COST: u64 = native_with_delegations!(12_140_000, 835_600, 0);
+pub const BLS12_381_PAIRING_PER_PAIR_NATIVE_COST: u64 =
+    native_with_delegations!(10_700_000, 830_500, 0);
+// Mapping: allocation-free isogeny with Montgomery's trick for batch inversion.
+pub const BLS12_381_MAP_FP_TO_G1_NATIVE_COST: u64 = native_with_delegations!(1_478_000, 246_300, 0);
+pub const BLS12_381_MAP_FP2_TO_G2_NATIVE_COST: u64 =
+    native_with_delegations!(4_343_000, 541_700, 0);
+
+// Blake2f native costs (EIP-152).
+// Measured via RISC-V cycle markers. No delegations — pure RISC-V computation.
+pub const BLAKE2F_BASE_NATIVE_COST: u64 = 1_584;
+pub const BLAKE2F_PER_ROUND_NATIVE_COST: u64 = 673;

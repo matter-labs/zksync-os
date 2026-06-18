@@ -12,7 +12,7 @@ use crypto::blake2s::Blake2s256;
 use zk_ee::common_structs::{ProofData, WarmStorageKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
-use zk_ee::oracle::basic_queries::{DisconnectOracleQuery, ZKProofDataQuery};
+use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -169,6 +169,10 @@ where
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp: metadata.block_timestamp(),
         };
+        let next_proof_data = ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: metadata.block_timestamp(),
+        };
         logger_log!(
             logger,
             "PI calculation: state commitment after {:?}",
@@ -178,18 +182,15 @@ where
         batch_data.apply_block(
             chain_state_commitment_before.hash().into(),
             chain_state_commitment_after.hash().into(),
+            next_proof_data,
             metadata.block_timestamp(),
-            U256::from(metadata.chain_id()),
+            metadata.chain_config,
             upgrade_tx_hash,
             multichain_root,
             io.interop_root_storage.iter(),
             settlement_layer_chain_id,
             block_data.current_transaction_number,
         );
-
-        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
-        // but during proving this request shouldn't have the effect with "u32 array based" oracle
-        <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
 
         Ok(io.oracle)
     }

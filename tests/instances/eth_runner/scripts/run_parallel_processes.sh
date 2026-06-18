@@ -88,7 +88,7 @@ for i in $(seq 1 $NUM_PROCESSES); do
             CMD="$CMD REFETCH_TRACES=$REFETCH_TRACES"
         fi
         
-        CMD="$CMD cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print,rig/unlimited_native -- \
+        CMD="$CMD cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release --features rig/no_print -- \
             live-run \
             --start-block $CURRENT_START \
             --end-block $CURRENT_END \

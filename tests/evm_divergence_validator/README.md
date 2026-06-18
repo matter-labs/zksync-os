@@ -193,5 +193,5 @@ The tool uses the existing REVM consistency checker from `tests/revm_runner/`, w
 ## Design notes
 
 - All steps run in a single block. Multi-block scenarios are not yet supported.
-- The tool enables `unlimited_native` and `independent_gas`, so ZKsync OS gas accounting follows standard EVM rules and is not overridden from ZKsync OS to REVM. The validator reports `gas_used` per step, but does not treat per-transaction gas differences as a separate divergence check — gas differences surface through balance diffs in the state comparison.
+- The tool enables unlimited native(`native_price` == 0) and `independent_gas`, so ZKsync OS gas accounting follows standard EVM rules and is not overridden from ZKsync OS to REVM. The validator reports `gas_used` per step, but does not treat per-transaction gas differences as a separate divergence check — gas differences surface through balance diffs in the state comparison.
 - The REVM side uses `zksync-os-revm` (adapted REVM), which accounts for ZKsync-specific behaviors (precompile differences, fee distribution, etc.). This is intentional — divergences caught here are real bugs, not known differences.

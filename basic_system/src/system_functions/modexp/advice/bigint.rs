@@ -229,6 +229,17 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         }
         assert!(current.digits <= modulus.digits);
 
+        // 1^exp mod m = 1 for any exp (m > 1 guaranteed by caller)
+        if current.digits == 1 && current.backing[0].is_one() {
+            return current;
+        }
+
+        // 0^exp mod m = 0 for any exp > 0 (0^0 = 1 is handled by the
+        // exponent loop's `first_found` logic, so only skip when exp != 0)
+        if current.digits == 0 && exp.iter().any(|&b| b != 0) {
+            return current;
+        }
+
         let base = current.duplicate_with_capacity(current.digits, allocator.clone());
 
         let mut scratch_3 = Self::with_capacity_in(modulus.digits * 2, allocator.clone());

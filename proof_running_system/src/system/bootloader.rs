@@ -7,6 +7,7 @@ use core::mem::MaybeUninit;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
@@ -167,9 +168,11 @@ pub fn run_proving_inner<
     I: NonDeterminismCSRSourceImplementation,
     L: Logger + Default,
 >(
-    oracle: O,
+    mut oracle: O,
 ) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
+
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
 
     // Load all transactions from oracle and apply them.
     let (_oracle, public_input, _batch_output) =
@@ -179,6 +182,7 @@ pub fn run_proving_inner<
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
 
@@ -193,12 +197,19 @@ pub fn run_proving_inner<
 >(
     mut oracle: O,
 ) -> [u32; 8] {
+    use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
+    use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+
     logger_log!(L::default(), "IO implementer init is complete");
 
     // simulating query, just in case
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
+    // Batch proof input stores exactly one chain-config oracle response after
+    // the block count. Forward batch-input generation asserts per-block
+    // responses are equal, then compacts them to match this read pattern.
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
         oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
@@ -207,6 +218,7 @@ pub fn run_proving_inner<
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
     }
@@ -216,6 +228,11 @@ pub fn run_proving_inner<
             .into_public_input(L::default(), &mut oracle)
             .hash(),
     );
+    // The multiblock post-op is re-entered once per block and cannot know when
+    // the batch is complete, so the final disconnect has to be emitted by the
+    // outer runner.
+    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+        .expect("disconnect query must not fail");
 
     unsafe { core::mem::transmute(public_input) }
 }

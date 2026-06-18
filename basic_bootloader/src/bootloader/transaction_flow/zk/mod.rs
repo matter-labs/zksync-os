@@ -131,6 +131,12 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// recovered by subtracting the residual from `FORMAL_INFINITE` and
     /// compared against the formula as an upper bound.
     pub intrinsic_resources: S::Resources,
+    /// Intrinsic computational native that was precharged against
+    /// `resources.main_resources` during validation. Recorded here so
+    /// `after_execution` can add it back when computing the total
+    /// `computational_native_used`, and so `verify_intrinsic_native` can
+    /// compare actual consumption against the formula.
+    pub intrinsic_computational_native: u64,
     /// Number of EIP-7702 authorization list entries in the transaction.
     /// Used by `verify_intrinsic_native` to skip the overcharging check when
     /// authorizations are present (failed auths consume much less native than
@@ -158,6 +164,10 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
             .field("intrinsic_resources", &self.intrinsic_resources)
+            .field(
+                "intrinsic_computational_native",
+                &self.intrinsic_computational_native,
+            )
             .field("authorization_list_num", &self.authorization_list_num)
             .field(
                 "statement_versioned_hashes_num",
@@ -559,15 +569,14 @@ where
         _transaction_data_keeper: &mut impl BlockTransactionsDataKeeper<S, Self>,
         _tracer: &mut impl Tracer<S>,
     ) -> Self::ExecutionResult<'a> {
-        // Add back the intrinsic native charged in get_resources_for_tx,
-        // as initial_resources doesn't include them.
+        // Add back as initial_resources doesn't include the intrinsic.
         let computational_native_used = context
             .resources_before_refund
             .clone()
             .diff(context.initial_resources.clone())
             .native()
             .as_u64()
-            .saturating_add(context.resources.intrinsic_computational_native_charged);
+            .saturating_add(context.intrinsic_computational_native);
 
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
@@ -932,7 +941,7 @@ where
         let initial = S::Resources::FORMAL_INFINITE.native().as_u64();
         let remaining = context.intrinsic_resources.native().as_u64();
         let actual_used = initial.saturating_sub(remaining);
-        let formula = context.resources.intrinsic_computational_native_charged;
+        let formula = context.intrinsic_computational_native;
         system_log!(
             system,
             "intrinsic native verification: formula={}, actually_used={}\n",
@@ -945,11 +954,19 @@ where
             formula,
             actual_used
         );
-        // Skip the overcharging check when authorization-list entries are
-        // present: failed auths (bad sig, wrong chain id, nonce overflow)
-        // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
-        // formula budgets worst-case success cost per entry.
-        if context.authorization_list_num == 0 {
+        // The overcharging guard does not apply in two cases:
+        //
+        // - Authorization-list entries are present: failed auths (bad sig,
+        //   wrong chain id, nonce overflow) consume only
+        //   PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the formula budgets
+        //   worst-case success cost per entry.
+        // - Native is free (`native_per_gas == 0`): the formula intentionally
+        //   uses the worst-case "new sender" intrinsic constant
+        //   (`L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE`), which can exceed
+        //   twice the actual consumption for an already-existing sender. Native
+        //   over-budgeting is harmless when native isn't priced, so this is by
+        //   design rather than a misestimate.
+        if context.authorization_list_num == 0 && context.native_per_gas != 0 {
             assert!(
                 formula <= actual_used * 2,
                 "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",

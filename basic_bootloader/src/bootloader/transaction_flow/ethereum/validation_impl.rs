@@ -124,9 +124,9 @@ where
 
     // Validate block-level invariants
     {
-        // Validate that the transaction's gas limit is not larger than
-        // the block's gas limit.
-        let tx_limit = system.metadata.individual_tx_gas_limit();
+        // Validate that the transaction's gas limit is not larger than the
+        // effective per-tx limit.
+        let tx_limit = system.get_individual_tx_gas_limit();
         require!(
             tx_gas_limit <= tx_limit,
             InvalidTransaction::CallerGasLimitMoreThanTxLimit,

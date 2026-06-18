@@ -19,7 +19,7 @@ path = "../../../../../evm_interpreter/src/lib.rs"
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "825dd25c9397afc53f1205cbb369c4072e7d3ea5", package = "airbender-crypto", default-features = false, features = ["proving"] }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false, features = ["proving"] }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
 

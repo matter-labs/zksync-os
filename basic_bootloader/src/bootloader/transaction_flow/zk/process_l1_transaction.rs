@@ -1,7 +1,6 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    ASSET_TRACKER_INTRINSIC_PUBDATA, FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_PUBDATA,
-    L1_TX_NATIVE_PRICE,
+    ASSET_TRACKER_INTRINSIC_PUBDATA, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PER_GAS,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -10,7 +9,7 @@ use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
     check_enough_resources_for_pubdata, create_resources_for_tx,
-    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
+    get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
@@ -37,7 +36,7 @@ use zk_ee::system::{EthereumLikeTypes, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{IOSubsystem, IOSubsystemExt, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
-use zk_ee::utils::{u256_to_b160_checked, u256_try_to_u64, Bytes32};
+use zk_ee::utils::{u256_to_b160_checked, Bytes32};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 use system_hooks::addresses_constants::{L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
@@ -107,17 +106,15 @@ where
             ResourcesForTx {
                 main_resources: mut resources,
                 withheld: withheld_resources,
-                intrinsic_computational_native_charged,
             },
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
-    } = prepare_and_check_resources::<S, Config>(
+        intrinsic_computational_native,
+    } = prepare_and_check_resources::<S>(
         system,
         transaction,
-        is_priority_op,
         gas_limit,
-        gas_price,
         gas_per_pubdata,
         intrinsic_pubdata,
     )?;
@@ -370,13 +367,39 @@ where
         )?;
     }
 
-    // Add back the intrinsic native charged in get_resources_for_tx,
-    // as initial_resources doesn't include them.
+    // Verify that the L1 intrinsic native formula covers the actual
+    // post-execution inf_resources consumption. The formula also includes
+    // pre-budgeted costs (event log, rolling hash keccak) that are not
+    // charged to inf_resources, giving a small surplus (~4%). This matches
+    // the L2 verify_intrinsic_native pattern.
+    #[cfg(feature = "verify_intrinsic_native")]
+    {
+        let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
+        let inf_remaining = inf_resources.native().as_u64();
+        let actual_used = inf_initial.saturating_sub(inf_remaining);
+        let formula = intrinsic_computational_native;
+        system_log!(
+            system,
+            "L1 intrinsic native verification: formula={}, actually_used={}\n",
+            formula,
+            actual_used
+        );
+        assert!(
+            actual_used <= formula,
+            "L1 intrinsic computational native formula ({}) is not an upper bound \
+             on actual post-execution consumption ({})",
+            formula,
+            actual_used
+        );
+    }
+
+    // Add back the intrinsic native charged in `prepare_and_check_resources`,
+    // as `initial_resources` is snapshotted after that precharge.
     let computational_native_used = resources_before_refund
         .diff(initial_resources)
         .native()
         .as_u64()
-        + intrinsic_computational_native_charged;
+        + intrinsic_computational_native;
 
     // Restore the saved returndata into the return buffer so that the
     // ExecutionResult can borrow it with the correct lifetime.
@@ -418,6 +441,11 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
     native_per_pubdata: u64,
     native_per_gas: u64,
     minimal_gas_used: u64,
+    /// Intrinsic computational native that was precharged during resource
+    /// preparation. Hoisted out so callers can add it back to the total
+    /// `computational_native_used` reported at end-of-tx (since
+    /// `initial_resources` is captured after the precharge).
+    intrinsic_computational_native: u64,
 }
 
 ///
@@ -426,23 +454,17 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
 /// validation errors, as "invalidating" an L1 transaction can halt
 /// the chain (due to the priority queue).
 /// Note that the "validation errors" are practically unreachable, as
-/// gas_limit, gas_price and gas_per_pubdata are either checked or set
-/// by the L1 contracts. We decide to handle these cases as a fallback in
-/// case the L1 contracts aren't properly updated to reflect a change in
+/// gas_limit, gas_per_pubdata are either checked or set by the L1
+/// contracts. We decide to handle these cases as a fallback in case
+/// the L1 contracts aren't properly updated to reflect a change in
 /// ZKsync OS.
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
 ///
-fn prepare_and_check_resources<
-    'a,
-    S: EthereumLikeTypes + 'a,
-    Config: BasicBootloaderExecutionConfig,
->(
+fn prepare_and_check_resources<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
-    is_priority_op: bool,
     gas_limit: u64,
-    gas_price: U256,
     gas_per_pubdata: u32,
     intrinsic_pubdata: u64,
 ) -> Result<ResourceAndFeeInfo<S>, BootloaderSubsystemError>
@@ -451,34 +473,11 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    // For L1->L2 txs, we use a constant native price to avoid censorship.
-    let native_price = L1_TX_NATIVE_PRICE;
-    let native_per_gas = if is_priority_op {
-        if gas_price.is_zero() {
-            if Config::SIMULATION {
-                u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price))
-                    .unwrap_or_else(|| {
-                        system_log!(
-                            system,
-                            "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
-                        u64::MAX
-                    })
-            } else {
-                FREE_L1_TX_NATIVE_PER_GAS
-            }
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price)).unwrap_or_else(|| {
-                system_log!(
-                    system,
-                    "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
-                u64::MAX
-            })
-        }
-    } else {
-        // Upgrade txs are paid by the protocol, so we use a fixed native per gas
-        FREE_L1_TX_NATIVE_PER_GAS
-    };
+    let native_per_gas = L1_TX_NATIVE_PER_GAS;
 
+    // `gas_per_pubdata` is provided for the transaction and is expected to be
+    // 800 in production, so the product fits in u64. Saturate defensively in
+    // case future values or constants change.
     let native_per_pubdata = (gas_per_pubdata as u64)
         .checked_mul(native_per_gas)
         .unwrap_or_else(|| {
@@ -488,6 +487,7 @@ where
                 u64::MAX
         });
 
+    // Any reasonable gas limit will not saturate
     let native_prepaid_from_gas = native_per_gas.checked_mul(gas_limit)
         .unwrap_or_else(|| {
             system_log!(
@@ -515,10 +515,8 @@ where
     let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
         transaction.calldata().len() as u64,
     );
-    // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
-    // Validation errors are type-safe impossible - they're logged and saturated instead
-    let resources = create_resources_for_tx::<S, L1ResourcesPolicy>(
-        system,
+
+    let (resources, charge_err) = create_resources_for_tx::<S>(
         gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
@@ -526,7 +524,16 @@ where
         intrinsic_gas,
         intrinsic_computational_native,
         intrinsic_pubdata,
-    )?;
+    );
+    // We are not invalidating L1 txs in case of there is not enough resources to cover intrinsic costs.
+    // It shouldn't be reachable in practice, as we checking it on l1, but we want to be extra safe.
+    if let Some(e) = charge_err {
+        system_log!(
+            system,
+            "L1 tx: intrinsic charge underflow ({:?}), saturating\n",
+            e
+        );
+    }
 
     // L1 transactions might have a gas limit < minimal_gas_used. This should be
     // prevented by L1 validation, but we log and saturate if it happens.
@@ -544,6 +551,7 @@ where
         native_per_pubdata,
         native_per_gas,
         minimal_gas_used,
+        intrinsic_computational_native,
     })
 }
 
@@ -872,6 +880,7 @@ where
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     if amount > U256::ZERO || Config::SIMULATION {
+        let notify_native_before = resources.native().as_u64();
         // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
         // selector 0x03117c8c + abi-encoded (fromChainId, amount)
         let mut calldata = [0u8; 68];
@@ -901,6 +910,12 @@ where
             *inf_ergs = resources_returned;
             Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
         })?;
+
+        let notify_native_used = notify_native_before - resources.native().as_u64();
+        system_log!(
+            system,
+            "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+        );
 
         if failed {
             system_log!(

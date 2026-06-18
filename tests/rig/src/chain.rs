@@ -4,6 +4,7 @@ use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
+use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
@@ -19,6 +20,7 @@ use basic_system::system_implementation::flat_storage_model::{
     TREE_HEIGHT,
 };
 use forward_system::run::output::BlockOutput;
+use forward_system::run::query_processors::ChainConfigResponder;
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
@@ -29,10 +31,13 @@ use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::result_keeper::ProverInputResultKeeper;
-use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::test_impl::{
+    InMemoryBatchState, InMemoryPreimageSource, InMemoryTree, NoopTxCallback,
+};
+use forward_system::run::BatchBlockInput;
 use forward_system::run::FriVerifierArtifacts;
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::bootloader::run_prover_input_no_panic;
+use forward_system::system::bootloader::run_prover_input_with_batch_output_no_panic;
 use forward_system::system::system_types::ethereum::{
     EthereumStorageSystemTypes, EthereumStorageSystemTypesWithPostOps,
 };
@@ -49,6 +54,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
+use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -68,6 +74,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -83,6 +90,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -105,6 +113,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -115,7 +124,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         add_uart: bool,
         use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
@@ -132,6 +142,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -142,7 +153,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         add_uart: bool,
         use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
@@ -168,6 +180,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
+    chain_config: ChainConfig,
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
@@ -182,7 +195,6 @@ pub struct BlockContext {
     pub pubdata_limit: u64,
     pub mix_hash: U256,
     pub blob_fee: U256,
-    pub is_gateway: bool,
 }
 
 impl Default for BlockContext {
@@ -197,7 +209,6 @@ impl Default for BlockContext {
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
             blob_fee: U256::ONE,
-            is_gateway: false,
         }
     }
 }
@@ -224,9 +235,23 @@ pub struct RunConfig {
     // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
     pub check_revm_consistency: bool,
     /// When true, REVM computes gas independently instead of using
-    /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
+    /// ZKsync OS's `gas_used` override. Best combined with `native_price = 0`
+    /// in the block metadata.
     pub revm_independent_gas: bool,
     pub update_state_after_block_execution: bool,
+}
+
+pub(crate) struct ProverInputArtifacts {
+    pub proof_input: Vec<u32>,
+    pub pubdata: Vec<u8>,
+    pub block_output: BlockOutput,
+    pub batch_output: BatchOutput,
+}
+
+pub(crate) struct ExecutedBlockArtifacts {
+    pub block_output: BlockOutput,
+    pub block_extra_stats: BlockExtraStats,
+    pub prover_input: Option<ProverInputArtifacts>,
 }
 
 impl Default for RunConfig {
@@ -340,6 +365,8 @@ impl Chain<false> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -363,6 +390,8 @@ impl Chain<true> {
             previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -518,6 +547,10 @@ fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
         "block computational_native_used mismatch between forward and prover-input runs"
     );
     assert_eq!(
+        actual.pubdata_used, expected.pubdata_used,
+        "block pubdata_used mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
         actual.published_preimages, expected.published_preimages,
         "published preimages mismatch between forward and prover-input runs"
     );
@@ -596,6 +629,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.chain_id
     }
 
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain_config
+    }
+
+    pub fn set_chain_config(&mut self, chain_config: ChainConfig) {
+        self.chain_config = chain_config;
+        // Keep the block-level chain id (used to build block metadata) in sync
+        // with the chain config, which is now the source of truth.
+        self.chain_id = chain_config.chain_id();
+    }
+
+    pub fn set_fri_proof_verification_enabled(&mut self, enabled: bool) {
+        self.chain_config = ChainConfig::new(
+            self.chain_config.chain_id(),
+            enabled,
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
+    }
+
     pub fn block_hashes(&self) -> [U256; 256] {
         self.block_hashes
     }
@@ -610,19 +663,42 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
+        self.chain_config = ChainConfig::new(
+            chain_id,
+            self.chain_config.fri_proof_verification_enabled(),
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
     }
 
+    /// Build the batch pre-state passed to the batch prover-input runner.
+    pub fn prepare_batch_initial_proof_data(
+        &self,
+    ) -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
+            root: *self.state_tree.storage_tree.root(),
+            next_free_slot: self.state_tree.storage_tree.next_free_slot,
+        };
+
+        ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: self.block_timestamp,
+        }
+    }
+
+    /// Build the per-block inputs that remain external to the batch runner.
     ///
-    /// Simulate block, do not validate transactions
-    ///
-    pub fn simulate_block(
-        &mut self,
+    /// This snapshots the chain metadata at the current height. It does not
+    /// advance the chain, so repeated calls on the same `Chain` will reuse the
+    /// same block number and block hashes unless the caller first mutates the
+    /// chain state (e.g. by executing a block).
+    pub fn prepare_batch_block_input(
+        &self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
-    ) -> BlockOutput {
+    ) -> BatchBlockInput<TxListSource> {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -634,7 +710,49 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
+        };
+
+        BatchBlockInput {
+            block_context: block_metadata,
+            tx_source: TxListSource {
+                transactions: transactions.into(),
+            },
+        }
+    }
+
+    /// Clone the batch-start state used by batch prover-input tests.
+    pub fn prepare_batch_state(&self) -> InMemoryBatchState<RANDOMIZED_TREE> {
+        InMemoryBatchState {
+            tree: self.state_tree.clone(),
+            preimage_source: self.preimage_source.clone(),
+        }
+    }
+
+    ///
+    /// Simulate block, do not validate transactions
+    ///
+    pub fn simulate_block(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+    ) -> BlockOutput {
+        let block_context = block_context.unwrap_or_default();
+        let chain_config = self.chain_config;
+
+        self.ensure_account_exists(block_context.coinbase);
+
+        let block_metadata = BlockMetadataFromOracle {
+            block_number: self.next_block_number(),
+            block_hashes: BlockHashes(self.block_hashes),
+            timestamp: block_context.timestamp,
+            eip1559_basefee: block_context.eip1559_basefee,
+            pubdata_price: block_context.pubdata_price,
+            native_price: block_context.native_price,
+            coinbase: block_context.coinbase,
+            gas_limit: block_context.gas_limit,
+            pubdata_limit: block_context.pubdata_limit,
+            mix_hash: block_context.mix_hash,
+            blob_fee: block_context.blob_fee,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -643,24 +761,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_tracer = NopTracer::default();
         let mut nop_validator = NopTxValidator;
 
-        let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
-            _,
-            _,
-            _,
-            _,
-            BasicBootloaderCallSimulationConfig,
-        >(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            NoopTxCallback,
-            None,
-            None,
-            &mut nop_tracer,
-            &mut nop_validator,
-        )
-        .unwrap();
+        let block_output: BlockOutput =
+            forward_system::run::run_block_with_oracle_dump_ext_with_chain_config::<
+                _,
+                _,
+                _,
+                _,
+                BasicBootloaderCallSimulationConfig,
+            >(
+                chain_config,
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                NoopTxCallback,
+                None,
+                None,
+                &mut nop_tracer,
+                &mut nop_validator,
+            )
+            .unwrap();
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -745,7 +865,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut NopTracer::default(),
             &mut NopTxValidator,
         )
-        .map(|r| r.0)
+        .map(|r| r.block_output)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn run_block_with_execution_artifacts(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        self.run_inner(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config.unwrap_or_default(),
+            &factory,
+            Default::default(),
+            None,
+            tracer,
+            validator,
+        )
     }
 
     #[allow(clippy::result_large_err)]
@@ -758,15 +902,49 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        self.run_block_with_execution_artifacts(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config,
+            tracer,
+            validator,
+        )
+        .map(|result| {
+            let ExecutedBlockArtifacts {
+                block_output,
+                block_extra_stats,
+                prover_input,
+            } = result;
+            let (proof_input, pubdata) = prover_input
+                .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
+                .unwrap_or_else(|| (vec![], vec![]));
+            (block_output, block_extra_stats, proof_input, pubdata)
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn run_block_with_execution_artifacts_with_oracle_factory(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
         self.run_inner(
             transactions,
             block_context,
             da_commitment_scheme,
             run_config.unwrap_or_default(),
-            &factory,
-            Default::default(),
-            None,
+            oracle_factory,
+            fri_sidecar,
+            fri_artifacts,
             tracer,
             validator,
         )
@@ -786,17 +964,28 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
         fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
-        self.run_inner(
+        self.run_block_with_execution_artifacts_with_oracle_factory(
             transactions,
             block_context,
             da_commitment_scheme,
-            run_config.unwrap_or_default(),
+            run_config,
+            tracer,
+            validator,
             oracle_factory,
             fri_sidecar,
             fri_artifacts,
-            tracer,
-            validator,
         )
+        .map(|result| {
+            let ExecutedBlockArtifacts {
+                block_output,
+                block_extra_stats,
+                prover_input,
+            } = result;
+            let (proof_input, pubdata) = prover_input
+                .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
+                .unwrap_or_else(|| (vec![], vec![]));
+            (block_output, block_extra_stats, proof_input, pubdata)
+        })
     }
 
     #[allow(clippy::result_large_err)]
@@ -812,7 +1001,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
         let RunConfig {
             flamegraph,
             witness_output_file,
@@ -826,8 +1015,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         } = run_config;
 
         let block_context = block_context.unwrap_or_default();
+        let chain_config = self.chain_config;
+
+        // Intrinsic cost formulas assume coinbase is an existing account.
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -839,7 +1032,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
             blob_fee: block_context.blob_fee,
-            is_gateway: block_context.is_gateway,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -858,6 +1050,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
+            chain_config,
             self.state_tree.clone(),
             self.preimage_source.clone(),
             tx_source.clone(),
@@ -922,11 +1115,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let block_output: BlockOutput = result_keeper.into();
 
-        let (prover_input_forward, pubdata) = if do_prover_input_run {
+        let prover_input = if do_prover_input_run {
             let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
 
             let prover_input_oracle = oracle_factory.create_forward_oracle(
                 block_metadata,
+                chain_config,
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
                 tx_source.clone(),
@@ -940,13 +1134,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
             let mut validator = NopTxValidator;
-            let prover_input_forward = {
+            let (prover_input_forward, prover_input_batch_output) = {
                 // This run uses ProverInputSystem (proving STF) — its labels
                 // are exactly what RISC-V will fire markers for, so we keep
                 // them in LABELS for the post-RISC-V count match. The earlier
                 // sequencing forward run's labels were already reverted, so
                 // LABELS now contains only this run's proving-mode labels.
-                let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+                let result = run_prover_input_with_batch_output_no_panic::<
+                    BasicBootloaderProvingExecutionConfig,
+                >(
                     copy_source,
                     &mut result_keeper_prover_input,
                     &mut tracer,
@@ -966,7 +1162,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     .expect("should write to file");
             }
 
-            let pubdata = result_keeper_prover_input.pubdata.clone();
+            let pubdata = std::mem::take(&mut result_keeper_prover_input.pubdata);
             let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
             let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
             if has_filtered_by_validator {
@@ -978,7 +1174,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             } else {
                 assert_block_outputs_match(&block_output, &prover_input_block_output);
             }
-            (prover_input_forward, pubdata)
+            Some(ProverInputArtifacts {
+                proof_input: prover_input_forward,
+                pubdata,
+                block_output: prover_input_block_output,
+                batch_output: prover_input_batch_output,
+            })
         } else {
             // We use the forward prover input run outputs to validate the risc-v run,
             // so we check consistency in config
@@ -986,7 +1187,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 !do_riscv_run,
                 "Native prover input run should be performed if risc v run is enabled"
             );
-            (vec![], vec![])
+            None
         };
 
         trace!(
@@ -1040,6 +1241,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         if do_riscv_run {
+            let proof_input = &prover_input
+                .as_ref()
+                .expect("native prover input run should exist when risc-v run is enabled")
+                .proof_input;
             let dist_dir = get_zksync_os_dist_dir(&app);
 
             let now = std::time::Instant::now();
@@ -1050,7 +1255,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let zksync_os_runner::RunResult {
                 output: proof_output,
                 block_effective,
-            } = runner.run(&prover_input_forward);
+            } = runner.run(proof_input);
 
             info!(
                 "Simulator without witness tracing executed over {:?}",
@@ -1063,12 +1268,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
                 let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
                 // Write each u32 as an 8-character hexadecimal string without newlines
-                for num in prover_input_forward.iter() {
+                for num in proof_input.iter() {
                     write!(file, "{num:08X}").expect("Failed to write to file");
                 }
                 debug!(
                     "Successfully wrote {} u32 csr reads elements to file: {}",
-                    prover_input_forward.len(),
+                    proof_input.len(),
                     output_csr
                 );
             }
@@ -1102,10 +1307,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 assert_eq!(proof_output_u8, forward_storage_diff_hash);
 
                 #[cfg(feature = "e2e_proving")]
-                run_prover(&prover_input_forward);
+                run_prover(proof_input);
             }
         }
-        Ok((block_output, stats, prover_input_forward, pubdata))
+        Ok(ExecutedBlockArtifacts {
+            block_output,
+            block_extra_stats: stats,
+            prover_input,
+        })
     }
 
     pub fn make_eth_block_oracle(
@@ -1236,6 +1445,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
             da_commitment_scheme: Some(DACommitmentScheme::None),
         };
+        let chain_config_responder = ChainConfigResponder {
+            chain_config: ChainConfig::default(),
+        };
         let preimage_responder = GenericPreimageResponder { preimage_source };
         let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
             initial_root.0,
@@ -1252,6 +1464,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         };
 
         let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(chain_config_responder);
         oracle.add_external_processor(target_header_responder.clone());
         oracle.add_external_processor(tx_data_responder.clone());
         oracle.add_external_processor(preimage_responder.clone());
@@ -1335,6 +1548,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut result_keeper,
             &mut nop_tracer,
             &mut nop_validator,
+            ChainConfig::default(),
         )
         .expect("must succeed");
         let proof_input = if only_forward {
@@ -1349,7 +1563,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 block_header,
                 withdrawals,
             );
-            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let chain_config =
+                ChainConfig::read_from_oracle(&mut copy_source).expect("must read chain config");
             let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
                 ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
@@ -1363,6 +1579,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 &mut pi_result_keeper,
                 &mut pi_tracer,
                 &mut pi_validator,
+                chain_config,
             )
             .expect("prover-input forward run must succeed");
 
@@ -1453,6 +1670,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Ensure an account exists in the state tree with default properties.
+    /// No-op if the account already exists.
+    pub fn ensure_account_exists(&mut self, address: B160) {
+        if self.get_account_properties_maybe(&address).is_some() {
+            return;
+        }
+        self.set_balance(address, U256::ZERO);
+    }
+
     /// Initialize the L2 base token treasury with 2^128 - 1 balance.
     ///
     /// This should be called during chain setup to pre-fund the treasury account.

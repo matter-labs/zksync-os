@@ -1,6 +1,7 @@
 use super::*;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::SystemTypes;
 
 /// Trait for initializing block metadata at the start of block execution.
@@ -12,5 +13,6 @@ pub trait MetadataInitOp<S: SystemTypes> {
     fn metadata_op<Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         allocator: S::Allocator,
+        chain_config: ChainConfig,
     ) -> Result<S::Metadata, InternalError>;
 }

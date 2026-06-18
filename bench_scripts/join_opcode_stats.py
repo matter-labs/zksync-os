@@ -3,12 +3,16 @@
 Reads:
   - .out file: EVM Opcode Stats table (gas, native with min/max/median)
   - .bench file: Per-opcode cycle stats (cycles with min/max/median)
+  - tracer_dir: per-execution gas/native samples (<OPCODE>.samples)
+  - cycles_dir: per-execution cycle samples (<OPCODE>.effective.cycles or .cycles)
 
-Outputs a combined table with cycles/gas and native/gas ratios,
-including worst-case bounds (max_cycles/min_gas).
+Per-execution ratios (cycles/gas, native/gas) are computed from paired samples
+(one per invocation), producing accurate p50/p95/p99/max statistics. Aggregate
+medians from the .out/.bench files are shown for context.
 
 Usage:
-    python join_opcode_stats.py <block.out> <block.bench> [--csv output.csv]
+    python join_opcode_stats.py <block.out> <block.bench> \
+        <tracer_dir> <cycles_dir> [--csv output.csv]
 """
 
 import os
@@ -17,7 +21,14 @@ import re
 import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from benchlib import ratio  # noqa: E402
+from benchlib import (  # noqa: E402
+    load_gas_native_samples,
+    load_int_samples,
+    list_label_files,
+    percentile,
+    ratio,
+    safe_listdir,
+)
 
 
 def parse_tracer_stats(filename):
@@ -85,10 +96,57 @@ def parse_cycle_stats(filename):
     return stats
 
 
+def load_per_execution_samples(tracer_dir, cycles_dir):
+    """Load paired (gas, native, cycles) per-execution from sample dirs.
+
+    Returns dict: opcode -> list of (gas, native, cycles) tuples.
+    """
+    tracer_files = {
+        f[: -len(".samples")]
+        for f in safe_listdir(tracer_dir)
+        if f.endswith(".samples")
+    }
+    _, _, opcode_to_file = list_label_files(cycles_dir)
+
+    paired = {}
+    for op in sorted(tracer_files & set(opcode_to_file)):
+        tracer_path = os.path.join(tracer_dir, f"{op}.samples")
+        cycles_path = os.path.join(cycles_dir, opcode_to_file[op])
+        tracer_samples = load_gas_native_samples(tracer_path)
+        cycle_samples = load_int_samples(cycles_path)
+        n = min(len(tracer_samples), len(cycle_samples))
+        if n == 0:
+            continue
+        if len(tracer_samples) != len(cycle_samples):
+            print(
+                f"  WARNING: {op} count mismatch: tracer={len(tracer_samples)} "
+                f"cycles={len(cycle_samples)}, using first {n}",
+                file=sys.stderr,
+            )
+        paired[op] = [(tracer_samples[i][0], tracer_samples[i][1], cycle_samples[i]) for i in range(n)]
+    return paired
+
+
+def fmt(val):
+    """Format a ratio value, or '—' for None."""
+    if val is None:
+        return "—".rjust(10)
+    return f"{val:>10.1f}"
+
+
+def fmt_csv(val):
+    """Format a ratio value for CSV, or empty for None."""
+    if val is None:
+        return ""
+    return f"{val:.2f}"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Join opcode tracer and cycle stats")
     parser.add_argument("out_file", help=".out file with tracer stats")
     parser.add_argument("bench_file", help=".bench file with cycle stats")
+    parser.add_argument("tracer_dir", help="Directory with per-execution .samples files")
+    parser.add_argument("cycles_dir", help="Directory with per-execution .cycles files")
     parser.add_argument("--csv", help="Write CSV output to file")
     args = parser.parse_args()
 
@@ -99,61 +157,72 @@ def main():
         print("No data to join.", file=sys.stderr)
         sys.exit(1)
 
+    per_exec = load_per_execution_samples(args.tracer_dir, args.cycles_dir)
+
     opcodes = sorted(set(tracer) & set(cycles))
 
     rows = []
     for op in opcodes:
         t = tracer[op]
         c = cycles[op]
-        rows.append({
+
+        row = {
             "op": op,
             "count": t["count"],
-            # Median ratios (typical case)
-            "med_cycles_per_gas": ratio(c["med_cycles"], t["med_gas"]),
-            "med_native_per_gas": ratio(t["med_native"], t["med_gas"]),
-            "med_cycles_per_native": ratio(c["med_cycles"], t["med_native"]),
-            # Worst-case ratios (upper bounds)
-            "worst_cycles_per_gas": ratio(c["max_cycles"], t["min_gas"]) if t["min_gas"] > 0 else 0,
-            "worst_native_per_gas": ratio(t["max_native"], t["min_gas"]) if t["min_gas"] > 0 else 0,
-            # Raw values for reference
             "med_gas": t["med_gas"],
             "med_native": t["med_native"],
             "med_cycles": c["med_cycles"],
-            "max_cycles": c["max_cycles"],
-            "min_gas": t["min_gas"],
-            "max_native": t["max_native"],
-        })
+            "p50_cpg": None,
+            "p95_cpg": None,
+            "p99_cpg": None,
+            "max_cpg": None,
+            "p50_npg": None,
+            "p95_npg": None,
+            "p99_npg": None,
+            "max_npg": None,
+        }
 
-    # Sort by worst cycles/gas descending (most expensive first)
-    rows.sort(key=lambda r: r["worst_cycles_per_gas"], reverse=True)
+        if op in per_exec:
+            samples = per_exec[op]
+            cpg_values = sorted(ratio(cyc, g) for g, _, cyc in samples if g > 0)
+            npg_values = sorted(ratio(nat, g) for g, nat, _ in samples if g > 0)
+            if cpg_values:
+                row["p50_cpg"] = percentile(cpg_values, 50)
+                row["p95_cpg"] = percentile(cpg_values, 95)
+                row["p99_cpg"] = percentile(cpg_values, 99)
+                row["max_cpg"] = cpg_values[-1]
+            if npg_values:
+                row["p50_npg"] = percentile(npg_values, 50)
+                row["p95_npg"] = percentile(npg_values, 95)
+                row["p99_npg"] = percentile(npg_values, 99)
+                row["max_npg"] = npg_values[-1]
 
-    # Print table
+        rows.append(row)
+
+    rows.sort(key=lambda r: r["max_cpg"] or 0, reverse=True)
+
     print(f"{'opcode':<16} {'count':>8} {'med_gas':>8} {'med_nat':>8} {'med_cyc':>8}"
-          f" {'cyc/gas':>8} {'nat/gas':>8} {'cyc/nat':>8}"
-          f" {'W cyc/gas':>10} {'W nat/gas':>10}")
-    print("-" * 114)
+          f" {'p50 c/g':>10} {'p95 c/g':>10} {'p99 c/g':>10} {'max c/g':>10}"
+          f" {'p50 n/g':>10} {'p95 n/g':>10} {'max n/g':>10}")
+    print("-" * 142)
     for r in rows:
         print(f"{r['op']:<16} {r['count']:>8} {r['med_gas']:>8} {r['med_native']:>8} {r['med_cycles']:>8}"
-              f" {r['med_cycles_per_gas']:>8.1f} {r['med_native_per_gas']:>8.1f} {r['med_cycles_per_native']:>8.2f}"
-              f" {r['worst_cycles_per_gas']:>10.1f} {r['worst_native_per_gas']:>10.1f}")
+              f" {fmt(r['p50_cpg'])} {fmt(r['p95_cpg'])} {fmt(r['p99_cpg'])} {fmt(r['max_cpg'])}"
+              f" {fmt(r['p50_npg'])} {fmt(r['p95_npg'])} {fmt(r['max_npg'])}")
 
     if args.csv:
         with open(args.csv, "w") as f:
             f.write("opcode,count,"
                     "med_gas,med_native,med_cycles,"
-                    "min_gas,max_gas,min_native,max_native,min_cycles,max_cycles,"
-                    "med_cycles_per_gas,med_native_per_gas,med_cycles_per_native,"
-                    "worst_cycles_per_gas,worst_native_per_gas\n")
+                    "p50_cpg,p95_cpg,p99_cpg,max_cpg,"
+                    "p50_npg,p95_npg,p99_npg,max_npg\n")
             for r in rows:
-                t = tracer[r["op"]]
-                c = cycles[r["op"]]
                 f.write(f"{r['op']},{r['count']},"
-                        f"{t['med_gas']},{t['med_native']},{c['med_cycles']},"
-                        f"{t['min_gas']},{t['max_gas']},{t['min_native']},{t['max_native']},"
-                        f"{c['min_cycles']},{c['max_cycles']},"
-                        f"{r['med_cycles_per_gas']:.2f},{r['med_native_per_gas']:.2f},"
-                        f"{r['med_cycles_per_native']:.4f},"
-                        f"{r['worst_cycles_per_gas']:.2f},{r['worst_native_per_gas']:.2f}\n")
+                        f"{r['med_gas']},{r['med_native']},{r['med_cycles']},"
+                        f"{fmt_csv(r['p50_cpg'])},{fmt_csv(r['p95_cpg'])},"
+                        f"{fmt_csv(r['p99_cpg'])},{fmt_csv(r['max_cpg'])},"
+                        f"{fmt_csv(r['p50_npg'])},{fmt_csv(r['p95_npg'])},"
+                        f"{fmt_csv(r['p99_npg'])},{fmt_csv(r['max_npg'])}\n")
         print(f"\nCSV written to {args.csv}")
 
 

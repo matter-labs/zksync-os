@@ -115,3 +115,5 @@ pub const ZK_PROOF_DATA_INIT_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 1; // 0x40070
 pub const DA_COMMITMENT_SCHEME_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 2; // 0x40070002
 /// Query to get historical block hashes.
 pub const HISTORICAL_BLOCK_HASH_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 3; // 0x40070003
+/// Query to retrieve static chain-level execution configuration.
+pub const CHAIN_CONFIG_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 4; // 0x40070004
