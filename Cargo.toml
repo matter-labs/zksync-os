@@ -120,10 +120,12 @@ full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbend
 cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false }
+# TEMP: pinned to the vv/secp256k1-to-xy-bytes branch (airbender-platform#79)
+# which adds Affine::to_xy_bytes(). Revert to a released rev once #79 merges.
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b", package = "airbender-crypto", default-features = false }
 
 seq-macro = { version = "0.3.6", default-features = false }
 

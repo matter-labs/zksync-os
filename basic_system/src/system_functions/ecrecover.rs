@@ -93,13 +93,14 @@ fn ecrecover_as_system_function_inner<
 
         pk_bytes
     };
-    let bytes_ref = recovered_pubkey_bytes.as_ref();
 
     use crypto::sha3::Keccak256;
     use crypto::MiniDigest;
-    let address_hash = Keccak256::digest(&bytes_ref[1..]);
+    let address_hash = Keccak256::digest(&recovered_pubkey_bytes);
 
-    dst.try_extend(core::iter::repeat_n(0, 12).chain(address_hash.into_iter().skip(12)))
+    let mut result = [0u8; 32];
+    result[12..32].copy_from_slice(&address_hash[12..]);
+    dst.try_extend(result.iter().copied())
         .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
@@ -111,7 +112,7 @@ pub fn ecrecover_inner<O: IOOracle>(
     s: &[u8; 32],
     rec_id: u8,
     oracle: Option<&mut O>,
-) -> Result<crypto::k256::EncodedPoint, ()> {
+) -> Result<[u8; 64], ()> {
     use crypto::k256::{
         ecdsa::{hazmat::bits2field, RecoveryId, Signature},
         elliptic_curve::ops::Reduce,
@@ -139,10 +140,9 @@ pub fn ecrecover_inner<O: IOOracle>(
         return Err(());
     };
 
-    // represent as bytes, and we do not need compression
-    let encoded = pk.to_encoded_point(false);
-
-    Ok(encoded)
+    // Extract x||y coordinate bytes directly, bypassing EncodedPoint construction.
+    // The infinity check is already done inside `recover`/`recover_with_hooks`.
+    Ok(pk.to_xy_bytes())
 }
 
 #[cfg(test)]
