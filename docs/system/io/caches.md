@@ -54,8 +54,8 @@ ID from each cache:
 ```rust
 pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
     storage: StorageSnapshotId,       // storage cache
-    preimages: CacheSnapshotId,       // preimage cache
     account_data: CacheSnapshotId,    // account cache
+    preimages: CacheSnapshotId,       // preimage cache
 }
 ```
 
