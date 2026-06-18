@@ -135,8 +135,8 @@ This three-value model is essential for:
 
 #### Pubdata computation
 
-At the end of each transaction, `calculate_pubdata_used_by_tx()` iterates all
-elements altered since the last commit via `iter_altered_since_commit()` and sums
+At the end of each transaction, `NewStorageWithAccountPropertiesUnderHash::calculate_pubdata_used_by_tx()`
+iterates all elements altered since the last commit via `HistoryMap::iter_altered_since_commit()` and sums
 up the net pubdata bytes:
 
 1. **Deduplication** — multiple writes to the same key count once.
