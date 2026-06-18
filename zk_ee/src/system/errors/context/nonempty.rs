@@ -1,4 +1,4 @@
-#![cfg(not(target_arch = "riscv32"))]
+#![cfg(not(feature = "proving_env"))]
 
 use core::fmt::Display;
 
@@ -42,7 +42,7 @@ impl IErrorContext for ErrorContext {
             let value = value.to_string();
             self.values.push(NamedContextElement { name, value })
         };
-        if cfg!(not(target_arch = "riscv32")) {
+        if cfg!(not(feature = "proving_env")) {
             match visibility {
                 ValueVisibility::AnyForwardRun => perform_push_value(),
                 ValueVisibility::DetailedOnly if cfg!(feature = "detailed_errors") => {
@@ -115,7 +115,7 @@ impl IErrorContext for ErrorContext {
 ///
 ///    let _ctx4 = error_ctx! {
 ///        #[detailed] "debug" => "info",  // Only evaluated if `detailed_errors` feature is enabled
-///        "public" => "data"              // Always evaluated (but not on RISC-V)
+///        "public" => "data"              // Always evaluated (but not in proving mode)
 ///    };
 ///
 ///    let _ctx5 = error_ctx! {

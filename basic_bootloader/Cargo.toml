@@ -60,3 +60,4 @@ fri_precompile = ["dep:full_statement_verifier", "system_hooks/fri_precompile"]
 # on the native resources actually consumed by validation and post-execution
 # bookkeeping that it is meant to cover.
 verify_intrinsic_native = []
+proving_env = ["zk_ee/proving_env"]

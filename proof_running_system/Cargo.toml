@@ -31,7 +31,7 @@ fastrand = "2.0.2"
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing"]
 default = ["testing"]
-proving = ["crypto/proving", "basic_system/proving", "delegation"]
+proving = ["crypto/proving", "basic_system/proving", "delegation", "zk_ee/proving_env", "basic_bootloader/proving_env"]
 delegation = ["u256/delegation", "zk_ee/delegation", "evm_interpreter/delegation", "basic_system/delegation", "system_hooks/delegation", "basic_bootloader/delegation"]
 fri_precompile = ["basic_bootloader/fri_precompile", "system_hooks/fri_precompile"]
 scalloc = []

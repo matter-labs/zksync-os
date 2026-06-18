@@ -1,14 +1,14 @@
-/// Using this trait allows using Copy instead of Clone on RISCV target. It is
-/// useful for types like errors which contain less fields when compiled for
-/// RISCV
-pub trait CheapCloneRiscV {
-    /// Clone for standard target, Copy if on RISC-V.
-    /// Used for performance on small types
+/// Using this trait allows using Copy instead of Clone in the proving
+/// environment. It is useful for types like errors which contain less fields
+/// when compiled for proving.
+pub trait CheapCloneProvingEnv {
+    /// Clone in forward mode, Copy in proving environment.
+    /// Used for performance on small types.
     fn clone_or_copy(&self) -> Self;
 }
 
-#[cfg(target_arch = "riscv32")]
-impl<T> CheapCloneRiscV for T
+#[cfg(feature = "proving_env")]
+impl<T> CheapCloneProvingEnv for T
 where
     T: Copy,
 {
@@ -18,8 +18,8 @@ where
     }
 }
 
-#[cfg(not(target_arch = "riscv32"))]
-impl<T> CheapCloneRiscV for T
+#[cfg(not(feature = "proving_env"))]
+impl<T> CheapCloneProvingEnv for T
 where
     T: Clone,
 {

@@ -17,7 +17,7 @@ use element::NamedContextElement;
 /// easier debugging.
 /// On different targets, this information is then preserved or ignored:
 ///
-/// - On RISC-V proving system, the context is ignored.
+/// - In the proving environment, the context is ignored.
 /// - In production, only the basic context will be emitted.
 /// - For debug purposes (e.g. in `anvil-zksync`), the full context should be emitted.
 ///
@@ -36,7 +36,7 @@ pub trait IErrorContext {
     fn into_vec(self) -> Option<Vec<NamedContextElement>>;
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(feature = "proving_env"))]
 pub type ErrorContext = nonempty::ErrorContext;
-#[cfg(target_arch = "riscv32")]
+#[cfg(feature = "proving_env")]
 pub type ErrorContext = empty::ErrorContext;

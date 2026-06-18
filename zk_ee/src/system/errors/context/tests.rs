@@ -15,7 +15,7 @@ mod tests {
             "operation" => "test_operation"
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 1);
@@ -32,7 +32,7 @@ mod tests {
             "code" => 42
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 3);
@@ -58,7 +58,7 @@ mod tests {
             code
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 2);
@@ -78,7 +78,7 @@ mod tests {
             "public_info" => "safe_data"
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
 
@@ -112,7 +112,7 @@ mod tests {
             public_var
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
 
@@ -146,7 +146,7 @@ mod tests {
             #[detailed] var
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
 
@@ -194,7 +194,7 @@ mod tests {
             "formatted" => debug_format(test_val)
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 1);
@@ -210,7 +210,7 @@ mod tests {
             "test" => "value",
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 1);
@@ -225,7 +225,7 @@ mod tests {
             "test" => "value",,,
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 1);
@@ -241,14 +241,14 @@ mod tests {
             "key2" => "value2"
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             assert_eq!(ctx.get("key1"), Some(&"value1".to_string()));
             assert_eq!(ctx.get("key2"), Some(&"value2".to_string()));
             assert_eq!(ctx.get("nonexistent"), None);
         }
 
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(feature = "proving_env")]
         {
             // Empty context always returns None
             assert_eq!(ctx.get("key1"), None);
@@ -265,13 +265,13 @@ mod tests {
 
         let display_str = format!("{}", ctx);
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             assert!(display_str.contains("operation => test"));
             assert!(display_str.contains("status => failed"));
         }
 
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(feature = "proving_env")]
         {
             // Empty context displays as empty
             assert_eq!(display_str, "");
@@ -293,7 +293,7 @@ mod tests {
             "timestamp" => debug_format(std::time::SystemTime::now()),
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
 
@@ -345,7 +345,7 @@ mod tests {
             enabled
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 5);
@@ -375,7 +375,7 @@ mod tests {
             "key3" => "value3"
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             // Test get method
             assert_eq!(ctx.get("key1"), Some(&"value1".to_string()));
@@ -393,7 +393,7 @@ mod tests {
             assert_eq!(vec1, vec2);
         }
 
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(feature = "proving_env")]
         {
             assert_eq!(ctx.get("key1"), None);
             assert_eq!(ctx.to_vec(), None);
@@ -432,7 +432,7 @@ mod tests {
             "simple" => "plain_text"
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
             assert_eq!(elements.len(), 2);
@@ -454,7 +454,7 @@ mod tests {
         let ctx = error_ctx! {};
 
         // Test that empty context behaves correctly
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let vec = ctx.to_vec().unwrap();
             assert_eq!(vec.len(), 0);
@@ -465,7 +465,7 @@ mod tests {
             assert_eq!(display_str, "");
         }
 
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(feature = "proving_env")]
         {
             assert_eq!(ctx.to_vec(), None);
             assert_eq!(ctx.get("any_key"), None);
@@ -497,18 +497,18 @@ mod tests {
             },
         };
 
-        // Normal expressions should always be evaluated (on non-RISC-V)
-        #[cfg(not(target_arch = "riscv32"))]
+        // Normal expressions should always be evaluated (in forward mode / non-proving environment)
+        #[cfg(not(feature = "proving_env"))]
         assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 1);
 
-        #[cfg(target_arch = "riscv32")]
-        assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 0); // Nothing evaluated on RISC-V
+        #[cfg(feature = "proving_env")]
+        assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 0); // Nothing evaluated in proving env
 
         // Detailed expressions should only be evaluated when detailed_errors is enabled
-        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        #[cfg(all(not(feature = "proving_env"), feature = "detailed_errors"))]
         assert_eq!(DETAILED_CALL_COUNT.load(Ordering::Relaxed), 1);
 
-        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        #[cfg(not(all(not(feature = "proving_env"), feature = "detailed_errors")))]
         assert_eq!(DETAILED_CALL_COUNT.load(Ordering::Relaxed), 0);
     }
 
@@ -533,13 +533,13 @@ mod tests {
         };
 
         // Verify that expensive computation is only called when detailed_errors is enabled
-        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        #[cfg(all(not(feature = "proving_env"), feature = "detailed_errors"))]
         assert_eq!(EXPENSIVE_CALL_COUNT.load(Ordering::Relaxed), 1);
 
-        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        #[cfg(not(all(not(feature = "proving_env"), feature = "detailed_errors")))]
         assert_eq!(EXPENSIVE_CALL_COUNT.load(Ordering::Relaxed), 0);
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = _ctx.to_vec().unwrap();
 
@@ -582,13 +582,13 @@ mod tests {
         );
 
         // Verify the closure was called appropriately based on feature flags
-        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        #[cfg(all(not(feature = "proving_env"), feature = "detailed_errors"))]
         assert_eq!(CLOSURE_CALL_COUNT.load(Ordering::Relaxed), 1);
 
-        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        #[cfg(not(all(not(feature = "proving_env"), feature = "detailed_errors")))]
         assert_eq!(CLOSURE_CALL_COUNT.load(Ordering::Relaxed), 0);
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         {
             let elements = ctx.to_vec().unwrap();
 

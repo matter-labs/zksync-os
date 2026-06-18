@@ -33,7 +33,7 @@ paste = { workspace = true }
 testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
-proving = ["crypto/proving"]
+proving = ["crypto/proving", "zk_ee/proving_env"]
 delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/delegation"]
 # The finish method will just return inputs, so outputs can be processed outside bootloader
 # Used for proving multi block batch within 1 run
