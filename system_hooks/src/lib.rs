@@ -25,7 +25,6 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
-use crate::call_hooks::fri_precompile::fri_precompile_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
@@ -309,6 +308,7 @@ where
 
 /// Register the FRI proof verification hook at
 /// `FRI_PRECOMPILE_ADDRESS`.
+#[cfg(feature = "fri_precompile")]
 pub fn add_fri_proof_verification_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError>
@@ -317,8 +317,19 @@ where
 {
     hooks.add_call_hook(
         FRI_PRECOMPILE_ADDRESS_LOW,
-        SystemCallHook::new(fri_precompile_hook),
+        SystemCallHook::new(crate::call_hooks::fri_precompile::fri_precompile_hook),
     )
+}
+
+#[cfg(not(feature = "fri_precompile"))]
+pub fn add_fri_proof_verification_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
+where
+    S::IO: IOSubsystemExt,
+{
+    let _ = hooks;
+    Ok(())
 }
 
 pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(

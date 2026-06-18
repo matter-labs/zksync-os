@@ -1248,6 +1248,7 @@ fn test_event_hooks_empty_topics() {
 //   1. The precompile is not registered on non-gateway chains.
 //   2. On a gateway chain, querying an unverified statement hash returns false.
 //   3. FRI_PROOF_TX_TYPE is rejected when chain-config FRI support is disabled.
+#[cfg(feature = "fri_precompile")]
 mod fri_precompile {
     use super::*;
     use rig::alloy::eips::eip2930::AccessList;
@@ -1398,6 +1399,7 @@ mod fri_precompile {
 // root). Set AIRBENDER_DEV_PATH or provide FRI_LAYOUT_PATH to control the
 // source of the compiled circuit layouts when regenerating fixtures.
 // ---------------------------------------------------------------------------
+#[cfg(feature = "fri_precompile")]
 mod fri_precompile_e2e {
     use super::*;
     use rig::alloy::eips::eip2930::AccessList;
@@ -2330,6 +2332,7 @@ mod fri_precompile_e2e {
 // large-binary access still passes — same pattern as the existing
 // e2e test.
 // ---------------------------------------------------------------------------
+#[cfg(feature = "fri_precompile")]
 mod fri_admission_api {
     use super::fri_precompile_e2e::{
         default_setup_and_layout_paths, load_proof_fixture, load_verifier_artifacts,

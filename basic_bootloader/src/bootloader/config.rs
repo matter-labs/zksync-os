@@ -14,7 +14,7 @@ pub struct BasicBootloaderProvingExecutionConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderProvingExecutionConfig {
     const SIMULATION: bool = false;
     const VALIDATE_EOA_SIGNATURE: bool = true;
-    const VERIFY_FRI_PROOFS: bool = true;
+    const VERIFY_FRI_PROOFS: bool = cfg!(feature = "fri_precompile");
 }
 
 #[derive(Clone, Copy, Debug)]

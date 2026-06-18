@@ -1,6 +1,8 @@
 mod batch;
 pub mod errors;
+#[cfg_attr(not(feature = "fri_precompile"), path = "fri_admission_stub.rs")]
 pub mod fri_admission;
+#[cfg_attr(not(feature = "fri_precompile"), path = "fri_proof_decode_stub.rs")]
 mod fri_proof_decode;
 mod fri_proof_sidecar;
 pub mod output;

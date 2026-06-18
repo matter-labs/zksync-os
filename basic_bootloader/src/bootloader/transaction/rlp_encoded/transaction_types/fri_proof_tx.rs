@@ -32,6 +32,7 @@ pub type StatementVersionedHashesList<'a> = FixedList<'a, &'a [u8; 32]>;
 /// contract, because the whole point is to run against a contract that
 /// knows how to consume the FRI precompile result.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(feature = "fri_precompile"), allow(dead_code))]
 pub(crate) struct FriProofTx<'a> {
     pub(crate) chain_id: u64,
     pub(crate) nonce: u64,

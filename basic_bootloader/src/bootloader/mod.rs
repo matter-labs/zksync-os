@@ -22,7 +22,9 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
+#[cfg_attr(not(feature = "fri_precompile"), path = "fri_host_verifier_stub.rs")]
 pub mod fri_host_verifier;
+#[cfg_attr(not(feature = "fri_precompile"), path = "fri_verifier_stub.rs")]
 mod fri_verifier;
 pub mod result_keeper;
 mod rlp;
