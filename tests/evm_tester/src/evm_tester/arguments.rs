@@ -61,9 +61,9 @@ pub struct Arguments {
     #[structopt(long = "proof_run")]
     pub proof_run: bool,
 
-    /// Override the hardfork version for all tests (e.g., "Cancun", "Prague").
-    /// Note: Ethereum test fixtures use consensus-layer names ("Prague"), while
-    /// our Cargo features use the combined name ("pectra"). Use "Prague" here.
+    /// Override the hardfork version for all tests (e.g., "Osaka", "Prague").
+    /// Note: Ethereum test fixtures use consensus-layer names ("Osaka"); the STF
+    /// always targets Fusaka (Osaka EL), so the default selection is "Osaka".
     /// When set, this takes precedence over per-test/per-directory hardfork overrides.
     #[structopt(long = "hardfork")]
     pub hardfork: Option<String>,

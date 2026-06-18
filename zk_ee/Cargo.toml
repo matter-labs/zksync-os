@@ -35,7 +35,7 @@ error_origins = []
 detailed_errors = []
 prevrandao = []
 delegation = ["u256/delegation"]
-pectra-blobs = []
-fusaka-blobs = []
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = []
 
 [dev-dependencies]

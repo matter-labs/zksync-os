@@ -18,5 +18,4 @@ forward_system = { path = "../../../forward_system" }
 
 [features]
 cycle_marker = ["rig/cycle_marker"]
-pectra = ["rig/pectra"]
 default = []

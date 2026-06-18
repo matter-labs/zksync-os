@@ -49,10 +49,7 @@ for_tests = ["forward_system/for_tests", "callable_oracles/testing"]
 # Features used for eth_runner
 eth_runner = ["forward_system/eth_runner"]
 eth_stf = ["forward_system/eth_stf"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["forward_system/fusaka-bpo-2"]
 # Features used for evm_tester
 evm_tester = ["forward_system/evm_tester"]
-pectra = ["forward_system/pectra"]
-evm_tester_pectra = ["forward_system/evm_tester_pectra"]
-fusaka = ["forward_system/fusaka"]
-fusaka-blobs = ["forward_system/fusaka-blobs"]
-evm_tester_fusaka = ["forward_system/evm_tester_fusaka"]

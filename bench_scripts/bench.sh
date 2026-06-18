@@ -10,8 +10,12 @@ BLOCKS_DIR="$REPO_ROOT/tests/instances/eth_runner/blocks"
 QUICK_BLOCK="$(ls "$BLOCKS_DIR" | head -1)"
 
 FEATURES="rig/no_print,rig/cycle_marker"
-# Osaka block fixtures need the fusaka + latest-BPO blob schedule on the host.
-if grep -q '^fusaka-blobs = ' "$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"; then
+# Osaka block fixtures need the latest-BPO blob schedule on the host. Prefer the
+# current `fusaka-bpo-2` feature; fall back to the old `fusaka`/`fusaka-blobs`
+# names so the A/B harness still works against a pre-rename merge-base.
+if grep -q '^fusaka-bpo-2 = ' "$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"; then
+    FEATURES="$FEATURES,fusaka-bpo-2"
+elif grep -q '^fusaka-blobs = ' "$REPO_ROOT/tests/instances/eth_runner/Cargo.toml"; then
     FEATURES="$FEATURES,fusaka,fusaka-blobs"
 fi
 PRECOMPILE_FEATURES="rig/no_print,precompiles/cycle_marker"

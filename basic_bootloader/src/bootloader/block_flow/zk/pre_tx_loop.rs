@@ -22,13 +22,10 @@ where
         block_data.block_pubdata_used = BLOCK_INTRINSIC_PUBDATA_BYTES;
 
         // EIP-2935: store parent block hash in history storage contract
-        #[cfg(feature = "eip-2935")]
         {
             use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
             eip2935_system_part(system)?;
         }
-        #[cfg(not(feature = "eip-2935"))]
-        let _ = system;
 
         Ok(block_data)
     }

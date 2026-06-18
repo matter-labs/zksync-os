@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-benchmarking-pectra|for-tests-benchmarking-fusaka|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
 
@@ -54,24 +54,6 @@ case "$TYPE" in
     FEATURES="$FEATURES,for_tests,benchmarking"
     APP_NAME="for_tests"
     ;;
-  for-tests-benchmarking-pectra)
-    # Adds `pectra` on top of `for-tests-benchmarking` so the proving binary
-    # supports BLS12-381 + BLAKE2F + P256. Required by the precompiles bench
-    # CI when it exercises `test_precompiles` (incl. the BLS12-381 + BLAKE2F
-    # vectors) and `test_kzg_regression` (point_evaluation) in proof mode.
-    # NOTE: the literal string `for-tests-benchmarking-pectra` is used as
-    # a `grep -q` fallback target by `.github/workflows/bench.yml` — if
-    # this case label is renamed, update the workflow too.
-    FEATURES="$FEATURES,for_tests,benchmarking,pectra"
-    APP_NAME="for_tests"
-    ;;
-  for-tests-benchmarking-fusaka)
-    # Adds `fusaka` (a superset of `pectra`) on top of `for-tests-benchmarking`
-    # so the proving binary supports the Fusaka semantics (CLZ, modexp
-    # repricing, EIP-7825/7934/7918) in addition to the pectra precompiles.
-    FEATURES="$FEATURES,for_tests,benchmarking,fusaka"
-    APP_NAME="for_tests"
-    ;;
   for-tests-logging-enabled)
     FEATURES="$FEATURES,for_tests,print_debug_info"
     APP_NAME="for_tests"
@@ -89,22 +71,17 @@ case "$TYPE" in
     APP_NAME="evm_replay"
     ;;
   evm-replay-benchmarking-fusaka)
-    # `fusaka` for the proving binary already pulls in the latest BPO blob
-    # schedule (zksync_os's `fusaka` => proof_running_system/fusaka-blobs), so
-    # this single type covers Osaka replay including post-BPO blob txs (CLZ,
-    # modexp repricing, EIP-7825/7934/7918, BPO blob base fee).
+    # Adds `fusaka-bpo-2` (the BPO2 blob-count schedule) on top of
+    # `evm-replay-benchmarking` so the proving binary can replay post-BPO Osaka
+    # blocks (BPO blob base fee + higher blob count).
     # NOTE: the literal string `evm-replay-benchmarking-fusaka` is used as a
     # `grep -q` fallback target by `.github/workflows/bench.yml` — if this
     # case label is renamed, update the workflow too.
-    FEATURES="$FEATURES,eth_runner,benchmarking,fusaka"
+    FEATURES="$FEATURES,eth_runner,benchmarking,fusaka-bpo-2"
     APP_NAME="evm_replay"
     ;;
   evm-tester)
-    # `fusaka` so the proving binary matches the host EVM tester, which now
-    # defaults to Fusaka (Osaka). Without it the nightly proof run would pair a
-    # pre-Osaka proving binary with Fusaka test selection (CLZ, modexp
-    # repricing, EIP-7825/7934 would diverge).
-    FEATURES="$FEATURES,evm_tester,fusaka"
+    FEATURES="$FEATURES,evm_tester"
     APP_NAME="evm_tester"
     ;;
   "")

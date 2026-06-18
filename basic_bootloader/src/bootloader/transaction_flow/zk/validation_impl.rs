@@ -88,7 +88,6 @@ where
 
     // EIP-7623
     let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata);
-    #[cfg(feature = "eip-7623")]
     require!(
         minimal_gas_used <= tx_gas_limit,
         InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
@@ -148,15 +147,12 @@ where
             access_list_storage_keys += slots_list.count as u64;
         }
     }
-    #[cfg(feature = "eip-7702")]
     let authorization_list_num = if let Some(authorization_list) = transaction.authorization_list()
     {
         authorization_list.len() as u64
     } else {
         0u64
     };
-    #[cfg(not(feature = "eip-7702"))]
-    let authorization_list_num = 0;
 
     let is_deployment = transaction.is_deployment().is_some();
     if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
@@ -422,7 +418,6 @@ where
 
     // Now we can apply access list and authorization list, while simultaneously charging for them
     // Parse, validate and apply authorization list, following EIP-7702
-    #[cfg(feature = "eip-7702")]
     {
         if let Some(authorization_list) = transaction.authorization_list() {
             // Same as for the access list: gas is included in the intrinsic
@@ -536,8 +531,7 @@ where
 }
 
 ///
-/// Compute number of calldata tokens and EIP-7623 floor gas,
-/// floor gas == 0, if EIP-7623 disabled.
+/// Compute the number of calldata tokens and the EIP-7623 floor gas.
 ///
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
@@ -550,16 +544,8 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
     let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
 
-    #[cfg(feature = "eip-7623")]
-    {
-        let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let floor_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+    let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
+    let floor_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
-        (num_tokens, floor_gas)
-    }
-
-    #[cfg(not(feature = "eip-7623"))]
-    {
-        (num_tokens, 0)
-    }
+    (num_tokens, floor_gas)
 }

@@ -1275,34 +1275,26 @@ fn test_kzg_regression() {
 fn test_precompiles() {
     run_test_vectors(&TESTS);
 
-    // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompiles are only registered under the
-    // `pectra` feature; their vectors (incl. the MAP_FP*_TO_G* mappings) are cross-checked
-    // against revm's AtlasV4 spec just like the rest.
-    #[cfg(feature = "pectra")]
+    // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompile vectors (incl. the
+    // MAP_FP*_TO_G* mappings) are cross-checked against revm's AtlasV4 spec just
+    // like the rest.
     run_test_vectors(&PECTRA_TESTS);
 }
 
 // BLS12-381 generator and scalar constants shared across PECTRA test and bench functions.
-#[cfg(feature = "pectra")]
 const BLS_G1: &str = "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1";
 
-#[cfg(feature = "pectra")]
 const BLS_G2: &str = "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be";
 
-#[cfg(feature = "pectra")]
 const SCALAR_SMALL: &str = "0000000000000000000000000000000000000000000000000000000000000007";
 
-#[cfg(feature = "pectra")]
 const SCALAR_MEDIUM: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
 
-#[cfg(feature = "pectra")]
 const SCALAR_WORST: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
-// Test vectors for precompiles gated behind the `pectra` feature (EIP-152 BLAKE2F and
-// EIP-2537 BLS12-381). Values come from the EIP specifications and well-known group identities
-// (G + 0 = G, G * 1 = G, e(0, 0) = 1). Exercised by `test_precompiles` when the `pectra`
-// feature is enabled.
-#[cfg(feature = "pectra")]
+// Test vectors for the Pectra precompiles (EIP-152 BLAKE2F and EIP-2537 BLS12-381),
+// which are always registered. Values come from the EIP specifications and well-known
+// group identities (G + 0 = G, G * 1 = G, e(0, 0) = 1). Always exercised by `test_precompiles`.
 const PECTRA_TESTS: [Test; 13] = [
     // BLAKE2F: EIP-152 test vector (rounds = 12, message = "abc" padded, f = 1).
     Test {
@@ -1397,7 +1389,6 @@ const PECTRA_TESTS: [Test; 13] = [
     },
 ];
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_g1add() {
@@ -1424,7 +1415,6 @@ fn bench_bls_g1add() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_g2add() {
@@ -1451,7 +1441,6 @@ fn bench_bls_g2add() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_g1msm() {
@@ -1483,7 +1472,6 @@ fn bench_bls_g1msm() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_g2msm() {
@@ -1515,7 +1503,6 @@ fn bench_bls_g2msm() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_pairing() {
@@ -1538,7 +1525,6 @@ fn bench_bls_pairing() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_map_fp_to_g1() {
@@ -1564,7 +1550,6 @@ fn bench_bls_map_fp_to_g1() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_map_fp2_to_g2() {
@@ -1596,7 +1581,6 @@ fn bench_bls_map_fp2_to_g2() {
     }
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_blake2f() {

@@ -162,7 +162,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    #[cfg(feature = "clz")]
     pub fn clz(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, CLZ_NATIVE_COST)?;
@@ -210,7 +209,6 @@ mod tests {
 
     // Mirrors the value semantics of `Interpreter::clz` (EIP-7939): CLZ of zero
     // is 256, otherwise the count of leading zero bits in the 256-bit word.
-    #[cfg(feature = "clz")]
     fn clz_count(input: HostU256) -> usize {
         let op: U256 = input.into();
         if op.is_zero() {
@@ -220,7 +218,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "clz")]
     #[test]
     fn clz_matches_expected_and_host_reference() {
         let high_bit = HostU256::from_limbs([0, 0, 0, 0x8000_0000_0000_0000]);

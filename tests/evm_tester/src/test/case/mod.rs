@@ -37,24 +37,12 @@ const WITHDRAWAL_REQUEST_CONTRACT: Address = address!("0x00000961Ef480Eb55e80D19
 const CONSOLIDATION_REQUEST_CONTRACT: Address =
     address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
 
-/// Blob base fee update fraction.
-/// Cancun uses 3338477, Prague (EIP-7840) uses 5007716, Osaka (EIP-7918) uses 11684671.
-// Must match the STF's active blob schedule. Base Osaka keeps Prague's
-// fraction (5007716); only the latest BPO schedule (`fusaka-blobs`) uses
-// 11684671. Cancun uses 3338477.
-#[cfg(feature = "fusaka-blobs")]
-const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11_684_671;
-#[cfg(all(
-    any(feature = "evm_tester_pectra", feature = "evm_tester_fusaka"),
-    not(feature = "fusaka-blobs")
-))]
+/// Blob base fee update fraction. Must match the STF's active blob schedule:
+/// base-Osaka 5007716, or BPO2 (`fusaka-bpo-2`) 11684671.
+#[cfg(not(feature = "fusaka-bpo-2"))]
 const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5_007_716;
-#[cfg(not(any(
-    feature = "evm_tester_pectra",
-    feature = "evm_tester_fusaka",
-    feature = "fusaka-blobs"
-)))]
-const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 3_338_477;
+#[cfg(feature = "fusaka-bpo-2")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11_684_671;
 
 const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
 

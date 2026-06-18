@@ -90,7 +90,6 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP4844(tx, sig_data), sig_hash))
                 }
-                #[cfg(feature = "eip-7702")]
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(

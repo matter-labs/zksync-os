@@ -43,17 +43,12 @@ alloy-primitives = { workspace = true, features = ["arbitrary"] }
 serde = ["dep:serde", "ruint/serde"]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
 default = ["testing"]
-eip-2935 = []
-eip-7702 = []
-eip-7623 = []
-eip-4844 = ["system_hooks/point_eval_precompile"]
-pectra = ["eip-2935", "eip-7702", "eip-7623", "eip-4844", "zk_ee/pectra-blobs", "system_hooks/bls12_381", "system_hooks/blake2f"]
-eip-7934 = []
-eip-7918 = []
-# Latest blob-count schedule (BPO). Opt-in on top of `fusaka`; without it,
-# `fusaka` uses base-Osaka (Prague) blob counts. Production enables this.
-fusaka-blobs = ["zk_ee/fusaka-blobs"]
-fusaka = ["pectra", "eip-7934", "eip-7918", "basic_system/fusaka"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["zk_ee/fusaka-bpo-2"]
+# EIP-4844 blob transactions (type 0x03). L1-specific; enabled for the Ethereum
+# compatibility paths (eth_runner / evm_tester / for_tests) but not production,
+# where blob transactions are not accepted.
+eip-4844 = []
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 disable_system_contracts = []

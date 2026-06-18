@@ -143,24 +143,16 @@ where
             non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
         let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
 
-        #[cfg(feature = "eip-7623")]
-        {
-            let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-            let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+        let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
+        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
-            require!(
-                intrinsic_gas <= tx_gas_limit,
-                InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
-                system
-            )?;
+        require!(
+            intrinsic_gas <= tx_gas_limit,
+            InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
+            system
+        )?;
 
-            (num_tokens, intrinsic_gas)
-        }
-
-        #[cfg(not(feature = "eip-7623"))]
-        {
-            (num_tokens, TX_INTRINSIC_GAS)
-        }
+        (num_tokens, intrinsic_gas)
     };
 
     let (effective_gas_price, priority_fee_per_gas) = get_gas_prices(

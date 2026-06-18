@@ -53,10 +53,12 @@ fi
 
 EVM_FEATURES="rig/no_print,rig/cycle_marker"
 # The block fixtures are post-BPO Osaka blocks, so the eth_runner host must use
-# the fusaka + latest-BPO blob schedule. The `fusaka`/`fusaka-blobs` eth_runner
-# features were introduced on the PR side; guard so a pre-fusaka merge-base
-# (whose fixtures predate Osaka) still builds with the plain feature set.
-if grep -q '^fusaka-blobs = ' tests/instances/eth_runner/Cargo.toml; then
+# the latest-BPO blob schedule. Prefer the current `fusaka-bpo-2` feature; fall
+# back to the old `fusaka`/`fusaka-blobs` names so a pre-rename merge-base still
+# builds with the matching feature set.
+if grep -q '^fusaka-bpo-2 = ' tests/instances/eth_runner/Cargo.toml; then
+  EVM_FEATURES="$EVM_FEATURES,fusaka-bpo-2"
+elif grep -q '^fusaka-blobs = ' tests/instances/eth_runner/Cargo.toml; then
   EVM_FEATURES="$EVM_FEATURES,fusaka,fusaka-blobs"
 fi
 if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then

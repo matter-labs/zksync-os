@@ -2,7 +2,6 @@ use basic_system::cost_constants::{
     blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
 use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
-#[cfg(feature = "eip-2935")]
 use basic_system::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
     ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST, ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST,
@@ -313,7 +312,6 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
 /// what the storage layer actually charges in `materialize_element`
 /// (warm read + cold-new read-extra) followed by `charge_storage_write_extra`
 /// (cold-new write-extra).
-#[cfg(feature = "eip-2935")]
 const EIP_2935_INTRINSIC_NATIVE: u64 =
     // Cold read of HISTORY_STORAGE_ADDRESS account properties (assume exists)
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
@@ -325,17 +323,12 @@ const EIP_2935_INTRINSIC_NATIVE: u64 =
         + WARM_STORAGE_READ_NATIVE_COST
         + COLD_NEW_STORAGE_READ_NATIVE_COST
         + COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
-#[cfg(not(feature = "eip-2935"))]
-const EIP_2935_INTRINSIC_NATIVE: u64 = 0;
 
 /// Pubdata cost of the EIP-2935 history-slot write. One state diff:
 /// 32-byte derived key + worst-case 33-byte compressed value (the parent-hash
 /// value does not compress, so the `Nothing` strategy applies — same shape
 /// as `ASSET_TRACKER_INTRINSIC_PUBDATA`).
-#[cfg(feature = "eip-2935")]
 const EIP_2935_INTRINSIC_PUBDATA: u64 = 32 + 33;
-#[cfg(not(feature = "eip-2935"))]
-const EIP_2935_INTRINSIC_PUBDATA: u64 = 0;
 
 /// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
 /// from block start. Accounts for:

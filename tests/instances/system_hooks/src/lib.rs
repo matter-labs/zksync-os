@@ -2476,11 +2476,6 @@ fn measure_balance_gas_cost(target: Address) -> u64 {
     measure_balance_gas_cost_inner(target, false)
 }
 
-/// Same as [`measure_balance_gas_cost`] but skips the REVM consistency check.
-fn measure_balance_gas_cost_without_revm_check(target: Address) -> u64 {
-    measure_balance_gas_cost_inner(target, true)
-}
-
 fn measure_balance_gas_cost_inner(target: Address, skip_revm_check: bool) -> u64 {
     let probe_address = address!("cccccccccccccccccccccccccccccccccccccccc");
     let sender = address!("dddddddddddddddddddddddddddddddddddddddd");
@@ -2514,7 +2509,8 @@ fn measure_balance_gas_cost_inner(target: Address, skip_revm_check: bool) -> u64
     slot.into_u256_be().as_limbs()[0]
 }
 
-/// EVM precompiles (0x01..0x0a) must be warm at transaction start.
+/// EVM precompiles (including the Pectra additions: BLAKE2F 0x09, point eval
+/// 0x0a, BLS12-381 0x0b..0x11, P256 0x100) must be warm at transaction start.
 /// System hook addresses (0x7001, 0x7002, 0x7100) must be cold.
 #[test]
 fn test_precompiles_warm_hooks_cold_at_tx_start() {
@@ -2571,25 +2567,42 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         "contract_deployer hook (0x8006) must be cold"
     );
 
-    // blake2f (0x09) is not enabled in this for_tests build, so it must be cold.
-    // Skip the REVM consistency check: the AtlasV4 spec warms blake2f (a Pectra
-    // precompile) while this build does not enable it, so the warm/cold cost
-    // legitimately differs between the two.
+    // Pectra precompiles are always registered, so they must be warm. The AtlasV4
+    // REVM spec warms them too, so the consistency check holds.
     let blake2f = address!("0000000000000000000000000000000000000009");
     assert_eq!(
-        measure_balance_gas_cost_without_revm_check(blake2f),
-        COLD_BALANCE,
-        "blake2f (0x09) must be cold"
+        measure_balance_gas_cost(blake2f),
+        WARM_BALANCE,
+        "blake2f (0x09) must be warm"
     );
 
-    // point_eval (0x0a) is enabled via the eip-4844 feature in test builds, so it is warm.
-    // Note: in production builds point_eval is NOT enabled, so it would be cold there.
-    // The AtlasV4 REVM spec warms point_eval too, so the consistency check holds.
     let point_eval = address!("000000000000000000000000000000000000000a");
     assert_eq!(
         measure_balance_gas_cost(point_eval),
         WARM_BALANCE,
-        "point_eval (0x0a) must be warm (enabled via eip-4844 in test builds)"
+        "point_eval (0x0a) must be warm"
+    );
+
+    // BLS12-381 precompiles (0x0b..0x11, EIP-2537).
+    let bls12_g1add = address!("000000000000000000000000000000000000000b");
+    assert_eq!(
+        measure_balance_gas_cost(bls12_g1add),
+        WARM_BALANCE,
+        "bls12_381 g1add (0x0b) must be warm"
+    );
+    let bls12_map_fp2_to_g2 = address!("0000000000000000000000000000000000000011");
+    assert_eq!(
+        measure_balance_gas_cost(bls12_map_fp2_to_g2),
+        WARM_BALANCE,
+        "bls12_381 map_fp2_to_g2 (0x11) must be warm"
+    );
+
+    // P256 verify (0x100, RIP-7212 / EIP-7951).
+    let p256_verify = address!("0000000000000000000000000000000000000100");
+    assert_eq!(
+        measure_balance_gas_cost(p256_verify),
+        WARM_BALANCE,
+        "p256 verify (0x100) must be warm"
     );
 }
 

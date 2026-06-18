@@ -14,16 +14,14 @@ pub struct Block {
 }
 
 // Blob base fee update fraction. Must match the STF's active blob schedule:
-// Cancun 3338477, Prague/base-Osaka 5007716, latest BPO (`fusaka-blobs`)
-// 11684671. Alloy's `Header::blob_fee()` uses a fixed fraction that does not
-// track the BPO schedule, so we compute the blob base fee ourselves from
-// `excessBlobGas` to keep the replay consistent with the built STF.
-#[cfg(feature = "fusaka-blobs")]
-const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 11_684_671;
-#[cfg(all(feature = "fusaka", not(feature = "fusaka-blobs")))]
+// base-Osaka 5007716, or BPO2 (`fusaka-bpo-2`) 11684671. Alloy's
+// `Header::blob_fee()` uses a fixed fraction that does not track the BPO
+// schedule, so we compute the blob base fee ourselves from `excessBlobGas`
+// to keep the replay consistent with the built STF.
+#[cfg(not(feature = "fusaka-bpo-2"))]
 const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 5_007_716;
-#[cfg(not(any(feature = "fusaka", feature = "fusaka-blobs")))]
-const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 3_338_477;
+#[cfg(feature = "fusaka-bpo-2")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = 11_684_671;
 
 const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
 
