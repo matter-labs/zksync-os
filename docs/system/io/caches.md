@@ -6,7 +6,7 @@ In general, all three caches have to provide the same functionality: materializi
 
 ## Trait hierarchy
 
-Two traits in [`storage_models/src/common_structs/traits/`](../../../storage_models/src/common_structs/traits/) define the contract for cache behaviour:
+Three traits in [`storage_models/src/common_structs/traits/`](../../../storage_models/src/common_structs/traits/) define the contract for cache behavior:
 
 ```
 SnapshottableIo                         (transactional rollback: begin_new_tx, finish_tx, start_frame, finish_frame)
