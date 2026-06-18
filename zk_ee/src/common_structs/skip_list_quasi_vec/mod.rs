@@ -68,34 +68,6 @@ impl<T: Sized, const N: usize, A: Allocator + Clone> ListVec<T, N, A> {
     pub const fn new_in(allocator: A) -> Self {
         Self(LinkedList::new_in(allocator))
     }
-
-    /// Pushes `value` and returns a mutable reference to its slot.
-    ///
-    /// Equivalent to `Stack::push` followed by `Stack::top_mut`, but uses
-    /// `LinkedList::back_mut` (O(1)) instead of `iter_mut().last()` (O(pages))
-    /// — so this is constant-time per call rather than O(pages) per call.
-    pub fn push_returning_ref(&mut self, value: T) -> &mut T {
-        let needs_new_node = self.0.back_mut().is_none_or(|node| node.is_full());
-        if needs_new_node {
-            let mut new_node: ArrayVec<T, N> = ArrayVec::new();
-            new_node.push(value);
-            self.0.push_back(new_node);
-        } else {
-            // SAFETY: `needs_new_node` is false ⇒ back is `Some` and not full.
-            unsafe {
-                self.0.back_mut().unwrap_unchecked().push(value);
-            }
-        }
-        // SAFETY: we either pushed into the existing back or appended a new
-        // node holding one element, so back is `Some` and non-empty.
-        unsafe {
-            self.0
-                .back_mut()
-                .unwrap_unchecked()
-                .last_mut()
-                .unwrap_unchecked()
-        }
-    }
 }
 
 /// Iterator over elements in a ListVec.
