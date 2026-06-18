@@ -102,7 +102,7 @@ transaction ID that touched it. On access:
    (i.e. the access is "cold"), it additionally charges `charge_cold_storage_read_extra()`.
 3. `last_touched_in_tx` is updated to the current transaction ID, making all
    subsequent accesses within the same transaction "warm".
-4. At the transaction boundary, `finish_tx()` increments the transaction ID counter,
+4. At the transaction boundary, `begin_new_tx()` increments the transaction ID counter,
    resetting all elements to "cold" for the next transaction.
 
 #### EVM gas refund accounting
