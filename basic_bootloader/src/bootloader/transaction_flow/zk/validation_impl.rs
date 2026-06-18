@@ -130,10 +130,7 @@ where
         u256_try_to_u64(&pubdata_price.checked_div(native_price).unwrap_or_default())
             .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
-    let statement_versioned_hashes_num = transaction
-        .statement_versioned_hashes()
-        .map(|hashes| hashes.count as u64)
-        .unwrap_or(0);
+    let statement_versioned_hashes_num = transaction.statement_versioned_hashes_len();
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
@@ -455,15 +452,8 @@ where
     //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under
     //    `BasicBootloaderProvingExecutionConfig` (the RISC-V guest
     //    and the host prover-input recording pass that feeds it).
-    let verified_fri_statements = if transaction.is_fri_proof() {
-        super::fri::build_verified_fri_statements_list(system, transaction)?
-    } else {
-        arrayvec::ArrayVec::new()
-    };
-
-    if Config::VERIFY_FRI_PROOFS && transaction.is_fri_proof() {
-        super::fri::drive_fri_verification(system, &verified_fri_statements)?;
-    }
+    let verified_fri_statements = build_verified_fri_statements_list(system, transaction)?;
+    maybe_drive_fri_verification::<S, Config>(system, transaction, &verified_fri_statements)?;
 
     system.set_tx_context(TxLevelMetadata {
         tx_origin: *transaction.from(),
@@ -548,4 +538,59 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     let floor_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
     (num_tokens, floor_gas)
+}
+
+#[cfg(feature = "fri_precompile")]
+fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
+    system: &System<S>,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<
+    arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
+    TxError,
+> {
+    if transaction.is_fri_proof() {
+        super::fri::build_verified_fri_statements_list(system, transaction)
+    } else {
+        Ok(arrayvec::ArrayVec::new())
+    }
+}
+
+#[cfg(not(feature = "fri_precompile"))]
+fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
+    system: &System<S>,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<
+    arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
+    TxError,
+> {
+    let _ = (system, transaction);
+    Ok(arrayvec::ArrayVec::new())
+}
+
+#[cfg(feature = "fri_precompile")]
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
+    transaction: &Transaction<S::Allocator>,
+    verified_fri_statements: &[Bytes32],
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    if Config::VERIFY_FRI_PROOFS && transaction.is_fri_proof() {
+        super::fri::drive_fri_verification(system, verified_fri_statements)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "fri_precompile"))]
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
+    transaction: &Transaction<S::Allocator>,
+    verified_fri_statements: &[Bytes32],
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    let _ = (system, transaction, verified_fri_statements);
+    Ok(())
 }
