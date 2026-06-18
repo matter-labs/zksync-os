@@ -524,8 +524,7 @@ where
 }
 
 ///
-/// Compute number of calldata tokens and EIP-7623 floor gas,
-/// floor gas == 0, if EIP-7623 disabled.
+/// Compute the number of calldata tokens and the EIP-7623 floor gas.
 ///
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
