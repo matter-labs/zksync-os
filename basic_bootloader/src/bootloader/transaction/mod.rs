@@ -8,7 +8,6 @@
 //!
 
 use super::errors::TxError;
-use crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList;
 use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
@@ -267,10 +266,22 @@ impl<A: Allocator> Transaction<A> {
     }
 
     /// Returns the list of signed FRI statement hashes, if present.
-    pub fn statement_versioned_hashes<'a>(&'a self) -> Option<StatementVersionedHashesList<'a>> {
+    #[cfg(feature = "fri_precompile")]
+    pub fn statement_versioned_hashes<'a>(
+        &'a self,
+    ) -> Option<
+        crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList<'a>,
+    >{
         match self {
             Self::Abi(_) => None,
             Self::Rlp(tx) => tx.statement_versioned_hashes(),
+        }
+    }
+
+    pub fn statement_versioned_hashes_len(&self) -> u64 {
+        match self {
+            Self::Abi(_) => 0,
+            Self::Rlp(tx) => tx.statement_versioned_hashes_len(),
         }
     }
 

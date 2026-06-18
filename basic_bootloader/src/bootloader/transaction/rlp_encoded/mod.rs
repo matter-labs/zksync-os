@@ -6,6 +6,8 @@ use transaction_types::service_tx::ServiceTx;
 use crate::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::Rlp;
+#[cfg(feature = "fri_precompile")]
+use crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::FriProofTx;
 use crate::bootloader::transaction::rlp_encoded::transaction_types::legacy_tx::{
     LegacyPayloadParser, LegacySignatureData, LegacyTXInner,
 };
@@ -16,7 +18,6 @@ use crate::bootloader::transaction::rlp_encoded::{
     transaction_types::eip_2930_tx::EIP2930Tx,
     transaction_types::eip_4844_tx::EIP4844Tx,
     transaction_types::eip_7702_tx::EIP7702Tx,
-    transaction_types::fri_proof_tx::FriProofTx,
 };
 use zk_ee::utils::Bytes32;
 
@@ -41,6 +42,7 @@ pub(crate) enum RlpEncodedTxInner<'a> {
     EIP1559(EIP1559Tx<'a>, EIP2718SignatureData<'a>),
     EIP4844(EIP4844Tx<'a>, EIP2718SignatureData<'a>),
     EIP7702(EIP7702Tx<'a>, EIP2718SignatureData<'a>),
+    #[cfg(feature = "fri_precompile")]
     FriProof(FriProofTx<'a>, EIP2718SignatureData<'a>),
     Service(ServiceTx<'a>),
 }

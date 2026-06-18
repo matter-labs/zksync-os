@@ -13,7 +13,7 @@ mod ethereum_cl;
 mod ethereum_header;
 mod ethereum_initial_account_state;
 mod ethereum_initial_storage_slot_value;
-#[cfg_attr(not(feature = "fri_precompile"), path = "fri_proof_stub.rs")]
+#[cfg(feature = "fri_precompile")]
 mod fri_proof;
 mod generic_preimage;
 mod read_storage;
@@ -29,6 +29,7 @@ pub use self::ethereum_cl::EthereumCLResponder;
 pub use self::ethereum_header::EthereumTargetBlockHeaderResponder;
 pub use self::ethereum_initial_account_state::InMemoryEthereumInitialAccountStateResponder;
 pub use self::ethereum_initial_storage_slot_value::InMemoryEthereumInitialStorageSlotValueResponder;
+#[cfg(feature = "fri_precompile")]
 pub use self::fri_proof::{FriProofResponder, FriVerifierArtifacts};
 pub use self::generic_preimage::GenericPreimageResponder;
 pub use self::read_storage::ReadStorageResponder;
