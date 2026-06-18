@@ -104,3 +104,125 @@ pub fn apply_number_encoding<B: ?Sized + WriteBytes>(value: &[u8], buffer: &mut 
         .unwrap_or(value.len());
     apply_bytes_encoding(&value[first_non_zero_byte..], buffer);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec::Vec;
+
+    struct VecSink(Vec<u8>);
+    impl WriteBytes for VecSink {
+        fn write(&mut self, buf: &[u8]) {
+            self.0.extend_from_slice(buf);
+        }
+    }
+
+    fn applied<F: FnOnce(&mut VecSink)>(f: F) -> Vec<u8> {
+        let mut sink = VecSink(Vec::new());
+        f(&mut sink);
+        sink.0
+    }
+
+    #[test]
+    fn number_encoding_known_answers() {
+        // (input bytes, expected RLP). Numbers are big-endian with leading zeros stripped.
+        let cases: &[(&[u8], &[u8])] = &[
+            (&[], &[0x80]),           // empty -> empty string
+            (&[0x00], &[0x80]),       // zero -> empty string
+            (&[0x00, 0x00], &[0x80]), // multi-byte zero -> empty string
+            (&[0x05], &[0x05]),       // single byte < 0x80 -> itself
+            (&[0x7f], &[0x7f]),       // boundary: 0x7f -> itself
+            (&[0x80], &[0x81, 0x80]), // 0x80 needs a length prefix
+            (&[0xff], &[0x81, 0xff]),
+            (&[0x01, 0x00], &[0x82, 0x01, 0x00]),       // 256
+            (&[0x00, 0x12, 0x34], &[0x82, 0x12, 0x34]), // leading zero stripped
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                &applied(|s| apply_number_encoding(input, s)),
+                expected,
+                "input {input:?}"
+            );
+            // The estimate must match the number of bytes actually written.
+            assert_eq!(
+                estimate_number_encoding_len(input),
+                expected.len(),
+                "estimate {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bytes_encoding_known_answers() {
+        let cases: &[(&[u8], Vec<u8>)] = &[
+            (&[], alloc::vec![0x80]),     // empty string
+            (&[0x00], alloc::vec![0x00]), // single byte < 0x80 -> itself (NOT stripped)
+            (&[0x7f], alloc::vec![0x7f]),
+            (&[0x80], alloc::vec![0x81, 0x80]), // single byte >= 0x80 -> length-prefixed
+            (&[0xff], alloc::vec![0x81, 0xff]),
+            (&[0x01, 0x02], alloc::vec![0x82, 0x01, 0x02]),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                &applied(|s| apply_bytes_encoding(input, s)),
+                expected,
+                "input {input:?}"
+            );
+            assert_eq!(
+                estimate_bytes_encoding_len(input),
+                expected.len(),
+                "estimate {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bytes_encoding_length_prefix_boundary() {
+        // 55-byte string: short form, single prefix byte 0x80 + 55 = 0xb7.
+        let s55 = alloc::vec![0xaau8; 55];
+        let out = applied(|s| apply_bytes_encoding(&s55, s));
+        assert_eq!(out[0], 0xb7);
+        assert_eq!(out.len(), 1 + 55);
+        assert_eq!(estimate_bytes_encoding_len(&s55), out.len());
+
+        // 56-byte string: long form, 0xb8 then one length byte (56).
+        let s56 = alloc::vec![0xaau8; 56];
+        let out = applied(|s| apply_bytes_encoding(&s56, s));
+        assert_eq!(&out[..2], &[0xb8, 56]);
+        assert_eq!(out.len(), 2 + 56);
+        assert_eq!(estimate_bytes_encoding_len(&s56), out.len());
+
+        // 256-byte string: 0xb9 then two length bytes (0x01, 0x00).
+        let s256 = alloc::vec![0xaau8; 256];
+        let out = applied(|s| apply_bytes_encoding(&s256, s));
+        assert_eq!(&out[..3], &[0xb9, 0x01, 0x00]);
+        assert_eq!(out.len(), 3 + 256);
+        assert_eq!(estimate_bytes_encoding_len(&s256), out.len());
+    }
+
+    #[test]
+    fn list_length_prefix_known_answers() {
+        // (payload length, expected list prefix bytes)
+        let cases: &[(usize, &[u8])] = &[
+            (0, &[0xc0]), // empty list
+            (1, &[0xc1]),
+            (55, &[0xf7]),     // short-list boundary 0xc0 + 55
+            (56, &[0xf8, 56]), // long list: 0xc0 + 55 + 1, then length
+            (255, &[0xf8, 0xff]),
+            (256, &[0xf9, 0x01, 0x00]),
+        ];
+        for (len, expected) in cases {
+            assert_eq!(
+                &applied(|s| apply_list_length_encoding(*len, s)),
+                expected,
+                "len {len}"
+            );
+            // Prefix length only (payload excluded).
+            assert_eq!(
+                estimate_list_length_encoding_len(*len),
+                expected.len(),
+                "estimate {len}"
+            );
+        }
+    }
+}
