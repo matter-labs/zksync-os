@@ -287,9 +287,8 @@ The trait is implemented for `u8`, `u32`, `u64`, `U256`, `B160`, `Bytes32`,
 tuples, and fixed-size arrays. Little-endian encoding is used throughout.
 
 > **Note**: `UsizeDeserializable::from_iter` returns `Result<_, InternalError>` and
-> propagates an error when the supplied word count does not match `USIZE_LEN`.
-> Callers in the oracle layer must ensure the oracle response length matches the
-> expected `USIZE_LEN` constant.
+> propagates an error if the iterator does not yield enough words to fill `USIZE_LEN`.
+> Callers in the oracle layer must ensure responses are well-formed and consumed consistently.
 
 ## Data Flow: Storage Read
 
