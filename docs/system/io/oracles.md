@@ -64,7 +64,10 @@ The core query ID definitions can be found in [`query_ids.rs`](../../../zk_ee/sr
 - **GENERIC_PREIMAGE_QUERY_ID** (`0x40020000`): Retrieves preimage data for a given hash
 - **FRI_PROOF_QUERY_ID** (`0x40020001`): Gateway-only. Resolves a claimed
   `statement_versioned_hash` (declared in a `FriProofTx`) into the packed
-  verifier word stream the airbender unified verifier reads.
+  verifier word stream the airbender unified verifier reads. This query
+  is reachable only in builds with Cargo feature `fri_precompile`
+  enabled; feature-disabled builds reject `FriProofTx` during parsing
+  and never install the FRI query responder.
   - **Query input:** the `statement_versioned_hash` bytes.
   - **Sidecar storage:** raw bincode-serialized `UnrolledProgramProof`,
     keyed by `statement_versioned_hash`, supplied to the responder via a

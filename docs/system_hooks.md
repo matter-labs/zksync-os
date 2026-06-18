@@ -15,7 +15,7 @@ System hooks have two distinct use cases:
   - ecpairing
   - P256
 - Implementing Gateway-only precompiles:
-  - FRI proof verification (`0x7003`) — see the [FRI precompile design](./fri_precompile.md)
+  - FRI proof verification (`0x7003`, behind `fri_precompile`, disabled in default builds) — see the [FRI precompile design](./fri_precompile.md)
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook
@@ -74,7 +74,7 @@ Calls from unauthorized callers are treated as calls to an empty account: succes
 
 ## FRI precompile (Gateway-only)
 
-The FRI precompile (at address `0x0000000000000000000000000000000000000101`)
+The FRI precompile (at address `0x0000000000000000000000000000000000007003`)
 lets contracts ask whether a specific `statement_versioned_hash` is in the
 **current transaction's verified-statements list**, which is populated
 during `FriProofTx` validation.
@@ -85,12 +85,18 @@ the verification happens in the server and during sequencing, only transactions
 with valid FRI proofs are sequenced, so the precompile checks if the statement 
 versioned hash was supplied in the transaction.
 
+Support for this hook is compiled only when the default-off Cargo
+feature `fri_precompile` is enabled. Production and audit builds are
+expected to leave that feature disabled.
+
 ### Registration
 
-- Registered only when `system.get_chain_config().fri_proof_verification_enabled() == true`.
-- On non-Gateway chains the address is unregistered and behaves like an
-  empty account (success with empty returndata, no side effects, no
-  EVM gas burn).
+- If `fri_precompile` is disabled, `add_fri_proof_verification_hook`
+  is a no-op and the address is unregistered.
+- If `fri_precompile` is enabled, the hook is registered only when
+  `system.get_chain_config().fri_proof_verification_enabled() == true`.
+- When unregistered, the address behaves like an empty account
+  (success with empty returndata, no side effects, no EVM gas burn).
 
 ### Interface
 
