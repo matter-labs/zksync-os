@@ -1,12 +1,12 @@
 use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
-    ptr_arena::PtrArena,
     CacheSnapshotId,
 };
+use crate::utils::ptr_arena::PtrArena;
 use core::alloc::Allocator;
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
-pub struct ElementPool<V, A: Allocator + Clone> {
+pub struct HistoryRecordPool<V, A: Allocator + Clone> {
     /// Head of `recycled` sub-list
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
@@ -16,7 +16,7 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     buffer: PtrArena<HistoryRecord<V>, 50, A>,
 }
 
-impl<V, A: Allocator + Clone> ElementPool<V, A> {
+impl<V, A: Allocator + Clone> HistoryRecordPool<V, A> {
     pub fn new(alloc: A) -> Self {
         Self {
             head: Default::default(),
@@ -26,7 +26,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
     }
 
     /// Allocate memory or reuse old record and create a new record
-    pub fn create_element(
+    pub fn create_record(
         &mut self,
         value: V,
         previous: Option<HistoryRecordLink<V>>,
@@ -94,28 +94,28 @@ mod tests {
     use crate::common_structs::history_map::CacheSnapshotId;
     use std::alloc::Global;
 
-    use super::ElementPool;
+    use super::HistoryRecordPool;
 
     #[test]
-    fn creates_new_element() {
-        let mut elements_pool: ElementPool<u32, Global> = ElementPool::new(Global);
-        let element = elements_pool.create_element(11, None, CacheSnapshotId(1));
+    fn creates_new_record() {
+        let mut record_pool: HistoryRecordPool<u32, Global> = HistoryRecordPool::new(Global);
+        let record = record_pool.create_record(11, None, CacheSnapshotId(1));
 
-        assert_eq!(unsafe { element.as_ref().value }, 11);
-        assert_eq!(unsafe { element.as_ref().touch_ss_id }, CacheSnapshotId(1));
+        assert_eq!(unsafe { record.as_ref().value }, 11);
+        assert_eq!(unsafe { record.as_ref().touch_ss_id }, CacheSnapshotId(1));
     }
 
     #[test]
-    fn creates_new_element_reusing_memory() {
-        let mut elements_pool: ElementPool<u32, Global> = ElementPool::new(Global);
-        let element = elements_pool.create_element(11, None, CacheSnapshotId(1));
+    fn creates_new_record_reusing_memory() {
+        let mut record_pool: HistoryRecordPool<u32, Global> = HistoryRecordPool::new(Global);
+        let record = record_pool.create_record(11, None, CacheSnapshotId(1));
 
-        elements_pool.reuse_memory(element, element);
+        record_pool.reuse_memory(record, record);
 
-        assert!(elements_pool.head != None);
+        assert!(record_pool.head != None);
 
-        let element = elements_pool.create_element(2, None, CacheSnapshotId(10));
-        assert_eq!(unsafe { element.as_ref().value }, 2);
-        assert_eq!(unsafe { element.as_ref().touch_ss_id }, CacheSnapshotId(10));
+        let record = record_pool.create_record(2, None, CacheSnapshotId(10));
+        assert_eq!(unsafe { record.as_ref().value }, 2);
+        assert_eq!(unsafe { record.as_ref().touch_ss_id }, CacheSnapshotId(10));
     }
 }

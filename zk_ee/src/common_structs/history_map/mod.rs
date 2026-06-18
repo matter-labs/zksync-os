@@ -1,19 +1,29 @@
 //! Contains a key-value map that allows reverting items state.
 
-mod element_pool;
 pub(crate) mod element_with_history;
-mod element_with_history_arena;
-mod ptr_arena;
+mod record_pool;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
+use crate::utils::ptr_arena::PtrArena;
 use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
-pub(crate) use element_pool::ElementPool;
 use element_with_history::ElementWithHistory;
-use element_with_history_arena::ElementWithHistoryArena;
+pub(crate) use record_pool::HistoryRecordPool;
+
+/// Number of `ElementWithHistory` slots per arena page. Sized so a page fits
+/// within a small handful of cache lines for the K/V types in use (~24-52 B
+/// keys, ~32 B head/initial/first/committed pointers, plus optional element
+/// properties).
+const ELEMENT_PAGE_CAPACITY: usize = 32;
+
+/// Stable-address, stable-provenance storage for `ElementWithHistory` values.
+/// Handed-out `ElementPtr`s stay valid for reads and writes across later
+/// allocations (see [`PtrArena`]).
+type ElementArena<K, V, A, KP> =
+    PtrArena<ElementWithHistory<K, V, A, KP>, ELEMENT_PAGE_CAPACITY, A>;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -57,9 +67,9 @@ pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
     btree: BTreeMap<K, ElementPtr<K, V, A, KP>, A>,
     state: HistoryMapState<K, V, A, KP>,
     /// Manages memory allocations for history records, reuses old allocations for optimization
-    records_memory_pool: ElementPool<V, A>,
+    records_memory_pool: HistoryRecordPool<V, A>,
     /// Stable-address storage for `ElementWithHistory` values.
-    elements_arena: ElementWithHistoryArena<K, V, A, KP>,
+    elements_arena: ElementArena<K, V, A, KP>,
 }
 
 struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
@@ -86,15 +96,15 @@ where
                 frozen_snapshot_id: CacheSnapshotId(0),
                 pending_updated_elements: StackLinkedList::empty(alloc.clone()),
             },
-            records_memory_pool: ElementPool::new(alloc.clone()),
-            elements_arena: ElementWithHistoryArena::new(alloc),
+            records_memory_pool: HistoryRecordPool::new(alloc.clone()),
+            elements_arena: PtrArena::new_in(alloc),
         }
     }
 
     /// Clears the map while reusing history record allocations.
     pub fn clear(&mut self) {
         for (_, ptr) in self.btree.iter_mut() {
-            // Safety: each pointer was produced by `elements_arena.allocate` and the
+            // Safety: each pointer was produced by `elements_arena.push` and the
             // arena is still alive here. No pending-list user can race with this
             // (we hold `&mut self`).
             let element = unsafe { ptr.as_mut() };
@@ -154,7 +164,7 @@ where
                     v,
                     &mut self.records_memory_pool,
                 );
-                let ptr = self.elements_arena.allocate(element);
+                let ptr = self.elements_arena.push(element);
                 *vacant_entry.insert(ptr)
             }
         };
@@ -366,7 +376,7 @@ pub struct HistoryMapItemRefMut<'a, K, V, A: Allocator + Clone, KP = ()> {
     /// `&'a mut` fields below (and the marker).
     element: NonNull<ElementWithHistory<K, V, A, KP>>,
     cache_state: &'a mut HistoryMapState<K, V, A, KP>,
-    records_memory_pool: &'a mut ElementPool<V, A>,
+    records_memory_pool: &'a mut HistoryRecordPool<V, A>,
     _element_borrow: PhantomData<&'a mut ElementWithHistory<K, V, A, KP>>,
 }
 
@@ -421,7 +431,7 @@ where
         } else {
             // The item was last updated before the current snapshot.
 
-            let mut new = self.records_memory_pool.create_element(
+            let mut new = self.records_memory_pool.create_record(
                 unsafe { head_link.as_ref() }.value.clone(),
                 Some(head_link),
                 self.cache_state.next_snapshot_id,
@@ -753,7 +763,7 @@ mod tests {
     /// path walks pointers into every page.
     #[test]
     fn spans_multiple_arena_pages() {
-        use super::element_with_history_arena::ELEMENT_PAGE_CAPACITY;
+        use super::ELEMENT_PAGE_CAPACITY;
 
         // Span several pages, with a partially-filled final page (the `+ 1`),
         // so both the same-page and new-page branches of the arena's `push` are

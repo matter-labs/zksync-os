@@ -2,8 +2,9 @@
 //!
 //! # Why this exists
 //!
-//! The history map stores `NonNull` pointers into its backing storage and keeps
-//! using them (read *and* write) across later insertions. That requires two
+//! Some callers store `NonNull` pointers into their backing storage and keep
+//! using them (read *and* write) across later insertions — the history map's
+//! record/element arenas are the motivating example. That requires two
 //! properties from the storage:
 //!
 //! 1. **Stable addresses** — a value never moves once allocated.
@@ -248,9 +249,8 @@ mod tests {
         assert_eq!(drops.get(), 10, "every initialized slot dropped once");
 
         // Arena is reusable after clear.
-        let p = arena.push(DropCounter(&drops));
+        arena.push(DropCounter(&drops));
         assert_eq!(drops.get(), 10);
-        drop(p);
         drop(arena);
         assert_eq!(
             drops.get(),
