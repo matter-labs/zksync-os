@@ -71,16 +71,13 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate block-level invariants for non-service transactions. Call
-    // simulation intentionally skips normal tx-admission checks so RPC callers
-    // can estimate with a high gas ceiling.
+    // Validate that the tx gas limit doesn't exceed the effective per-tx
+    // limit, for non-service transactions. Call simulation intentionally skips
+    // normal tx-admission checks so RPC callers can estimate with a high gas
+    // ceiling. The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
+    // enforced once per block in `MetadataOp::metadata_op`, so it is not
+    // re-checked here per transaction.
     if !Config::SIMULATION && !transaction.is_service() {
-        let block_gas_limit = system.get_gas_limit();
-        require!(
-            block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
-            InvalidTransaction::BlockGasLimitTooHigh,
-            system
-        )?;
         let individual_limit = system.get_individual_tx_gas_limit();
         require!(
             tx_gas_limit <= individual_limit,
