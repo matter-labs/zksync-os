@@ -276,12 +276,13 @@ where
             Item = GenericEventContentRef<'events, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
         > + Clone,
 {
-    // Compute the receipt logs bloom over this tx's events. The bloom is the
-    // Ethereum-standard 2048-bit filter (keccak256 over the log address and each
-    // topic), independent of the blake2s hash used for the receipts tree.
-    let mut bloom = LogsBloom::default();
-    let mut bloom_hasher = crypto::sha3::Keccak256::new();
-    bloom.mark_events(&mut bloom_hasher, events.clone());
+    // The ZK receipts root commits to a zero logs bloom: the bloom is an
+    // Ethereum consensus field, and the ZK block header logs bloom is always
+    // zero, so computing a real per-receipt bloom (a keccak256 over every log
+    // address and topic) would be wasted prover work. The receipt still carries
+    // the (zero) bloom field for Ethereum receipt layout compatibility. The
+    // Ethereum block flow continues to compute the real bloom for its receipts.
+    let bloom = LogsBloom::default();
 
     let mut receipt_encoder = ReceiptEncoder::new_from_fields(
         tx_type,
