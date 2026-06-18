@@ -13,6 +13,16 @@ System hooks have two distinct use cases:
   - ecadd
   - ecmul
   - ecpairing
+  - blake2f
+  - point evaluation (KZG, EIP-4844)
+  - BLS12-381 (EIP-2537):
+    - G1 addition
+    - G2 addition
+    - G1 multi-scalar multiplication
+    - G2 multi-scalar multiplication
+    - pairing check
+    - map field element to G1
+    - map field element to G2
   - P256
 - Implementing Gateway-only precompiles:
   - FRI proof verification (`0x7003`) — see the [FRI precompile design](./fri_precompile.md)
