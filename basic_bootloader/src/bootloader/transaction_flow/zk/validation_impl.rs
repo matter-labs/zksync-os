@@ -591,6 +591,11 @@ fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExe
 where
     S::IO: IOSubsystemExt,
 {
-    let _ = (system, transaction, verified_fri_statements);
+    let _ = (
+        system,
+        transaction,
+        verified_fri_statements,
+        core::marker::PhantomData::<Config>,
+    );
     Ok(())
 }
