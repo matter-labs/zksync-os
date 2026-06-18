@@ -41,6 +41,7 @@ use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
+#[cfg(feature = "fri_precompile")]
 mod fri;
 pub mod process_l1_transaction;
 mod validation_impl;

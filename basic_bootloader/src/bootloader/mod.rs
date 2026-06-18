@@ -22,7 +22,9 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
+#[cfg(feature = "fri_precompile")]
 pub mod fri_host_verifier;
+#[cfg(feature = "fri_precompile")]
 mod fri_verifier;
 pub mod result_keeper;
 mod rlp;

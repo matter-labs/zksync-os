@@ -1,4 +1,4 @@
-# FRI precompile (Gateway-only)
+# FRI precompile (Gateway-only, feature-gated)
 
 The FRI precompile lets contracts on a Gateway-mode chain check, from
 inside a transaction, whether a specific `statement_versioned_hash`
@@ -9,6 +9,20 @@ themselves are supplied off-tx via an oracle sidecar; the
 `FriProofTx` transaction type declares the list of statement hashes
 the transaction sender claims to have proofs for.
 
+The entire feature is behind the default-off Cargo feature
+`fri_precompile`. Production and audit builds are expected to leave it
+disabled. The rest of this page describes the feature-enabled
+behavior. When the feature is disabled:
+
+- typed transaction `0x7C` is rejected during parsing as
+  `InvalidTransaction::InvalidEncoding`
+- the bootloader never issues `FRI_PROOF_QUERY_ID`
+- `system_hooks::add_fri_proof_verification_hook` is a no-op, so
+  address `0x0000000000000000000000000000000000007003` is not
+  registered
+- `forward_system::run::validate_fri_statement(...)` returns
+  `FriAdmissionError::FeatureDisabled`
+
 This page documents the design end-to-end. For the field-level
 encoding of the tx see
 [transaction_format.md](./bootloader/transaction_format.md). For the
@@ -17,13 +31,13 @@ the oracle query see [oracles.md](./system/io/oracles.md).
 
 ## Roles, in one sentence
 
-**Tx declares hashes**, **oracle supplies the proof witness**,
-**admission and proving verify**, **precompile only checks tx-scoped
-statement membership**.
+When `fri_precompile` is enabled: **tx declares hashes**, **oracle
+supplies the proof witness**, **admission and proving verify**,
+**precompile only checks tx-scoped statement membership**.
 
-Sequencer admission (server) verifies proofs before accepting the tx. During
-bootloader execution, FRI verification runs only in configs where
-`Config::VERIFY_FRI_PROOFS = true`; in those configs both native
+Sequencer admission (server) verifies proofs before accepting the tx.
+During bootloader execution, FRI verification runs only in configs
+where `Config::VERIFY_FRI_PROOFS = true`; in those configs both native
 prover-input generation and RISC-V proving verify the oracle stream.
 Proof verification happens in:
 
@@ -154,7 +168,9 @@ to. The precompile checks 32-byte membership against the tx-scoped statement lis
 ## Configs
 
 `BasicBootloaderExecutionConfig::VERIFY_FRI_PROOFS` gates whether
-`drive_fri_verification` runs. Set to:
+`drive_fri_verification` runs. This runtime flag only matters in
+builds where `fri_precompile` is enabled; feature-disabled builds
+compile the FRI verifier path out entirely. Set to:
 
 - `true` in `BasicBootloaderProvingExecutionConfig` — the bootloader
   verifies FRI proofs. In the native prover-input generation path, it
@@ -200,6 +216,10 @@ Current state:
 - Admission calls `validate_fri_statement(hash, proof_bytes,
   &artifacts)` per claimed statement before accepting the tx. Failure
   means the tx is rejected.
+- With `fri_precompile` disabled, the fallback public API remains but
+  `validate_fri_statement(...)` returns
+  `FriAdmissionError::FeatureDisabled`, and `forward_system` does not
+  install an FRI responder.
 - `FriVerifierArtifacts` is still part of the public API and carries
   Airbender setup + compiled layouts. A follow-up may embed these from
   `execution_utils::verifier_binaries::RECURSION_UNIFIED_*` so the

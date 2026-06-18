@@ -81,11 +81,20 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
     }
 
     pub fn is_fri_proof(&self) -> bool {
-        matches!(&self.inner, RlpEncodedTxInner::FriProof(_, _))
+        #[cfg(feature = "fri_precompile")]
+        {
+            matches!(&self.inner, RlpEncodedTxInner::FriProof(_, _))
+        }
+
+        #[cfg(not(feature = "fri_precompile"))]
+        {
+            false
+        }
     }
 
     /// Returns the signed `statement_versioned_hashes` list for a
     /// `FriProofTx`, or `None` for every other tx type.
+    #[cfg(feature = "fri_precompile")]
     pub fn statement_versioned_hashes(
         &self,
     ) -> Option<crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList<'_>>
@@ -93,6 +102,20 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         match &self.inner {
             RlpEncodedTxInner::FriProof(tx, _) => Some(tx.statement_versioned_hashes),
             _ => None,
+        }
+    }
+
+    pub fn statement_versioned_hashes_len(&self) -> u64 {
+        #[cfg(feature = "fri_precompile")]
+        {
+            self.statement_versioned_hashes()
+                .map(|hashes| hashes.count as u64)
+                .unwrap_or(0)
+        }
+
+        #[cfg(not(feature = "fri_precompile"))]
+        {
+            0
         }
     }
 
@@ -112,6 +135,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.nonce),
             RlpEncodedTxInner::EIP4844(tx, _) => Some(tx.nonce),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.nonce),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => Some(tx.nonce),
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -126,6 +150,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => &tx.value,
             RlpEncodedTxInner::EIP4844(tx, _) => &tx.value,
             RlpEncodedTxInner::EIP7702(tx, _) => &tx.value,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => &tx.value,
             RlpEncodedTxInner::Service(_) => &U256::ZERO,
         }
@@ -160,6 +185,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(_, _) => EIP1559Tx::TX_TYPE,
             RlpEncodedTxInner::EIP4844(_, _) => EIP4844Tx::TX_TYPE,
             RlpEncodedTxInner::EIP7702(_, _) => EIP7702Tx::TX_TYPE,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(_, _) => FriProofTx::TX_TYPE,
             RlpEncodedTxInner::Service(_) => ServiceTx::TX_TYPE,
         }
@@ -174,6 +200,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => tx.data,
             RlpEncodedTxInner::EIP4844(tx, _) => tx.data,
             RlpEncodedTxInner::EIP7702(tx, _) => tx.data,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => tx.data,
             RlpEncodedTxInner::Service(tx) => tx.data,
         }
@@ -186,6 +213,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list),
             RlpEncodedTxInner::EIP4844(tx, _) => Some(tx.access_list),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => Some(tx.access_list),
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -200,6 +228,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
             RlpEncodedTxInner::EIP4844(tx, _) => Some(tx.access_list.iter()),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => Some(tx.access_list.iter()),
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -240,6 +269,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
             RlpEncodedTxInner::EIP4844(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
             RlpEncodedTxInner::EIP7702(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -273,6 +303,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP4844(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP7702(tx, _) => tx.gas_limit,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::Service(_) => MAX_TX_GAS_LIMIT,
         }
@@ -294,6 +325,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => map_fn(tx.to),
             RlpEncodedTxInner::EIP4844(tx, _) => Some(B160::from_be_bytes(*tx.to)),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(B160::from_be_bytes(*tx.to)),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => Some(B160::from_be_bytes(*tx.to)),
             RlpEncodedTxInner::Service(tx) => Some(B160::from_be_bytes(*tx.to)),
         }
@@ -308,6 +340,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => &tx.max_fee_per_gas,
             RlpEncodedTxInner::EIP4844(tx, _) => &tx.max_fee_per_gas,
             RlpEncodedTxInner::EIP7702(tx, _) => &tx.max_fee_per_gas,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => &tx.max_fee_per_gas,
             RlpEncodedTxInner::Service(_) => &U256::ZERO,
         }
@@ -320,6 +353,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => Some(&tx.max_priority_fee_per_gas),
             RlpEncodedTxInner::EIP4844(tx, _) => Some(&tx.max_priority_fee_per_gas),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(&tx.max_priority_fee_per_gas),
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(tx, _) => Some(&tx.max_priority_fee_per_gas),
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -332,6 +366,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(_, _) => None,
             RlpEncodedTxInner::EIP4844(tx, _) => Some(&tx.max_fee_per_blob_gas),
             RlpEncodedTxInner::EIP7702(_, _) => None,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(_, _) => None,
             RlpEncodedTxInner::Service(_) => None,
         }
@@ -344,6 +379,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(_, _) => None,
             RlpEncodedTxInner::EIP4844(tx, _) => Some(tx.blob_versioned_hashes),
             RlpEncodedTxInner::EIP7702(_, _) => None,
+            #[cfg(feature = "fri_precompile")]
             RlpEncodedTxInner::FriProof(_, _) => None,
             RlpEncodedTxInner::Service(_) => None,
         }

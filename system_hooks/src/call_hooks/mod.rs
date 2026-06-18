@@ -1,4 +1,5 @@
 pub mod contract_deployer_temp;
+#[cfg(feature = "fri_precompile")]
 pub mod fri_precompile;
 pub mod l1_messenger;
 pub mod precompiles;
