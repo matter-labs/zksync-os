@@ -128,6 +128,10 @@ impl<'a> RLPEncodable for GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumI
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
+    use alloy::consensus::{Eip658Value, Receipt, ReceiptWithBloom};
+    use alloy_primitives::{Address, Bloom, Bytes, Log, B256};
+    use alloy_rlp::Encodable as _;
     use arrayvec::ArrayVec;
     use ruint::aliases::B160;
     use zk_ee::utils::Bytes32;
@@ -211,5 +215,164 @@ mod tests {
         expected.extend_from_slice(&body);
 
         assert_eq!(encode_log(&[]), expected);
+    }
+
+    // --- alloy cross-checks: our encoders must match a reference RLP library ---
+
+    /// Encodes one log with our `EventEncoder` and with alloy's `Log`, returning
+    /// both byte strings. Also asserts our length estimate matches what we wrote.
+    fn our_and_alloy_log(addr: [u8; 20], topics: &[[u8; 32]], data: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let address = B160::from_be_bytes::<20>(addr);
+        let mut tv: ArrayVec<Bytes32, MAX_EVENT_TOPICS> = ArrayVec::new();
+        for t in topics {
+            tv.push(Bytes32::from_array(*t));
+        }
+        let event: GenericEventContentRef<'_, MAX_EVENT_TOPICS, EthereumIOTypesConfig> =
+            GenericEventContentRef {
+                address: &address,
+                topics: &tv,
+                data,
+            };
+        let mut sink = VecSink(Vec::new());
+        event.encode_into(&mut sink);
+        assert_eq!(event.required_buffer_len(), sink.0.len());
+
+        let alloy_log = Log::new_unchecked(
+            Address::from(addr),
+            topics.iter().map(|t| B256::from(*t)).collect(),
+            Bytes::copy_from_slice(data),
+        );
+        let mut alloy_enc = Vec::new();
+        alloy_log.encode(&mut alloy_enc);
+
+        (sink.0, alloy_enc)
+    }
+
+    #[test]
+    fn event_encoding_matches_alloy() {
+        let addr = [0x11u8; 20];
+        let t = [[0x22u8; 32], [0x33u8; 32], [0x44u8; 32], [0x55u8; 32]];
+        // Exercises the topics-list length boundary (0 -> 0xc0, 1 -> 0xe1,
+        // 2..=4 -> long list) and the data single-byte rule.
+        let cases: &[(&[[u8; 32]], &[u8])] = &[
+            (&[], &[]),
+            (&[], &[0x05]),
+            (&t[..1], &[0xde, 0xad]),
+            (&t[..2], &[0x01, 0x02, 0x03, 0x04, 0x05]),
+            (&t[..3], &[]),
+            (&t[..4], &[0u8; 100]),
+        ];
+        for (topics, data) in cases {
+            let (ours, alloy) = our_and_alloy_log(addr, topics, data);
+            assert_eq!(
+                ours,
+                alloy,
+                "topics={} data_len={}",
+                topics.len(),
+                data.len()
+            );
+        }
+    }
+
+    /// Reference encoding of a full receipt via alloy: `type? || rlp([status,
+    /// cumulative_gas_used, logs_bloom, [logs...]])`.
+    fn alloy_receipt_rlp(
+        tx_type: u8,
+        status: bool,
+        gas: u64,
+        bloom: &[u8; 256],
+        logs: &[([u8; 20], Vec<[u8; 32]>, Vec<u8>)],
+    ) -> Vec<u8> {
+        let alloy_logs: Vec<Log> = logs
+            .iter()
+            .map(|(a, ts, d)| {
+                Log::new_unchecked(
+                    Address::from(*a),
+                    ts.iter().map(|t| B256::from(*t)).collect(),
+                    Bytes::copy_from_slice(d),
+                )
+            })
+            .collect();
+        let receipt = Receipt {
+            status: Eip658Value::Eip658(status),
+            cumulative_gas_used: gas,
+            logs: alloy_logs,
+        };
+        let rwb = ReceiptWithBloom {
+            receipt,
+            logs_bloom: Bloom::from_slice(bloom),
+        };
+        let mut out = Vec::new();
+        if tx_type != 0 {
+            out.push(tx_type);
+        }
+        rwb.encode(&mut out);
+        out
+    }
+
+    #[test]
+    fn receipt_encoding_matches_alloy() {
+        // Two logs: one with topics + multi-byte data, one with no topics and a
+        // single low byte of data (exercises the data single-byte rule).
+        let logs: alloc::vec::Vec<([u8; 20], Vec<[u8; 32]>, Vec<u8>)> = alloc::vec![
+            (
+                [0xaau8; 20],
+                alloc::vec![[0x01u8; 32], [0x02u8; 32]],
+                alloc::vec![0xde, 0xad, 0xbe, 0xef]
+            ),
+            ([0xbbu8; 20], alloc::vec![], alloc::vec![0x05]),
+        ];
+        let addrs: Vec<B160> = logs
+            .iter()
+            .map(|(a, _, _)| B160::from_be_bytes::<20>(*a))
+            .collect();
+        let topic_vecs: Vec<ArrayVec<Bytes32, MAX_EVENT_TOPICS>> = logs
+            .iter()
+            .map(|(_, ts, _)| {
+                let mut v = ArrayVec::new();
+                for t in ts {
+                    v.push(Bytes32::from_array(*t));
+                }
+                v
+            })
+            .collect();
+        let events: Vec<GenericEventContentRef<'_, MAX_EVENT_TOPICS, EthereumIOTypesConfig>> = (0
+            ..logs.len())
+            .map(|i| GenericEventContentRef {
+                address: &addrs[i],
+                topics: &topic_vecs[i],
+                data: logs[i].2.as_slice(),
+            })
+            .collect();
+        let bloom = [0x07u8; 256];
+
+        // Cover legacy (type 0, no prefix) and typed (1, 2) receipts, both status
+        // values, and a multi-byte cumulative gas.
+        for &tx_type in &[0u8, 1, 2] {
+            for &status in &[true, false] {
+                for &gas in &[0u64, 21_000, 0xffff_ffff] {
+                    let mut enc = ReceiptEncoder::new_from_fields(
+                        tx_type,
+                        &status,
+                        &gas,
+                        &bloom,
+                        events.iter().cloned(),
+                    );
+                    let mut sink = VecSink(Vec::new());
+                    enc.encode_into(&mut sink);
+                    assert_eq!(
+                        enc.required_buffer_len(),
+                        sink.0.len(),
+                        "len tx_type={tx_type}"
+                    );
+
+                    let expected = alloy_receipt_rlp(tx_type, status, gas, &bloom, &logs);
+                    assert_eq!(
+                        sink.0, expected,
+                        "tx_type={tx_type} status={status} gas={gas}"
+                    );
+                }
+            }
+        }
     }
 }
