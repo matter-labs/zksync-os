@@ -71,8 +71,16 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate that the transaction's gas limit is not larger than max gas limit
-    if !transaction.is_service() {
+    // Validate block-level invariants for non-service transactions. Call
+    // simulation intentionally skips normal tx-admission checks so RPC callers
+    // can estimate with a high gas ceiling.
+    if !Config::SIMULATION && !transaction.is_service() {
+        let block_gas_limit = system.get_gas_limit();
+        require!(
+            block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
+            InvalidTransaction::BlockGasLimitTooHigh,
+            system
+        )?;
         let individual_limit = system.get_individual_tx_gas_limit();
         require!(
             tx_gas_limit <= individual_limit,
@@ -175,6 +183,7 @@ where
         authorization_list_num,
         statement_versioned_hashes_num,
         transaction.is_service(),
+        native_per_gas == 0,
     );
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
@@ -448,7 +457,7 @@ where
 
     // FRI proof handling, split into two steps:
     //
-    // 1. Structural admission (is_gateway, cap, dedup) always runs
+    // 1. Structural admission (chain-config FRI support, cap, dedup) always runs
     //    and produces the hash list to install on tx-level metadata.
     // 2. Oracle-driven verification runs only when
     //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under

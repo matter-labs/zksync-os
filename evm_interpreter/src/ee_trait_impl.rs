@@ -247,7 +247,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         // passing a desired part of them to the callee, If particular EE wants to
                         // follow some not-true resource policy, it can make adjustments here before
                         // continuing the execution
-                        self.copy_returndata_to_heap(return_values.returndata);
+                        if let Err(exit_code) =
+                            self.copy_returndata_to_heap(return_values.returndata)
+                        {
+                            return self.create_immediate_return_state(system, exit_code, tracer);
+                        }
                     }
                     PendingOsRequest::Create(_) => {
                         // NOTE: failed deployments may have non-empty returndata
@@ -263,7 +267,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             CallResult::Successful { return_values } => {
                 match preemption_reason {
                     PendingOsRequest::Call => {
-                        self.copy_returndata_to_heap(return_values.returndata);
+                        if let Err(exit_code) =
+                            self.copy_returndata_to_heap(return_values.returndata)
+                        {
+                            return self.create_immediate_return_state(system, exit_code, tracer);
+                        }
                         self.stack.push_one().expect("must have enough space");
                     }
                     PendingOsRequest::Create(deployed_at) => {

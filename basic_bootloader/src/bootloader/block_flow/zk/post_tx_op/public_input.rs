@@ -46,12 +46,10 @@ impl ChainStateCommitment {
 /// - pubdata: to make sure that it's published and state is recoverable
 /// - executed priority ops: to process them on the settlement layer
 /// - l2 to l1 logs tree root: to be able to open them on the settlement layer
-/// - extra inputs to validate on the settlement layer(timestamp and chain id)
+/// - extra inputs to validate on the settlement layer(timestamp and settlement layer chain id)
 ///
 #[derive(Debug)]
 pub struct BatchOutput {
-    /// Chain id used during execution of the blocks.
-    pub chain_id: U256,
     /// First block timestamp.
     pub first_block_timestamp: u64,
     /// Last block timestamp.
@@ -85,7 +83,6 @@ impl BatchOutput {
     ///
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
-        hasher.update(self.chain_id.to_be_bytes::<32>());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         // Encode DA commitment scheme as U256 BE
@@ -110,6 +107,10 @@ pub struct BatchPublicInput {
     pub state_before: Bytes32,
     /// State commitment after the batch.
     pub state_after: Bytes32,
+    /// keccak256 commitment to the chain-level execution rules used during
+    /// execution (see [`ChainConfig::hash`]). Committed as a hash so this
+    /// layout stays fixed as the config's field set evolves.
+    pub chain_config_hash: Bytes32,
     /// Batch output to be opened on the settlement layer, needed to process DA, l1 <> l2 messaging, validate inputs.
     pub batch_output: Bytes32,
 }
@@ -122,7 +123,84 @@ impl BatchPublicInput {
         let mut hasher = Keccak256::new();
         hasher.update(self.state_before.as_u8_ref());
         hasher.update(self.state_after.as_u8_ref());
+        hasher.update(self.chain_config_hash.as_u8_ref());
         hasher.update(self.batch_output.as_u8_ref());
         hasher.finalize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::hex;
+    use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
+
+    fn sample_chain_config() -> ChainConfig {
+        ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap()
+    }
+
+    fn sample_batch_output() -> BatchOutput {
+        BatchOutput {
+            first_block_timestamp: 1,
+            last_block_timestamp: 2,
+            da_commitment_scheme: DACommitmentScheme::BlobsAndPubdataKeccak256,
+            pubdata_commitment: Bytes32::ZERO,
+            number_of_layer_1_txs: U256::from(3u64),
+            number_of_layer_2_txs: U256::from(4u64),
+            priority_operations_hash: Bytes32::ZERO,
+            l2_logs_tree_root: Bytes32::ZERO,
+            upgrade_tx_hash: Bytes32::ZERO,
+            interop_roots_rolling_hash: Bytes32::ZERO,
+            settlement_layer_chain_id: U256::from(9u64),
+        }
+    }
+
+    fn sample_public_input(chain_config: ChainConfig) -> BatchPublicInput {
+        let batch_output = sample_batch_output();
+
+        BatchPublicInput {
+            state_before: Bytes32::ZERO,
+            state_after: Bytes32::ZERO,
+            chain_config_hash: chain_config.hash().into(),
+            batch_output: batch_output.hash().into(),
+        }
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_chain_config() {
+        let default_hash = sample_public_input(sample_chain_config()).hash();
+        let fri = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let fri_hash = sample_public_input(fri).hash();
+
+        assert_ne!(default_hash, fri_hash);
+    }
+
+    #[test]
+    fn batch_output_hash_golden_vector() {
+        let default_hash = sample_batch_output().hash();
+
+        assert_eq!(
+            default_hash,
+            hex!("1c24f398aa0701f9348912ecca748ba93bfb84bfe4f283c16514311419f4f658")
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_max_tx_gas_limit() {
+        let default_hash = sample_public_input(sample_chain_config()).hash();
+        let changed = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT * 2).unwrap();
+
+        assert_ne!(default_hash, sample_public_input(changed).hash());
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_chain_id() {
+        let base = ChainConfig::new(1, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let other = ChainConfig::new(2, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+
+        assert_ne!(
+            sample_public_input(base).hash(),
+            sample_public_input(other).hash()
+        );
     }
 }

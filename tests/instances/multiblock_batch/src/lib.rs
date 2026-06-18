@@ -174,6 +174,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         batch_state,
         vec![block1_batch_input, block2_batch_input],
         da_commitment_scheme,
+        batch_tester.chain_config(),
     )
     .expect("batch prover input generation failed");
 
@@ -298,6 +299,7 @@ fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         batch_state,
         vec![block_batch_input],
         da_commitment_scheme,
+        batch_tester.chain_config(),
     )
     .expect("single-block batch prover input generation failed");
 
@@ -385,6 +387,7 @@ fn batch_helpers_reject_empty_batches() {
     let tester = new_multiblock_batch_tester();
     let initial_proof_data = tester.prepare_batch_initial_proof_data();
     let batch_state = tester.prepare_batch_state();
+    let chain_config = tester.chain_config();
 
     let batch_rejected = std::panic::catch_unwind(|| {
         let empty_blocks: Vec<BatchBlockInput<rig::zksync_os_interface::traits::TxListSource>> =
@@ -394,6 +397,7 @@ fn batch_helpers_reject_empty_batches() {
             batch_state,
             empty_blocks,
             DACommitmentScheme::BlobsAndPubdataKeccak256,
+            chain_config,
         );
     });
     assert!(

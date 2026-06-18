@@ -101,7 +101,6 @@ impl ZKsyncOS {
                 .expect("Invalid coinbase"),
             mix_hash: system_context.mix_hash,
             blob_fee: system_context.blob_fee,
-            is_gateway: false,
         };
 
         let run_config = RunConfig {

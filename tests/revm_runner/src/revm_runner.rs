@@ -64,6 +64,11 @@ where
     /// `native_price = 0` in the block metadata so that the ZKsync OS
     /// native-correction is disabled and gas models are equivalent.
     independent_gas: bool,
+    /// Overrides REVM's per-transaction gas limit cap (`CfgEnv::tx_gas_limit_cap`).
+    /// `None` uses REVM's spec-derived default (EIP-7825: 2^24 on Osaka+, else u64::MAX).
+    /// A consistency checker must not reject a transaction that ZKsync OS accepted, so the
+    /// caller passes a cap matching the ZKsync OS build under test.
+    tx_gas_limit_cap: Option<u64>,
 }
 
 impl<State> RevmRunner<State>
@@ -73,8 +78,11 @@ where
     pub fn new(state: State) -> Self {
         Self {
             state,
-            spec: ZkSpecId::AtlasV3,
+            // Default spec tracks the latest ZKsync OS protocol version (v0.4.0 -> AtlasV4),
+            // which enables the Pectra precompiles (BLAKE2F, point eval, BLS12-381).
+            spec: ZkSpecId::default(),
             independent_gas: false,
+            tx_gas_limit_cap: None,
         }
     }
 
@@ -92,6 +100,13 @@ where
     /// instead of using ZKsync OS's `gas_used` override.
     pub fn with_independent_gas(mut self, independent: bool) -> Self {
         self.independent_gas = independent;
+        self
+    }
+
+    /// Override REVM's per-transaction gas limit cap (EIP-7825). `None` keeps REVM's
+    /// spec-derived default; `Some(u64::MAX)` effectively disables the cap.
+    pub fn with_tx_gas_limit_cap(mut self, cap: Option<u64>) -> Self {
+        self.tx_gas_limit_cap = cap;
         self
     }
 
@@ -167,6 +182,7 @@ where
             .modify_cfg_chained(|cfg| {
                 cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
+                cfg.tx_gas_limit_cap = self.tx_gas_limit_cap;
             })
             .modify_block_chained(|block| {
                 block.number = U256::from(block_context.block_number());
@@ -185,6 +201,7 @@ where
             block_context.gas_limit(),
             settlement_layer_chain_id,
             self.independent_gas,
+            self.tx_gas_limit_cap,
         )?;
 
         let mut call_traces = Vec::with_capacity(transactions.len());
@@ -273,6 +290,7 @@ where
         block_gas_limit: u64,
         settlement_layer_chain_id: U256,
         independent_gas: bool,
+        tx_gas_limit_cap: Option<u64>,
     ) -> anyhow::Result<Vec<ReplayTx>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -309,6 +327,7 @@ where
                     force_fail,
                     block_gas_limit,
                     Some(settlement_layer_chain_id),
+                    tx_gas_limit_cap,
                 )
                 .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))?;
 
@@ -330,6 +349,7 @@ where
                         false,
                         block_gas_limit,
                         Some(settlement_layer_chain_id),
+                        tx_gas_limit_cap,
                     )
                     .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
                     .map(|tx| ReplayTx {

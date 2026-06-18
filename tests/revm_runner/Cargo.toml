@@ -24,7 +24,8 @@ revm = "=38.0.0"
 revm-inspectors = "0.39.0"
 log = { workspace = true }
 
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = "v0.1.0" }
+# TODO: switch back to a tagged release once AtlasV4 is merged into zksync-os-revm.
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "4daec8c176ec91db2655377e05b77ec5b302ba42" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }

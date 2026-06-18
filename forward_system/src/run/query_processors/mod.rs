@@ -7,6 +7,7 @@ use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 // Each processor handles specific types of oracle queries.
 
 mod block_metadata;
+mod chain_config;
 mod da_commitment_scheme;
 mod ethereum_cl;
 mod ethereum_header;
@@ -21,6 +22,7 @@ mod uart_print;
 mod zk_proof_data;
 
 pub use self::block_metadata::BlockMetadataResponder;
+pub use self::chain_config::ChainConfigResponder;
 pub use self::da_commitment_scheme::DACommitmentSchemeResponder;
 pub use self::ethereum_cl::EthereumCLResponder;
 pub use self::ethereum_header::EthereumTargetBlockHeaderResponder;
@@ -46,6 +48,7 @@ pub struct ForwardRunningOracleDump<
 > {
     pub zk_proof_data_responder: ZKProofDataResponder,
     pub da_commitment_scheme_responder: DACommitmentSchemeResponder,
+    pub chain_config_responder: ChainConfigResponder,
     pub block_metadata_responder: BlockMetadataResponder,
     /// Handles storage tree read operations and Merkle proofs
     pub tree_responder: ReadTreeResponder<T>,

@@ -11,7 +11,8 @@ use rig::basic_system::system_implementation::flat_storage_model::{
 };
 use rig::chain::TestingOracleFactory;
 use rig::forward_system::run::query_processors::{
-    BlockMetadataResponder, DACommitmentSchemeResponder, TxDataResponder, ZKProofDataResponder,
+    BlockMetadataResponder, ChainConfigResponder, DACommitmentSchemeResponder, TxDataResponder,
+    ZKProofDataResponder,
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
@@ -21,6 +22,7 @@ use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::system::metadata::chain_config::ChainConfig;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
@@ -252,6 +254,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         _state_tree: InMemoryTree<false>,
         _preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
@@ -285,6 +288,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
 
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(block_metadata_responder);
+        oracle.add_external_processor(ChainConfigResponder { chain_config });
         oracle.add_external_processor(tx_data_responder);
         oracle.add_external_processor(storage_responder);
         oracle.add_external_processor(zk_proof_data_responder);
@@ -296,6 +300,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
     fn create_proof_oracle(
         &self,
         _block_metadata: BlockMetadataFromOracle,
+        _chain_config: ChainConfig,
         _state_tree: InMemoryTree<false>,
         _preimage_source: InMemoryPreimageSource,
         _tx_source: TxListSource,

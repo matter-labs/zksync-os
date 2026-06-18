@@ -1,12 +1,9 @@
 use super::*;
 use zk_ee::system::errors::internal::InternalError;
-#[cfg(not(feature = "disable_system_contracts"))]
-use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 
 impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificMetadata,
 {
     fn post_init_op<Config: BasicBootloaderExecutionConfig>(
         #[cfg_attr(feature = "disable_system_contracts", allow(unused_variables))]
@@ -28,7 +25,7 @@ where
             system_hooks::add_base_token_mint(system_functions)?;
 
             // Gateway-only system hook
-            if system.metadata.is_gateway() {
+            if system.get_chain_config().fri_proof_verification_enabled() {
                 system_hooks::add_fri_proof_verification_hook(system_functions)?;
             }
         }

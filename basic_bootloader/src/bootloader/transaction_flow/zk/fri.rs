@@ -4,7 +4,7 @@
 //! execution configs:
 //!
 //! - [`build_verified_fri_statements_list`] — structural admission
-//!   checks (is_gateway, cap, dedup) that produce the hash list to
+//!   checks (chain-config FRI support, cap, dedup) that produce the hash list to
 //!   install on `TxLevelMetadata`. Runs in every config. Does not
 //!   touch the oracle or the verifier.
 //!
@@ -27,21 +27,17 @@ use crate::bootloader::transaction::Transaction;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
 
 /// Structural admission checks for a `FriProofTx`'s statement-hash
-/// list: enforce `is_gateway`, cap against `MAX_FRI_STATEMENTS_PER_TX`,
+/// list: enforce chain-config FRI support, cap against `MAX_FRI_STATEMENTS_PER_TX`,
 /// and dedup. Returns the unique hash list in declaration order.
 pub(super) fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
     system: &System<S>,
     transaction: &Transaction<S::Allocator>,
-) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError>
-where
-    S::Metadata: ZkSpecificMetadata,
-{
-    if !system.metadata.is_gateway() {
+) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError> {
+    if !system.get_chain_config().fri_proof_verification_enabled() {
         return Err(TxError::Validation(
             InvalidTransaction::FriProofTxNotSupported,
         ));
