@@ -752,7 +752,7 @@ mod tests {
     }
 
     /// Regression test for the arena variant: pointers stored in the BTreeMap and
-    /// the pending-updates list must stay valid across `ListVec` page appends.
+    /// the pending-updates list must stay valid across `PtrArena` page appends.
     ///
     /// The other unit tests only ever insert a single key, so they live entirely
     /// within the first arena page and never trigger a page append. Here we insert
@@ -835,5 +835,115 @@ mod tests {
         for k in 0..count {
             assert!(map.get(&k).is_none());
         }
+    }
+
+    /// Exercises `for_each_range`, which hands out a `HistoryMapItemRefMut` built
+    /// from a raw arena pointer and (via `update`) pushes that same pointer into
+    /// the pending list and writes through it. Run under Miri this checks that
+    /// the range-walk + write path keeps consistent pointer provenance.
+    #[test]
+    fn miri_for_each_range() {
+        use crate::system::errors::internal::InternalError;
+        use core::ops::Bound;
+
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        for k in 0..5usize {
+            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+        }
+        map.snapshot();
+
+        // Mutate only the sub-range [1, 3] through the mutable handle.
+        map.for_each_range((Bound::Included(&1), Bound::Included(&3)), |mut item| {
+            let cur = *item.current();
+            item.update::<_, InternalError>(|x| {
+                *x = cur + 100;
+                Ok(())
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        // In-range keys updated; out-of-range keys untouched.
+        for k in 0..5usize {
+            let item = map.get(&k).expect("key present");
+            let expected = if (1..=3).contains(&k) { k + 100 } else { k };
+            assert_eq!(*item.current(), expected);
+        }
+    }
+
+    /// Exercises `iter_altered_since_commit`, which reads each element through a
+    /// `NonNull` taken from the pending-updates list (`ptr.as_ref()`). Under Miri
+    /// this guards those foreign reads against invalidating the live arena.
+    #[test]
+    fn miri_iter_altered_since_commit() {
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        for k in 0..4usize {
+            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+        }
+        map.snapshot();
+
+        // Alter only keys 1 and 2 — exactly these should be reported as altered.
+        for k in [1usize, 2] {
+            let mut v = map.get_mut(&k).expect("key present");
+            v.update::<_, ()>(|x| {
+                *x = k + 10;
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        let mut seen: std::vec::Vec<(usize, usize)> = map
+            .iter_altered_since_commit()
+            .map(|item| (*item.key(), *item.current()))
+            .collect();
+        seen.sort();
+        assert_eq!(seen, std::vec![(1usize, 11usize), (2, 12)]);
+    }
+
+    /// Exercises `apply_to_last_record_of_pending_changes` with a non-`()` `KP`,
+    /// the path that derives `&initial` / `&mut head` / `&mut properties` all
+    /// from a single `&mut` to one arena element. Also drives
+    /// `element_properties` / `element_properties_mut`. This overlapping-borrow
+    /// shape is the strictest case for Tree Borrows.
+    #[test]
+    fn miri_apply_to_last_record_with_properties() {
+        // KP = u32 so the property paths are actually exercised.
+        let mut map = HistoryMap::<usize, usize, Global, u32>::new(Global);
+        for k in 0..3usize {
+            map.get_or_insert::<()>(&k, || Ok((k, k as u32))).unwrap();
+        }
+        map.snapshot();
+
+        // Update value and properties through a RefMut on keys 0 and 2.
+        for k in [0usize, 2] {
+            let mut item = map.get_mut(&k).expect("key present");
+            item.update::<_, ()>(|x| {
+                *x = k + 100;
+                Ok(())
+            })
+            .unwrap();
+            *item.element_properties_mut() += 1;
+            assert_eq!(*item.element_properties(), k as u32 + 1);
+        }
+
+        // Walk the pending heads: read `initial`, mutate `current` and the
+        // properties through the aliased references.
+        map.apply_to_last_record_of_pending_changes(|key, (initial, current), props| {
+            assert_eq!(initial.value, *key);
+            assert_eq!(current.value, *key + 100);
+            current.value += 1;
+            *props += 10;
+            Ok(())
+        })
+        .unwrap();
+
+        // Mutations through the aliased refs are visible afterwards; key 1 was
+        // never altered.
+        for k in [0usize, 2] {
+            let item = map.get(&k).expect("key present");
+            assert_eq!(*item.current(), k + 101);
+            assert_eq!(*item.key_properties(), k as u32 + 11);
+        }
+        assert_eq!(*map.get(&1).expect("key present").current(), 1);
     }
 }
