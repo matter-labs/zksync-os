@@ -952,11 +952,19 @@ where
             formula,
             actual_used
         );
-        // Skip the overcharging check when authorization-list entries are
-        // present: failed auths (bad sig, wrong chain id, nonce overflow)
-        // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
-        // formula budgets worst-case success cost per entry.
-        if context.authorization_list_num == 0 {
+        // The overcharging guard does not apply in two cases:
+        //
+        // - Authorization-list entries are present: failed auths (bad sig,
+        //   wrong chain id, nonce overflow) consume only
+        //   PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the formula budgets
+        //   worst-case success cost per entry.
+        // - Native is free (`native_per_gas == 0`): the formula intentionally
+        //   uses the worst-case "new sender" intrinsic constant
+        //   (`L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE`), which can exceed
+        //   twice the actual consumption for an already-existing sender. Native
+        //   over-budgeting is harmless when native isn't priced, so this is by
+        //   design rather than a misestimate.
+        if context.authorization_list_num == 0 && context.native_per_gas != 0 {
             assert!(
                 formula <= actual_used * 2,
                 "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",
