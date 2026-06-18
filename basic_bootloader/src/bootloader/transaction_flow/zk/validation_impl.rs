@@ -444,16 +444,9 @@ where
         ));
     }
 
-    // FRI proof handling, split into two steps:
-    //
-    // 1. Structural admission (chain-config FRI support, cap, dedup) always runs
-    //    and produces the hash list to install on tx-level metadata.
-    // 2. Oracle-driven verification runs only when
-    //    `Config::VERIFY_FRI_PROOFS == true`, i.e. under
-    //    `BasicBootloaderProvingExecutionConfig` (the RISC-V guest
-    //    and the host prover-input recording pass that feeds it).
-    let verified_fri_statements = build_verified_fri_statements_list(system, transaction)?;
-    maybe_drive_fri_verification::<S, Config>(system, transaction, &verified_fri_statements)?;
+    // FRI proof handling is centralized so the feature-off build can
+    // encapsulate the entire path in one helper.
+    let verified_fri_statements = maybe_drive_fri_verification::<S, Config>(system, transaction)?;
 
     system.set_tx_context(TxLevelMetadata {
         tx_origin: *transaction.from(),
@@ -541,61 +534,39 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
 }
 
 #[cfg(feature = "fri_precompile")]
-fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
-    system: &System<S>,
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<
     arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
     TxError,
-> {
-    if transaction.is_fri_proof() {
-        super::fri::build_verified_fri_statements_list(system, transaction)
-    } else {
-        Ok(arrayvec::ArrayVec::new())
+>
+where
+    S::IO: IOSubsystemExt,
+{
+    if !transaction.is_fri_proof() {
+        return Ok(arrayvec::ArrayVec::new());
     }
+
+    let verified_fri_statements =
+        super::fri::build_verified_fri_statements_list(system, transaction)?;
+    if Config::VERIFY_FRI_PROOFS {
+        super::fri::drive_fri_verification(system, &verified_fri_statements)?;
+    }
+    Ok(verified_fri_statements)
 }
 
 #[cfg(not(feature = "fri_precompile"))]
-fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
-    system: &System<S>,
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<
     arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
     TxError,
-> {
-    let _ = (system, transaction);
+>
+where
+    S::IO: IOSubsystemExt,
+{
+    let _ = (system, transaction, core::marker::PhantomData::<Config>);
     Ok(arrayvec::ArrayVec::new())
-}
-
-#[cfg(feature = "fri_precompile")]
-fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
-    system: &mut System<S>,
-    transaction: &Transaction<S::Allocator>,
-    verified_fri_statements: &[Bytes32],
-) -> Result<(), TxError>
-where
-    S::IO: IOSubsystemExt,
-{
-    if Config::VERIFY_FRI_PROOFS && transaction.is_fri_proof() {
-        super::fri::drive_fri_verification(system, verified_fri_statements)?;
-    }
-    Ok(())
-}
-
-#[cfg(not(feature = "fri_precompile"))]
-fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
-    system: &mut System<S>,
-    transaction: &Transaction<S::Allocator>,
-    verified_fri_statements: &[Bytes32],
-) -> Result<(), TxError>
-where
-    S::IO: IOSubsystemExt,
-{
-    let _ = (
-        system,
-        transaction,
-        verified_fri_statements,
-        core::marker::PhantomData::<Config>,
-    );
-    Ok(())
 }
