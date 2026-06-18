@@ -77,7 +77,7 @@ dependencies = [
 [[package]]
 name = "airbender-codec"
 version = "0.2.3"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b#bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "airbender-core"
 version = "0.2.3"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b#bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "airbender-crypto"
 version = "0.2.3"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b#bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -126,7 +126,7 @@ dependencies = [
 [[package]]
 name = "airbender-host"
 version = "0.2.3"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b#bd6c4a2992a0422b8f56a1dc74733e96a4a02b2b"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "airbender-codec",
  "airbender-core",

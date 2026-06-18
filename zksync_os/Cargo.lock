@@ -16,8 +16,8 @@ dependencies = [
 
 [[package]]
 name = "airbender-codec"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -25,13 +25,13 @@ dependencies = [
 
 [[package]]
 name = "airbender-core"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 
 [[package]]
 name = "airbender-crypto"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -60,8 +60,8 @@ dependencies = [
 
 [[package]]
 name = "airbender-guest"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "airbender-codec",
  "airbender-core",
@@ -71,18 +71,18 @@ dependencies = [
 
 [[package]]
 name = "airbender-macros"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
 name = "airbender-rt"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "getrandom 0.2.17",
  "riscv_common",
@@ -90,8 +90,8 @@ dependencies = [
 
 [[package]]
 name = "airbender-sdk"
-version = "0.2.2"
-source = "git+https://github.com/matter-labs/airbender-platform?rev=80c0541f6#80c0541f62414dc7f21c200218686c4bef9458d4"
+version = "0.2.3"
+source = "git+https://github.com/matter-labs/airbender-platform?rev=7b7bd958b3abae3ba8c77e546098008b8c287b1a#7b7bd958b3abae3ba8c77e546098008b8c287b1a"
 dependencies = [
  "airbender-codec",
  "airbender-guest",
@@ -244,7 +244,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62945a2f7e6de02a31fe400aa489f0e0f5b2502e69f95f853adb82a96c7a6b60"
 dependencies = [
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -282,7 +282,7 @@ dependencies = [
  "num-traits",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -342,7 +342,7 @@ checksum = "213888f660fddcca0d257e88e54ac05bca01885f258ccdf695bafd77031bb69d"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -389,7 +389,7 @@ checksum = "ffdcb70bdbc4d478427380519163274ac86e52916e10f0a8889adf0f96d3fee7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -474,15 +474,15 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "bitvec"
-version = "1.0.1"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+checksum = "ddcec3d12c579d40898fe0a9a358a803c23e9c52ca3c425707f81c9436211837"
 dependencies = [
  "funty",
  "radium",
@@ -541,9 +541,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
 name = "cc-traits"
@@ -775,7 +775,7 @@ dependencies = [
  "enum-ordinalize",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -819,7 +819,7 @@ checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1039,7 +1039,7 @@ checksum = "a0eb5a3343abf848c0984fe4604b2b105da9539376e24fc0a3b0007411ae4fd9"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1164,9 +1164,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.8.1"
+version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "modexp"
@@ -1259,7 +1259,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1492,9 +1492,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rfc6979"
@@ -1706,7 +1706,7 @@ checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1755,9 +1755,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.15.1"
+version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 dependencies = [
  "serde",
 ]
@@ -1784,7 +1784,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1806,9 +1806,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.117"
+version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+checksum = "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2013,9 +2013,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
-version = "1.0.3+wasi-0.2.9"
+version = "1.0.4+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20064672db26d7cdc89c7798c48a0fdfac8213434a1186e5ef29fd560ae223d6"
+checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen",
 ]
@@ -2055,42 +2055,42 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b065d4f0e55f82fae73202e189638116a87c55ab6b8e6c2721e13dd9d854ad1"
+checksum = "ce1022995ff5ff5d841ad7d994facc23098cd40152f2c1d11cd607c6f530653f"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b631b19d36a892ab55420c92dbc83ccd79274f25be714855d3074aa71cab639"
+checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
 name = "zeroize"
-version = "1.8.2"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 dependencies = [
  "zeroize_derive",
 ]
 
 [[package]]
 name = "zeroize_derive"
-version = "1.4.3"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a5b4158499876c763cb03bc4e49185d3cccbabb15b33c627f7884f43db852e"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
