@@ -17,6 +17,8 @@ pub struct HistoryRecord<V> {
 /// to an `ElementWithHistory` and still surface the key on iteration without
 /// going back through the BTreeMap.
 pub struct ElementWithHistory<K, V, A: Allocator + Clone, EP = ()> {
+    // The type and its module are `pub(crate)`, so these `pub` fields are
+    // crate-internal regardless — no external API surface.
     /// Key owned by this element (separate from the BTreeMap key copy).
     pub key: K,
     /// Additional properties associated with the element globally.

@@ -43,7 +43,11 @@ struct Page<T, const N: usize> {
 /// `push` returns a `NonNull<T>` that remains valid (for reads and writes) until
 /// [`PtrArena::clear`] or drop, regardless of subsequent `push` calls. Slots are
 /// never freed or moved individually.
-pub struct PtrArena<T, const N: usize, A: Allocator> {
+///
+/// Internal `pub(crate)` primitive: it exposes raw-pointer/provenance invariants
+/// that callers must uphold, so it is intentionally not part of the crate's
+/// public API. Promote to `pub` only when an external consumer genuinely needs it.
+pub(crate) struct PtrArena<T, const N: usize, A: Allocator> {
     /// Page metadata, in a `LinkedList` (not a `Vec`): the proving-mode
     /// allocator is allocate-only and forbids `realloc`/`grow`, so a growable
     /// `Vec` would panic ("grow is not allowed") once it outgrew its capacity.

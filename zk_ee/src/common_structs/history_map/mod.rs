@@ -63,13 +63,21 @@ type ElementPtr<K, V, A, KP> = NonNull<ElementWithHistory<K, V, A, KP>>;
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
 pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
+    // Field order matters for drop: fields drop top-to-bottom, so pointer
+    // holders are declared before the storage they point into. `btree` and
+    // `state` hold pointers into `elements_arena`; each `ElementWithHistory`
+    // there in turn holds record links into `records_memory_pool`. Dropping in
+    // this order means a holder is always gone before its target storage is
+    // released. (No field's `Drop` dereferences these links today, so this is
+    // defensive rather than load-bearing — but it keeps the ownership graph
+    // sound by construction.)
     /// Map from key to pointer into the elements arena.
     btree: BTreeMap<K, ElementPtr<K, V, A, KP>, A>,
     state: HistoryMapState<K, V, A, KP>,
-    /// Manages memory allocations for history records, reuses old allocations for optimization
-    records_memory_pool: HistoryRecordPool<V, A>,
     /// Stable-address storage for `ElementWithHistory` values.
     elements_arena: ElementArena<K, V, A, KP>,
+    /// Manages memory allocations for history records, reuses old allocations for optimization
+    records_memory_pool: HistoryRecordPool<V, A>,
 }
 
 struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
@@ -839,21 +847,29 @@ mod tests {
 
     /// Exercises `for_each_range`, which hands out a `HistoryMapItemRefMut` built
     /// from a raw arena pointer and (via `update`) pushes that same pointer into
-    /// the pending list and writes through it. Run under Miri this checks that
-    /// the range-walk + write path keeps consistent pointer provenance.
+    /// the pending list and writes through it. The range spans multiple arena
+    /// pages, so under Miri this checks the range-walk + write path keeps
+    /// consistent pointer provenance across page boundaries.
     #[test]
     fn miri_for_each_range() {
+        use super::ELEMENT_PAGE_CAPACITY;
         use crate::system::errors::internal::InternalError;
         use core::ops::Bound;
 
+        // Several pages, partially-filled last page.
+        let count = ELEMENT_PAGE_CAPACITY * 3 + 1;
+        // Sub-range that starts on the first page and ends on the last one.
+        let lo = 1usize;
+        let hi = count - 2;
+
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
-        for k in 0..5usize {
+        for k in 0..count {
             map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
         }
         map.snapshot();
 
-        // Mutate only the sub-range [1, 3] through the mutable handle.
-        map.for_each_range((Bound::Included(&1), Bound::Included(&3)), |mut item| {
+        // Mutate the [lo, hi] sub-range through the mutable handle.
+        map.for_each_range((Bound::Included(&lo), Bound::Included(&hi)), |mut item| {
             let cur = *item.current();
             item.update::<_, InternalError>(|x| {
                 *x = cur + 100;
@@ -863,10 +879,10 @@ mod tests {
         })
         .unwrap();
 
-        // In-range keys updated; out-of-range keys untouched.
-        for k in 0..5usize {
+        // In-range keys (across every page) updated; out-of-range keys untouched.
+        for k in 0..count {
             let item = map.get(&k).expect("key present");
-            let expected = if (1..=3).contains(&k) { k + 100 } else { k };
+            let expected = if (lo..=hi).contains(&k) { k + 100 } else { k };
             assert_eq!(*item.current(), expected);
         }
     }
@@ -903,19 +919,27 @@ mod tests {
     /// Exercises `apply_to_last_record_of_pending_changes` with a non-`()` `KP`,
     /// the path that derives `&initial` / `&mut head` / `&mut properties` all
     /// from a single `&mut` to one arena element. Also drives
-    /// `element_properties` / `element_properties_mut`. This overlapping-borrow
-    /// shape is the strictest case for Tree Borrows.
+    /// `element_properties` / `element_properties_mut`. The updated elements are
+    /// spread across multiple arena pages, and this overlapping-borrow shape is
+    /// the strictest case for Tree Borrows.
     #[test]
     fn miri_apply_to_last_record_with_properties() {
+        use super::ELEMENT_PAGE_CAPACITY;
+
+        // Span several pages; update every third key so altered elements land on
+        // every page (and `even` keys verify the untouched path too).
+        let count = ELEMENT_PAGE_CAPACITY * 3 + 1;
+        let altered = |k: usize| k % 3 == 0;
+
         // KP = u32 so the property paths are actually exercised.
         let mut map = HistoryMap::<usize, usize, Global, u32>::new(Global);
-        for k in 0..3usize {
+        for k in 0..count {
             map.get_or_insert::<()>(&k, || Ok((k, k as u32))).unwrap();
         }
         map.snapshot();
 
-        // Update value and properties through a RefMut on keys 0 and 2.
-        for k in [0usize, 2] {
+        // Update value and properties through a RefMut on the altered subset.
+        for k in (0..count).filter(|&k| altered(k)) {
             let mut item = map.get_mut(&k).expect("key present");
             item.update::<_, ()>(|x| {
                 *x = k + 100;
@@ -937,13 +961,17 @@ mod tests {
         })
         .unwrap();
 
-        // Mutations through the aliased refs are visible afterwards; key 1 was
-        // never altered.
-        for k in [0usize, 2] {
+        // Mutations through the aliased refs are visible on every page; untouched
+        // keys keep their initial value/properties.
+        for k in 0..count {
             let item = map.get(&k).expect("key present");
-            assert_eq!(*item.current(), k + 101);
-            assert_eq!(*item.key_properties(), k as u32 + 11);
+            if altered(k) {
+                assert_eq!(*item.current(), k + 101);
+                assert_eq!(*item.key_properties(), k as u32 + 11);
+            } else {
+                assert_eq!(*item.current(), k);
+                assert_eq!(*item.key_properties(), k as u32);
+            }
         }
-        assert_eq!(*map.get(&1).expect("key present").current(), 1);
     }
 }
