@@ -189,11 +189,11 @@ that different execution environments can use different cost schedules without
 branching at runtime:
 
 ```rust
-pub trait StorageAccessPolicy<R: Resources, V> {
-    fn charge_warm_storage_read(&self, ee_type, resources) -> Result<(), SystemError>;
-    fn charge_cold_storage_read_extra(&self, ee_type, resources, is_new_slot) -> Result<(), SystemError>;
-    fn charge_storage_write_extra(&self, ee_type, initial, current, new, resources, is_warm, is_new) -> Result<(), SystemError>;
-    fn refund_for_storage_write(&self, ee_type, ..., refund_counter) -> Result<(), SystemError>;
+pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
+    fn charge_warm_storage_read(&self, ee_type: ExecutionEnvironmentType, resources: &mut R) -> Result<(), SystemError>;
+    fn charge_cold_storage_read_extra(&self, ee_type: ExecutionEnvironmentType, resources: &mut R, is_new_slot: bool) -> Result<(), SystemError>;
+    fn charge_storage_write_extra(&self, ee_type: ExecutionEnvironmentType, initial_value: &V, current_value: &V, new_value: &V, resources: &mut R, is_warm_access: bool, is_cold_write_charged: bool, is_new_slot: bool) -> Result<(), SystemError>;
+    fn refund_for_storage_write(&self, ee_type: ExecutionEnvironmentType, value_at_tx_start: &V, current_value: &V, new_value: &V, resources: &mut R, refund_counter: &mut R) -> Result<(), SystemError>;
 }
 ```
 
