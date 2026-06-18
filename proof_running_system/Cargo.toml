@@ -52,13 +52,13 @@ production = ["fusaka-bpo-2"]
 # Features used for tests.
 # Note: cycle_marker is intentionally excluded — binaries with marker CSRs
 # cannot be proved (the transpiler replayer rejects them by design).
-for_tests = ["production", "state-diffs-pi"]
+for_tests = ["production", "state-diffs-pi", "basic_bootloader/eip-4844"]
 
 # Features used for eth_runner.
-eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee"]
+eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
 # Additional features used for eth_stf in eth_runner
 eth_stf = []
 
 # Features used for evm_tester
-evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee"]
+evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]

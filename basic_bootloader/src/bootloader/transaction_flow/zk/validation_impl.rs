@@ -388,6 +388,13 @@ where
     // for non-EIP4844 transactions.
     let block_base_fee_per_blob_gas = system.get_blob_base_fee_per_gas();
 
+    #[cfg(not(feature = "eip-4844"))]
+    crate::require_internal!(
+        block_base_fee_per_blob_gas == U256::ONE,
+        "Blob base fee should be set to 1 if EIP 4844 is disabled",
+        system
+    )?;
+
     let blobs = if let Some(blobs_list) = transaction.blobs() {
         let tx_max_fee_per_blob_gas = transaction.max_fee_per_blob_gas().ok_or(internal_error!(
             "Tx with blobs must define max_fee_per_blob_gas"
