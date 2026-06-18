@@ -9,7 +9,7 @@ use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
     check_enough_resources_for_pubdata, create_resources_for_tx,
-    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
+    get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
@@ -106,11 +106,11 @@ where
             ResourcesForTx {
                 main_resources: mut resources,
                 withheld: withheld_resources,
-                intrinsic_computational_native_charged,
             },
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
+        intrinsic_computational_native,
     } = prepare_and_check_resources::<S>(
         system,
         transaction,
@@ -377,7 +377,7 @@ where
         let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
         let inf_remaining = inf_resources.native().as_u64();
         let actual_used = inf_initial.saturating_sub(inf_remaining);
-        let formula = intrinsic_computational_native_charged;
+        let formula = intrinsic_computational_native;
         system_log!(
             system,
             "L1 intrinsic native verification: formula={}, actually_used={}\n",
@@ -393,13 +393,13 @@ where
         );
     }
 
-    // Add back the intrinsic native charged in get_resources_for_tx,
-    // as initial_resources doesn't include them.
+    // Add back the intrinsic native charged in `prepare_and_check_resources`,
+    // as `initial_resources` is snapshotted after that precharge.
     let computational_native_used = resources_before_refund
         .diff(initial_resources)
         .native()
         .as_u64()
-        + intrinsic_computational_native_charged;
+        + intrinsic_computational_native;
 
     // Restore the saved returndata into the return buffer so that the
     // ExecutionResult can borrow it with the correct lifetime.
@@ -440,6 +440,11 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
     native_per_pubdata: u64,
     native_per_gas: u64,
     minimal_gas_used: u64,
+    /// Intrinsic computational native that was precharged during resource
+    /// preparation. Hoisted out so callers can add it back to the total
+    /// `computational_native_used` reported at end-of-tx (since
+    /// `initial_resources` is captured after the precharge).
+    intrinsic_computational_native: u64,
 }
 
 ///
@@ -509,10 +514,8 @@ where
     let intrinsic_computational_native = calculate_l1_tx_intrinsic_computational_native_resources(
         transaction.calldata().len() as u64,
     );
-    // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
-    // Validation errors are type-safe impossible - they're logged and saturated instead
-    let resources = create_resources_for_tx::<S, L1ResourcesPolicy>(
-        system,
+
+    let (resources, charge_err) = create_resources_for_tx::<S>(
         gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
@@ -520,7 +523,16 @@ where
         intrinsic_gas,
         intrinsic_computational_native,
         intrinsic_pubdata,
-    )?;
+    );
+    // We are not invalidating L1 txs in case of there is not enough resources to cover intrinsic costs.
+    // It shouldn't be reachable in practice, as we checking it on l1, but we want to be extra safe.
+    if let Some(e) = charge_err {
+        system_log!(
+            system,
+            "L1 tx: intrinsic charge underflow ({:?}), saturating\n",
+            e
+        );
+    }
 
     // L1 transactions might have a gas limit < minimal_gas_used. This should be
     // prevented by L1 validation, but we log and saturate if it happens.
@@ -538,6 +550,7 @@ where
         native_per_pubdata,
         native_per_gas,
         minimal_gas_used,
+        intrinsic_computational_native,
     })
 }
 

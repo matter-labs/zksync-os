@@ -61,7 +61,8 @@ where
     spec: ZkSpecId,
     /// When true, REVM computes gas independently instead of using
     /// ZKsync OS's `gas_used` as an override. Best combined with
-    /// `unlimited_native` so that gas models are equivalent.
+    /// `native_price = 0` in the block metadata so that the ZKsync OS
+    /// native-correction is disabled and gas models are equivalent.
     independent_gas: bool,
     /// Overrides REVM's per-transaction gas limit cap (`CfgEnv::tx_gas_limit_cap`).
     /// `None` uses REVM's spec-derived default (EIP-7825: 2^24 on Osaka+, else u64::MAX).

@@ -44,14 +44,14 @@ else
   PROFILE="--release"
 fi
 if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
-  PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,precompiles/pectra,rig/unlimited_native"
+  PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,precompiles/pectra"
   PRECOMPILES_TESTS="test_precompiles test_pectra_precompiles test_kzg_regression"
 else
-  PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker,rig/unlimited_native"
+  PRECOMPILES_FEATURES="rig/no_print,precompiles/cycle_marker"
   PRECOMPILES_TESTS="test_precompiles"
 fi
 
-EVM_FEATURES="rig/no_print,rig/cycle_marker,rig/unlimited_native"
+EVM_FEATURES="rig/no_print,rig/cycle_marker"
 # The block fixtures are post-BPO Osaka blocks, so the eth_runner host must use
 # the fusaka + latest-BPO blob schedule. The `fusaka`/`fusaka-blobs` eth_runner
 # features were introduced on the PR side; guard so a pre-fusaka merge-base
@@ -60,9 +60,9 @@ if grep -q '^fusaka-blobs = ' tests/instances/eth_runner/Cargo.toml; then
   EVM_FEATURES="$EVM_FEATURES,fusaka,fusaka-blobs"
 fi
 if grep -q "for-tests-benchmarking-pectra" zksync_os/dump_bin.sh; then
-  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra,rig/unlimited_native"
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,system_hooks_tests/pectra"
 else
-  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker,rig/unlimited_native"
+  FRI_PRECOMPILE_FEATURES="rig/no_print,system_hooks_tests/cycle_marker"
 fi
 
 # Block runs are independent — outputs are namespaced by ${SIDE}_${blk} and

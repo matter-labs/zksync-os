@@ -104,9 +104,9 @@ fn run_precompile_inner(
         wallet.clone(),
     );
 
-    // We use a very high native per gas ratio
+    // Unlimited native (native price == 0)
     let block_context = BlockContext {
-        native_price: U256::ONE,
+        native_price: U256::ZERO,
         eip1559_basefee: U256::from(25_000),
         ..Default::default()
     };
@@ -6861,9 +6861,9 @@ fn test_regression_p256_is_warm() {
         wallet.clone(),
     );
 
-    // We use a very high native per gas ratio
+    // Unlimited native (native price == 0)
     let block_context = BlockContext {
-        native_price: U256::ONE,
+        native_price: U256::ZERO,
         eip1559_basefee: U256::from(25_000),
         ..Default::default()
     };

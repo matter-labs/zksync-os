@@ -97,7 +97,6 @@ where
             chain_config,
         )?;
 
-        // we will model initial calldata buffer as just another "heap"
         let mut system: System<S> = System::init_from_metadata_and_oracle(metadata, oracle)?;
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
