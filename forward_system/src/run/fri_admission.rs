@@ -16,6 +16,8 @@ use zk_ee::utils::Bytes32;
 /// from a malformed-proof rejection).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FriAdmissionError {
+    /// The `fri_precompile` feature is disabled in this build.
+    FeatureDisabled,
     /// `proof_bytes` could not be decoded as a bincode
     /// `UnrolledProgramProof`. Caller is expected to reject the
     /// transaction.

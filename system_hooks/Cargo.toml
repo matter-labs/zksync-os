@@ -22,3 +22,4 @@ paste = { workspace = true }
 [features]
 cycle_marker = ["cycle_marker/log_to_file"]
 delegation = ["zk_ee/delegation", "evm_interpreter/delegation"]
+fri_precompile = []

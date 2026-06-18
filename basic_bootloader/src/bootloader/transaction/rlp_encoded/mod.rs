@@ -101,6 +101,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP7702(tx, sig_data), sig_hash))
                 }
+                #[cfg(feature = "fri_precompile")]
                 FriProofTx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<FriProofTx<'a>>::try_parse_and_hash_for_signature_verification(

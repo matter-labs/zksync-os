@@ -13,6 +13,7 @@ mod ethereum_cl;
 mod ethereum_header;
 mod ethereum_initial_account_state;
 mod ethereum_initial_storage_slot_value;
+#[cfg_attr(not(feature = "fri_precompile"), path = "fri_proof_stub.rs")]
 mod fri_proof;
 mod generic_preimage;
 mod read_storage;
