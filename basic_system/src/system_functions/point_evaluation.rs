@@ -1,10 +1,14 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_ERGS, POINT_EVALUATION_NATIVE_COST};
-use crypto::ark_ff::PrimeField;
+use crypto::ark_ec::pairing::Pairing;
+use crypto::ark_ec::{AffineRepr, CurveGroup};
+use crypto::ark_ff::{Field, PrimeField};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::*;
+
+pub type KzgScalar = <crypto::bls12_381::Fr as PrimeField>::BigInt;
 
 ///
 /// Point evaluation system function implementation.
@@ -51,7 +55,7 @@ pub fn versioned_hash_for_kzg(data: &[u8]) -> [u8; 32] {
 }
 
 // We do not need internal representation, just canonical scalar
-fn parse_scalar(input: &[u8; 32]) -> Result<<crypto::bls12_381::Fr as PrimeField>::BigInt, ()> {
+fn parse_scalar(input: &[u8; 32]) -> Result<KzgScalar, ()> {
     // Arkworks has strange format for integer serialization, so we do manually
     let result = crypto::parse_u256_be(input);
     if result >= crypto::bls12_381::Fr::MODULUS {
@@ -65,6 +69,36 @@ pub fn parse_g1_compressed(input: &[u8]) -> Result<crypto::bls12_381::G1Affine, 
     // format coincides with one defined in ZCash/Arkworks
     use crypto::ark_serialize::CanonicalDeserialize;
     crypto::bls12_381::G1Affine::deserialize_compressed(input).map_err(|_| ())
+}
+
+#[inline(always)]
+pub fn verify_kzg_proof(
+    commitment: crypto::bls12_381::G1Affine,
+    proof: crypto::bls12_381::G1Affine,
+    z: KzgScalar,
+    y: KzgScalar,
+) -> bool {
+    // Original check:
+    // e(yG1 - commitment, G2) * e(proof, tauG2 - zG2) == 1.
+    //
+    // Move the z multiplication from G2 to G1:
+    // e(yG1 - commitment - z*proof, G2) * e(proof, tauG2) == 1.
+    let mut left_g1 = crypto::bls12_381::G1Affine::generator().mul_bigint(&y);
+    left_g1 -= &commitment;
+    left_g1 -= proof.mul_bigint(&z);
+
+    let left_g1 = left_g1.into_affine();
+    let tau_g2_prepared: <crypto::bls12_381::curves::Bls12_381 as Pairing>::G2Prepared =
+        crypto::bls12_381::consts::G2_BY_TAU_POINT.into();
+
+    let gt_el = crypto::bls12_381::curves::Bls12_381::multi_pairing(
+        [left_g1, proof],
+        [
+            crypto::bls12_381::consts::PREPARED_G2_GENERATOR.clone(),
+            tau_g2_prepared,
+        ],
+    );
+    gt_el.0 == <crypto::bls12_381::curves::Bls12_381 as Pairing>::TargetField::ONE
 }
 
 fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
@@ -121,7 +155,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
         ));
     };
 
-    if crypto::bls12_381::verify_kzg_proof(commitment_point, proof, z, y) {
+    if verify_kzg_proof(commitment_point, proof, z, y) {
         dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
             .map_err(|_| out_of_return_memory!())?;
         Ok(())
@@ -181,6 +215,40 @@ mod tests {
 
         assert_eq!(gas_used, gas);
         assert_eq!(output[..], expected_output);
+    }
+
+    #[test]
+    fn test_rearranged_kzg_verifier_matches_reference() {
+        let commitment =
+            hex!("8f59a8d2a1a625a17f3fea0fe5eb8c896db3764f3185481bc22f91b4aaffcca25f26936857bc3a7c2539ea8ec3a952b7");
+        let proof =
+            hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c");
+        let z = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000");
+        let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9");
+
+        let commitment = parse_g1_compressed(&commitment).unwrap();
+        let proof = parse_g1_compressed(&proof).unwrap();
+        let z = parse_scalar(&z).unwrap();
+        let y = parse_scalar(&y).unwrap();
+
+        let local = verify_kzg_proof(commitment, proof, z, y);
+        let reference = crypto::bls12_381::verify_kzg_proof(commitment, proof, z, y);
+        assert!(local, "valid proof should verify");
+        assert_eq!(local, reference);
+
+        let unrelated_128_bit_z =
+            hex!("000000000000000000000000000000000123456789abcdef0123456789abcdef");
+        let unrelated_128_bit_z = parse_scalar(&unrelated_128_bit_z).unwrap();
+        assert_eq!(
+            verify_kzg_proof(commitment, proof, unrelated_128_bit_z, y),
+            crypto::bls12_381::verify_kzg_proof(commitment, proof, unrelated_128_bit_z, y)
+        );
+
+        let zero_y = parse_scalar(&[0u8; 32]).unwrap();
+        assert_eq!(
+            verify_kzg_proof(commitment, proof, z, zero_y),
+            crypto::bls12_381::verify_kzg_proof(commitment, proof, z, zero_y)
+        );
     }
 
     #[test]

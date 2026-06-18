@@ -4,7 +4,7 @@ use self::commitment_and_proof_advice::{
 use super::DACommitmentGenerator;
 use arrayvec::ArrayVec;
 use basic_system::system_functions::point_evaluation::{
-    parse_g1_compressed, versioned_hash_for_kzg,
+    parse_g1_compressed, verify_kzg_proof, versioned_hash_for_kzg,
 };
 use crypto::ark_ff::Field;
 use crypto::ark_ff::One;
@@ -113,7 +113,7 @@ pub fn blob_versioned_hash_with_advisor(
     let opening_value = polynomial_evaluation::evaluate_blob_polynomial(data, &evaluation_point);
 
     assert!(
-        crypto::bls12_381::verify_kzg_proof(
+        verify_kzg_proof(
             commitment,
             proof,
             evaluation_point.into_bigint(),
