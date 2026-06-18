@@ -63,14 +63,10 @@ type ElementPtr<K, V, A, KP> = NonNull<ElementWithHistory<K, V, A, KP>>;
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
 pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
-    // Field order matters for drop: fields drop top-to-bottom, so pointer
-    // holders are declared before the storage they point into. `btree` and
-    // `state` hold pointers into `elements_arena`; each `ElementWithHistory`
-    // there in turn holds record links into `records_memory_pool`. Dropping in
-    // this order means a holder is always gone before its target storage is
-    // released. (No field's `Drop` dereferences these links today, so this is
-    // defensive rather than load-bearing — but it keeps the ownership graph
-    // sound by construction.)
+    // Drop order (fields drop top-to-bottom): pointer holders before the storage
+    // they point into — `btree`/`state` hold pointers into `elements_arena`,
+    // whose elements hold record links into `records_memory_pool`. Defensive
+    // today (no `Drop` derefs these links), but sound by construction.
     /// Map from key to pointer into the elements arena.
     btree: BTreeMap<K, ElementPtr<K, V, A, KP>, A>,
     state: HistoryMapState<K, V, A, KP>,

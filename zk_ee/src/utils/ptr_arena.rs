@@ -44,9 +44,8 @@ struct Page<T, const N: usize> {
 /// [`PtrArena::clear`] or drop, regardless of subsequent `push` calls. Slots are
 /// never freed or moved individually.
 ///
-/// Internal `pub(crate)` primitive: it exposes raw-pointer/provenance invariants
-/// that callers must uphold, so it is intentionally not part of the crate's
-/// public API. Promote to `pub` only when an external consumer genuinely needs it.
+/// Kept `pub(crate)`: callers must uphold its provenance invariants, so it is
+/// deliberately not public API.
 pub(crate) struct PtrArena<T, const N: usize, A: Allocator> {
     /// Page metadata, in a `LinkedList` (not a `Vec`): the proving-mode
     /// allocator is allocate-only and forbids `realloc`/`grow`, so a growable
@@ -123,10 +122,9 @@ impl<T, const N: usize, A: Allocator> PtrArena<T, N, A> {
         // payload deallocated.
         while let Some(page) = self.pages.pop_front() {
             for i in 0..page.len {
-                // SAFETY: slots `0..len` are initialized; each physical slot is
-                // dropped exactly once (the arena is the sole owner of the
-                // payload — the history chains/free list only hold borrows-as
-                // -pointers into it).
+                // SAFETY: slots `0..len` are initialized; the arena is the sole
+                // owner of the payload, so each slot is dropped exactly once
+                // (handed-out pointers are non-owning copies).
                 unsafe { page.data.as_ptr().add(i).cast::<T>().drop_in_place() };
             }
             // SAFETY: `page.data` came from `alloc_page` with `PAGE_LAYOUT` and
