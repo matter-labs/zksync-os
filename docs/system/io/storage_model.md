@@ -122,8 +122,7 @@ pub struct FullIO<
 ## `SystemIOTypesConfig` ([source](../../../zk_ee/src/types_config/mod.rs))
 
 This trait is the type-level configuration for all IO primitive types. It decouples
-the system logic from the specific widths of addresses, keys, and values:
-
+the system logic from the specific widths of addresses, keys, and values (simplified; see source for full definition):
 ```rust
 pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
     type Address;           // e.g. B160 (20-byte Ethereum address)
