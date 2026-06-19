@@ -1,13 +1,18 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
+use alloy::consensus::{Eip658Value, Receipt, ReceiptWithBloom};
 use alloy::hex;
+use alloy::primitives::{Bloom, Log};
+use alloy::rlp::Encodable as _;
 use forward_system::run::output::BlockOutput;
-use rig::crypto::MiniDigest;
+use rig::basic_bootloader::bootloader::block_flow::zk::zk_block_tx_tree_root_in_place;
+use rig::crypto::{blake2s::Blake2s256, MiniDigest};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::log::{error, info};
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -16,7 +21,8 @@ pub enum PostCheckError {
     TxShouldHaveFailed { id: TxId },
     IncorrectLogs { id: TxId },
     GasMismatch { id: TxId },
-    BadTxRollingHash,
+    BadTransactionsRoot,
+    BadReceiptsRoot,
     Internal { msg: String },
 }
 
@@ -333,19 +339,64 @@ fn zksync_os_output_into_account_state(
     Ok(updates)
 }
 
-fn compute_tx_rolling_hash_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
-    let mut hasher = rig::crypto::sha3::Keccak256::new();
-    let mut tx_rolling_hash = [
-        0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03,
-        0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85,
-        0xa4, 0x70,
-    ];
-    for receipt in receipts.iter() {
-        hasher.update(tx_rolling_hash);
-        hasher.update(receipt.transaction_hash);
-        tx_rolling_hash = hasher.finalize_reset();
+/// Reproduces the header `transactions_root`: a Blake2s simple Merkle tree over
+/// the block's transaction hashes (in execution order), matching the ZKsync OS
+/// `block_data` scheme.
+fn compute_transactions_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
+    let mut leaves: Vec<Bytes32> = receipts
+        .iter()
+        .map(|receipt| Bytes32::from_array(receipt.transaction_hash.0))
+        .collect();
+    zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
+}
+
+/// Reproduces a single ZK receipt-hash leaf independently of ZKsync OS:
+/// `blake2s(type? || rlp([status, cumulative_gas_used, logs_bloom, [logs...]]))`,
+/// matching `compute_receipt_hash`. The ZK path commits to a **zero** logs bloom
+/// (the bloom is recomputable from the logs and would be wasted prover work), so
+/// the leaf is built with a zero bloom here too. Status, cumulative gas and the
+/// logs are taken from the reference receipt, giving a check that is independent
+/// of the per-tx data ZKsync OS used to build the header.
+fn compute_receipt_leaf(receipt: &TransactionReceipt) -> Bytes32 {
+    let status = receipt.status == Some(U256::from(1u64));
+    let cumulative_gas_used = zk_ee::utils::u256_to_u64_saturated(&receipt.cumulative_gas_used);
+    // ZK/Ethereum-specific type bytes (e.g. 0x7e) all fit in one byte.
+    let tx_type = receipt
+        .tx_type
+        .map_or(0u8, |t| zk_ee::utils::u256_to_u64_saturated(&t) as u8);
+
+    let logs: Vec<Log> = receipt
+        .logs
+        .iter()
+        .map(|l| Log::new_unchecked(l.address, l.topics.clone(), l.data.clone()))
+        .collect();
+
+    let receipt_with_bloom = ReceiptWithBloom {
+        receipt: Receipt {
+            status: Eip658Value::Eip658(status),
+            cumulative_gas_used,
+            logs,
+        },
+        logs_bloom: Bloom::ZERO,
+    };
+
+    let mut rlp = Vec::new();
+    if tx_type != 0 {
+        rlp.push(tx_type);
     }
-    tx_rolling_hash
+    receipt_with_bloom.encode(&mut rlp);
+
+    let mut hasher = Blake2s256::new();
+    hasher.update(&rlp);
+    Bytes32::from_array(hasher.finalize())
+}
+
+/// Reproduces the header `receipts_root`: a Blake2s simple Merkle tree over the
+/// block's receipt-hash leaves (in execution order), matching the ZKsync OS
+/// `block_data` scheme. Independent of ZKsync OS' own receipt encoding.
+fn compute_receipts_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
+    let mut leaves: Vec<Bytes32> = receipts.iter().map(compute_receipt_leaf).collect();
+    zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
 }
 
 pub fn post_check(
@@ -358,15 +409,26 @@ pub fn post_check(
         zk_ee::utils::u256_to_u64_saturated(src) as usize
     }
 
-    let reference_rolling_tx_hash = compute_tx_rolling_hash_for_receipts(&receipts);
-    let zksync_os_tx_rolling_hash = output.header.inner().transactions_root.0;
-    if reference_rolling_tx_hash != zksync_os_tx_rolling_hash {
+    let reference_transactions_root = compute_transactions_root_for_receipts(&receipts);
+    let zksync_os_transactions_root = output.header.inner().transactions_root.0;
+    if reference_transactions_root != zksync_os_transactions_root {
         error!(
-            "Transaction rolling hash mismatch, reference {}, got {}",
-            hex::encode(reference_rolling_tx_hash),
-            hex::encode(zksync_os_tx_rolling_hash)
+            "Transactions root mismatch, reference {}, got {}",
+            hex::encode(reference_transactions_root),
+            hex::encode(zksync_os_transactions_root)
         );
-        return Err(PostCheckError::BadTxRollingHash);
+        return Err(PostCheckError::BadTransactionsRoot);
+    }
+
+    let reference_receipts_root = compute_receipts_root_for_receipts(&receipts);
+    let zksync_os_receipts_root = output.header.inner().receipts_root.0;
+    if reference_receipts_root != zksync_os_receipts_root {
+        error!(
+            "Receipts root mismatch, reference {}, got {}",
+            hex::encode(reference_receipts_root),
+            hex::encode(zksync_os_receipts_root)
+        );
+        return Err(PostCheckError::BadReceiptsRoot);
     }
 
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {

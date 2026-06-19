@@ -54,6 +54,7 @@ pub struct ZkTransactionFlowOnlyEOA<S: EthereumLikeTypes> {
 pub struct ZkTxResult<'a> {
     pub result: ExecutionResult<'a, EthereumIOTypesConfig>,
     pub tx_hash: Bytes32,
+    pub tx_type: u8,
     pub is_priority_tx: bool,
     pub is_upgrade_tx: bool,
     pub is_service_tx: bool,
@@ -607,6 +608,7 @@ where
         ZkTxResult {
             result,
             tx_hash: context.tx_hash,
+            tx_type: transaction.tx_type(),
             is_priority_tx: false,
             is_upgrade_tx: false,
             is_service_tx: transaction.is_service(),

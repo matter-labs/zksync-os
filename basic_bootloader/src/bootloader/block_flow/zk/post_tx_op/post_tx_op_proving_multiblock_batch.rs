@@ -45,7 +45,7 @@ where
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
     type PostTxLoopOpResult = O;
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator, S::Allocator>;
     type BatchDataKeeper = ZKBatchDataKeeper<A, O>;
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
 
@@ -57,7 +57,8 @@ where
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         let block_header = form_block_header(
             &system,
-            block_data.transaction_hashes_accumulator.finish().0,
+            block_data.transactions_root(),
+            block_data.receipts_root(),
             block_data.block_gas_used,
         )?;
         let block_hash = Bytes32::from(block_header.hash());

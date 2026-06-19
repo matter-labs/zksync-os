@@ -41,12 +41,12 @@ pub mod eip_7002_withdrawal_contract;
 pub mod eip_7251_consolidation_contract;
 mod loop_op;
 pub mod metadata_op;
+mod mpt_leaf;
 pub mod oracle_queries;
 mod post_init_op;
 mod post_tx_op_proving;
 mod post_tx_op_sequencing;
 mod pre_tx_loop;
-mod rlp_encodings;
 mod utils;
 pub(crate) mod withdrawals;
 

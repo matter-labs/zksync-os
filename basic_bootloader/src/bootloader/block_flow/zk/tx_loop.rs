@@ -4,7 +4,8 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
-use zk_ee::system::Resource;
+use zk_ee::memory::stack_trait::Stack;
+use zk_ee::system::{IOTeardown, Resource};
 
 impl<
         S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
@@ -12,10 +13,10 @@ impl<
         BatchEA: TxHashesAccumulator,
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
-    S::IO: IOSubsystemExt,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
     S::Metadata: ZkSpecificMetadata,
 {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA, S::Allocator>;
     // we write only enforced tx hashes to the batch data, so it can be anything that implements tx hashes accumulator
     type BatchDataKeeper = BatchEA;
 
@@ -181,6 +182,17 @@ where
 
                                 is_first_tx = false;
 
+                                let tx_status = matches!(
+                                    &tx_processing_result.result,
+                                    ExecutionResult::Success { .. }
+                                );
+                                let receipt_hash = compute_receipt_hash(
+                                    tx_processing_result.tx_type,
+                                    &tx_status,
+                                    &next_block_gas_used,
+                                    system.io.events_in_this_tx_iterator(),
+                                );
+
                                 // Finish the frame opened before processing the tx
                                 system.finish_global_frame(None)?;
 
@@ -196,8 +208,9 @@ where
                                     };
 
                                 block_data
-                                    .transaction_hashes_accumulator
-                                    .add_tx_hash(&tx_processing_result.tx_hash);
+                                    .transaction_hashes
+                                    .push(tx_processing_result.tx_hash);
+                                block_data.receipt_hashes.push(receipt_hash);
                                 if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
@@ -212,7 +225,12 @@ where
                                         .upgrade_tx_recorder
                                         .add_upgrade_tx_hash(&tx_processing_result.tx_hash);
                                 }
-                                block_data.current_transaction_number += 1;
+                                block_data.current_transaction_number = block_data
+                                    .current_transaction_number
+                                    .checked_add(1)
+                                    .ok_or_else(|| {
+                                        internal_error!("too many transactions in block")
+                                    })?;
 
                                 result_keeper.tx_processed(Ok(TxProcessingOutput {
                                     status,

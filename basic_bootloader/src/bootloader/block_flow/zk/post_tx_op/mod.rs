@@ -69,7 +69,8 @@ fn write_pubdata<
 /// Helper method to create block header.
 fn form_block_header<S: EthereumLikeTypes>(
     system: &System<S>,
-    tx_rolling_hash: Bytes32,
+    transactions_root: Bytes32,
+    receipts_root: Bytes32,
     block_gas_used: u64,
 ) -> Result<BlockHeader, BootloaderSubsystemError> {
     let block_number = system.get_block_number();
@@ -91,7 +92,8 @@ fn form_block_header<S: EthereumLikeTypes>(
     Ok(BlockHeader::new(
         previous_block_hash,
         beneficiary,
-        tx_rolling_hash,
+        transactions_root,
+        receipts_root,
         block_number,
         gas_limit,
         block_gas_used,

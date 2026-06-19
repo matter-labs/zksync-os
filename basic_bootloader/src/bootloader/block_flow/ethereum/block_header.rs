@@ -3,7 +3,7 @@ use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_TARGET_HEA
 use crate::bootloader::block_flow::ethereum::oracle_queries::ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID;
 use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::RlpListDecode;
-use crate::bootloader::transaction_flow::ethereum::LogsBloom;
+use crate::bootloader::transaction_flow::logs_bloom::LogsBloom;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;

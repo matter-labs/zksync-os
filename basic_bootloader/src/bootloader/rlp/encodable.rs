@@ -1,37 +1,40 @@
-use crate::bootloader::rlp;
-use basic_system::system_implementation::ethereum_storage_model::ByteBuffer;
+//! The RLP encoder framework: the `RLPEncodable` / `CachingRLPEncodable` traits,
+//! list envelopes, and `RLPEncodable` impls for the primitive types.
+//!
+//! Encoding a list is a two-step dance because the list is length-prefixed:
+//! first sum every element's encoded length (`required_buffer_len`, cached where
+//! useful), then write the prefix followed by the elements (`encode_into`).
 
-mod receipt;
-mod utils;
-pub(crate) use self::receipt::ReceiptEncoder;
-pub(crate) use self::utils::*;
+use super::primitives::{
+    apply_bytes_encoding, apply_list_length_encoding, apply_number_encoding,
+    estimate_bytes_encoding_len, estimate_list_length_encoding_len, estimate_number_encoding_len,
+};
+use zk_ee::utils::{write_bytes::WriteBytes, Bytes32};
 
 pub trait RLPEncodable {
     fn required_buffer_len(&self) -> usize;
-    fn encode_into<B: ?Sized + ByteBuffer>(&self, buffer: &mut B);
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B);
 }
 
-impl<'a, T: RLPEncodable> RLPEncodable for &'a T {
+impl<T: ?Sized + RLPEncodable> RLPEncodable for &T {
     fn required_buffer_len(&self) -> usize {
         (*self).required_buffer_len()
     }
-    fn encode_into<B: ?Sized + ByteBuffer>(&self, buffer: &mut B) {
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
         (*self).encode_into(buffer);
     }
 }
 
 pub trait CachingRLPEncodable {
-    // mut allows some caching of length if needed by out internedialte structures
     fn required_buffer_len(&mut self) -> usize;
-    fn encode_into<B: ?Sized + ByteBuffer>(&mut self, buffer: &mut B);
+    fn encode_into<B: ?Sized + WriteBytes>(&mut self, buffer: &mut B);
 }
 
-// To be used and implemented only for a small number of types. This envelope assumes nothing
-// about internals - it's implementation can encode as list for convenience
 #[derive(Debug)]
 pub struct CachingEnvelope<T: RLPEncodable> {
-    pub(crate) value: T,
-    pub(crate) cached_len: usize,
+    value: T,
+    cached_len: usize,
 }
 
 impl<T: RLPEncodable> CachingEnvelope<T> {
@@ -51,7 +54,7 @@ impl<T: RLPEncodable> CachingRLPEncodable for CachingEnvelope<T> {
         self.cached_len
     }
 
-    fn encode_into<B: ?Sized + ByteBuffer>(&mut self, buffer: &mut B) {
+    fn encode_into<B: ?Sized + WriteBytes>(&mut self, buffer: &mut B) {
         self.value.encode_into(buffer);
     }
 }
@@ -78,8 +81,8 @@ pub struct ListEnvelope<T: CachingRLPEncodable, U: CachingRLPEncodable> {
 impl<T: CachingRLPEncodable, U: CachingRLPEncodable> ListEnvelope<T, U> {
     pub fn from_head(head: ListElement<T, U>) -> Self {
         Self {
-            cached_len: 0,
             head,
+            cached_len: 0,
         }
     }
 }
@@ -98,12 +101,8 @@ impl<T: RLPEncodable, I: Iterator<Item = T> + Clone> HomogeneousListEnvelope<T, 
     }
 }
 
-// recursive implementation for lists
-
 impl<T: CachingRLPEncodable, U: CachingRLPEncodable> CachingRLPEncodable for ListElement<T, U> {
     fn required_buffer_len(&mut self) -> usize {
-        // list doesn't cache, but we expect it's internals to cache if needed,
-        // or ListEnvelope to cache once on top
         let mut total_len = self.value.required_buffer_len();
         if let Some(next) = self.next.as_mut() {
             total_len += next.required_buffer_len();
@@ -112,7 +111,7 @@ impl<T: CachingRLPEncodable, U: CachingRLPEncodable> CachingRLPEncodable for Lis
         total_len
     }
 
-    fn encode_into<B: ?Sized + ByteBuffer>(&mut self, buffer: &mut B) {
+    fn encode_into<B: ?Sized + WriteBytes>(&mut self, buffer: &mut B) {
         self.value.encode_into(buffer);
         if let Some(next) = self.next.as_mut() {
             next.encode_into(buffer);
@@ -125,14 +124,12 @@ impl<T: CachingRLPEncodable, U: CachingRLPEncodable> CachingRLPEncodable for Lis
         if self.cached_len == 0 {
             self.cached_len = self.head.required_buffer_len();
         }
-        // it's a list
-        self.cached_len + rlp::estimate_encoding_len_for_payload_length(self.cached_len)
+        self.cached_len + estimate_list_length_encoding_len(self.cached_len)
     }
 
-    fn encode_into<B: ?Sized + ByteBuffer>(&mut self, buffer: &mut B) {
+    fn encode_into<B: ?Sized + WriteBytes>(&mut self, buffer: &mut B) {
         let _ = self.required_buffer_len();
-        let payload_len = self.cached_len;
-        apply_list_length_encoding(payload_len, buffer);
+        apply_list_length_encoding(self.cached_len, buffer);
         self.head.encode_into(buffer);
     }
 }
@@ -146,18 +143,66 @@ impl<T: RLPEncodable, I: Iterator<Item = T> + Clone> CachingRLPEncodable
                 self.cached_len += el.required_buffer_len();
             }
         }
-        // it's a list
-        self.cached_len + rlp::estimate_encoding_len_for_payload_length(self.cached_len)
+        self.cached_len + estimate_list_length_encoding_len(self.cached_len)
     }
 
-    fn encode_into<B: ?Sized + ByteBuffer>(&mut self, buffer: &mut B) {
-        // just compute it if needed
+    fn encode_into<B: ?Sized + WriteBytes>(&mut self, buffer: &mut B) {
         let _ = self.required_buffer_len();
-        // we need only the payload
-        let payload_len = self.cached_len;
-        apply_list_length_encoding(payload_len, buffer);
+        apply_list_length_encoding(self.cached_len, buffer);
         for el in self.elements_it.clone() {
             el.encode_into(buffer);
         }
+    }
+}
+
+impl RLPEncodable for bool {
+    fn required_buffer_len(&self) -> usize {
+        let self_u8 = if *self { 1 } else { 0 };
+        estimate_number_encoding_len(&[self_u8])
+    }
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
+        let self_u8 = if *self { 1 } else { 0 };
+        apply_number_encoding(&[self_u8], buffer);
+    }
+}
+
+impl RLPEncodable for u64 {
+    fn required_buffer_len(&self) -> usize {
+        estimate_number_encoding_len(&self.to_be_bytes())
+    }
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
+        apply_number_encoding(&self.to_be_bytes(), buffer);
+    }
+}
+
+impl<const N: usize> RLPEncodable for [u8; N] {
+    fn required_buffer_len(&self) -> usize {
+        estimate_bytes_encoding_len(self)
+    }
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
+        apply_bytes_encoding(self, buffer);
+    }
+}
+
+impl RLPEncodable for [u8] {
+    fn required_buffer_len(&self) -> usize {
+        estimate_bytes_encoding_len(self)
+    }
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
+        apply_bytes_encoding(self, buffer);
+    }
+}
+
+impl RLPEncodable for Bytes32 {
+    fn required_buffer_len(&self) -> usize {
+        estimate_bytes_encoding_len(self.as_u8_ref())
+    }
+
+    fn encode_into<B: ?Sized + WriteBytes>(&self, buffer: &mut B) {
+        apply_bytes_encoding(self.as_u8_ref(), buffer);
     }
 }
