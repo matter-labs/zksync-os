@@ -2079,6 +2079,7 @@ dependencies = [
  "full_statement_verifier",
  "hex",
  "paste",
+ "proptest",
  "ruint",
  "serde",
  "serde-big-array",

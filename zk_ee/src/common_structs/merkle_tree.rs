@@ -17,13 +17,33 @@ use crypto::MiniDigest;
 /// (index `0` = empty leaf, index `height` = all-empty root), and its length
 /// sets `height = len - 1`. Empty input returns `empty_subtree_hashes[height]`.
 ///
-/// Precondition: `nodes.len() <= 2^height` (call sites bound leaves well below
-/// capacity, so this is not reachable from input).
+/// # Panics
+///
+/// Both preconditions below are guaranteed by current call sites (the empty-hash
+/// table is a hardcoded constant and leaf counts are bounded well below
+/// capacity), but they are asserted explicitly because this folds a
+/// consensus-critical root: a violation would otherwise underflow or silently
+/// return a non-root.
+///
+/// - `empty_subtree_hashes` must be non-empty (it sets the tree height).
+/// - `nodes.len() <= 2^height`: with more leaves than capacity the fold stops
+///   after `height` levels and the result is not a valid fixed-height root.
 pub fn merkle_root_in_place<H>(nodes: &mut [Bytes32], empty_subtree_hashes: &[Bytes32]) -> Bytes32
 where
     H: MiniDigest<HashOutput = [u8; 32]>,
 {
+    assert!(
+        !empty_subtree_hashes.is_empty(),
+        "empty_subtree_hashes must contain at least the empty-leaf hash"
+    );
     let height = empty_subtree_hashes.len() - 1;
+    // `2^height` may exceed `usize` (e.g. `height == 32` on a 32-bit target), in
+    // which case any slice fits and the shift must be skipped to avoid its own
+    // overflow.
+    assert!(
+        height >= usize::BITS as usize || nodes.len() <= (1usize << height),
+        "more leaves than the tree capacity 2^height"
+    );
 
     let mut count = nodes.len();
     if count == 0 {
@@ -149,6 +169,22 @@ mod tests {
             merkle_root_in_place::<Blake2s256>(&mut one, &empty),
             reference_root::<Blake2s256>(&[leaf], Bytes32::ZERO, HEIGHT)
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "empty-leaf hash")]
+    fn empty_subtree_table_panics() {
+        let mut leaves = alloc::vec![blake_leaf(1)];
+        let _ = merkle_root_in_place::<Blake2s256>(&mut leaves, &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "tree capacity")]
+    fn too_many_leaves_panics() {
+        const HEIGHT: usize = 2; // capacity 4
+        let empty = empty_subtree_hashes::<Blake2s256>(Bytes32::ZERO, HEIGHT);
+        let mut leaves: Vec<Bytes32> = (0..5).map(blake_leaf).collect();
+        let _ = merkle_root_in_place::<Blake2s256>(&mut leaves, &empty);
     }
 
     #[test]

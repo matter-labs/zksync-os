@@ -38,6 +38,7 @@ full_statement_verifier = { workspace = true, default-features = false, features
 alloy = { workspace = true, features = ["rlp", "full"] }
 alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["arbitrary"] }
+proptest = { workspace = true }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]

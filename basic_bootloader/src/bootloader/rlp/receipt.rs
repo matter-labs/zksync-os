@@ -310,18 +310,15 @@ mod tests {
         out
     }
 
-    #[test]
-    fn receipt_encoding_matches_alloy() {
-        // Two logs: one with topics + multi-byte data, one with no topics and a
-        // single low byte of data (exercises the data single-byte rule).
-        let logs: alloc::vec::Vec<([u8; 20], Vec<[u8; 32]>, Vec<u8>)> = alloc::vec![
-            (
-                [0xaau8; 20],
-                alloc::vec![[0x01u8; 32], [0x02u8; 32]],
-                alloc::vec![0xde, 0xad, 0xbe, 0xef]
-            ),
-            ([0xbbu8; 20], alloc::vec![], alloc::vec![0x05]),
-        ];
+    /// Encodes a receipt over the given logs with our `ReceiptEncoder`, returning
+    /// `(our_bytes, our_length_estimate, alloy_bytes)` for comparison.
+    fn encode_receipt_ours_and_alloy(
+        tx_type: u8,
+        status: bool,
+        gas: u64,
+        bloom: &[u8; 256],
+        logs: &[([u8; 20], Vec<[u8; 32]>, Vec<u8>)],
+    ) -> (Vec<u8>, usize, Vec<u8>) {
         let addrs: Vec<B160> = logs
             .iter()
             .map(|(a, _, _)| B160::from_be_bytes::<20>(*a))
@@ -344,35 +341,85 @@ mod tests {
                 data: logs[i].2.as_slice(),
             })
             .collect();
+
+        let mut enc =
+            ReceiptEncoder::new_from_fields(tx_type, &status, &gas, bloom, events.iter().cloned());
+        let mut sink = VecSink(Vec::new());
+        enc.encode_into(&mut sink);
+        let estimate = enc.required_buffer_len();
+
+        let expected = alloy_receipt_rlp(tx_type, status, gas, bloom, logs);
+        (sink.0, estimate, expected)
+    }
+
+    #[test]
+    fn receipt_encoding_matches_alloy() {
+        // Two logs: one with topics + multi-byte data, one with no topics and a
+        // single low byte of data (exercises the data single-byte rule).
+        let logs: alloc::vec::Vec<([u8; 20], Vec<[u8; 32]>, Vec<u8>)> = alloc::vec![
+            (
+                [0xaau8; 20],
+                alloc::vec![[0x01u8; 32], [0x02u8; 32]],
+                alloc::vec![0xde, 0xad, 0xbe, 0xef]
+            ),
+            ([0xbbu8; 20], alloc::vec![], alloc::vec![0x05]),
+        ];
         let bloom = [0x07u8; 256];
 
-        // Cover legacy (type 0, no prefix) and typed (1, 2) receipts, both status
-        // values, and a multi-byte cumulative gas.
-        for &tx_type in &[0u8, 1, 2] {
+        // The encoder's contract is purely "prefix the raw type byte for any
+        // nonzero `tx_type`" — it is *not* Ethereum-receipt-specific. Cover
+        // legacy (type 0, no prefix), the Ethereum typed receipts (1, 2), and the
+        // ZKsync-specific type bytes the ZK path can feed (0x7c-0x7f), alongside
+        // both status values and a multi-byte cumulative gas.
+        for &tx_type in &[0u8, 1, 2, 0x7c, 0x7d, 0x7e, 0x7f] {
             for &status in &[true, false] {
                 for &gas in &[0u64, 21_000, 0xffff_ffff] {
-                    let mut enc = ReceiptEncoder::new_from_fields(
-                        tx_type,
-                        &status,
-                        &gas,
-                        &bloom,
-                        events.iter().cloned(),
-                    );
-                    let mut sink = VecSink(Vec::new());
-                    enc.encode_into(&mut sink);
+                    let (ours, estimate, expected) =
+                        encode_receipt_ours_and_alloy(tx_type, status, gas, &bloom, &logs);
+                    assert_eq!(estimate, ours.len(), "len tx_type={tx_type}");
                     assert_eq!(
-                        enc.required_buffer_len(),
-                        sink.0.len(),
-                        "len tx_type={tx_type}"
-                    );
-
-                    let expected = alloy_receipt_rlp(tx_type, status, gas, &bloom, &logs);
-                    assert_eq!(
-                        sink.0, expected,
+                        ours, expected,
                         "tx_type={tx_type} status={status} gas={gas}"
                     );
                 }
             }
+        }
+    }
+
+    /// Strategy for one random log: 20-byte address, 0..=MAX_EVENT_TOPICS topics,
+    /// and an arbitrary data payload.
+    fn arb_log() -> impl proptest::strategy::Strategy<Value = ([u8; 20], Vec<[u8; 32]>, Vec<u8>)> {
+        use proptest::prelude::*;
+        (
+            proptest::array::uniform20(any::<u8>()),
+            proptest::collection::vec(
+                proptest::array::uniform32(any::<u8>()),
+                0..=MAX_EVENT_TOPICS,
+            ),
+            proptest::collection::vec(any::<u8>(), 0..=48),
+        )
+    }
+
+    proptest::proptest! {
+        /// Property test: for arbitrary type byte, status, cumulative gas, bloom
+        /// and a list of arbitrary logs, our `ReceiptEncoder` must byte-for-byte
+        /// match the canonical alloy RLP encoding, and its length estimate must
+        /// equal the bytes actually written.
+        #[test]
+        fn receipt_encoding_matches_alloy_prop(
+            tx_type in proptest::prelude::any::<u8>(),
+            status in proptest::prelude::any::<bool>(),
+            gas in proptest::prelude::any::<u64>(),
+            bloom_bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 256),
+            logs in proptest::collection::vec(arb_log(), 0..=6),
+        ) {
+            let mut bloom = [0u8; 256];
+            bloom.copy_from_slice(&bloom_bytes);
+
+            let (ours, estimate, expected) =
+                encode_receipt_ours_and_alloy(tx_type, status, gas, &bloom, &logs);
+            proptest::prop_assert_eq!(estimate, ours.len(), "length estimate must match bytes written");
+            proptest::prop_assert_eq!(ours, expected);
         }
     }
 }
