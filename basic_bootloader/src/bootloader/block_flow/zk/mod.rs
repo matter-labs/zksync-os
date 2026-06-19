@@ -10,11 +10,13 @@ mod metadata_op;
 mod post_init_op;
 mod post_tx_op;
 mod pre_tx_loop;
+mod receipt;
 mod tx_loop;
 
 pub use self::batch_data::*;
 pub use self::block_data::*;
 pub use self::post_tx_op::*;
+pub(crate) use self::receipt::compute_receipt_hash;
 
 pub struct ZKHeaderPostInitOp;
 
