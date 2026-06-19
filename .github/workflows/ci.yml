@@ -158,6 +158,31 @@ jobs:
               run: |
                   cargo clippy --features proving -- -D warnings
 
+    miri:
+        # Runs the `history_map` and `ptr_arena` unit tests under Miri to guard
+        # the storage cache's raw-pointer/arena code against aliasing-provenance
+        # UB. Scoped to these modules because they are the ones verified
+        # Miri-clean; widen the filters as other modules are made clean. The
+        # two filters are passed after `--` so libtest ORs them (before `--`
+        # only the first would apply). Pure unit tests — no RISC-V binary
+        # needed, so this runs on a lightweight runner.
+        name: Miri (history_map aliasing/UB)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  # Channel comes from rust-toolchain.toml (pinned nightly);
+                  # `miri` needs `rust-src` to build a checked std.
+                  components: miri, rust-src
+                  rustflags: ""
+            - name: Miri (Stacked Borrows)
+              run: cargo miri test -p zk_ee -- history_map ptr_arena
+            - name: Miri (Tree Borrows)
+              env:
+                  MIRIFLAGS: "-Zmiri-tree-borrows"
+              run: cargo miri test -p zk_ee -- history_map ptr_arena
+
     typos:
         name: typos check
         runs-on: ubuntu-latest
