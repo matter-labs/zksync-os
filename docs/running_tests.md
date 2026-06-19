@@ -44,6 +44,38 @@ Both fuzzing strategies are executed on a daily basis as part of our testing pip
  - Fuzzing of the primitives runs daily using [GitHub Actions](../.github/workflows/fuzz.yml) 
  - Metamorphic testing runs continuously in our cloud-based test infrastructure for deeper, longer fuzzing sessions.
 
+## Code coverage
+
+The [`coverage_scripts/`](../coverage_scripts/) directory contains tooling for generating per-crate code coverage reports using [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov).
+
+Prerequisites (one-time):
+```bash
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
+```
+
+Run tests and show a per-crate coverage summary table:
+```bash
+coverage_scripts/coverage.sh summary
+```
+
+Generate an HTML report for file-level drill-down:
+```bash
+coverage_scripts/coverage.sh html --open
+```
+
+Generate an LCOV file (for external tooling or CI):
+```bash
+coverage_scripts/coverage.sh lcov
+```
+
+Re-generate a report from the last test run without re-running tests:
+```bash
+coverage_scripts/coverage.sh report html
+```
+
+Results are saved to `coverage_results/` (gitignored). Some crates are excluded from the test run due to local compilation issues (`evm_interpreter`, `basic_system`) or missing resources (`multiblock_batch_tests`, which requires a pre-built RISC-V binary), but their code is still covered when exercised by integration tests from other packages.
+
 ## EVM tester
 
 The in-repo [`tests/evm_tester`](../tests/evm_tester/) crate is used to parse and run the [EVM execution spec tests](https://github.com/ethereum/execution-spec-tests) compiled by the Ethereum Foundation.
