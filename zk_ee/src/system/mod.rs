@@ -446,7 +446,11 @@ define_subsystem!(NextTx,
 );
 
 /// Logging macros for the system.
-/// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
+/// Logging is enabled on non-riscv32 targets, and also on riscv32 when the `global-alloc` feature
+/// is active (debug proving mode). In production proving mode (riscv32 without `global-alloc`),
+/// the global allocator is not present, so any heap allocation (e.g. via `alloc::format!`) would
+/// panic; logging is therefore compiled to a no-op to prevent accidental allocations and ensure
+/// correct behaviour in the proving environment.
 #[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
 #[macro_export]
 macro_rules! logger_log {
@@ -455,7 +459,11 @@ macro_rules! logger_log {
     }};
 }
 
-// No-op only if riscv32 AND no allocator feature
+// No-op in production proving mode (riscv32 without `global-alloc`).
+// Format-argument expressions (including heap-allocating ones such as `alloc::format!()` or
+// `.to_string()`) are never evaluated in this configuration, so they do not trigger any
+// allocation.  This property only holds for the no-op variant; on other targets or with
+// `global-alloc` the macro is active and format expressions are evaluated normally.
 #[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
 #[macro_export]
 macro_rules! logger_log {
