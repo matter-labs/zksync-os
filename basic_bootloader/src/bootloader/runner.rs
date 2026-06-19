@@ -6,7 +6,7 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use errors::internal::InternalError;
 use ruint::aliases::B160;
-use zk_ee::common_structs::system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook};
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::error_ctx;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -267,20 +267,23 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
 
         // Only calls to addresses linked to a hook are considered special.
         // Any other call can execute code following the normal flow.
-        //
-        // TODO(EVM-1181): We should refactor the logic to avoid the duplicated lookup into the hook storage.
-        let is_call_to_special_address = external_call_launch_params.external_call.callee.as_uint()
+        let hook = if external_call_launch_params.external_call.callee.as_uint()
             < SPECIAL_ADDRESS_BOUND.as_uint()
-            && self.hooks.has_hook_for(
-                external_call_launch_params.external_call.callee.as_limbs()[0] as u16,
-            );
+        {
+            // SPECIAL_ADDRESS_BOUND fits in u16, so the truncating cast is safe here.
+            let callee_low = external_call_launch_params.external_call.callee.as_limbs()[0] as u16;
+            self.hooks.find_call_hook(callee_low)
+        } else {
+            None
+        };
 
-        if is_call_to_special_address {
+        if let Some(hook) = hook {
             // The call is targeting the "system contract" space.
             self.call_to_special_address_execute_callee_frame(
                 external_call_launch_params,
                 caller_ee_type,
                 rollback_handle,
+                hook,
             )
         } else {
             self.call_execute_callee_frame(
@@ -506,6 +509,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
         caller_ee_type: ExecutionEnvironmentType,
         rollback_handle: SystemFrameSnapshot<S>,
+        hook: SystemCallHook<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -531,12 +535,8 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         }
 
         let return_memory = core::mem::take(&mut self.return_memory);
-        let resources_passed = external_call_launch_params
-            .external_call
-            .available_resources
-            .clone();
-        let (res, remaining_memory) = self.hooks.try_intercept(
-            external_call_launch_params.external_call.callee.as_limbs()[0] as u16,
+        let (system_hook_run_result, remaining_memory) = self.hooks.run_call_hook(
+            hook,
             external_call_launch_params.external_call,
             caller_ee_type as u8,
             self.system,
@@ -545,57 +545,41 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         // Reclaim unused return memory
         self.return_memory = remaining_memory;
 
-        if let Some(system_hook_run_result) = res {
-            let CompletedExecution {
-                resources_returned,
-                result,
-            } = system_hook_run_result;
+        let CompletedExecution {
+            resources_returned,
+            result,
+        } = system_hook_run_result;
 
-            let reverted = result.failed();
-            let return_values = result.return_values();
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
-            system_log!(
-                self.system,
-                "Call to special address returned, success = {}\n",
-                !reverted
-            );
+        system_log!(
+            self.system,
+            "Call to special address returned, success = {}\n",
+            !reverted
+        );
 
-            let returndata_slice = return_values.returndata;
-            let returndata_iter = returndata_slice.iter().copied();
-            system_log!(self.system, "Returndata = ");
-            let _ = self.system.get_logger().log_data(returndata_iter);
+        let returndata_slice = return_values.returndata;
+        let returndata_iter = returndata_slice.iter().copied();
+        system_log!(self.system, "Returndata = ");
+        let _ = self.system.get_logger().log_data(returndata_iter);
 
-            self.system
-                .finish_global_frame(if reverted {
-                    Some(&rollback_handle)
-                } else {
-                    None
-                })
-                .map_err(|_| internal_error!("must finish execution frame"))?;
+        self.system
+            .finish_global_frame(if reverted {
+                Some(&rollback_handle)
+            } else {
+                None
+            })
+            .map_err(|_| internal_error!("must finish execution frame"))?;
 
-            Ok((
-                resources_returned,
-                if reverted {
-                    CallResult::Failed { return_values }
-                } else {
-                    CallResult::Successful { return_values }
-                },
-            ))
-        } else {
-            let resources_returned = resources_passed;
-            // it's an empty account for all the purposes
-            system_log!(self.system, "Call to special address was not intercepted\n",);
-            self.system
-                .finish_global_frame(None)
-                .map_err(|_| internal_error!("must finish execution frame"))?;
-
-            Ok((
-                resources_returned,
-                CallResult::Successful {
-                    return_values: ReturnValues::empty(),
-                },
-            ))
-        }
+        Ok((
+            resources_returned,
+            if reverted {
+                CallResult::Failed { return_values }
+            } else {
+                CallResult::Successful { return_values }
+            },
+        ))
     }
 }
 
