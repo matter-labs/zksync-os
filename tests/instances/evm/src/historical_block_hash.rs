@@ -1,13 +1,13 @@
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, Address, TxKind, B256};
 use rig::basic_bootloader::bootloader::block_flow::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
+use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::{B256 as RuintB256, U256};
 use rig::zk_ee::system::EIP7702_DELEGATION_MARKER;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{testing_signer, TestingFramework};
 
-const HISTORY_GETTER_BYTECODE: &str = "6000355460005260206000f3";
 const DEFAULT_TEST_BALANCE: u64 = 1_000_000_000_000_000;
 
 fn history_storage_address() -> Address {
@@ -32,15 +32,26 @@ fn parent_hash_window(parent_hash: B256) -> [U256; 256] {
     hashes
 }
 
+fn history_getter_bytecode() -> Vec<u8> {
+    BytecodeBuilder::new()
+        .push_u8(0)
+        .calldataload()
+        .sload()
+        .push_u8(0)
+        .mstore()
+        .push_u8(0x20)
+        .push_u8(0)
+        .return_()
+        .finish()
+}
+
 fn history_getter_tester() -> TestingFramework {
     let signer = testing_signer(0);
+    let bytecode = history_getter_bytecode();
 
     TestingFramework::new()
         .with_balance(signer.address(), U256::from(DEFAULT_TEST_BALANCE))
-        .with_evm_contract(
-            history_storage_address(),
-            &rig::alloy::hex::decode(HISTORY_GETTER_BYTECODE).expect("valid getter bytecode"),
-        )
+        .with_evm_contract(history_storage_address(), &bytecode)
 }
 
 fn history_getter_tx(slot_idx: u64, nonce: u64) -> ZKsyncTxEnvelope {
