@@ -1,4 +1,4 @@
-use alloy::primitives::{Bytes, Log, U256};
+use alloy::primitives::{Bytes, Log, B256, U256};
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use forward_system::run::convert_alloy::IntoAlloy;
@@ -14,6 +14,7 @@ use revm::{
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 use zk_ee::system::metadata::zk_metadata::BlockHashes;
 use zksync_os_interface::traits::AnyBlockContext;
+use zksync_os_revm::constants::HISTORY_STORAGE_ADDRESS;
 use zksync_os_revm::ZKsyncTx;
 use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -194,6 +195,30 @@ where
                 block.blob_excess_gas_and_price = Some(blob_excess_gas_and_price);
             })
             .build_zk_with_inspector(TracingInspector::new(TracingInspectorConfig::default_geth()));
+
+        // ZKsync OS performs block-boundary system state transitions (EIP-2935
+        // historical block hash) in its pre-tx loop, before any transaction
+        // runs. The per-tx REVM replay below does not execute block-level system
+        // calls, so mirror them here via the shared helper before replaying.
+        //
+        // The helper owns the mechanics; eligibility is decided here from the
+        // ZKsync OS account model so we match `eip2935_system_part`'s gate
+        // (`is_contract` = has bytecode and not an EIP-7702 delegation), skipping
+        // the write for an absent, codeless, or delegated history account.
+        let history_eligible = self
+            .state
+            .clone()
+            .get_account(HISTORY_STORAGE_ADDRESS)
+            .context("Failed to read EIP-2935 history account")?
+            .is_some_and(|props| {
+                props.observable_bytecode_len > 0 && !props.versioning_data.is_delegated()
+            });
+        if history_eligible {
+            // The parent hash is the most recent entry of the 256-block window.
+            let parent_hash = B256::from(block_context.block_hashes()[255].to_be_bytes::<32>());
+            zksync_os_revm::apply_pre_block_system_calls(&mut evm, self.spec, parent_hash)
+                .map_err(|err| anyhow!("EIP-2935 pre-block system call failed: {err:?}"))?;
+        }
 
         let revm_txs = Self::build_revm_txs(
             &transactions,

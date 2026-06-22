@@ -1,7 +1,6 @@
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, Address, TxKind, B256};
 use rig::basic_bootloader::bootloader::block_flow::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
-use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::{B256 as RuintB256, U256};
 use rig::zk_ee::system::EIP7702_DELEGATION_MARKER;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
@@ -32,29 +31,32 @@ fn parent_hash_window(parent_hash: B256) -> [U256; 256] {
     hashes
 }
 
-fn history_getter_bytecode() -> Vec<u8> {
-    BytecodeBuilder::new()
-        .push_u8(0)
-        .calldataload()
-        .sload()
-        .push_u8(0)
-        .mstore()
-        .push_u8(0x20)
-        .push_u8(0)
-        .return_()
-        .finish()
+/// The canonical EIP-2935 history-storage contract bytecode, as deployed on
+/// mainnet at `HISTORY_STORAGE_ADDRESS`. When called by the system address with
+/// 32 bytes of calldata it stores the value into slot `(block-1) % 8191`;
+/// otherwise it serves a stored block hash, taking the queried block number as
+/// calldata and reverting for out-of-window blocks. Using the real bytecode (vs
+/// a dummy getter) lets the REVM consistency checker drive the same canonical
+/// system call ZKsync OS mirrors in its pre-tx loop.
+fn history_contract_bytecode() -> Vec<u8> {
+    rig::alloy::hex::decode(
+        "3373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5ffd5b5f35611fff60014303065500",
+    )
+    .expect("canonical EIP-2935 bytecode is valid hex")
 }
 
 fn history_getter_tester() -> TestingFramework {
     let signer = testing_signer(0);
-    let bytecode = history_getter_bytecode();
+    let bytecode = history_contract_bytecode();
 
     TestingFramework::new()
         .with_balance(signer.address(), U256::from(DEFAULT_TEST_BALANCE))
         .with_evm_contract(history_storage_address(), &bytecode)
 }
 
-fn history_getter_tx(slot_idx: u64, nonce: u64) -> ZKsyncTxEnvelope {
+/// Builds a tx that queries the history contract for `block_number`'s hash via
+/// the canonical getter path (calldata = the block number, big-endian).
+fn history_getter_tx(block_number: u64, nonce: u64) -> ZKsyncTxEnvelope {
     let signer = testing_signer(0);
 
     ZKsyncTxEnvelope::from_eth_tx(
@@ -65,7 +67,7 @@ fn history_getter_tx(slot_idx: u64, nonce: u64) -> ZKsyncTxEnvelope {
             gas_limit: 100_000,
             to: TxKind::Call(history_storage_address()),
             value: Default::default(),
-            input: slot_key(slot_idx).to_be_bytes_vec().into(),
+            input: U256::from(block_number).to_be_bytes_vec().into(),
         },
         signer,
     )
