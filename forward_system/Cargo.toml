@@ -39,7 +39,7 @@ paste = { workspace = true }
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing"]
 default = ["testing"]
 error_origins = ["zk_ee/error_origins"]
-no_print = []
+no_print = ["zk_ee/no_print"]
 unlimited_native = ["basic_bootloader/unlimited_native"]
 
 # A feature for every specific use case

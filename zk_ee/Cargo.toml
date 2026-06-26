@@ -34,5 +34,8 @@ global-alloc = []
 error_origins = []
 detailed_errors = []
 prevrandao = []
+# Compiles `system_log!`/`logger_log!` out entirely (no `format_args!`
+# construction, no argument evaluation). Enabled via `forward_system/no_print`.
+no_print = []
 
 [dev-dependencies]

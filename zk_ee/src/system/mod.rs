@@ -435,7 +435,10 @@ define_subsystem!(NextTx,
 
 /// Logging macros for the system.
 /// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
-#[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
+#[cfg(all(
+    any(not(target_arch = "riscv32"), feature = "global-alloc"),
+    not(feature = "no_print")
+))]
 #[macro_export]
 macro_rules! logger_log {
     ($logger:expr, $($arg:tt)*) => {{
@@ -443,8 +446,16 @@ macro_rules! logger_log {
     }};
 }
 
-// No-op only if riscv32 AND no allocator feature
-#[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
+// No-op when either:
+// - riscv32 without an allocator (ruint Debug needs global alloc), or
+// - logging is compiled out via `no_print`. In that case we must NOT even
+//   build `format_args!` / evaluate its arguments: on the host the logger is
+//   `NullLogger` (a no-op sink), but the macro would still construct the
+//   arguments every call, which shows up in forward-run profiles.
+#[cfg(any(
+    all(target_arch = "riscv32", not(feature = "global-alloc")),
+    feature = "no_print"
+))]
 #[macro_export]
 macro_rules! logger_log {
     ($logger:expr, $($arg:tt)*) => {{
