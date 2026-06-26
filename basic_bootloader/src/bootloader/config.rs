@@ -4,6 +4,11 @@ pub trait BasicBootloaderExecutionConfig: 'static + Clone + Copy + core::fmt::De
     const VALIDATE_EOA_SIGNATURE: bool;
     /// Simulation flag(used for `eth_call` and `estimate_gas`)
     const SIMULATION: bool;
+    /// True only for the sequencer forward run. When set, the bootloader may
+    /// trust oracle-provided hints (e.g. the transaction hash) and skip
+    /// block-commitment work (the transactions rolling hash) that the proving
+    /// run still performs. Never set for proving or simulation configs.
+    const SEQUENCER_FORWARD: bool = false;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -20,6 +25,7 @@ pub struct BasicBootloaderForwardSimulationConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderForwardSimulationConfig {
     const VALIDATE_EOA_SIGNATURE: bool = false;
     const SIMULATION: bool = false;
+    const SEQUENCER_FORWARD: bool = true;
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -195,9 +195,16 @@ where
                                         ExecutionResult::Revert { output } => (false, output, None),
                                     };
 
-                                block_data
-                                    .transaction_hashes_accumulator
-                                    .add_tx_hash(&tx_processing_result.tx_hash);
+                                // Sequencer forward run skips the transactions
+                                // rolling hash: it is block-commitment work that
+                                // the proving run still performs, so in sim the
+                                // header `transactions_root` stays at its
+                                // empty-block placeholder.
+                                if !Config::SEQUENCER_FORWARD {
+                                    block_data
+                                        .transaction_hashes_accumulator
+                                        .add_tx_hash(&tx_processing_result.tx_hash);
+                                }
                                 if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
