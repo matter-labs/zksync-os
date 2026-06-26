@@ -67,6 +67,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn try_from_buffer<S: EthereumLikeTypes<Allocator = A>>(
         buffer: UsizeAlignedByteBox<A>,
         system: &mut System<S>,
+        compute_sig_hash: bool,
     ) -> Result<Self, TxError>
     where
         S::IO: IOSubsystemExt,
@@ -81,7 +82,12 @@ impl<A: Allocator> Transaction<A> {
                 // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
                 // This is so that sequencer can skip ecrecover (for simulation, for example).
                 let from = TxFromQuery::get(system.io.oracle(), &())?;
-                let tx = RlpEncodedTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
+                let tx = RlpEncodedTransaction::parse_from_buffer(
+                    buffer,
+                    expected_chain_id,
+                    from,
+                    compute_sig_hash,
+                )?;
                 Ok(Self::Rlp(tx))
             }
             TxEncodingFormat::Abi => {

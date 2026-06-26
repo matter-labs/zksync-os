@@ -21,7 +21,13 @@ where
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError> {
-        let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
+        // The signing hash is only consumed when we actually verify the EOA
+        // signature via `ecrecover`. When signature validation is skipped (the
+        // sequencer forward run, or `eth_call`/`estimate_gas` simulation),
+        // computing it during parsing is wasted work, so skip the keccak.
+        let compute_sig_hash = Config::VALIDATE_EOA_SIGNATURE && !Config::SIMULATION;
+        let transaction =
+            Transaction::try_from_buffer(initial_calldata_buffer, system, compute_sig_hash)?;
 
         match &transaction {
             Transaction::Abi(zk_tx) => {

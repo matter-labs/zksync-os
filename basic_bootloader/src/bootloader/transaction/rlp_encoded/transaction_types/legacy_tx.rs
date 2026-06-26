@@ -61,9 +61,14 @@ impl<'a> RlpListDecode<'a> for LegacyTXInner<'a> {
 pub(crate) struct LegacyPayloadParser {}
 
 impl LegacyPayloadParser {
+    /// When `compute_sig_hash` is false (sequencer forward run / simulation,
+    /// where the signature is not verified), the signing hash is unused, so we
+    /// skip the keccak and return `Bytes32::ZERO`. The EIP-155 `v` binding is
+    /// still validated for structural correctness.
     pub(crate) fn try_parse_and_hash_for_signature_verification<'a>(
         src: &'a [u8],
         expected_chain_id: u64,
+        compute_sig_hash: bool,
     ) -> Result<(LegacyTXInner<'a>, LegacySignatureData<'a>, Bytes32), TxError> {
         // Legacy path: input must be a single list with 9 elements total.
         let mut outer = Rlp::new(src);
@@ -88,30 +93,39 @@ impl LegacyPayloadParser {
 
         let sig_hash: Bytes32 = if legacy_signature.is_eip155() == false {
             // Unprotected legacy
-            let mut hasher = crypto::sha3::Keccak256::new();
-            apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
-            hasher.update(inner_slice);
-            hasher.finalize_reset().into()
+            if compute_sig_hash {
+                let mut hasher = crypto::sha3::Keccak256::new();
+                apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
+                hasher.update(inner_slice);
+                hasher.finalize_reset().into()
+            } else {
+                Bytes32::ZERO
+            }
         } else {
-            // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
+            // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1}).
+            // This binding is structural validation, so check it regardless.
             let min_v = U256::from(35) + U256::from(expected_chain_id) * U256::from(2);
             if !(legacy_signature.v == min_v || legacy_signature.v == min_v + U256::ONE) {
                 return Err(InvalidTransaction::InvalidEncoding.into());
             }
 
-            // Compute signing hash over the 6-field payload plus chainId and two empty strings.
-            let chain_id = expected_chain_id;
-            let chain_id_encoding_len = u64_encoding_len(chain_id);
+            if compute_sig_hash {
+                // Compute signing hash over the 6-field payload plus chainId and two empty strings.
+                let chain_id = expected_chain_id;
+                let chain_id_encoding_len = u64_encoding_len(chain_id);
 
-            let mut hasher = crypto::sha3::Keccak256::new();
-            apply_list_concatenation_encoding_to_hash(
-                (inner_slice.len() + chain_id_encoding_len + 2) as u32, // 0x80, 0x80 for r/s
-                &mut hasher,
-            );
-            hasher.update(inner_slice);
-            apply_u64_encoding_to_hash(chain_id, &mut hasher);
-            hasher.update(&[0x80, 0x80]);
-            hasher.finalize_reset().into()
+                let mut hasher = crypto::sha3::Keccak256::new();
+                apply_list_concatenation_encoding_to_hash(
+                    (inner_slice.len() + chain_id_encoding_len + 2) as u32, // 0x80, 0x80 for r/s
+                    &mut hasher,
+                );
+                hasher.update(inner_slice);
+                apply_u64_encoding_to_hash(chain_id, &mut hasher);
+                hasher.update(&[0x80, 0x80]);
+                hasher.finalize_reset().into()
+            } else {
+                Bytes32::ZERO
+            }
         };
 
         Ok((legacy_inner, legacy_signature, sig_hash))
@@ -311,7 +325,7 @@ mod test {
         let mut encoded = hex::decode("f901ab820215840cc9aa6c82ca9c94bf7cf0d775d6ac130912a22861773c21661095a280b90144baae8abf0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000008f3ffa11cd5915f0e869192663b905504a2ef4a500000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000064d22c0930000000000000000000000000953ca96b057d5397ce7791c5ae9b5a19b135234100000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000689010fd0000000000000000000000000000000000000000000000000000000026a005b37d188e6af6851c1036a5c42113ada300c03403d340d4c9ba8102146e9a76a0471b7967f289f3248f4250d0dbcb8e7391ea0b9252385377909911420f164db7").unwrap();
 
         encoded.push(0x00); // extra byte at the end
-        let res = LegacyPayloadParser::try_parse_and_hash_for_signature_verification(&encoded, 1);
+        let res = LegacyPayloadParser::try_parse_and_hash_for_signature_verification(&encoded, 1, true);
 
         assert!(
             res.is_err(),

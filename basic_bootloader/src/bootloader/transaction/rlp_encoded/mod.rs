@@ -50,6 +50,7 @@ impl<'a> RlpEncodedTxInner<'a> {
         input: &'a [u8],
         expected_chain_id: u64,
         from: &B160,
+        compute_sig_hash: bool,
     ) -> Result<(Self, Bytes32), TxError> {
         // Try to read a leading single-byte item as the typed marker.
         // For typed txs, this is a bare byte (1/2/4) followed by an RLP list.
@@ -59,7 +60,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                 EIP2930Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP2930Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining()
+                            r.remaining(), compute_sig_hash,
                         )?;
 
                     if tx.chain_id != expected_chain_id {
@@ -70,7 +71,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                 EIP1559Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP1559Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining()
+                            r.remaining(), compute_sig_hash,
                         )?;
                     if tx.chain_id != expected_chain_id {
                         return Err(InvalidTransaction::InvalidChainId.into());
@@ -81,7 +82,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                 EIP4844Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP4844Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining()
+                            r.remaining(), compute_sig_hash,
                         )?;
                     if tx.chain_id != expected_chain_id {
                         return Err(InvalidTransaction::InvalidChainId.into());
@@ -92,7 +93,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining()
+                            r.remaining(), compute_sig_hash,
                         )?;
 
                     if tx.chain_id != expected_chain_id {
@@ -122,6 +123,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                 LegacyPayloadParser::try_parse_and_hash_for_signature_verification(
                     input,
                     expected_chain_id,
+                    compute_sig_hash,
                 )?;
 
             let tx = if sig_data.is_eip155() {
@@ -180,7 +182,7 @@ mod test {
         let input = raw_legacy_chain1();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true).unwrap();
         assert_eq!(
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
@@ -192,7 +194,7 @@ mod test {
         let input = raw_eip2930_chain1();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true).unwrap();
         assert_eq!(
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
@@ -204,7 +206,7 @@ mod test {
         let input = raw_eip1559_chain1();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true).unwrap();
         assert_eq!(
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
@@ -217,7 +219,7 @@ mod test {
         let input = hex::decode("03f9049f01830837e4843b9aca0085213f9eed7283036a2b941c479675ad559dc151f6ec7ed3fbf8cee79582b680b8a43e5aa082000000000000000000000000000000000000000000000000000000000008fff2000000000000000000000000000000000000000000000000000000000016a443000000000000000000000000e64a54e2533fd126c2e452c5fab544d80e2e4eb5000000000000000000000000000000000000000000000000000000000aafdc87000000000000000000000000000000000000000000000000000000000aafde27f902c0f8dd941c479675ad559dc151f6ec7ed3fbf8cee79582b6f8c6a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001a0000000000000000000000000000000000000000000000000000000000000000aa0b53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103a0360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbca0a10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660f90141948315177ab297ba92a06054ce80a67ed4dbd7ed3af90129a00000000000000000000000000000000000000000000000000000000000000006a00000000000000000000000000000000000000000000000000000000000000007a00000000000000000000000000000000000000000000000000000000000000009a0000000000000000000000000000000000000000000000000000000000000000aa0b53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103a0360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbca0a66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a873fc679a0a66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a873fc67aa0f652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f3792b181f89b94e64a54e2533fd126c2e452c5fab544d80e2e4eb5f884a00000000000000000000000000000000000000000000000000000000000000004a00000000000000000000000000000000000000000000000000000000000000005a0e85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62a07686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda410af8c6a0014527d555d949b3afcfa246e16eb0e0aef9e9da60b7a0266f1da43b3fd8e8cfa0016d80efa350ab1fc156b505ab619bee3f6245b8f7d4d60bf11c9d8b0105b02fa00176b14180ebfaa132142ff163eb2aaf2985af7da011d195e39fe8b0faf1e960a00134da09304a6a66b691bc48d351b976203cd419778d142f19e68e904f07a5aea00181b4581a9fc316eadc58e4d6d362e316e259643913339a3e46b7c9d742ac30a00112fa6c9dfaceaff1868ef19d01c4a1da99e6e02162fe7dacf94ec441da697701a04dfd139f20fdefc834fbdce2e120ca8ed1a4688d8843df8fc2de1df8c6d0a0f3a06ec282ea1c2c55e467425c380c17f0f8ef664d8e2de8a39b18d6c83b8d6a9afa").unwrap();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true).unwrap();
         assert_eq!(
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
@@ -229,7 +231,7 @@ mod test {
         let input = hex::decode("04f9077101820d068402faf0808419977a0f8305606c940000000071727de22e5e9d8baf0edac6f37da03280b906a4765e827f0000000000000000000000000000000000000000000000000000000000000040000000000000000000000000fdc043d3e922d392fb396f6cdfa20b864b428280000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000006303ec3b6610715b9584c2ccbec4789f9c56f3540000000000000000000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000b7980000000000000000000000000000cd2c000000000000000000000000000000000000000000000000000000000001861c000000000000000000000000039387000000000000000000000000001cce824400000000000000000000000000000000000000000000000000000000000004c000000000000000000000000000000000000000000000000000000000000005a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000034426da7d8800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000220000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b30000000000000000000000007d3201fa7a85c0a5f9fa1c0c6b9d0b784368d2ac000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b30000000000000000000000007d3201fa7a85c0a5f9fa1c0c6b9d0b784368d2ac00000000000000000000000000000000000000000000000000000000000aaa1f00000000000000000000000000000000000000000000000000000000000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044a9059cbb0000000000000000000000007f4fbc470620d0f91f6e0e6e1bd00a9c8d5786b20000000000000000000000000000000000000000000000000000000004c4b400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b57d3201fa7a85c0a5f9fa1c0c6b9d0b784368d2ac000000000000000000000000000061a800000000000000000000000000005daa000068ecbc9a000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000062064d5287c2485c8293cbbb69f9e1906cf6d9359e3ea2585f0bc4a60c3c9eb5575f220a3a543d2d15151b28148e24acb9f72d219b0169d9bd2751026c71c6cccd19c1c000000000000000000000000000000000000000000000000000000000000000000000000000000000000417d0e5794393da57e3fc52409766d31842c0b5f3ed4f94f0f89b0fac71e995a4a32c460981d39621df352686eeaac92818ce8faa0cc9020b2518a5773957b01ab1c00000000000000000000000000000000000000000000000000000000000000c0f85cf85a0194d2e28229f6f2c235e57de2ebc727025a1d0530fb5001a0a30c512336ab49f4715e39c7414df0cd29c587ffb286d08bc03f50dff579a0eda009be7b5f49e806c00ead7b04946b5f505c0a75bbc08a0c0ed2d39728345e6cb780a00bc31d69a5b8ae70cfc8ee52fad5e1e6505a9139965d586c1e5e6871c15ebf5da024064528d690af9bcb999a91bfe25c6797bced894d6be1f4164189fa45e8e8f0").unwrap();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true).unwrap();
         assert_eq!(
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
@@ -241,14 +243,14 @@ mod test {
         let input = hex::decode("7df90324940000000000000000000000000000000000010008b9030bcca2f7bc000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f30f04f005f6f700f80f09fa0fb00fcf0d0fef0f000000100203000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f380").unwrap();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let _tx =
-            RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS).unwrap();
+            RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS, true).unwrap();
     }
 
     #[test]
     fn test_on_random_service_fails_on_bad_from() {
         let input = hex::decode("7df9020d940000000000000000000000000000000000010008b901f4000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f330").unwrap();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let _ = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO)
+        let _ = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true)
             .expect_err("Only bootloader address is allowed");
     }
 
@@ -259,7 +261,7 @@ mod test {
         let input = raw_eip1559_chain1();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         // expected chain_id=99 != actual chain_id=1 — must fail with InvalidChainId
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 99, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 99, B160::ZERO, true);
         assert!(
             matches!(
                 result,
@@ -276,7 +278,7 @@ mod test {
         let input = raw_eip2930_chain1();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         // expected chain_id=2 != actual chain_id=1 — must fail with InvalidChainId
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO, true);
         assert!(
             matches!(
                 result,
@@ -290,7 +292,7 @@ mod test {
     #[test]
     fn test_empty_input_fails() {
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&[], Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true);
         assert!(result.is_err(), "empty input must be rejected");
     }
 
@@ -299,7 +301,7 @@ mod test {
     fn test_unknown_type_byte_fails() {
         // 0x05 is not a known transaction type
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&[0x05], Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true);
         assert!(
             result.is_err(),
             "unknown transaction type byte must be rejected"
@@ -313,7 +315,7 @@ mod test {
         // drop the last byte to truncate the signature
         input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true);
         assert!(result.is_err(), "truncated EIP-1559 tx must be rejected");
     }
 
@@ -323,7 +325,7 @@ mod test {
         let mut input = raw_eip2930_chain1();
         input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true);
         assert!(result.is_err(), "truncated EIP-2930 tx must be rejected");
     }
 
@@ -333,7 +335,7 @@ mod test {
         let mut input = raw_legacy_chain1();
         input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO, true);
         assert!(result.is_err(), "truncated legacy tx must be rejected");
     }
 
@@ -348,7 +350,7 @@ mod test {
     /// encoding rules) beyond what Alloy checks is expected and not flagged.
     fn assert_mutation_sound(mutated: &[u8], chain_id: u64, label: &str) {
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(mutated, Global);
-        let our_result = RlpEncodedTransaction::parse_from_buffer(buffer, chain_id, B160::ZERO);
+        let our_result = RlpEncodedTransaction::parse_from_buffer(buffer, chain_id, B160::ZERO, true);
 
         // Alloy must both succeed and consume all bytes to count as "accept".
         let mut alloy_input: &[u8] = mutated;
@@ -562,7 +564,7 @@ mod test {
     fn test_legacy_wrong_chain_id_rejected() {
         let input = raw_legacy_chain1();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
-        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO, true);
         assert!(
             result.is_err(),
             "legacy chain_id mismatch must be rejected, got: {result:?}"

@@ -52,6 +52,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         buffer: UsizeAlignedByteBox<A>,
         expected_chain_id: u64,
         from: B160,
+        compute_sig_hash: bool,
     ) -> Result<Self, TxError> {
         // ideally we want partial initialization to be available here, but let's do without. Note that
         // we are free to move this structure as UsizeAlignedByteBox has a box inside and guarantees stable
@@ -63,6 +64,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
                 unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
                 &from,
+                compute_sig_hash,
             )?;
 
         Ok(Self {

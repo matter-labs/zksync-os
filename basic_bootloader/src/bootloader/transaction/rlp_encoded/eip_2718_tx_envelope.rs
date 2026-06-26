@@ -52,8 +52,13 @@ impl<'a, P: RlpListDecode<'a> + EthereumTxType> EIP2718PayloadParser<'a, P> {
     /// Will try to parse P, and the try to parse signature manually
     /// NOTE: double hashing is inevitable, as signature is verified upon keccak256(0x01 || rlp([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList])),
     /// while for indexing purposes divergence starts at the very start as RLP pre-encodes total length
+    /// When `compute_sig_hash` is false (sequencer forward run / simulation,
+    /// where the signature is not verified), the signing hash is unused, so we
+    /// skip the keccak and return `Bytes32::ZERO`. Parsing/validation is
+    /// unchanged.
     pub(crate) fn try_parse_and_hash_for_signature_verification(
         src: &'a [u8],
+        compute_sig_hash: bool,
     ) -> Result<(P, EIP2718SignatureData<'a>, Bytes32), TxError> {
         let mut outer = Rlp::new(src);
         // Strip the list encoding
@@ -75,14 +80,18 @@ impl<'a, P: RlpListDecode<'a> + EthereumTxType> EIP2718PayloadParser<'a, P> {
             return Err(InvalidTransaction::InvalidStructure.into());
         }
 
-        let mut hasher = crypto::sha3::Keccak256::new();
-        hasher.update(&[P::TX_TYPE]);
+        let sig_hash = if compute_sig_hash {
+            let mut hasher = crypto::sha3::Keccak256::new();
+            hasher.update(&[P::TX_TYPE]);
 
-        // Hash payload list header + payload bytes.
-        // Caller already hashed the type byte.
-        apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
-        hasher.update(inner_slice);
-        let sig_hash = hasher.finalize().into();
+            // Hash payload list header + payload bytes.
+            // Caller already hashed the type byte.
+            apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
+            hasher.update(inner_slice);
+            hasher.finalize().into()
+        } else {
+            Bytes32::ZERO
+        };
 
         Ok((payload, sig, sig_hash))
     }
