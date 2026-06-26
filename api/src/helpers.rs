@@ -217,7 +217,7 @@ where
     let signed: Signed<T> = tx.into_signed(sig);
     let env: TxEnvelope = signed.into();
     let bytes = encode_envelope_2718(&env);
-    EncodedTx::Rlp(bytes, wallet.address())
+    EncodedTx::Rlp(bytes, wallet.address(), None)
 }
 
 pub fn encode_envelope_2718(env: &TxEnvelope) -> Vec<u8> {
@@ -313,7 +313,7 @@ pub fn encode_service_tx(to: &[u8; 20], data: &[u8], salt: u64) -> EncodedTx {
     out.push(SERVICE_TX_TYPE);
     out.extend_from_slice(&rlp_body);
     let from = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
-    EncodedTx::Rlp(out, from)
+    EncodedTx::Rlp(out, from, None)
 }
 
 ///

@@ -120,6 +120,13 @@ debug = true
 [patch.crates-io]
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
+# Fork adds an optional precomputed tx hash to `EncodedTx::Rlp` so the sequencer
+# forward run can read it from the oracle instead of recomputing keccak256.
+# Patched here (not just workspace.dependencies) so transitive users get it too.
+# `zksync_os_evm_errors` lives in the same repo and must be patched in lockstep,
+# otherwise the fork's interface pulls a second copy of it (duplicate EvmError).
+zksync_os_interface = { git = "https://github.com/antoniolocascio-bot/zksync-os-interface", rev = "ff11e95bca304738d462f33fa52174fd0bfdf7e9" }
+zksync_os_evm_errors = { git = "https://github.com/antoniolocascio-bot/zksync-os-interface", rev = "ff11e95bca304738d462f33fa52174fd0bfdf7e9" }
 
 [patch."https://github.com/matter-labs/zksync-airbender"]
 # blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }

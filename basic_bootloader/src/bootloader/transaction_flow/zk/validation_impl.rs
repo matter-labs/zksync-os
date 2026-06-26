@@ -4,7 +4,8 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
-use crate::bootloader::transaction::{charge_keccak, Transaction};
+use crate::bootloader::transaction::{charge_keccak, Transaction, TxHashQuery};
+use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
     calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
@@ -299,7 +300,16 @@ where
             }
         }
     };
-    let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
+    // In the sequencer forward run the transaction hash is provided by the
+    // oracle (precomputed by the sequencer), so read it instead of recomputing
+    // keccak256 over the encoding. The native cost is still charged for parity
+    // with the proving run, which always recomputes the hash.
+    let tx_hash: Bytes32 = if Config::SEQUENCER_FORWARD {
+        charge_keccak(transaction.len(), &mut intrinsic_resources)?;
+        TxHashQuery::get(system.io.oracle(), &())?
+    } else {
+        transaction.transaction_hash(&mut intrinsic_resources)?
+    };
 
     // any IO starts here
 

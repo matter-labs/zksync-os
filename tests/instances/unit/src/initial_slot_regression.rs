@@ -140,6 +140,7 @@ impl InvalidInitialValueOracleFactory {
             next_tx: None,
             next_tx_format: None,
             next_tx_from: None,
+            next_tx_hash: None,
         };
         let preimage_responder = GenericPreimageResponder { preimage_source };
 

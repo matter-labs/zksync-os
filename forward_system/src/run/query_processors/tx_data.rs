@@ -4,10 +4,11 @@ use crate::run::NextTxResponse;
 use crate::run::TxSource;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
 use ruint::aliases::B160;
-use zk_ee::oracle::query_ids::TX_FROM_QUERY_ID;
+use zk_ee::oracle::query_ids::{TX_FROM_QUERY_ID, TX_HASH_QUERY_ID};
 use zk_ee::oracle::query_ids::{
     NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
 };
+use zk_ee::utils::Bytes32;
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
 
@@ -31,6 +32,10 @@ pub struct TxDataResponder<TS: TxSource> {
     /// Cached next transaction from, populated after size query
     /// (if present)
     pub next_tx_from: Option<B160>,
+    /// Cached next transaction hash (sequencer-provided), populated after the
+    /// size query for RLP txs that carry one. Read only by the sequencer
+    /// forward run.
+    pub next_tx_hash: Option<Bytes32>,
 }
 
 impl<TS: TxSource> TxDataResponder<TS> {
@@ -39,6 +44,7 @@ impl<TS: TxSource> TxDataResponder<TS> {
         TX_DATA_WORDS_QUERY_ID,
         TX_ENCODING_FORMAT_QUERY_ID,
         TX_FROM_QUERY_ID,
+        TX_HASH_QUERY_ID,
     ];
 }
 
@@ -73,15 +79,17 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Abi);
                                 self.next_tx_from = None;
+                                self.next_tx_hash = None;
                                 next_tx_len
                             }
-                            NextTxResponse::Tx(EncodedTx::Rlp(next_tx, from)) => {
+                            NextTxResponse::Tx(EncodedTx::Rlp(next_tx, from, tx_hash)) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Rlp);
                                 self.next_tx_from = Some(B160::from_alloy(from));
+                                self.next_tx_hash = tx_hash.map(|h| Bytes32::from_array(h.0));
                                 next_tx_len
                             }
                         }
@@ -117,6 +125,14 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                     );
                 };
                 DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+            }
+            TX_HASH_QUERY_ID => {
+                let Some(tx_hash) = self.next_tx_hash.take() else {
+                    panic!(
+                        "trying to read next tx hash before size query, after seal response, or when none was provided"
+                    );
+                };
+                DynUsizeIterator::from_constructor(tx_hash, UsizeSerializable::iter)
             }
             _ => unreachable!(),
         }

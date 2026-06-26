@@ -86,6 +86,11 @@ pub const TX_ENCODING_FORMAT_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 2; // 0
 /// Query to get sender address of the transaction.
 pub const TX_FROM_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 3; // 0x40060003
 
+/// Query to get the sequencer-provided transaction hash (keccak256 of the
+/// encoding). Only used in the sequencer forward run, which trusts it instead
+/// of recomputing; the proving run always recomputes the hash.
+pub const TX_HASH_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 4; // 0x40060004
+
 // ========== Block or batch Subspace Queries ==========
 
 /// Query to retrieve block metadata (timestamp, number, etc.) from the oracle

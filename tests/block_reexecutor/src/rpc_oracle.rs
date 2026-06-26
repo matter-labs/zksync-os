@@ -268,6 +268,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
             next_tx: None,
             next_tx_format: None,
             next_tx_from: None,
+            next_tx_hash: None,
         };
 
         let storage_responder = RpcStorageResponder::new(

@@ -19,7 +19,7 @@ use ruint::aliases::B160;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
+use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID, TX_HASH_QUERY_ID};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
@@ -384,4 +384,15 @@ impl SimpleOracleQuery for TxFromQuery {
     type Output = B160;
 
     const QUERY_ID: u32 = TX_FROM_QUERY_ID;
+}
+
+/// Queries the sequencer-provided transaction hash from the oracle. Used by the
+/// sequencer forward run to avoid recomputing keccak256 over the encoding.
+pub struct TxHashQuery;
+
+impl SimpleOracleQuery for TxHashQuery {
+    type Input = ();
+    type Output = Bytes32;
+
+    const QUERY_ID: u32 = TX_HASH_QUERY_ID;
 }

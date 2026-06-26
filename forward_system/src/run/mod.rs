@@ -81,6 +81,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
         next_tx: None,
         next_tx_format: None,
         next_tx_from: None,
+        next_tx_hash: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -142,6 +143,7 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
         next_tx: None,
         next_tx_format: None,
         next_tx_from: None,
+        next_tx_hash: None,
     };
     let zk_proof_data_responder = ZKProofDataResponder {
         data: Some(proof_data),
@@ -289,6 +291,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
         next_tx: None,
         next_tx_format: None,
         next_tx_from: None,
+        next_tx_hash: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -373,6 +376,7 @@ pub fn run_block_with_oracle_dump_ext<
         next_tx: None,
         next_tx_format: None,
         next_tx_from: None,
+        next_tx_hash: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -492,6 +496,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
         next_tx: None,
         next_tx_format: None,
         next_tx_from: None,
+        next_tx_hash: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let storage_responder = ReadStorageResponder { storage };

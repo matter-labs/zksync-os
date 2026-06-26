@@ -937,6 +937,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             next_tx: None,
             next_tx_format: None,
             next_tx_from: None,
+            next_tx_hash: None,
         };
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
             da_commitment_scheme: Some(DACommitmentScheme::None),

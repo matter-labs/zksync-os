@@ -65,7 +65,10 @@ fn encode_abi_tx_envelope<T: AbiEncodableTx>(tx_envelope: T) -> EncodedTx {
 fn encode_2718_tx_envelope<T: Encodable2718>(tx_envelope: T, signer: Address) -> EncodedTx {
     let mut bytes = vec![];
     tx_envelope.encode_2718(&mut bytes);
-    EncodedTx::Rlp(bytes, signer)
+    // Precompute the transaction hash (keccak256 of the encoding) so the
+    // sequencer forward run can read it from the oracle instead of hashing.
+    let tx_hash = alloy::primitives::keccak256(&bytes);
+    EncodedTx::Rlp(bytes, signer, Some(tx_hash))
 }
 
 fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
