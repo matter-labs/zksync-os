@@ -24,8 +24,10 @@ revm = "=38.0.0"
 revm-inspectors = "0.39.0"
 log = { workspace = true }
 
-# TODO: switch back to a tagged release once AtlasV4 is merged into zksync-os-revm.
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "4daec8c176ec91db2655377e05b77ec5b302ba42" }
+# Pinned to the vv-new-version tip, which is AtlasV4 plus the
+# apply_pre_block_system_calls helper (matter-labs/zksync-os-revm#19).
+# TODO: switch back to a tagged release once vv-new-version is released.
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "2156a430bdd0c0dbb5361d97dcd9993f854bc87e" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }
