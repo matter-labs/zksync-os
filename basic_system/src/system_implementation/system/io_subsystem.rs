@@ -19,7 +19,9 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
-use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
+use zk_ee::common_structs::new_settlement_layer_chain_id_storage::{
+    NewSettlementLayerChainIdSnapshotId, NewSettlementLayerChainIdStorage,
+};
 use zk_ee::common_structs::{
     GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef,
     L2_TO_L1_LOG_SERIALIZE_SIZE,
@@ -64,6 +66,7 @@ pub struct FullIOStateSnapshot<M: StorageModel> {
     messages: usize,
     events: usize,
     interop_roots: usize,
+    new_settlement_layer_chain_id: NewSettlementLayerChainIdSnapshotId,
 }
 
 impl<
@@ -407,6 +410,8 @@ impl<
         let messages = self.logs_storage.start_frame();
         let events = self.events_storage.start_frame();
         let interop_roots = self.interop_root_storage.start_frame();
+        let new_settlement_layer_chain_id =
+            self.new_settlement_layer_chain_id_storage.start_frame();
 
         Ok(FullIOStateSnapshot {
             io,
@@ -414,6 +419,7 @@ impl<
             messages,
             events,
             interop_roots,
+            new_settlement_layer_chain_id,
         })
     }
 
@@ -430,6 +436,8 @@ impl<
             .finish_frame(rollback_handle.map(|x| x.events));
         self.interop_root_storage
             .finish_frame(rollback_handle.map(|x| x.interop_roots));
+        self.new_settlement_layer_chain_id_storage
+            .finish_frame(rollback_handle.map(|x| x.new_settlement_layer_chain_id));
 
         Ok(())
     }

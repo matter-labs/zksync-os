@@ -21,6 +21,7 @@ use rig::utils::{
 };
 use rig::zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use rig::zk_ee::utils::Bytes32;
+use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{testing_signer, BlockContext, BlockOutput, TestingFramework};
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
@@ -47,6 +48,14 @@ fn b160_to_address(value: B160) -> Address {
 fn service_block_context() -> BlockContext {
     BlockContext {
         eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    }
+}
+
+fn service_block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
+    BlockContext {
+        eip1559_basefee: U256::ZERO,
+        gas_limit,
         ..Default::default()
     }
 }
@@ -425,6 +434,55 @@ fn test_new_sl_chain_id_two_updates_fail() {
     assert_eq!(
         read_sl_chain_id_slot(&mut tester),
         U256::from(old_sl_chain_id)
+    );
+}
+
+/// A `setSettlementLayerChainId` service tx emits `SettlementLayerChainIdUpdated`,
+/// which populates the proving-side settlement-chain-id side channel through the
+/// SystemContext event hook. If the tx is then reverted because a block limit is
+/// reached, the side channel must be rolled back together with the storage write.
+///
+/// Otherwise the forward STF seals the block (it never reads the side channel) while
+/// the proving post-tx op reads the stale side channel and the reverted storage slot
+/// and aborts on the mismatch. Here a tight block gas limit lets the tx execute
+/// (emitting the event) and then invalidates it.
+#[test]
+fn test_new_sl_chain_id_update_rolled_back_on_block_limit() {
+    let old_sl_chain_id = 1u64;
+    let new_sl_chain_id = U256::from(42);
+    let mut tester = with_system_context_contracts(TestingFramework::new())
+        .with_storage_slot(
+            b160_to_address(SYSTEM_CONTEXT_ADDRESS),
+            U256::ZERO,
+            B256::from_limbs([old_sl_chain_id, 0, 0, 0]),
+        )
+        .with_block_context(service_block_context_with_gas_limit(0));
+
+    // Forward execution seals the block; the update tx is invalidated by the block
+    // gas limit (it is the only tx, so the block carries no settlement-chain-id update).
+    let output = tester.execute_block(vec![set_sl_chain_id_tx(new_sl_chain_id, 0)]);
+
+    assert_eq!(output.tx_results.len(), 1);
+    assert!(
+        matches!(
+            output.tx_results[0],
+            Err(InvalidTransaction::BlockGasLimitReached)
+        ),
+        "settlement-chain-id tx must be invalidated by the block gas limit, got: {:?}",
+        output.tx_results[0]
+    );
+
+    // The storage write was reverted...
+    assert_eq!(
+        read_sl_chain_id_slot(&mut tester),
+        U256::from(old_sl_chain_id)
+    );
+    // ...and the proving-side settlement layer chain id agrees with it, i.e. the side
+    // channel was rolled back. Before the fix, the proving post-tx op aborted here
+    // because the stale side channel (42) did not match the reverted storage slot (1).
+    assert_eq!(
+        last_prover_input_batch_output(&tester).settlement_layer_chain_id,
+        U256::from(old_sl_chain_id),
     );
 }
 
