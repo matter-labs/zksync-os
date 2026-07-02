@@ -330,12 +330,22 @@ const EIP_2935_INTRINSIC_NATIVE: u64 =
 /// as `ASSET_TRACKER_INTRINSIC_PUBDATA`).
 const EIP_2935_INTRINSIC_PUBDATA: u64 = 32 + 33;
 
+/// Three u32 counters serialized into pubdata for state diffs, logs, and
+/// messages.
+pub const BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES: u64 = 3 * 4;
+
+/// `BlobsZKsyncOS` prepends one 31-byte field element that stores the encoded
+/// pubdata length before any payload bytes.
+pub const BLOBS_ZKSYNC_OS_LENGTH_PREFIX_PUBDATA_BYTES: u64 = 31;
+
 /// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
 /// from block start. Accounts for:
 /// - the fixed envelope written by `write_pubdata`: 1 byte
 ///   (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash) + 8 bytes (timestamp),
+/// - the fixed serialized counters for state diffs, logs, and messages,
 /// - the EIP-2935 history-slot diff when the feature is enabled.
-pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 32 + 8 + EIP_2935_INTRINSIC_PUBDATA;
+pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
+    1 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
 
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
 /// from block start. Covers fixed pre-tx-loop system work — currently just

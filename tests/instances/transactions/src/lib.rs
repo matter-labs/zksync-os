@@ -12,15 +12,23 @@ use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::basic_bootloader::bootloader::block_flow::{
     TransactionsRollingKeccakHasher, TxHashesAccumulator,
 };
+use rig::basic_bootloader::bootloader::constants::{
+    BLOCK_INTRINSIC_PUBDATA_BYTES, BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES,
+};
 use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR;
+use rig::chain::RunConfig;
 use rig::crypto::sha3::Keccak256;
 use rig::crypto::MiniDigest;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::{B160, B256, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_interface::traits::EncodedTx;
-use rig::{alloy, common_target_address, testing_signer, TestingFramework};
+use rig::{
+    alloy, assert_tx_rejected, assert_tx_success, common_target_address, testing_signer,
+    TestingFramework,
+};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
@@ -66,6 +74,59 @@ fn expected_priority_operations_hash(
         accumulator.add_tx_hash(&l1_tx_hash(tx));
     }
     accumulator.finish().0
+}
+
+fn run_single_erc20_transfer_with_limits(
+    pubdata_limit: u64,
+    da_commitment_scheme: DACommitmentScheme,
+) -> rig::forward_system::run::output::BlockOutput {
+    let wallet = testing_signer(0);
+    let target = address!("0000000000000000000000000000000000010002");
+    let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
+    let key = compute_erc20_balance_slot(wallet.address());
+    let value = B256::from(U256::from(1_000_000_000_000_000_u64));
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 60_000,
+            to: TxKind::Call(target),
+            value: Default::default(),
+            access_list: Default::default(),
+            input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+    let block_context = BlockContext {
+        pubdata_limit,
+        ..Default::default()
+    };
+
+    TestingFramework::new()
+        .with_evm_contract(target, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_storage_slot(target, key, value)
+        .with_block_context(block_context)
+        .with_da_commitment_scheme(da_commitment_scheme)
+        .with_run_config(RunConfig {
+            do_prover_input_run: false,
+            ..RunConfig::without_riscv_run()
+        })
+        .execute_block(vec![tx])
+}
+
+fn successful_single_erc20_transfer_pubdata_used() -> u64 {
+    let output = run_single_erc20_transfer_with_limits(
+        u64::MAX,
+        DACommitmentScheme::BlobsAndPubdataKeccak256,
+    );
+    assert_tx_success!(output, 0);
+    output.tx_results[0]
+        .as_ref()
+        .expect("tx should be accepted")
+        .pubdata_used
 }
 
 #[test]
@@ -1354,6 +1415,46 @@ fn test_check_pubdata_has_timestamp() {
             .expect("Slice with incorrect length"),
     );
     assert_eq!(timestamp, pubdata_timestamp, "Timestamps do not match");
+}
+
+#[test]
+fn test_block_pubdata_limit_counts_serialized_counters() {
+    let tx_pubdata_used = successful_single_erc20_transfer_pubdata_used();
+    let old_limit = BLOCK_INTRINSIC_PUBDATA_BYTES + tx_pubdata_used
+        - BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES;
+
+    let output = run_single_erc20_transfer_with_limits(
+        old_limit,
+        DACommitmentScheme::BlobsAndPubdataKeccak256,
+    );
+
+    assert_tx_rejected!(output, 0);
+    assert!(matches!(
+        output.tx_results[0],
+        Err(InvalidTransaction::BlockPubdataLimitReached)
+    ));
+}
+
+#[test]
+fn test_block_pubdata_limit_counts_blobs_length_prefix() {
+    let tx_pubdata_used = successful_single_erc20_transfer_pubdata_used();
+    let limit_without_blob_prefix = BLOCK_INTRINSIC_PUBDATA_BYTES + tx_pubdata_used;
+
+    let keccak_output = run_single_erc20_transfer_with_limits(
+        limit_without_blob_prefix,
+        DACommitmentScheme::BlobsAndPubdataKeccak256,
+    );
+    assert_tx_success!(keccak_output, 0);
+
+    let blobs_output = run_single_erc20_transfer_with_limits(
+        limit_without_blob_prefix,
+        DACommitmentScheme::BlobsZKsyncOS,
+    );
+    assert_tx_rejected!(blobs_output, 0);
+    assert!(matches!(
+        blobs_output.tx_results[0],
+        Err(InvalidTransaction::BlockPubdataLimitReached)
+    ));
 }
 
 #[test]
