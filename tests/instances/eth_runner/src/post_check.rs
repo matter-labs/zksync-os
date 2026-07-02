@@ -41,6 +41,13 @@ pub enum TxId {
     Index(usize),
 }
 
+/// Account code as a byte slice, treating `None` (no code) and an empty `Bytes`
+/// identically. A cleared delegation is recorded as an empty `Bytes` on the
+/// reference side but left as `None` on the ZKsync OS side; both mean "no code".
+fn code_as_slice(code: &Option<alloy::primitives::Bytes>) -> &[u8] {
+    code.as_ref().map(|c| c.as_ref()).unwrap_or(&[])
+}
+
 impl DiffTrace {
     fn collect_diffs(self, prestate_cache: &Cache) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, (Option<usize>, AccountState)> = HashMap::new();
@@ -56,11 +63,38 @@ impl DiffTrace {
                     .nonce
                     .into_iter()
                     .for_each(|x| entry.nonce = Some(x));
-                account
-                    .code
-                    .clone()
-                    .into_iter()
-                    .for_each(|x| entry.code = Some(x));
+                // A code set (contract deploy or EIP-7702 delegation) is
+                // reported in `post`. A code clear (e.g. an EIP-7702 delegation
+                // removed by a later tx in the same block) is reported by the
+                // tracer OMITTING `code` from `post`. But `post` also omits
+                // `code` when it is simply UNCHANGED, and the tracer's `pre` can
+                // echo an account's existing (unchanged) code, so "code in pre,
+                // absent in post" alone is ambiguous.
+                //
+                // Disambiguate using EIP-7702's nonce rule: applying an
+                // authorization (setting OR removing a delegation) increments
+                // the authority's nonce, so a genuine delegation removal always
+                // reports a nonce change in the same `post`. (A contract's code
+                // is otherwise only wiped by selfdestruct, handled via the
+                // account-clear logic below.) Treat the account as code-cleared
+                // only when its code was present in `pre` and this `post` also
+                // bumps the nonce — this catches a delegation set earlier in the
+                // block and removed later, which the plain aggregation would
+                // otherwise leave as a stale intermediate code.
+                match account.code.clone() {
+                    Some(code) => entry.code = Some(code),
+                    None => {
+                        let pre_had_code = item
+                            .result
+                            .pre
+                            .get(address)
+                            .and_then(|pre_account| pre_account.code.as_ref())
+                            .is_some_and(|pre_code| !pre_code.is_empty());
+                        if pre_had_code && account.nonce.is_some() {
+                            entry.code = Some(alloy::primitives::Bytes::new());
+                        }
+                    }
+                }
 
                 // Populate storage slot clears (slots present in pre but
                 // absent in post). Write 0 to them.
@@ -178,7 +212,13 @@ impl DiffTrace {
                     )
                 }
             }
-            if account.code.is_some() && account.code != zk_account.code {
+            // Compare code content treating "no code" uniformly: the reference
+            // may carry an explicit empty `Bytes` (e.g. a cleared delegation)
+            // while the ZKsync OS side leaves `code` as `None`. Both mean empty
+            // account code and must not be reported as a difference.
+            if account.code.is_some()
+                && code_as_slice(&account.code) != code_as_slice(&zk_account.code)
+            {
                 error_internal!(
                     "Code for address {} differed. ZKsync OS: {}, reference: {}",
                     hex::encode(address.to_be_bytes_vec()),
