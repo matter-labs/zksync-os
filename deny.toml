@@ -1,5 +1,11 @@
 [advisories]
-ignore = []
+ignore = [
+    # Pulled in transitively via `inferno` in Airbender flamegraph/diagnostic
+    # tooling. `inferno 0.12.x` pins `quick-xml = "0.39"`, so lifting these
+    # requires an upstream dependency update rather than a local lockfile bump.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
 
 [bans]
 multiple-versions = "warn"
