@@ -503,7 +503,12 @@ impl<
             InteropRootStorage::<SF, N, A>::new_from_parts(allocator.clone());
         let new_settlement_layer_chain_id_storage =
             NewSettlementLayerChainIdStorage::<SF, N, A>::new_from_parts(allocator.clone());
-        let da_commitment_scheme = Some(DACommitmentScheme::try_from_oracle(&mut oracle)?);
+        // we read da scheme during init as in future it should affect pubdata price
+        let da_commitment_scheme = if PROOF_ENV {
+            Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
+        } else {
+            None
+        };
         let new = Self {
             storage,
             transient_storage,
@@ -518,10 +523,6 @@ impl<
         };
 
         Ok(new)
-    }
-
-    fn da_commitment_scheme(&self) -> Option<DACommitmentScheme> {
-        self.da_commitment_scheme
     }
 
     fn oracle(&mut self) -> &mut Self::IOOracle {

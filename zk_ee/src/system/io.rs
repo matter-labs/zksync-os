@@ -12,7 +12,6 @@ use super::errors::system::SystemError;
 use super::logger::Logger;
 use super::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use super::{IOResultKeeper, Resources};
-use crate::common_structs::da_commitment_scheme::DACommitmentScheme;
 use crate::common_structs::GenericEventContentRef;
 use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
@@ -377,8 +376,6 @@ pub trait IOSubsystemExt: IOSubsystem {
     type IOOracle: IOOracle;
 
     fn init_from_oracle(oracle: Self::IOOracle) -> Result<Self, InternalError>;
-
-    fn da_commitment_scheme(&self) -> Option<DACommitmentScheme>;
 
     fn oracle(&mut self) -> &mut Self::IOOracle;
 

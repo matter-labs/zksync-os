@@ -170,9 +170,6 @@ pub fn run_block<
         block_metadata: block_context,
     };
     let chain_config_responder = ChainConfigResponder { chain_config };
-    let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-        da_commitment_scheme: Some(DACommitmentScheme::BlobsAndPubdataKeccak256),
-    };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -185,7 +182,6 @@ pub fn run_block<
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(chain_config_responder);
-    oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -919,9 +915,6 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
         block_metadata: block_context,
     };
     let chain_config_responder = ChainConfigResponder { chain_config };
-    let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-        da_commitment_scheme: Some(DACommitmentScheme::BlobsAndPubdataKeccak256),
-    };
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
@@ -934,7 +927,6 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     let mut oracle = ZkEENonDeterminismSource::default();
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(chain_config_responder);
-    oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(storage_responder);

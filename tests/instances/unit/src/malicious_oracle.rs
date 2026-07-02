@@ -209,8 +209,8 @@ mod da_commitment_scheme {
     //!
     //! DACommitmentScheme::try_from validates the oracle-provided scheme ID.
     //! Only values 0-4 are valid. Invalid IDs should be rejected.
-    //! The scheme is now queried during forward initialization as well, so
-    //! these tests focus only on the enum-level validation logic.
+    //! Note: the oracle query for DA commitment scheme only runs in PROOF_ENV,
+    //! so this is tested at the type level rather than through the full execution path.
 
     use rig::zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 
