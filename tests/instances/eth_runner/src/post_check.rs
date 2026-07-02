@@ -66,21 +66,31 @@ impl DiffTrace {
                 // A code set (contract deploy or EIP-7702 delegation) is
                 // reported in `post`. A code clear (e.g. an EIP-7702 delegation
                 // removed by a later tx in the same block) is reported by the
-                // tracer OMITTING `code` from `post` while it is present in
-                // `pre` — the same convention used for cleared storage slots
-                // below. Without handling the clear, a delegation set earlier in
-                // the block would survive here as a stale reference code and
-                // spuriously fail the diff check.
+                // tracer OMITTING `code` from `post`. But `post` also omits
+                // `code` when it is simply UNCHANGED, and the tracer's `pre` can
+                // echo an account's existing (unchanged) code, so "code in pre,
+                // absent in post" alone is ambiguous.
+                //
+                // Disambiguate using EIP-7702's nonce rule: applying an
+                // authorization (setting OR removing a delegation) increments
+                // the authority's nonce, so a genuine delegation removal always
+                // reports a nonce change in the same `post`. (A contract's code
+                // is otherwise only wiped by selfdestruct, handled via the
+                // account-clear logic below.) Treat the account as code-cleared
+                // only when its code was present in `pre` and this `post` also
+                // bumps the nonce — this catches a delegation set earlier in the
+                // block and removed later, which the plain aggregation would
+                // otherwise leave as a stale intermediate code.
                 match account.code.clone() {
                     Some(code) => entry.code = Some(code),
                     None => {
-                        let code_cleared = item
+                        let pre_had_code = item
                             .result
                             .pre
                             .get(address)
                             .and_then(|pre_account| pre_account.code.as_ref())
                             .is_some_and(|pre_code| !pre_code.is_empty());
-                        if code_cleared {
+                        if pre_had_code && account.nonce.is_some() {
                             entry.code = Some(alloy::primitives::Bytes::new());
                         }
                     }
