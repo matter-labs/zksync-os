@@ -1436,28 +1436,6 @@ fn test_block_pubdata_limit_counts_serialized_counters() {
 }
 
 #[test]
-fn test_block_pubdata_limit_counts_blobs_length_prefix() {
-    let tx_pubdata_used = successful_single_erc20_transfer_pubdata_used();
-    let limit_without_blob_prefix = BLOCK_INTRINSIC_PUBDATA_BYTES + tx_pubdata_used;
-
-    let keccak_output = run_single_erc20_transfer_with_limits(
-        limit_without_blob_prefix,
-        DACommitmentScheme::BlobsAndPubdataKeccak256,
-    );
-    assert_tx_success!(keccak_output, 0);
-
-    let blobs_output = run_single_erc20_transfer_with_limits(
-        limit_without_blob_prefix,
-        DACommitmentScheme::BlobsZKsyncOS,
-    );
-    assert_tx_rejected!(blobs_output, 0);
-    assert!(matches!(
-        blobs_output.tx_results[0],
-        Err(InvalidTransaction::BlockPubdataLimitReached)
-    ));
-}
-
-#[test]
 fn test_simple_service_transaction() {
     let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
 

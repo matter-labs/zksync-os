@@ -148,15 +148,6 @@ fn add_fri_proof_responder<FS: FriProofSidecarSource>(
     let _ = (oracle, fri_proof_sidecar, fri_verifier_artifacts);
 }
 
-fn default_da_commitment_scheme(
-    da_commitment_scheme: Option<DACommitmentScheme>,
-) -> Option<DACommitmentScheme> {
-    // `None` means the caller omitted the oracle response entirely. Preserve the
-    // explicit enum variant `DACommitmentScheme::None`, but default the missing
-    // responder value to the standard forward-mode scheme.
-    Some(da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256))
-}
-
 pub fn run_block<
     T: ReadStorageTree,
     PS: PreimageSource,
@@ -682,7 +673,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
     let tree_responder = ReadTreeResponder { tree };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-        da_commitment_scheme: default_da_commitment_scheme(da_commitment_scheme),
+        da_commitment_scheme,
     };
 
     let mut oracle = ZkEENonDeterminismSource::default();
@@ -811,7 +802,7 @@ pub fn run_block_with_oracle_dump_ext_with_chain_config<
     let tree_responder = ReadTreeResponder { tree };
     let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
     let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-        da_commitment_scheme: default_da_commitment_scheme(da_commitment_scheme),
+        da_commitment_scheme,
     };
 
     if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
@@ -977,18 +968,6 @@ mod tests {
         let mut response = vec![0; len];
         response[0] = (len - 1) as u32;
         response
-    }
-
-    #[test]
-    fn defaults_missing_da_commitment_scheme_without_masking_explicit_none() {
-        assert_eq!(
-            default_da_commitment_scheme(None),
-            Some(DACommitmentScheme::BlobsAndPubdataKeccak256)
-        );
-        assert_eq!(
-            default_da_commitment_scheme(Some(DACommitmentScheme::None)),
-            Some(DACommitmentScheme::None)
-        );
     }
 
     #[test]

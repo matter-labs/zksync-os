@@ -776,7 +776,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 tx_source.clone(),
                 NoopTxCallback,
                 None,
-                None,
+                Some(DACommitmentScheme::BlobsAndPubdataKeccak256),
                 &mut nop_tracer,
                 &mut nop_validator,
             )

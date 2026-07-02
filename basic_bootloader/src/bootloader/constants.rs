@@ -334,10 +334,6 @@ const EIP_2935_INTRINSIC_PUBDATA: u64 = 32 + 33;
 /// messages.
 pub const BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES: u64 = 3 * 4;
 
-/// `BlobsZKsyncOS` prepends one 31-byte field element that stores the encoded
-/// pubdata length before any payload bytes.
-pub const BLOBS_ZKSYNC_OS_LENGTH_PREFIX_PUBDATA_BYTES: u64 = 31;
-
 /// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
 /// from block start. Accounts for:
 /// - the fixed envelope written by `write_pubdata`: 1 byte
