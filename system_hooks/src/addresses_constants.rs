@@ -53,6 +53,11 @@ pub const L2_INTEROP_CENTER_ADDRESS: B160 =
 // L2 asset tracker contract
 pub const L2_ASSET_TRACKER_ADDRESS: B160 = B160::from_limbs([0x1000f, 0, 0]);
 
+// L2 interop commitment tree (Indexed Merkle Tree of atomic-interop commit values) system contract
+pub const L2_INTEROP_COMMITMENT_TREE_ADDRESS_LOW: u32 = 0x10012;
+pub const L2_INTEROP_COMMITMENT_TREE_ADDRESS: B160 =
+    B160::from_limbs([L2_INTEROP_COMMITMENT_TREE_ADDRESS_LOW as u64, 0, 0]);
+
 // Treasury contract used for "minting" base tokens on L2
 pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
 pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
