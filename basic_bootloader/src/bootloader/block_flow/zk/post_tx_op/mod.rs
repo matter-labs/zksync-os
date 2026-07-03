@@ -5,7 +5,9 @@ use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::{B160, U256};
-use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
+use system_hooks::addresses_constants::{
+    L2_INTEROP_COMMITMENT_TREE_ADDRESS, MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+};
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
@@ -130,6 +132,57 @@ pub fn calculate_interop_roots_rolling_hash<'a>(
     rolling_hash
 }
 
+/// Number of leaves in the chain batch root Merkle tree (fixed height-3 tree = 8 leaves).
+pub const CHAIN_BATCH_ROOT_TREE_LEAVES: usize = 8;
+
+/// Builds the chain batch root as a fixed height-3 (8-leaf) keccak256 Merkle tree.
+///
+/// Leaf layout — the first four carry the live commitments, the last four are reserved (zero) for now:
+///   0: l2 logs root
+///   1: multichain root
+///   2: interop commitment tree (IMT) root at batch begin
+///   3: interop commitment tree (IMT) root at batch end
+///   4..8: reserved (`Bytes32::ZERO`)
+///
+/// Internal nodes are `keccak256(left || right)`; leaves are used directly (no separate leaf-hashing
+/// step), matching the existing `l2_logs_root` tree. Because the whole right subtree is zero, this is
+/// equivalent to the canonical empty-subtree convention with a zero empty leaf, so reserved leaves can
+/// later be populated in place without changing the shape.
+pub fn compute_chain_batch_root(
+    l2_logs_root: Bytes32,
+    multichain_root: Bytes32,
+    commitment_tree_root_begin: Bytes32,
+    commitment_tree_root_end: Bytes32,
+) -> Bytes32 {
+    let mut nodes = [
+        l2_logs_root,
+        multichain_root,
+        commitment_tree_root_begin,
+        commitment_tree_root_end,
+        Bytes32::ZERO,
+        Bytes32::ZERO,
+        Bytes32::ZERO,
+        Bytes32::ZERO,
+    ];
+
+    // Reduce level by level in place: 8 -> 4 -> 2 -> 1. Node `i` of the next level hashes children
+    // `2*i` and `2*i + 1`; the write index is always below the read indices, so no live value is
+    // clobbered before it is consumed.
+    let mut width = CHAIN_BATCH_ROOT_TREE_LEAVES;
+    while width > 1 {
+        let half = width / 2;
+        for i in 0..half {
+            let mut hasher = crypto::sha3::Keccak256::new();
+            hasher.update(nodes[2 * i].as_u8_ref());
+            hasher.update(nodes[2 * i + 1].as_u8_ref());
+            nodes[i] = Bytes32::from_array(hasher.finalize());
+        }
+        width = half;
+    }
+
+    nodes[0]
+}
+
 ///
 /// Reads SL chain id from the SystemContext(0x800b) contract.
 ///
@@ -206,6 +259,68 @@ pub fn read_multichain_root<
         &root_slot,
     )
     .expect("must read MessageRoot multichain root")
+}
+
+/// Fixed depth of the interop commitment tree's Indexed Merkle Tree. Mirrors `IMT_DEPTH` in
+/// `l1-contracts/contracts/common/libraries/IndexedMerkleTree.sol`.
+const INTEROP_COMMITMENT_TREE_IMT_DEPTH: u8 = 32;
+
+/// Storage slot of `_imt.nodes[IMT_DEPTH][0]` — the interop commitment tree's root node — in the
+/// L2InteropCommitmentTree(0x10012) contract.
+///
+/// Derived from the Solidity storage layout (verified with `forge inspect`): `_imt` sits at slot 0;
+/// inside `struct IMT` the `bytes32[IMT_DEPTH + 1] zeros` array occupies slots `0..=IMT_DEPTH`, so the
+/// `mapping(uint256 => mapping(uint256 => bytes32)) nodes` base slot is `IMT_DEPTH + 1` (= 33). For a
+/// nested mapping: `inner = keccak256(pad32(IMT_DEPTH) || pad32(33))`, then
+/// `slot = keccak256(pad32(0) || inner)`. Locked against the formula by
+/// `commitment_tree_root_slot_matches_layout` below.
+const COMMITMENT_TREE_ROOT_NODE_SLOT: [u8; 32] = [
+    0xf7, 0x00, 0x9d, 0x13, 0x71, 0x93, 0xf8, 0x68, 0x7e, 0x15, 0x07, 0x32, 0x6b, 0x04, 0x75, 0xde,
+    0xd1, 0xa0, 0xd0, 0x9a, 0xa4, 0xd4, 0x61, 0x6a, 0xc9, 0xb1, 0x95, 0xb2, 0xfb, 0x33, 0x3f, 0x81,
+];
+
+///
+/// Reads the interop commitment tree root from the L2InteropCommitmentTree(0x10012) contract.
+///
+/// Returns `_imt.nodes[IMT_DEPTH][0]` (the tree root node). When that node has not been written yet —
+/// an empty / freshly-seeded tree — it falls back to `_imt.zeros[IMT_DEPTH]` (the last element of the
+/// `zeros` array, at slot `IMT_DEPTH`), exactly mirroring `IndexedMerkleTreeLib.root`. On a chain that
+/// does not have the tree deployed the reads return zero, so this yields `Bytes32::zero()`.
+///
+/// Generic over the IO subsystem (like `read_settlement_layer_chain_id`) so it can be called both
+/// before the tx loop (batch-begin snapshot) and after it (batch-end snapshot).
+///
+pub fn read_commitment_tree_root<IO: IOSubsystem>(io: &mut IO) -> Bytes32
+where
+    IO::IOTypes: SystemIOTypesConfig<Address = B160, StorageKey = Bytes32, StorageValue = Bytes32>,
+{
+    let mut inf_resources = IO::Resources::FORMAL_INFINITE;
+
+    let root_node = io
+        .storage_read::<false>(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
+            &Bytes32::from_array(COMMITMENT_TREE_ROOT_NODE_SLOT),
+        )
+        .expect("must read InteropCommitmentTree root node");
+
+    if !root_node.is_zero() {
+        return root_node;
+    }
+
+    // Empty / freshly-seeded tree: the top node is unwritten, so the canonical root is
+    // `zeros[IMT_DEPTH]`, stored at slot `IMT_DEPTH` (last element of `bytes32[IMT_DEPTH + 1] zeros`,
+    // which starts at slot 0).
+    let mut zeros_root_slot = [0u8; 32];
+    zeros_root_slot[31] = INTEROP_COMMITMENT_TREE_IMT_DEPTH;
+    io.storage_read::<false>(
+        ExecutionEnvironmentType::NoEE,
+        &mut inf_resources,
+        &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
+        &Bytes32::from_array(zeros_root_slot),
+    )
+    .expect("must read InteropCommitmentTree zeros root")
 }
 
 ///
@@ -318,5 +433,68 @@ mod tests {
             hex::decode("35817d789b7a6dbe8b95b0f21e189fb26d3d329de699cac7a267a9568298e0a5")
                 .unwrap()
         );
+    }
+
+    /// Recomputes the interop-commitment-tree root slot from the storage layout and locks the
+    /// hardcoded `COMMITMENT_TREE_ROOT_NODE_SLOT` against it. `_imt` is at slot 0; `IMT.zeros` is
+    /// `bytes32[IMT_DEPTH + 1]` occupying slots `0..=IMT_DEPTH`, so the `nodes` mapping base slot is
+    /// `IMT_DEPTH + 1`. Then `nodes[IMT_DEPTH][0]` follows the nested-mapping rule.
+    fn calculate_commitment_tree_root_slot() -> [u8; 32] {
+        let nodes_base_slot = INTEROP_COMMITMENT_TREE_IMT_DEPTH + 1;
+
+        let mut level = [0u8; 32];
+        level[31] = INTEROP_COMMITMENT_TREE_IMT_DEPTH;
+        let mut base = [0u8; 32];
+        base[31] = nodes_base_slot;
+        // inner mapping slot: keccak256(pad32(IMT_DEPTH) || pad32(nodes_base_slot))
+        let mut hasher = crypto::sha3::Keccak256::new();
+        hasher.update(level);
+        hasher.update(base);
+        let inner = hasher.finalize();
+
+        // element [0] of the inner mapping: keccak256(pad32(0) || inner)
+        let index = [0u8; 32];
+        let mut hasher = crypto::sha3::Keccak256::new();
+        hasher.update(index);
+        hasher.update(inner);
+        hasher.finalize()
+    }
+
+    #[test]
+    fn commitment_tree_root_slot_matches_layout() {
+        assert_eq!(
+            calculate_commitment_tree_root_slot(),
+            COMMITMENT_TREE_ROOT_NODE_SLOT
+        );
+    }
+
+    #[test]
+    fn chain_batch_root_is_height3_merkle() {
+        fn node(a: &Bytes32, b: &Bytes32) -> Bytes32 {
+            let mut h = crypto::sha3::Keccak256::new();
+            h.update(a.as_u8_ref());
+            h.update(b.as_u8_ref());
+            Bytes32::from_array(h.finalize())
+        }
+
+        let a = Bytes32::from_byte_fill(1);
+        let b = Bytes32::from_byte_fill(2);
+        let c = Bytes32::from_byte_fill(3);
+        let d = Bytes32::from_byte_fill(4);
+        let z = Bytes32::ZERO;
+
+        // Independent recomputation of the height-3 tree with the last four leaves zero.
+        let l1 = [node(&a, &b), node(&c, &d), node(&z, &z), node(&z, &z)];
+        let l2 = [node(&l1[0], &l1[1]), node(&l1[2], &l1[3])];
+        let expected = node(&l2[0], &l2[1]);
+
+        assert_eq!(compute_chain_batch_root(a, b, c, d), expected);
+    }
+
+    #[test]
+    fn chain_batch_root_all_zero_is_deterministic() {
+        // Sanity: an all-zero input (empty batch) is well defined and non-trivial (non-zero).
+        let z = Bytes32::ZERO;
+        assert_ne!(compute_chain_batch_root(z, z, z, z), Bytes32::ZERO);
     }
 }

@@ -107,10 +107,17 @@ where
         });
 
         let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
+        // IMT root snapshots: `begin` was taken in `pre_op` (before the block), `end` is taken now
+        // (after the block). Committed into the chain batch root below, matching the multiblock keeper's
+        // ordering (logs root, multichain root, IMT begin, IMT end).
+        let commitment_tree_root_begin = block_data.commitment_tree_root_begin;
+        let commitment_tree_root_end = read_commitment_tree_root(&mut io);
 
         let mut full_root_hasher = crypto::sha3::Keccak256::new();
         full_root_hasher.update(io.logs_storage.tree_root().as_u8_ref());
         full_root_hasher.update(multichain_root.as_u8_ref());
+        full_root_hasher.update(commitment_tree_root_begin.as_u8_ref());
+        full_root_hasher.update(commitment_tree_root_end.as_u8_ref());
         let full_l2_to_l1_logs_root = full_root_hasher.finalize().into();
 
         let (priority_operations_hash, number_of_layer_1_txs) =

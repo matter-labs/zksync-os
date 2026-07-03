@@ -1,5 +1,7 @@
 use super::post_tx_op::da_commitment_generator::DACommitmentGenerator;
-use crate::bootloader::block_flow::zk::post_tx_op::calculate_interop_roots_rolling_hash;
+use crate::bootloader::block_flow::zk::post_tx_op::{
+    calculate_interop_roots_rolling_hash, compute_chain_batch_root,
+};
 use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
 use crate::bootloader::block_flow::{TransactionsRollingKeccakHasher, TxHashesAccumulator};
 use arrayvec::ArrayVec;
@@ -43,6 +45,10 @@ pub struct ZKBatchDataKeeper<A: alloc::alloc::Allocator, O: IOOracle> {
     multichain_root: Bytes32,
     interop_roots_rolling_hash: Bytes32,
     settlement_layer_chain_id: Option<U256>,
+    // Interop commitment tree (IMT) root snapshots committed into the chain batch root. `begin` is the
+    // root before the batch's first block ran; `end` is the root after the latest applied block.
+    commitment_tree_root_begin: Bytes32,
+    commitment_tree_root_end: Bytes32,
 }
 
 impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
@@ -65,6 +71,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             multichain_root: Bytes32::zero(),
             interop_roots_rolling_hash: Bytes32::ZERO,
             settlement_layer_chain_id: None,
+            commitment_tree_root_begin: Bytes32::zero(),
+            commitment_tree_root_end: Bytes32::zero(),
         }
     }
 
@@ -90,6 +98,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         interop_roots: impl Iterator<Item = &'a InteropRoot>,
         settlement_layer_chain_id: U256,
         number_of_txs_in_block: u32,
+        commitment_tree_root_begin: Bytes32,
+        commitment_tree_root_end: Bytes32,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -100,6 +110,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             self.chain_config = Some(chain_config);
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
             self.settlement_layer_chain_id = Some(settlement_layer_chain_id);
+            // Only the first block's begin root is the batch-begin root.
+            self.commitment_tree_root_begin = commitment_tree_root_begin;
             self.is_first_block = false;
         } else {
             assert_eq!(
@@ -123,6 +135,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         }
         // we always override multichain root with latest
         self.multichain_root = multichain_root;
+        // likewise the batch-end commitment tree root is always the latest applied block's end root
+        self.commitment_tree_root_end = commitment_tree_root_end;
 
         self.tx_count += U256::from(number_of_txs_in_block);
 
@@ -164,10 +178,15 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         assert!(!self.is_first_block);
         let has_upgrade_tx = self.has_upgrade_tx();
 
-        let mut chain_batch_root_hasher = crypto::sha3::Keccak256::new();
-        chain_batch_root_hasher.update(Self::l2_logs_root(self.logs_storage).as_u8_ref());
-        chain_batch_root_hasher.update(self.multichain_root.as_u8_ref());
-        let chain_batch_root = chain_batch_root_hasher.finalize();
+        // Chain batch root: a fixed height-3 (8-leaf) keccak Merkle tree. The IMT roots at the batch
+        // boundaries sit in dedicated leaves so a consumer can authenticate an IMT root against the
+        // chain batch root with a few hashes. See `compute_chain_batch_root` for the leaf layout.
+        let chain_batch_root = compute_chain_batch_root(
+            Self::l2_logs_root(self.logs_storage),
+            self.multichain_root,
+            self.commitment_tree_root_begin,
+            self.commitment_tree_root_end,
+        );
 
         let (priority_operations_hash, number_of_layer_1_txs) =
             self.enforced_txs_accumulator.finish();
@@ -187,7 +206,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             number_of_layer_1_txs,
             number_of_layer_2_txs,
             priority_operations_hash,
-            l2_logs_tree_root: chain_batch_root.into(),
+            l2_logs_tree_root: chain_batch_root,
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
             interop_roots_rolling_hash: self.interop_roots_rolling_hash,
             settlement_layer_chain_id: self.settlement_layer_chain_id.unwrap(),
@@ -314,6 +333,8 @@ mod tests {
             core::iter::empty(),
             U256::from(1u64),
             0,
+            Bytes32::ZERO,
+            Bytes32::ZERO,
         );
 
         // Second block continues the state chain but carries a different config.
@@ -328,6 +349,8 @@ mod tests {
             core::iter::empty(),
             U256::from(1u64),
             0,
+            Bytes32::ZERO,
+            Bytes32::ZERO,
         );
     }
 }
