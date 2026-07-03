@@ -3,7 +3,7 @@ mod block_execution;
 mod db;
 mod error_handling;
 mod prefetch;
-mod rpc;
+pub(crate) mod rpc;
 mod statistics;
 mod utils;
 use db::{BlockStatus, BlockTraces, Database};

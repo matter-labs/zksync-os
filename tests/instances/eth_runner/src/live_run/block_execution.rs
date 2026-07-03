@@ -196,7 +196,14 @@ pub fn run_block(
     let db_write_time = db_write_start.elapsed();
 
     let post_check_start = Instant::now();
-    let post_check_result = post_check(output, receipts, diff_trace, prestate_cache);
+    let post_check_result = post_check(
+        output,
+        receipts,
+        diff_trace,
+        prestate_cache,
+        Some(endpoint),
+        block_number,
+    );
     let post_check_time = post_check_start.elapsed();
 
     let total_time = block_start.elapsed();

@@ -160,7 +160,17 @@ fn run<const RANDOMIZED: bool>(
         }
     }
 
-    post_check(output, receipts, diff_trace, prestate_cache).unwrap();
+    // No RPC endpoint here (fixtures run offline): the post-check falls back to
+    // the trace-derived reference for any code comparison.
+    post_check(
+        output,
+        receipts,
+        diff_trace,
+        prestate_cache,
+        None,
+        block_number,
+    )
+    .unwrap();
 
     Ok(())
 }
