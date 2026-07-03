@@ -160,6 +160,7 @@ impl DiffTrace {
         prestate_cache: Cache,
         endpoint: Option<&str>,
         block_number: u64,
+        parent_block_hash: Option<[u8; 32]>,
     ) -> Result<(), PostCheckError> {
         let diffs = self.collect_diffs(&prestate_cache);
         let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache)?;
@@ -286,13 +287,23 @@ impl DiffTrace {
                 match diffs.get(address) {
                     Some(_) => (),
                     None => {
-                        // For some reason, selfdestruct is not correctly reported in the
-                        // traces. We could use calltrace, but for now we just check that
-                        // the ZKsync OS diff is consistent with selfdestruct.
+                        // The per-tx `prestateTracer` diff does not report two
+                        // kinds of legitimate ZKsync OS writes, so an unmatched
+                        // ZKsync OS diff is not necessarily a divergence:
+                        //  * selfdestruct — not reported in the traces at all; we
+                        //    check the ZKsync OS diff is consistent with one.
+                        //  * the EIP-2935 pre-block system call — a block-boundary
+                        //    write to the history-storage contract that no per-tx
+                        //    diff can contain.
                         if !zksync_os_diff_consistent_with_selfdestruct(
                             address,
                             acc,
                             &prestate_cache,
+                        ) && !zksync_os_diff_is_eip2935_system_write(
+                            address,
+                            acc,
+                            block_number,
+                            parent_block_hash,
                         ) {
                             error_internal!(
                                 "Reference must have write for account {} {:?}",
@@ -326,6 +337,54 @@ fn zksync_os_diff_consistent_with_selfdestruct(
         })
     };
     diff_is_empty && prestate_can_be_deployed()
+}
+
+/// EIP-2935 history-storage contract and ring-buffer size, mirroring
+/// `basic_bootloader::bootloader::block_flow::eip_2935_historical_block_hash`.
+const HISTORY_STORAGE_ADDRESS: B160 =
+    B160::from_limbs([0x335B175320002935, 0x27F1C53A10CB7A02, 0x0000F908]);
+const HISTORY_SERVE_WINDOW: u64 = 8191;
+
+/// Returns true if `acc` is exactly the EIP-2935 pre-block system write the STF
+/// performs at the start of every post-Pectra block: a single storage write to
+/// `HISTORY_STORAGE_ADDRESS` at slot `(block_number - 1) % HISTORY_SERVE_WINDOW`
+/// holding the parent block hash, with no other account change.
+///
+/// This write is a block-boundary *system call*, so it never appears in the
+/// per-tx `prestateTracer` diff the reference is rebuilt from — leaving a
+/// ZKsync OS storage diff with no matching reference entry that would otherwise
+/// trip the "reference must have write" check. When the parent hash is known
+/// (`expected_parent_hash`, from the block-hash oracle the harness already
+/// fetched), the written value is validated against it so a genuinely wrong
+/// value or slot is still reported; otherwise only the address and slot are
+/// checked.
+fn zksync_os_diff_is_eip2935_system_write(
+    address: &B160,
+    acc: &AccountState,
+    block_number: u64,
+    expected_parent_hash: Option<[u8; 32]>,
+) -> bool {
+    if *address != HISTORY_STORAGE_ADDRESS || block_number == 0 {
+        return false;
+    }
+    // Only a single storage write is expected — nothing else changes.
+    if acc.balance.is_some() || acc.nonce.is_some() || acc.code.is_some() {
+        return false;
+    }
+    let Some(storage) = acc.storage.as_ref() else {
+        return false;
+    };
+    if storage.len() != 1 {
+        return false;
+    }
+    let expected_slot = U256::from((block_number - 1) % HISTORY_SERVE_WINDOW);
+    let Some(value) = storage.get(&expected_slot) else {
+        return false;
+    };
+    match expected_parent_hash {
+        Some(parent) => value.to_be_bytes::<32>() == parent,
+        None => true,
+    }
 }
 
 fn zksync_os_output_into_account_state(
@@ -471,6 +530,10 @@ pub fn post_check(
     // fixtures) falls back to the trace-derived reference.
     endpoint: Option<&str>,
     block_number: u64,
+    // Parent block hash (from the block-hash oracle the harness already fetched),
+    // used to validate the EIP-2935 pre-block history-storage write that the per-tx
+    // trace cannot express. `None` skips value validation of that write.
+    parent_block_hash: Option<[u8; 32]>,
 ) -> Result<(), PostCheckError> {
     fn u256_to_usize(src: &U256) -> usize {
         zk_ee::utils::u256_to_u64_saturated(src) as usize
@@ -576,7 +639,13 @@ pub fn post_check(
         }
     }
 
-    diff_trace.check_storage_writes(output, prestate_cache, endpoint, block_number)?;
+    diff_trace.check_storage_writes(
+        output,
+        prestate_cache,
+        endpoint,
+        block_number,
+        parent_block_hash,
+    )?;
 
     info!("All good!");
     Ok(())

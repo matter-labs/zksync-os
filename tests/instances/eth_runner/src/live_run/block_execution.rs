@@ -96,7 +96,14 @@ pub fn run_block(
     chain.set_last_block_number(block_number - 1);
 
     let db_hash_start = Instant::now();
-    chain.set_block_hashes(utils::get_block_hashes_array(block_number, db)?);
+    let block_hashes_array = utils::get_block_hashes_array(block_number, db)?;
+    // Parent block hash (block N-1) is the last entry; used by the post-check to
+    // validate the EIP-2935 pre-block history-storage write.
+    let parent_block_hash: [u8; 32] = block_hashes_array
+        .last()
+        .expect("block hashes array is non-empty")
+        .to_be_bytes::<32>();
+    chain.set_block_hashes(block_hashes_array);
     let db_hash_time = db_hash_start.elapsed();
 
     let prestate_start = Instant::now();
@@ -203,6 +210,7 @@ pub fn run_block(
         prestate_cache,
         Some(endpoint),
         block_number,
+        Some(parent_block_hash),
     );
     let post_check_time = post_check_start.elapsed();
 

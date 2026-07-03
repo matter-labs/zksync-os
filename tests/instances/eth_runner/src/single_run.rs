@@ -161,7 +161,8 @@ fn run<const RANDOMIZED: bool>(
     }
 
     // No RPC endpoint here (fixtures run offline): the post-check falls back to
-    // the trace-derived reference for any code comparison.
+    // the trace-derived reference for any code comparison. `None` parent hash
+    // means the EIP-2935 history-storage write is validated by address+slot only.
     post_check(
         output,
         receipts,
@@ -169,6 +170,7 @@ fn run<const RANDOMIZED: bool>(
         prestate_cache,
         None,
         block_number,
+        None,
     )
     .unwrap();
 
