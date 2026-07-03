@@ -4,7 +4,7 @@ use crate::{
     prestate::{DiffTrace, PrestateTrace},
     receipts::BlockReceipts,
 };
-use alloy::primitives::B256;
+use alloy::primitives::{Bytes, B256};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use rig::log::{debug, warn};
@@ -216,6 +216,30 @@ pub fn get_chain_id(endpoint: &str) -> Result<u64> {
     let hex = if hex.is_empty() { "0" } else { hex };
     let id = u64::from_str_radix(hex, 16)?;
     Ok(id)
+}
+
+/// Fetches an account's code at a given block via `eth_getCode`.
+///
+/// This is the authoritative on-chain code (post-Pectra, a delegated EOA
+/// returns its `0xef0100‖address` designator; a cleared/undelegated account
+/// returns empty). The post-check uses it to resolve EIP-7702 delegation code
+/// that the per-tx prestate/diff trace cannot reconstruct unambiguously.
+pub fn get_code(endpoint: &str, address_hex: &str, block_number: u64) -> Result<Bytes> {
+    debug!("RPC: eth_getCode({address_hex}, {block_number})");
+
+    let body = json!({
+        "method": "eth_getCode",
+        "params": [address_hex, to_hex(block_number)],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let res: serde_json::Value = serde_json::from_str(&res)?;
+    let code_hex = res["result"]
+        .as_str()
+        .ok_or_else(|| anyhow!("No code found in eth_getCode response"))?;
+    let code = Bytes::from_str(code_hex)?;
+    Ok(code)
 }
 
 /// Decompresses response body based on Content-Encoding header.

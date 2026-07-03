@@ -41,9 +41,10 @@ pub enum TxId {
     Index(usize),
 }
 
-/// Account code as a byte slice, treating `None` (no code) and an empty `Bytes`
-/// identically. A cleared delegation is recorded as an empty `Bytes` on the
-/// reference side but left as `None` on the ZKsync OS side; both mean "no code".
+/// Account code as a byte slice, treating `None` and an empty `Bytes`
+/// identically: the ZKsync OS side leaves an account with no code as `None`
+/// while the reference/on-chain side can carry an explicit empty `Bytes`; both
+/// mean "no code" and must compare equal.
 fn code_as_slice(code: &Option<alloy::primitives::Bytes>) -> &[u8] {
     code.as_ref().map(|c| c.as_ref()).unwrap_or(&[])
 }
@@ -64,37 +65,19 @@ impl DiffTrace {
                     .into_iter()
                     .for_each(|x| entry.nonce = Some(x));
                 // A code set (contract deploy or EIP-7702 delegation) is
-                // reported in `post`. A code clear (e.g. an EIP-7702 delegation
-                // removed by a later tx in the same block) is reported by the
-                // tracer OMITTING `code` from `post`. But `post` also omits
-                // `code` when it is simply UNCHANGED, and the tracer's `pre` can
-                // echo an account's existing (unchanged) code, so "code in pre,
-                // absent in post" alone is ambiguous.
-                //
-                // Disambiguate using EIP-7702's nonce rule: applying an
-                // authorization (setting OR removing a delegation) increments
-                // the authority's nonce, so a genuine delegation removal always
-                // reports a nonce change in the same `post`. (A contract's code
-                // is otherwise only wiped by selfdestruct, handled via the
-                // account-clear logic below.) Treat the account as code-cleared
-                // only when its code was present in `pre` and this `post` also
-                // bumps the nonce — this catches a delegation set earlier in the
-                // block and removed later, which the plain aggregation would
-                // otherwise leave as a stale intermediate code.
-                match account.code.clone() {
-                    Some(code) => entry.code = Some(code),
-                    None => {
-                        let pre_had_code = item
-                            .result
-                            .pre
-                            .get(address)
-                            .and_then(|pre_account| pre_account.code.as_ref())
-                            .is_some_and(|pre_code| !pre_code.is_empty());
-                        if pre_had_code && account.nonce.is_some() {
-                            entry.code = Some(alloy::primitives::Bytes::new());
-                        }
-                    }
-                }
+                // reported in `post`. A code CLEAR (e.g. an EIP-7702 delegation
+                // removed within the block) is reported by the tracer OMITTING
+                // `code` from `post` — but `post` ALSO omits `code` when it is
+                // simply UNCHANGED (e.g. a delegated EOA just sends a tx), so
+                // "code absent in post" is ambiguous and cannot be resolved from
+                // the per-tx trace alone. We therefore aggregate only explicit
+                // code sets here; a possibly-stale delegation is reconciled
+                // against the authoritative on-chain code in `check_storage_writes`.
+                account
+                    .code
+                    .clone()
+                    .into_iter()
+                    .for_each(|x| entry.code = Some(x));
 
                 // Populate storage slot clears (slots present in pre but
                 // absent in post). Write 0 to them.
@@ -175,6 +158,8 @@ impl DiffTrace {
         self,
         output: BlockOutput,
         prestate_cache: Cache,
+        endpoint: Option<&str>,
+        block_number: u64,
     ) -> Result<(), PostCheckError> {
         let diffs = self.collect_diffs(&prestate_cache);
         let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache)?;
@@ -212,19 +197,55 @@ impl DiffTrace {
                     )
                 }
             }
-            // Compare code content treating "no code" uniformly: the reference
-            // may carry an explicit empty `Bytes` (e.g. a cleared delegation)
-            // while the ZKsync OS side leaves `code` as `None`. Both mean empty
-            // account code and must not be reported as a difference.
+            // Compare code content treating "no code" uniformly (`None` on the
+            // ZKsync OS side vs an empty `Bytes` reference both mean empty).
+            //
+            // The trace-reconstructed reference code can be a STALE EIP-7702
+            // delegation: the per-tx diff omits `code` from `post` both when a
+            // delegation is cleared and when it is left unchanged, so a
+            // delegation set earlier in the block and cleared later (or replaced)
+            // leaves an intermediate designator in `account.code`. On a mismatch
+            // we therefore reconcile against the authoritative on-chain code via
+            // `eth_getCode`: if ZKsync OS matches the real chain, the reference
+            // was merely ambiguous and this is not a divergence; otherwise it is
+            // a genuine divergence and we report it.
             if account.code.is_some()
                 && code_as_slice(&account.code) != code_as_slice(&zk_account.code)
             {
-                error_internal!(
-                    "Code for address {} differed. ZKsync OS: {}, reference: {}",
-                    hex::encode(address.to_be_bytes_vec()),
-                    hex::encode(zk_account.code.as_ref().unwrap_or_default()),
-                    hex::encode(account.code.as_ref().unwrap_or_default())
-                )
+                let address_hex = hex::encode(address.to_be_bytes_vec());
+                let on_chain_code = match endpoint {
+                    Some(ep) => match crate::live_run::rpc::get_code(
+                        ep,
+                        &format!("0x{address_hex}"),
+                        block_number,
+                    ) {
+                        Ok(code) => Some(code),
+                        Err(e) => error_internal!(
+                            "Failed to resolve on-chain code for address {address_hex} at block {block_number}: {e}"
+                        ),
+                    },
+                    None => None,
+                };
+                match &on_chain_code {
+                    // ZKsync OS matches the real chain; the trace-derived
+                    // reference was an ambiguous EIP-7702 delegation, not a
+                    // divergence.
+                    Some(code) if code_as_slice(&zk_account.code) == code.as_ref() => {}
+                    Some(code) => error_internal!(
+                        "Code for address {} diverges from on-chain state. ZKsync OS: {}, on-chain: {}",
+                        address_hex,
+                        hex::encode(zk_account.code.as_ref().unwrap_or_default()),
+                        hex::encode(code)
+                    ),
+                    // No endpoint to reconcile against (e.g. single-run from
+                    // fixtures): fall back to the trace-derived reference.
+                    None => error_internal!(
+                        "Code for address {} differed. ZKsync OS: {}, reference: {}",
+                        address_hex,
+                        hex::encode(zk_account.code.as_ref().unwrap_or_default()),
+                        hex::encode(account.code.as_ref().unwrap_or_default())
+                    ),
+                }
             }
             if let Some(storage) = &account.storage {
                 for (key, value) in storage {
@@ -439,11 +460,17 @@ fn compute_receipts_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 3
     zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn post_check(
     output: BlockOutput,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     prestate_cache: Cache,
+    // RPC endpoint used to reconcile ambiguous EIP-7702 delegation code against
+    // the authoritative on-chain state. `None` (e.g. single-run from local
+    // fixtures) falls back to the trace-derived reference.
+    endpoint: Option<&str>,
+    block_number: u64,
 ) -> Result<(), PostCheckError> {
     fn u256_to_usize(src: &U256) -> usize {
         zk_ee::utils::u256_to_u64_saturated(src) as usize
@@ -549,7 +576,7 @@ pub fn post_check(
         }
     }
 
-    diff_trace.check_storage_writes(output, prestate_cache)?;
+    diff_trace.check_storage_writes(output, prestate_cache, endpoint, block_number)?;
 
     info!("All good!");
     Ok(())
