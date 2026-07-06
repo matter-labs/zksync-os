@@ -195,11 +195,12 @@ fn bls12_381_g1_msm_as_system_function_inner<
     resources: &mut R,
     allocator: A,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
-    if input.len() == 0 {
+    if input.is_empty() || !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
         return Err(interface_error!(
             Bls12PrecompileInterfaceError::InvalidInputSize
         ));
     }
+
     let cost = compute_cost(
         input.len(),
         G1_MSM_PAIR_LEN,
@@ -217,12 +218,6 @@ fn bls12_381_g1_msm_as_system_function_inner<
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
     ))?;
-
-    if !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
-        return Err(interface_error!(
-            Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
 
     let num_pairs = input.len() / G1_MSM_PAIR_LEN;
     let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
@@ -282,11 +277,12 @@ fn bls12_381_g2_msm_as_system_function_inner<
     resources: &mut R,
     allocator: A,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
-    if input.len() == 0 {
+    if input.is_empty() || !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
         return Err(interface_error!(
             Bls12PrecompileInterfaceError::InvalidInputSize
         ));
     }
+
     let cost = compute_cost(
         input.len(),
         G2_MSM_PAIR_LEN,
@@ -304,12 +300,6 @@ fn bls12_381_g2_msm_as_system_function_inner<
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
     ))?;
-
-    if !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
-        return Err(interface_error!(
-            Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
 
     let num_pairs = input.len() / G2_MSM_PAIR_LEN;
 

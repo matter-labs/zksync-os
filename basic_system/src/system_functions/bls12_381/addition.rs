@@ -32,18 +32,18 @@ fn bls12_381_g1_add_as_system_function_inner<
     output: &mut D,
     resources: &mut R,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
+    if input.len() != G1_SERIALIZATION_LEN * 2 {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+
     let cost_ergs = Ergs(BLS12_381_G1_ADDITION_GAS * ERGS_PER_GAS);
     let cost_native = crate::cost_constants::BLS12_381_G1ADD_NATIVE_COST;
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
     ))?;
-
-    if input.len() != G1_SERIALIZATION_LEN * 2 {
-        return Err(interface_error!(
-            Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
 
     let p0 = parse_g1(input[0..G1_SERIALIZATION_LEN].try_into().unwrap())?;
     let p1 = parse_g1(
@@ -86,18 +86,18 @@ fn bls12_381_g2_add_as_system_function_inner<
     output: &mut D,
     resources: &mut R,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
+    if input.len() != G2_SERIALIZATION_LEN * 2 {
+        return Err(interface_error!(
+            Bls12PrecompileInterfaceError::InvalidInputSize
+        ));
+    }
+
     let cost_ergs = Ergs(BLS12_381_G2_ADDITION_GAS * ERGS_PER_GAS);
     let cost_native = crate::cost_constants::BLS12_381_G2ADD_NATIVE_COST;
     resources.charge(&R::from_ergs_and_native(
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
     ))?;
-
-    if input.len() != G2_SERIALIZATION_LEN * 2 {
-        return Err(interface_error!(
-            Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
 
     let p0 = parse_g2(input[0..G2_SERIALIZATION_LEN].try_into().unwrap())?;
     let p1 = parse_g2(
