@@ -9,11 +9,12 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::SystemFunctionExt;
 use zk_ee::{
-    interface_error, internal_error, out_of_ergs_error,
+    interface_error, internal_error, out_of_ergs_error, out_of_native_resources,
+    out_of_return_memory,
     system::{
         base_system_functions::ModExpErrors,
         errors::{subsystem::SubsystemError, system::SystemError},
-        Computational, Ergs, ModExpInterfaceError,
+        Computational, Ergs, ModExpInterfaceError, Resource,
     },
 };
 
@@ -157,9 +158,11 @@ fn modexp_as_system_function_inner<
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
     let minimal_native = <R::Native as Computational>::from_computational(MODEXP_BASE_NATIVE_COST);
-    let minimal_resources = R::from_ergs_and_native(MODEXP_MINIMAL_COST_ERGS, minimal_native);
-    if !resources.has_enough(&minimal_resources) {
+    if !resources.ergs().has_enough(&MODEXP_MINIMAL_COST_ERGS) {
         return Err(out_of_ergs_error!().into());
+    }
+    if !resources.native().has_enough(&minimal_native) {
+        return Err(out_of_native_resources!().into());
     }
 
     // The format of input is:
@@ -249,8 +252,11 @@ fn modexp_as_system_function_inner<
     let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     let conservative_native =
         native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
-    if !resources.has_enough(&R::from_ergs_and_native(ergs, conservative_native)) {
+    if !resources.ergs().has_enough(&ergs) {
         return Err(out_of_ergs_error!().into());
+    }
+    if !resources.native().has_enough(&conservative_native) {
+        return Err(out_of_native_resources!().into());
     }
 
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
@@ -309,10 +315,10 @@ fn modexp_as_system_function_inner<
     if output.len() >= mod_len {
         // truncate
         dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
-            .map_err(|_| out_of_ergs_error!())?;
+            .map_err(|_| out_of_return_memory!())?;
     } else {
         dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
-            .map_err(|_| out_of_ergs_error!())?;
+            .map_err(|_| out_of_return_memory!())?;
     }
 
     Ok(())
@@ -397,4 +403,161 @@ fn native_cost<R: Resources>(
     let total_ops = 2u64.saturating_mul(bit_len.saturating_sub(1));
     let cost = modexp_native_from_ops(total_ops, digits);
     Ok(<R::Native as Computational>::from_computational(cost))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::alloc::Global;
+    use zk_ee::oracle::IOOracle;
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::system::{
+        errors::{
+            runtime::{FatalRuntimeError, RuntimeError},
+            subsystem::SubsystemError,
+        },
+        NullLogger, Resources,
+    };
+
+    type TestResources = BaseResources<DecreasingNative>;
+
+    struct DummyOracle;
+    struct AlwaysFailDst;
+
+    impl IOOracle for DummyOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<
+            'a,
+            I: zk_ee::oracle::usize_serialization::UsizeSerializable
+                + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+        >(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+            unreachable!("oracle should not be consulted on native targets");
+        }
+    }
+
+    impl TryExtend<u8> for AlwaysFailDst {
+        type Error = ();
+
+        fn try_extend<I>(&mut self, _iter: I) -> Result<(), Self::Error>
+        where
+            I: IntoIterator<Item = u8>,
+        {
+            Err(())
+        }
+    }
+
+    fn encode_len(len: usize) -> [u8; 32] {
+        U256::from(len).to_be_bytes::<32>()
+    }
+
+    fn modexp_input(base: &[u8], exponent: &[u8], modulus: &[u8]) -> Vec<u8> {
+        let mut input = Vec::with_capacity(96 + base.len() + exponent.len() + modulus.len());
+        input.extend_from_slice(&encode_len(base.len()));
+        input.extend_from_slice(&encode_len(exponent.len()));
+        input.extend_from_slice(&encode_len(modulus.len()));
+        input.extend_from_slice(base);
+        input.extend_from_slice(exponent);
+        input.extend_from_slice(modulus);
+        input
+    }
+
+    fn assert_out_of_native(err: SubsystemError<ModExpErrors>) {
+        assert!(matches!(
+            err,
+            SubsystemError::LeafRuntime(RuntimeError::FatalRuntimeError(
+                FatalRuntimeError::OutOfNativeResources(_)
+            ))
+        ));
+    }
+
+    fn assert_out_of_return_memory(err: SubsystemError<ModExpErrors>) {
+        assert!(matches!(
+            err,
+            SubsystemError::LeafRuntime(RuntimeError::FatalRuntimeError(
+                FatalRuntimeError::OutOfReturnMemory(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn returns_out_of_native_when_minimal_native_missing() {
+        let input = modexp_input(&[2], &[1], &[3]);
+        let mut output = Vec::new();
+        let mut resources = TestResources::from_ergs_and_native(
+            MODEXP_MINIMAL_COST_ERGS,
+            DecreasingNative::from_computational(MODEXP_BASE_NATIVE_COST - 1),
+        );
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("native, not ergs, should be exhausted");
+
+        assert_out_of_native(err);
+    }
+
+    #[test]
+    fn returns_out_of_native_when_conservative_native_gate_fails() {
+        let base = vec![0x11; 64];
+        let exponent = vec![0xff; 1];
+        let modulus = vec![0x33; 64];
+        let input = modexp_input(&base, &exponent, &modulus);
+        let exp_highp = U256::from_be_slice(&exponent);
+        let conservative_native = native_cost::<TestResources>(
+            base.len() as u64,
+            exponent.len() as u64,
+            modulus.len() as u64,
+            &exp_highp,
+        )
+        .expect("cost must be computable");
+        let mut output = Vec::new();
+        let mut resources = TestResources::from_ergs_and_native(
+            Ergs::FORMAL_INFINITE,
+            DecreasingNative::from_computational(conservative_native.as_u64() - 1),
+        );
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("native conservative gate should fail first");
+
+        assert_out_of_native(err);
+    }
+
+    #[test]
+    fn returns_out_of_return_memory_when_output_does_not_fit() {
+        let base = [2u8];
+        let exponent = [2u8];
+        let modulus = [1u8];
+        let input = modexp_input(&base, &exponent, &modulus);
+        let mut output = AlwaysFailDst;
+        let mut resources = TestResources::FORMAL_INFINITE;
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("output buffer should be the failing resource");
+
+        assert_out_of_return_memory(err);
+    }
 }
