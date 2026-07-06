@@ -74,10 +74,12 @@ pub fn read_memory_as_u64(
 /// The data in the memory at offset should actually be T.
 pub unsafe fn read_struct<T>(memory: &dyn RamPeek, offset: u32) -> Result<T, ()> {
     if !core::mem::size_of::<T>().is_multiple_of(4) {
-        todo!()
+        return Err(());
     }
 
-    if !(offset as usize).is_multiple_of(core::mem::align_of::<T>()) {
+    if !offset.is_multiple_of(4)
+        || !(offset as usize).is_multiple_of(core::mem::align_of::<T>())
+    {
         return Err(());
     }
 
@@ -94,4 +96,53 @@ pub unsafe fn read_struct<T>(memory: &dyn RamPeek, offset: u32) -> Result<T, ()>
 
     // Safety: have written all bytes.
     unsafe { Ok(r.assume_init()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_struct;
+    use crate::test_utils::TestMemorySource;
+
+    #[repr(C)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct PackedWord(u32);
+
+    #[repr(C)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct BytePair(u8, u8);
+
+    // Size is a multiple of a word (4) and alignment is 1, so neither the size
+    // check nor the type-alignment check rejects it — only the word-offset check
+    // can. This isolates the offset check that `BytePair` (size 2) would never
+    // reach, since the size check rejects it first.
+    #[repr(C)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct FourBytes([u8; 4]);
+
+    #[test]
+    fn read_struct_rejects_offsets_not_aligned_to_words() {
+        let mut memory = TestMemorySource::default();
+        memory.insert_u32(0, 0xdead_beef);
+
+        let result = unsafe { read_struct::<FourBytes>(&memory, 2) };
+        assert_eq!(result, Err(()));
+    }
+
+    #[test]
+    fn read_struct_rejects_sizes_not_multiple_of_word() {
+        let mut memory = TestMemorySource::default();
+        memory.insert_u32(0, 0xdead_beef);
+
+        let result = unsafe { read_struct::<BytePair>(&memory, 0) };
+        assert_eq!(result, Err(()));
+    }
+
+    #[test]
+    fn read_struct_reads_word_aligned_values() {
+        let mut memory = TestMemorySource::default();
+        memory.insert_u32(0, 0xdead_beef);
+
+        let value = unsafe { read_struct::<PackedWord>(&memory, 0) }.unwrap();
+        assert_eq!(value, PackedWord(0xdead_beef));
+    }
 }
