@@ -778,3 +778,198 @@ fn test_cross_tx_write_charges_cold_again() {
          write_extra_charged_in_tx must reset per-tx"
     );
 }
+
+/// Builds a tx from an unfunded sender that warms `access_list` during
+/// validation and is then dropped with `LackOfFundForMaxFee`. Access-list
+/// warming happens before the balance check, so the dropped tx materializes
+/// the listed accounts and slots in the sequencer's caches.
+fn dropped_tx_with_access_list(
+    signer: rig::alloy::signers::local::PrivateKeySigner,
+    access_list: rig::alloy::eips::eip2930::AccessList,
+) -> ZKsyncTxEnvelope {
+    let tx = TxEip1559 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1000,
+        max_priority_fee_per_gas: 1000,
+        gas_limit: 200_000,
+        to: TxKind::Call(address!("00000000000000000000000000000000000000ff")),
+        value: U256::ZERO,
+        input: Default::default(),
+        access_list,
+    };
+    ZKsyncTxEnvelope::from_eth_tx(tx, signer)
+}
+
+/// A transaction dropped from the block (e.g. failing validation on
+/// LackOfFundForMaxFee after its access list was warmed) must not change the
+/// native cost of subsequent transactions. The proving run only re-executes
+/// included transactions, so any discount inherited from a dropped tx's cache
+/// entries would make the sequencer under-charge relative to the proving run.
+///
+/// This test covers new storage slots: the dropped tx's access list
+/// materializes a fresh slot, and the follow-up tx SLOADs it. The follow-up
+/// tx must pay the cold NEW read cost as if the dropped tx never ran.
+#[test]
+fn test_dropped_tx_does_not_discount_new_slot_read() {
+    use rig::alloy::eips::eip2930::{AccessList, AccessListItem};
+
+    let contract_addr = address!("00000000000000000000000000000000000b0001");
+    let funded_wallet = testing_signer(0);
+    let unfunded_wallet = testing_signer(1);
+    let block_context = storage_test_block_context();
+
+    // Contract: SLOAD(0) (a fresh slot), then return.
+    let bytecode = BytecodeBuilder::new()
+        .push_u8(0)
+        .sload()
+        .pop()
+        .return_empty()
+        .finish();
+
+    let reader_tx = |wallet: &rig::alloy::signers::local::PrivateKeySigner| {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(contract_addr),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+
+    // Reference: the reader tx alone in a block.
+    let mut reference_tester = TestingFramework::new()
+        .with_evm_contract(contract_addr, &bytecode)
+        .with_balance(
+            funded_wallet.address(),
+            U256::from(1_000_000_000_000_000_u64),
+        )
+        .with_block_context(block_context.clone());
+    let reference_output = reference_tester.execute_block(vec![reader_tx(&funded_wallet)]);
+    let reference_result = reference_output.tx_results[0]
+        .as_ref()
+        .expect("reference reader tx should be processed");
+    assert!(reference_result.is_success(), "reference tx should succeed");
+    let reference_native = reference_result.computational_native_used;
+
+    // Same reader tx, but preceded by a dropped tx whose access list touches
+    // the very slot the reader will SLOAD.
+    let dropped_tx = dropped_tx_with_access_list(
+        unfunded_wallet,
+        AccessList(vec![AccessListItem {
+            address: contract_addr,
+            storage_keys: vec![rig::alloy::primitives::B256::ZERO],
+        }]),
+    );
+
+    let mut polluted_tester = TestingFramework::new()
+        .with_evm_contract(contract_addr, &bytecode)
+        .with_balance(
+            funded_wallet.address(),
+            U256::from(1_000_000_000_000_000_u64),
+        )
+        .with_block_context(block_context);
+    let polluted_output =
+        polluted_tester.execute_block(vec![dropped_tx, reader_tx(&funded_wallet)]);
+
+    assert!(
+        polluted_output.tx_results[0].is_err(),
+        "unfunded tx should fail validation, got: {:?}",
+        polluted_output.tx_results[0]
+    );
+    let polluted_result = polluted_output.tx_results[1]
+        .as_ref()
+        .expect("reader tx after dropped tx should be processed");
+    assert!(polluted_result.is_success(), "reader tx should succeed");
+    let polluted_native = polluted_result.computational_native_used;
+
+    assert_eq!(
+        polluted_native, reference_native,
+        "Native cost of the reader tx must not depend on cache entries \
+         materialized by a dropped transaction"
+    );
+}
+
+/// Same as `test_dropped_tx_does_not_discount_new_slot_read`, but for the
+/// account cache: the dropped tx's access list materializes a fresh account,
+/// and the follow-up tx transfers value to it. The follow-up tx must pay the
+/// cold NEW account access cost as if the dropped tx never ran.
+#[test]
+fn test_dropped_tx_does_not_discount_new_account_access() {
+    use rig::alloy::eips::eip2930::{AccessList, AccessListItem};
+
+    let fresh_recipient = address!("00000000000000000000000000000000000c0001");
+    let funded_wallet = testing_signer(0);
+    let unfunded_wallet = testing_signer(1);
+    let block_context = storage_test_block_context();
+
+    let transfer_tx = |wallet: &rig::alloy::signers::local::PrivateKeySigner| {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: TxKind::Call(fresh_recipient),
+            value: U256::from(1),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+
+    // Reference: the transfer tx alone in a block.
+    let mut reference_tester = TestingFramework::new()
+        .with_balance(
+            funded_wallet.address(),
+            U256::from(1_000_000_000_000_000_u64),
+        )
+        .with_block_context(block_context.clone());
+    let reference_output = reference_tester.execute_block(vec![transfer_tx(&funded_wallet)]);
+    let reference_result = reference_output.tx_results[0]
+        .as_ref()
+        .expect("reference transfer tx should be processed");
+    assert!(reference_result.is_success(), "reference tx should succeed");
+    let reference_native = reference_result.computational_native_used;
+
+    // Same transfer tx, but preceded by a dropped tx whose access list touches
+    // the fresh recipient account.
+    let dropped_tx = dropped_tx_with_access_list(
+        unfunded_wallet,
+        AccessList(vec![AccessListItem {
+            address: fresh_recipient,
+            storage_keys: vec![],
+        }]),
+    );
+
+    let mut polluted_tester = TestingFramework::new()
+        .with_balance(
+            funded_wallet.address(),
+            U256::from(1_000_000_000_000_000_u64),
+        )
+        .with_block_context(block_context);
+    let polluted_output =
+        polluted_tester.execute_block(vec![dropped_tx, transfer_tx(&funded_wallet)]);
+
+    assert!(
+        polluted_output.tx_results[0].is_err(),
+        "unfunded tx should fail validation, got: {:?}",
+        polluted_output.tx_results[0]
+    );
+    let polluted_result = polluted_output.tx_results[1]
+        .as_ref()
+        .expect("transfer tx after dropped tx should be processed");
+    assert!(polluted_result.is_success(), "transfer tx should succeed");
+    let polluted_native = polluted_result.computational_native_used;
+
+    assert_eq!(
+        polluted_native, reference_native,
+        "Native cost of the transfer tx must not depend on cache entries \
+         materialized by a dropped transaction"
+    );
+}

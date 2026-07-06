@@ -42,6 +42,13 @@ pub struct StorageElementMetadata {
     /// Used to distinguish "warm because previously written" (write paths paid)
     /// from "warm because previously read" (only read paths paid).
     pub write_extra_charged_in_tx: Option<TransactionId>,
+    /// Whether the cold NEW-slot read extra was already charged for this slot.
+    /// Kept in rollback-aware metadata rather than derived from cache presence:
+    /// entries materialized by a transaction that is later dropped from the
+    /// block stay in the cache, but their metadata updates are rolled back
+    /// together with the charge, so charging never depends on dropped
+    /// transactions (which the proving run doesn't re-execute).
+    pub new_read_extra_charged: bool,
 }
 
 impl StorageElementMetadata {
@@ -158,22 +165,16 @@ impl<
     {
         resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
-        let mut initialized_element = false;
-
         cache
             .get_or_insert(key, || {
-                // Element doesn't exist in cache yet, initialize it
-                initialized_element = true;
-
+                // Element doesn't exist in cache yet, initialize it.
+                // Cold access charging happens at warm-up below: the initial
+                // record persists even if the inserting transaction is dropped
+                // from the block, so anything charging-related must live in
+                // rollback-aware metadata.
                 let query_input = (*key).into();
                 let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
                     .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
-
-                resources_policy.charge_cold_storage_read_extra(
-                    ee_type,
-                    resources,
-                    data_from_oracle.is_new_storage_slot,
-                )?;
 
                 // We need to check that the initial value is default
                 if data_from_oracle.is_new_storage_slot {
@@ -195,16 +196,24 @@ impl<
                 // Warm up element according to EVM rules if needed
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
-                    if initialized_element == false {
-                        // Element is in cache from a prior access — that access already
-                        // paid the NEW read cost if the slot was new. Charge EXISTING.
-                        resources_policy
-                            .charge_cold_storage_read_extra(ee_type, resources, false)?;
-                    }
+                    // The NEW read extra (tree non-inclusion check) is charged once
+                    // per slot per block; later cold accesses pay EXISTING. "Already
+                    // paid" is tracked in metadata so that it rolls back together
+                    // with the paying transaction if it's dropped from the block.
+                    let charge_as_new = x.element_properties().is_new_element()
+                        && !x.current().metadata().new_read_extra_charged;
+                    resources_policy.charge_cold_storage_read_extra(
+                        ee_type,
+                        resources,
+                        charge_as_new,
+                    )?;
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.last_touched_in_tx = Some(current_tx_id);
+                            if charge_as_new {
+                                m.new_read_extra_charged = true;
+                            }
                             Ok(())
                         })
                     })?;
