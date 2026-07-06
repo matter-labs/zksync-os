@@ -121,6 +121,7 @@ When working on performance optimizations, always run benchmarks to verify the i
 - Treat behavior changes as protocol changes unless proven otherwise.
 - Avoid changing serialization/hashing/state-layout/resource-accounting/oracle-query semantics without explicit validation.
 - Keep forward/proof behavior aligned; if one path changes, inspect the other, especially important for crypto primitives.
+- Derive resource charging only from block-start facts, rollback-aware cache metadata, and cache values — never from cache entry presence, which can outlive transactions dropped from the block. See "Charging invariant" in `docs/system/io/caches.md`.
 - Add/adjust tests when corresponding logic is changed.
 - Never include credentials, keys, or tokens in code.
 - When possible, make match statements exhaustive and avoid wildcard arms.
