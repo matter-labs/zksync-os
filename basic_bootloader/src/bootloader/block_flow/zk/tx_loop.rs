@@ -158,9 +158,9 @@ where
                             let computational_native_used = tx_processing_result
                                 .computational_native_used
                                 + blake2s_native_cost(receipt_rlp_len);
-                            let next_block_computational_native_used =
-                                block_data.block_computational_native_used
-                                    + computational_native_used;
+                            let next_block_computational_native_used = block_data
+                                .block_computational_native_used
+                                + computational_native_used;
 
                             // Check if the transaction made the block reach any of the limits
                             // for gas, native, pubdata or logs.

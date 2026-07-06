@@ -98,7 +98,8 @@ mod tests {
         let status = true;
         let gas: u64 = 0x5208;
 
-        let (got, encoded_len) = compute_receipt_hash(tx_type, &status, &gas, core::iter::once(event));
+        let (got, encoded_len) =
+            compute_receipt_hash(tx_type, &status, &gas, core::iter::once(event));
         let mut reference_rlp = Vec::new();
         let zero_bloom = Bloom::from_slice(&[0u8; 256]);
         let zero_bloom_reference = ReceiptWithBloom {

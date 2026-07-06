@@ -77,9 +77,7 @@ pub unsafe fn read_struct<T>(memory: &dyn RamPeek, offset: u32) -> Result<T, ()>
         return Err(());
     }
 
-    if !offset.is_multiple_of(4)
-        || !(offset as usize).is_multiple_of(core::mem::align_of::<T>())
-    {
+    if !offset.is_multiple_of(4) || !(offset as usize).is_multiple_of(core::mem::align_of::<T>()) {
         return Err(());
     }
 
