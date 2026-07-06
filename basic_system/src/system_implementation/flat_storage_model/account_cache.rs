@@ -370,10 +370,10 @@ impl<
 
         if new != cur {
             Self::charge_account_persist_cost_if_needed(cur_tx, &mut account_data, resources)?;
-            resources.charge(&R::from_native(R::Native::from_computational(
-                WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
-            )))?;
         }
+        resources.charge(&R::from_native(R::Native::from_computational(
+            WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+        )))?;
 
         account_data.update(|cache_record| {
             cache_record.update(|v, m| {
@@ -1328,3 +1328,109 @@ define_subsystem!(AccountCache,
                       EvmSubsystem(EvmSubsystemError),
                   }
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
+    use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
+    use std::alloc::Global;
+    use storage_models::common_structs::snapshottable_io::SnapshottableIo;
+    use zk_ee::internal_error;
+    use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
+    use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::IOOracle;
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::storage_types::InitialStorageSlotData;
+    use zk_ee::system::errors::internal::InternalError;
+    use zk_ee::system::Resource;
+    use zk_ee::types_config::EthereumIOTypesConfig;
+
+    type TestResources = BaseResources<DecreasingNative>;
+    type TestStorage = NewStorageWithAccountPropertiesUnderHash<
+        Global,
+        VecStackFactory,
+        4,
+        TestResources,
+        EthereumLikeStorageAccessCostModel,
+    >;
+    type TestAccountCache = NewModelAccountCache<
+        Global,
+        TestResources,
+        EthereumLikeStorageAccessCostModel,
+        VecStackFactory,
+        4,
+    >;
+
+    struct EmptyAccountOracle;
+
+    impl IOOracle for EmptyAccountOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            match query_type {
+                INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
+                    let response = InitialStorageSlotData::<EthereumIOTypesConfig> {
+                        is_new_storage_slot: true,
+                        initial_value: Bytes32::ZERO,
+                    };
+                    let values: Vec<_> = response.iter().collect();
+                    Ok(Box::new(values.into_iter()))
+                }
+                _ => Err(internal_error!("unexpected oracle query in test")),
+            }
+        }
+    }
+
+    #[test]
+    fn noop_balance_update_charges_warm_account_cache_write() {
+        let mut storage: TestStorage = NewStorageWithAccountPropertiesUnderHash(
+            GenericPubdataAwarePlainStorage::new_from_parts(
+                Global,
+                EthereumLikeStorageAccessCostModel,
+            ),
+        );
+        let mut preimages_cache =
+            BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::new_from_parts(Global);
+        let mut account_cache = TestAccountCache::new_from_parts(Global);
+        let mut oracle = EmptyAccountOracle;
+        let address = B160::from_limbs([0x1234, 0, 0]);
+
+        storage.begin_new_tx();
+        account_cache.begin_new_tx();
+
+        let mut resources = TestResources::FORMAL_INFINITE;
+        let initial_native = resources.native().as_u64();
+
+        let previous_balance = account_cache
+            .update_nominal_token_value::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut resources,
+                &address,
+                |balance| Ok(*balance),
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+                false,
+            )
+            .expect("no-op update on an empty account should succeed");
+
+        assert_eq!(previous_balance, U256::ZERO);
+
+        let charged_native = initial_native - resources.native().as_u64();
+        let expected_native = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+            + WARM_STORAGE_READ_NATIVE_COST
+            + COLD_NEW_STORAGE_READ_NATIVE_COST
+            + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
+
+        assert_eq!(
+            charged_native, expected_native,
+            "no-op balance updates must still pay the warm account-cache write cost"
+        );
+    }
+}
