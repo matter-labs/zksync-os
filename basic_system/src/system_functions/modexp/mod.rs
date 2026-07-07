@@ -62,18 +62,23 @@ fn modexp_native_from_ops(total_ops: u64, digits: u64) -> u64 {
         )
 }
 
-/// The delegated modexp implementation may do one quotient*modulus FMA before
-/// the exponent loop to reduce an oversized base into the modulus range.
+/// The delegated modexp implementation may do one `quotient * modulus + remainder`
+/// FMA before the exponent loop to reduce an oversized base into the modulus
+/// range (`advice/bigint.rs`: `reduce_initially`).
+///
+/// That FMA is a schoolbook multiply whose delegation count scales with the
+/// product of the operand word counts — `quotient_digits * modulus_digits` (the
+/// two loops in `fma`), not `modulus_digits^2`. For an oversized base reduced by
+/// a small modulus the quotient dominates, so charging `modulus_digits^2` would
+/// undercharge. We therefore charge on the true `quotient_digits * modulus_digits`
+/// product.
 ///
 /// A regular square/multiply step does two FMAs in the current model, so we
 /// account this standalone reduction as half of a normal per-op charge.
-fn modexp_initial_reduction_native_cost(digits: u64) -> u64 {
+fn modexp_initial_reduction_native_cost(quotient_digits: u64, modulus_digits: u64) -> u64 {
+    let digit_products = quotient_digits.saturating_mul(modulus_digits);
     MODEXP_PER_OP_OVERHEAD_NATIVE_COST
-        .saturating_add(
-            digits
-                .saturating_mul(digits)
-                .saturating_mul(MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST),
-        )
+        .saturating_add(digit_products.saturating_mul(MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST))
         .div_ceil(2)
 }
 
@@ -102,11 +107,20 @@ fn significant_word_count(bytes: &[u8]) -> u64 {
 /// (rather than the numeric values): a base that is smaller in value than the
 /// modulus but occupies the same number of words is still reduced, and must be
 /// charged accordingly.
+///
+/// Two operand values short-circuit the delegated path *before* the reduction
+/// and so must not be charged for it:
+/// - `modulus == 0`: the implementation returns an empty result immediately.
+/// - `modulus == 1`: `modexp_inner` returns before parsing the base or calling
+///   `modpow`, so `reduce_initially` never runs (`base^exp mod 1 == 0`).
 fn requires_initial_reduction(base: &[u8], modulus: &[u8]) -> bool {
-    let modulus_words = significant_word_count(modulus);
-    if modulus_words == 0 {
+    let modulus = strip_leading_zeroes(modulus);
+    // modulus == 0 (no significant bytes) or modulus == 1 (a single 0x01 byte):
+    // the delegated path returns before any reduction.
+    if modulus.is_empty() || modulus == [1u8] {
         return false;
     }
+    let modulus_words = (modulus.len() as u64).div_ceil(32);
     significant_word_count(base) >= modulus_words
 }
 
@@ -429,7 +443,14 @@ pub fn native_cost_from_exp_data<R: Resources>(
     let squares = bit_len.saturating_sub(1);
     let multiplies = popcount.saturating_sub(1);
     let reduction_cost = if requires_initial_reduction(base, modulus) {
-        modexp_initial_reduction_native_cost(significant_word_count(modulus))
+        let modulus_digits = significant_word_count(modulus);
+        // The honest quotient q = base / modulus occupies at most
+        // `base_digits - modulus_digits + 1` words (guaranteed >= 1 here, since
+        // `requires_initial_reduction` implies `base_digits >= modulus_digits`).
+        let quotient_digits = significant_word_count(base)
+            .saturating_sub(modulus_digits)
+            .saturating_add(1);
+        modexp_initial_reduction_native_cost(quotient_digits, modulus_digits)
     } else {
         0
     };
@@ -458,14 +479,19 @@ fn native_cost<R: Resources>(
     // Worst case: all bits set → squares = multiplies = bit_len - 1.
     let total_ops = 2u64.saturating_mul(bit_len.saturating_sub(1));
     // Conservative upper bound on the exact reduction charge. The exact charge
-    // (`native_cost_from_exp_data`) adds the reduction whenever the base has at
-    // least as many significant words as the modulus. We cannot strip leading
-    // zeroes here without materializing the operands, so we charge the reduction
-    // whenever both operands are non-empty and use `mod_size`, which upper-bounds
-    // the exact modulus word count. This keeps the gate a true upper bound.
+    // (`native_cost_from_exp_data`) adds `quotient_digits * modulus_digits`,
+    // where `quotient_digits <= base_digits` and `modulus_digits` are the
+    // significant word counts. We cannot strip leading zeroes here without
+    // materializing the operands, so we upper-bound both dimensions by the
+    // header word counts (`base_size`/`mod_size`, which dominate the significant
+    // counts) and charge the reduction whenever both operands are non-empty.
+    // This keeps the gate a true upper bound (it also covers the `modulus == 1`
+    // case, which the exact charge skips). `base_words * mod_words >=
+    // quotient_digits * modulus_digits`.
     let reduction_cost = if mod_size != 0 && base_size != 0 {
-        let modulus_digits = core::cmp::max(1, mod_size.div_ceil(32));
-        modexp_initial_reduction_native_cost(modulus_digits)
+        let modulus_words = core::cmp::max(1, mod_size.div_ceil(32));
+        let base_words = core::cmp::max(1, base_size.div_ceil(32));
+        modexp_initial_reduction_native_cost(base_words, modulus_words)
     } else {
         0
     };
@@ -631,17 +657,57 @@ mod tests {
 
     #[test]
     fn exact_native_cost_accounts_for_initial_reduction() {
-        let base = vec![0xff; 64];
+        let base = vec![0xff; 64]; // 2 words
         let exponent = [1u8];
-        let modulus = vec![0x01; 32];
+        let modulus = vec![0x01; 32]; // 1 word, value != 1
 
         let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
             .expect("cost must be computable");
 
+        // quotient = base / modulus occupies at most base_digits - mod_digits + 1
+        // = 2 - 1 + 1 = 2 words; the reduction FMA is quotient_digits * mod_digits.
         assert_eq!(
             native.as_u64(),
-            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(1)
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(2, 1)
         );
+    }
+
+    #[test]
+    fn exact_native_cost_scales_reduction_with_quotient_for_small_modulus() {
+        // Oversized base reduced by a single-word modulus: the reduction FMA
+        // scales with the quotient (~base_digits), not modulus_digits^2. With
+        // exponent == 1 the exponent loop contributes no ops, so the reduction
+        // is the only variable cost — this is the case the old modulus_digits^2
+        // charge undercharged.
+        let base = vec![0xff; 32 * 8]; // 8 words
+        let exponent = [1u8];
+        let modulus = vec![0x03]; // 1 word, value != 1
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // quotient_digits = 8 - 1 + 1 = 8, modulus_digits = 1.
+        assert_eq!(
+            native.as_u64(),
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(8, 1)
+        );
+    }
+
+    #[test]
+    fn exact_native_cost_skips_initial_reduction_for_modulus_one() {
+        // `base^exp mod 1 == 0`: the delegated `modexp_inner` returns before
+        // parsing the base or calling `modpow`, so no reduction runs and none
+        // must be charged, however oversized the base is.
+        let base = vec![0xff; 32 * 8];
+        let exponent = [1u8];
+        let modulus = [1u8];
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // exponent == 1 => no square/multiply ops, and modulus == 1 => no
+        // reduction, so only the base cost remains.
+        assert_eq!(native.as_u64(), MODEXP_BASE_NATIVE_COST);
     }
 
     #[test]
@@ -672,9 +738,10 @@ mod tests {
         let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
             .expect("cost must be computable");
 
+        // quotient_digits = 1 - 1 + 1 = 1, modulus_digits = 1.
         assert_eq!(
             native.as_u64(),
-            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(1)
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(1, 1)
         );
     }
 
@@ -689,6 +756,9 @@ mod tests {
             (&[0x01], &[0x01], &[0x02]),       // same word count, base < modulus
             (&[0xff; 64], &[0xff; 4], &[0x01; 32]),
             (&[0x00, 0x00, 0x01], &[0x01], &[0x00, 0x00, 0x03]),
+            (&[0xff; 32 * 8], &[0x01], &[0x03]), // oversized base, single-word modulus
+            (&[0xff; 32 * 8], &[0xff; 4], &[0x01]), // modulus == 1: exact skips reduction
+            (&[0xff; 32 * 4], &[0xff; 8], &[0x00, 0x01]), // modulus == 1 with leading zero byte
         ];
         for (base, exp, modulus) in cases {
             let exact = native_cost_from_exp_data::<TestResources>(base, exp, modulus)
