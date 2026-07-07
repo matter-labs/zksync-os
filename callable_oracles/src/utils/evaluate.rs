@@ -73,7 +73,8 @@ pub fn read_memory_as_u64(
 /// # Safety
 /// The data in the memory at offset should actually be T.
 pub unsafe fn read_struct<T>(memory: &dyn RamPeek, offset: u32) -> Result<T, ()> {
-    if !core::mem::size_of::<T>().is_multiple_of(4) {
+    let size = core::mem::size_of::<T>();
+    if !size.is_multiple_of(4) {
         return Err(());
     }
 
@@ -81,14 +82,26 @@ pub unsafe fn read_struct<T>(memory: &dyn RamPeek, offset: u32) -> Result<T, ()>
         return Err(());
     }
 
+    // Words are read at `offset, offset + 4, ..., offset + size - 4`. Reject
+    // pointers near the top of the address space so this arithmetic cannot
+    // overflow `u32` — which would otherwise panic in debug builds and wrap
+    // into low memory in release builds. Mirrors the up-front overflow checks
+    // in `read_memory_as_u8`/`read_memory_as_u64`.
+    let size_u32 = u32::try_from(size).map_err(|_| ())?;
+    if offset.checked_add(size_u32).is_none() {
+        return Err(());
+    }
+
     let mut r = MaybeUninit::<T>::uninit();
 
     let ptr = r.as_mut_ptr();
 
-    for i in (0..core::mem::size_of::<T>()).step_by(4) {
+    for i in (0..size).step_by(4) {
         let v = memory.peek_word(offset + i as u32);
 
-        // Safety: iterating over size of T, add will not overflow.
+        // Safety: `i < size` and `offset + size` fits in `u32` (checked above),
+        // so `offset + i` cannot overflow. The destination write stays within
+        // the `size / 4` words of the allocated `T`.
         unsafe { ptr.cast::<u32>().add(i / 4).write(v) };
     }
 
@@ -116,6 +129,22 @@ mod tests {
     #[repr(C)]
     #[derive(Debug, PartialEq, Eq)]
     struct FourBytes([u8; 4]);
+
+    // A multi-word struct whose size and alignment checks both pass, so only
+    // the address-space overflow guard can reject a near-top-of-memory pointer.
+    #[repr(C)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct TwoWords(u32, u32);
+
+    #[test]
+    fn read_struct_rejects_offset_overflowing_address_space() {
+        let memory = TestMemorySource::default();
+
+        // 0xffff_fffc is word-aligned and passes every other check, but reading
+        // the second word would compute 0xffff_fffc + 4 and overflow `u32`.
+        let result = unsafe { read_struct::<TwoWords>(&memory, 0xffff_fffc) };
+        assert_eq!(result, Err(()));
+    }
 
     #[test]
     fn read_struct_rejects_offsets_not_aligned_to_words() {
