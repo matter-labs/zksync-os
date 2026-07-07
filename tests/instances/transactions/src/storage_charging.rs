@@ -585,15 +585,22 @@ fn test_noop_sstore_does_not_discount_next_write() {
     assert!(result_b.is_success(), "single write should succeed");
 
     // The no-op SSTORE should not have discounted the real write.
-    // Both pay cold write extra. native_a is strictly more because the
-    // no-op SSTORE's materialize warms the slot, so the real SSTORE's
-    // materialize pays only a warm read (strictly positive cost).
+    // Both pay cold write extra for the real write. The no-op itself still
+    // updates the cache, so it must add at least one warm read plus one warm
+    // storage-cache write on top of the baseline single write.
     assert!(
         result_a.computational_native_used > result_b.computational_native_used,
         "No-op SSTORE + real SSTORE (native={}) should cost strictly more than \
          single SSTORE (native={}) — no-op adds warm read but must not discount write",
         result_a.computational_native_used,
         result_b.computational_native_used
+    );
+    let extra_native = result_a.computational_native_used - result_b.computational_native_used;
+    let expected_min_extra = WARM_STORAGE_READ_NATIVE_COST + WARM_STORAGE_WRITE_EXTRA_NATIVE_COST;
+    assert!(
+        extra_native >= expected_min_extra,
+        "Expected at least {expected_min_extra} extra native from the no-op SSTORE \
+         cache update, but only observed {extra_native}"
     );
 }
 

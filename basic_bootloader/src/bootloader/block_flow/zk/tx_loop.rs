@@ -4,6 +4,7 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
+use basic_system::cost_constants::blake2s_native_cost;
 use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{IOTeardown, Resource};
 
@@ -139,14 +140,27 @@ where
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =
                                 block_data.block_gas_used + tx_processing_result.gas_used;
-                            let next_block_computational_native_used = block_data
-                                .block_computational_native_used
-                                + tx_processing_result.computational_native_used;
                             let next_block_pubdata_used =
                                 block_data.block_pubdata_used + tx_processing_result.pubdata_used;
                             let block_logs_used = system.io.logs_len();
                             let next_block_blob_gas_used =
                                 block_data.block_blob_gas_used + tx_processing_result.blob_gas_used;
+                            let tx_status = matches!(
+                                &tx_processing_result.result,
+                                ExecutionResult::Success { .. }
+                            );
+                            let (receipt_hash, receipt_rlp_len) = compute_receipt_hash(
+                                tx_processing_result.tx_type,
+                                &tx_status,
+                                &next_block_gas_used,
+                                system.io.events_in_this_tx_iterator(),
+                            );
+                            let computational_native_used = tx_processing_result
+                                .computational_native_used
+                                + blake2s_native_cost(receipt_rlp_len);
+                            let next_block_computational_native_used = block_data
+                                .block_computational_native_used
+                                + computational_native_used;
 
                             // Check if the transaction made the block reach any of the limits
                             // for gas, native, pubdata or logs.
@@ -181,17 +195,6 @@ where
                                 }
 
                                 is_first_tx = false;
-
-                                let tx_status = matches!(
-                                    &tx_processing_result.result,
-                                    ExecutionResult::Success { .. }
-                                );
-                                let receipt_hash = compute_receipt_hash(
-                                    tx_processing_result.tx_type,
-                                    &tx_status,
-                                    &next_block_gas_used,
-                                    system.io.events_in_this_tx_iterator(),
-                                );
 
                                 // Finish the frame opened before processing the tx
                                 system.finish_global_frame(None)?;
@@ -238,8 +241,7 @@ where
                                     contract_address,
                                     gas_used: tx_processing_result.gas_used,
                                     gas_refunded: tx_processing_result.gas_refunded,
-                                    computational_native_used: tx_processing_result
-                                        .computational_native_used,
+                                    computational_native_used,
                                     native_used: tx_processing_result.native_used,
                                     pubdata_used: tx_processing_result.pubdata_used,
                                 }));

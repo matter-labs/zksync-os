@@ -7,7 +7,7 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2TxIntrinsicNativeInput,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -131,6 +131,7 @@ where
             .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
     let statement_versioned_hashes_num = transaction.statement_versioned_hashes_len();
+    let blob_versioned_hashes_num = transaction.blobs().map_or(0, |blobs| blobs.count as u64);
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
@@ -166,15 +167,17 @@ where
         authorization_list_num,
         statement_versioned_hashes_num,
     );
-    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
-        calldata.len() as u64,
-        access_list_accounts,
-        access_list_storage_keys,
-        authorization_list_num,
-        statement_versioned_hashes_num,
-        transaction.is_service(),
-        native_per_gas == 0,
-    );
+    let intrinsic_computational_native =
+        calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
+            calldata_byte_length: calldata.len() as u64,
+            access_list_accounts,
+            access_list_storages: access_list_storage_keys,
+            authorization_list_num,
+            blob_versioned_hashes_num,
+            statement_versioned_hashes_num,
+            is_service: transaction.is_service(),
+            free_native: native_per_gas == 0,
+        });
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 

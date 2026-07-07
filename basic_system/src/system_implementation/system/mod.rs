@@ -105,11 +105,12 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         // Native uses write-specific warmness: only discount if cold write extra
         // was already charged this tx. A prior SLOAD warms the access but doesn't
-        // pay for write merkle paths. No-op writes (same value) skip the charge
-        // entirely — the tree won't do any work for unchanged slots.
-        let native = if new_value == current_value {
-            R::Native::from_computational(0)
-        } else if is_cold_write_charged {
+        // pay for write merkle paths. Even no-op writes still update the
+        // in-memory cache state, so they pay the warm cache-write cost.
+        let native = if new_value == current_value || is_cold_write_charged {
+            // No-op writes still update the in-memory cache state, and a warm
+            // write after a cold write was already charged this tx, so both pay
+            // only the warm cache-write cost.
             R::Native::from_computational(
                 crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
             )

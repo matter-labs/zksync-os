@@ -162,6 +162,10 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     133 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash, 133 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 3 list overhead)
     ACCOUNT_PERSIST_NEW_NATIVE_COST; // delegatee persist (worst case: new account)
 
+/// L2 tx blob versioned-hash computational native cost per hash.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH: u64 =
+    33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // full-hash + signing-hash RLP contribution for one 32-byte blob hash
+
 /// Native computational overhead of 7702 auth.
 pub const PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
 
@@ -257,8 +261,7 @@ pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compress
     2 + // nonce
     1 + // balance
     4 + // unpadded code length
-    4 + // artifacts length
-    24 + // padded bytecode
+    23 + // unpadded delegation bytecode
     4; // observable length
 
 // Pubdata needed for the diff in balance as a result of
@@ -347,3 +350,26 @@ pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
 /// from block start. Covers fixed pre-tx-loop system work — currently just
 /// the EIP-2935 historical block hash write when the feature is enabled.
 pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE;
+
+#[cfg(test)]
+mod tests {
+    use super::L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION;
+
+    #[test]
+    fn l2_authorization_intrinsic_pubdata_matches_published_diff() {
+        // Full diff compression publishes an EIP-7702 delegation write as:
+        //   storage key (32) + account metadata (1) + versioning data (8)
+        //   + nonce diff (2) + balance diff (1) + unpadded code length (4)
+        //   + the raw delegation designator + observable code length (4).
+        // Only the unpadded designator bytes are published (padding and
+        // artifacts are not; see `account_cache_entry.rs`). The designator is
+        // `0xef0100 || address`, i.e. a 3-byte prefix plus a 20-byte address.
+        // Deriving its length from that structure (rather than restating `23`)
+        // keeps this coupled to the actual EIP-7702 encoding.
+        const DELEGATION_DESIGNATOR_LEN: u64 = 3 /* 0xef0100 */ + 20 /* address */;
+        assert_eq!(
+            L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION,
+            32 + 1 + 8 + 2 + 1 + 4 + DELEGATION_DESIGNATOR_LEN + 4
+        );
+    }
+}

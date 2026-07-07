@@ -39,11 +39,12 @@ fn bls12_381_pairing_as_system_function_inner<
     resources: &mut R,
     allocator: A,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
-    if input.len() == 0 {
+    if input.is_empty() || !input.len().is_multiple_of(BLS12_381_PAIR_LEN) {
         return Err(interface_error!(
             Bls12PrecompileInterfaceError::InvalidInputSize
         ));
     }
+
     let num_pairs = input.len() / BLS12_381_PAIR_LEN;
     let cost_ergs = Ergs(
         ((num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS)
@@ -56,12 +57,6 @@ fn bls12_381_pairing_as_system_function_inner<
         cost_ergs,
         <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
     ))?;
-
-    if !input.len().is_multiple_of(BLS12_381_PAIR_LEN) {
-        return Err(interface_error!(
-            Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
 
     let mut g1_points = Vec::with_capacity_in(num_pairs, allocator.clone());
     let mut g2_points = Vec::with_capacity_in(num_pairs, allocator.clone());

@@ -68,7 +68,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn origin(&mut self, system: &mut System<S>) -> InstructionResult {
         #[cfg(feature = "eip-7645")]
         {
-            self.gas.spend_gas_and_native(0, ORIGIN_NATIVE_COST)?;
+            let _ = system;
             return self.caller();
         }
 

@@ -52,7 +52,16 @@ build_riscv_binary() {
         (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type for-tests-benchmarking)
     fi
     echo "==> Building RISC-V block-replay benchmarking binary..."
-    (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type evm-replay-benchmarking)
+    # The block fixtures are post-BPO Osaka blocks, so the replay guest needs the
+    # `fusaka-bpo-2` blob schedule (via the `evm-replay-benchmarking-fusaka` type);
+    # without it those blocks hit an unimplemented path and the RISC-V run aborts
+    # with an "Illegal instruction". Mirror the CI workflow (bench.yml): prefer the
+    # fusaka variant, fall back to the plain type on a pre-rename merge-base.
+    if grep -q "evm-replay-benchmarking-fusaka" "$REPO_ROOT/zksync_os/dump_bin.sh"; then
+        (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type evm-replay-benchmarking-fusaka)
+    else
+        (cd "$REPO_ROOT/zksync_os" && ./dump_bin.sh --type evm-replay-benchmarking)
+    fi
 }
 
 run_block() {

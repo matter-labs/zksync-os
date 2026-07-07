@@ -6,6 +6,7 @@ use crate::bootloader::constants::{
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION,
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH,
     L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L2_TX_INTRINSIC_PUBDATA,
     L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
     SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, TX_INTRINSIC_GAS,
@@ -41,15 +42,36 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
     }
 }
 
+/// Per-transaction quantities that drive the intrinsic computational-native
+/// cost. Grouping them into a struct avoids an error-prone positional argument
+/// list of same-typed `u64`/`bool` values (in particular the adjacent blob- and
+/// statement-versioned-hash counts, which would silently transpose).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct L2TxIntrinsicNativeInput {
+    pub calldata_byte_length: u64,
+    pub access_list_accounts: u64,
+    pub access_list_storages: u64,
+    pub authorization_list_num: u64,
+    pub blob_versioned_hashes_num: u64,
+    pub statement_versioned_hashes_num: u64,
+    pub is_service: bool,
+    pub free_native: bool,
+}
+
 pub fn calculate_l2_tx_intrinsic_computational_native_resources(
-    calldata_byte_length: u64,
-    access_list_accounts: u64,
-    access_list_storages: u64,
-    authorization_list_num: u64,
-    statement_versioned_hashes_num: u64,
-    is_service: bool,
-    free_native: bool,
+    input: &L2TxIntrinsicNativeInput,
 ) -> u64 {
+    let L2TxIntrinsicNativeInput {
+        calldata_byte_length,
+        access_list_accounts,
+        access_list_storages,
+        authorization_list_num,
+        blob_versioned_hashes_num,
+        statement_versioned_hashes_num,
+        is_service,
+        free_native,
+    } = *input;
+
     let mut intrinsic_computational_native_resources = if is_service {
         SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST
     } else if free_native {
@@ -85,11 +107,42 @@ pub fn calculate_l2_tx_intrinsic_computational_native_resources(
 
     intrinsic_computational_native_resources = intrinsic_computational_native_resources
         .saturating_add(
+            blob_versioned_hashes_num
+                .saturating_mul(L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH),
+        );
+
+    intrinsic_computational_native_resources = intrinsic_computational_native_resources
+        .saturating_add(
             statement_versioned_hashes_num
                 .saturating_mul(FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF),
         );
 
     intrinsic_computational_native_resources
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        calculate_l2_tx_intrinsic_computational_native_resources, L2TxIntrinsicNativeInput,
+    };
+    use crate::bootloader::constants::L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH;
+
+    #[test]
+    fn l2_intrinsic_native_accounts_for_blob_versioned_hashes() {
+        let without_blobs = calculate_l2_tx_intrinsic_computational_native_resources(
+            &L2TxIntrinsicNativeInput::default(),
+        );
+        let with_blobs =
+            calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
+                blob_versioned_hashes_num: 6,
+                ..Default::default()
+            });
+
+        assert_eq!(
+            with_blobs - without_blobs,
+            6 * L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH
+        );
+    }
 }
 
 pub fn calculate_l1_tx_intrinsic_computational_native_resources(calldata_byte_length: u64) -> u64 {

@@ -9,11 +9,12 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::SystemFunctionExt;
 use zk_ee::{
-    interface_error, internal_error, out_of_ergs_error,
+    interface_error, internal_error, out_of_ergs_error, out_of_native_resources,
+    out_of_return_memory,
     system::{
         base_system_functions::ModExpErrors,
         errors::{subsystem::SubsystemError, system::SystemError},
-        Computational, Ergs, ModExpInterfaceError,
+        Computational, Ergs, ModExpInterfaceError, Resource,
     },
 };
 
@@ -59,6 +60,68 @@ fn modexp_native_from_ops(total_ops: u64, digits: u64) -> u64 {
                 .saturating_mul(digits.saturating_mul(digits))
                 .saturating_mul(MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST),
         )
+}
+
+/// The delegated modexp implementation may do one `quotient * modulus + remainder`
+/// FMA before the exponent loop to reduce an oversized base into the modulus
+/// range (`advice/bigint.rs`: `reduce_initially`).
+///
+/// That FMA is a schoolbook multiply whose delegation count scales with the
+/// product of the operand word counts — `quotient_digits * modulus_digits` (the
+/// two loops in `fma`), not `modulus_digits^2`. For an oversized base reduced by
+/// a small modulus the quotient dominates, so charging `modulus_digits^2` would
+/// undercharge. We therefore charge on the true `quotient_digits * modulus_digits`
+/// product.
+///
+/// A regular square/multiply step does two FMAs in the current model, so we
+/// account this standalone reduction as half of a normal per-op charge.
+fn modexp_initial_reduction_native_cost(quotient_digits: u64, modulus_digits: u64) -> u64 {
+    let digit_products = quotient_digits.saturating_mul(modulus_digits);
+    MODEXP_PER_OP_OVERHEAD_NATIVE_COST
+        .saturating_add(digit_products.saturating_mul(MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST))
+        .div_ceil(2)
+}
+
+fn strip_leading_zeroes(bytes: &[u8]) -> &[u8] {
+    let first_nonzero = bytes
+        .iter()
+        .position(|&byte| byte != 0)
+        .unwrap_or(bytes.len());
+    &bytes[first_nonzero..]
+}
+
+/// Number of 32-byte words needed to represent the value, ignoring leading
+/// zero bytes. This mirrors `BigUint::digits` in the delegated bigint
+/// implementation (`advice/bigint.rs`), which counts significant 32-byte words.
+fn significant_word_count(bytes: &[u8]) -> u64 {
+    (strip_leading_zeroes(bytes).len() as u64).div_ceil(32)
+}
+
+/// Whether the delegated modexp implementation performs its standalone initial
+/// reduction FMA before the exponent loop.
+///
+/// That implementation gates the reduction purely on the significant 32-byte
+/// word counts of the operands (`advice/bigint.rs`: `if current.digits >=
+/// modulus.digits`) and, once the gate passes, always performs the FMA
+/// regardless of the operand values. We therefore compare word counts here too
+/// (rather than the numeric values): a base that is smaller in value than the
+/// modulus but occupies the same number of words is still reduced, and must be
+/// charged accordingly.
+///
+/// Two operand values short-circuit the delegated path *before* the reduction
+/// and so must not be charged for it:
+/// - `modulus == 0`: the implementation returns an empty result immediately.
+/// - `modulus == 1`: `modexp_inner` returns before parsing the base or calling
+///   `modpow`, so `reduce_initially` never runs (`base^exp mod 1 == 0`).
+fn requires_initial_reduction(base: &[u8], modulus: &[u8]) -> bool {
+    let modulus = strip_leading_zeroes(modulus);
+    // modulus == 0 (no significant bytes) or modulus == 1 (a single 0x01 byte):
+    // the delegated path returns before any reduction.
+    if modulus.is_empty() || modulus == [1u8] {
+        return false;
+    }
+    let modulus_words = (modulus.len() as u64).div_ceil(32);
+    significant_word_count(base) >= modulus_words
 }
 
 // Query ID for modular exponentiation advice from oracle
@@ -157,9 +220,11 @@ fn modexp_as_system_function_inner<
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
     let minimal_native = <R::Native as Computational>::from_computational(MODEXP_BASE_NATIVE_COST);
-    let minimal_resources = R::from_ergs_and_native(MODEXP_MINIMAL_COST_ERGS, minimal_native);
-    if !resources.has_enough(&minimal_resources) {
+    if !resources.ergs().has_enough(&MODEXP_MINIMAL_COST_ERGS) {
         return Err(out_of_ergs_error!().into());
+    }
+    if !resources.native().has_enough(&minimal_native) {
+        return Err(out_of_native_resources!().into());
     }
 
     // The format of input is:
@@ -249,8 +314,11 @@ fn modexp_as_system_function_inner<
     let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     let conservative_native =
         native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
-    if !resources.has_enough(&R::from_ergs_and_native(ergs, conservative_native)) {
+    if !resources.ergs().has_enough(&ergs) {
         return Err(out_of_ergs_error!().into());
+    }
+    if !resources.native().has_enough(&conservative_native) {
+        return Err(out_of_native_resources!().into());
     }
 
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
@@ -266,9 +334,10 @@ fn modexp_as_system_function_inner<
     read_padded(&mut modulus, &mut input, mod_len);
 
     // Charge the exact native (scans the materialized exponent's set bits).
-    // It never exceeds `conservative_native` checked above, so it cannot fail
-    // after the gate passed.
-    let native = native_cost_from_exp_data::<R>(base_len as u64, &exponent, mod_len as u64)?;
+    // `conservative_native` checked above is a true upper bound on this value
+    // (worst-case exponent, and it charges the initial reduction whenever the
+    // exact charge might), so this charge cannot fail after the gate passed.
+    let native = native_cost_from_exp_data::<R>(&base, &exponent, &modulus)?;
     resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
     debug_assert_eq!(base.len(), base_len);
@@ -309,10 +378,10 @@ fn modexp_as_system_function_inner<
     if output.len() >= mod_len {
         // truncate
         dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
-            .map_err(|_| out_of_ergs_error!())?;
+            .map_err(|_| out_of_return_memory!())?;
     } else {
         dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
-            .map_err(|_| out_of_ergs_error!())?;
+            .map_err(|_| out_of_return_memory!())?;
     }
 
     Ok(())
@@ -363,15 +432,29 @@ pub fn ergs_cost(
 
 /// Computes the native cost for modexp by scanning the exponent.
 pub fn native_cost_from_exp_data<R: Resources>(
-    base_size: u64,
+    base: &[u8],
     exp_data: &[u8],
-    mod_size: u64,
+    modulus: &[u8],
 ) -> Result<R::Native, SystemError> {
+    let base_size = base.len() as u64;
+    let mod_size = modulus.len() as u64;
     let digits = core::cmp::max(1, core::cmp::max(base_size, mod_size).div_ceil(32));
     let (bit_len, popcount) = exp_bit_len_and_popcount(exp_data);
     let squares = bit_len.saturating_sub(1);
     let multiplies = popcount.saturating_sub(1);
-    let cost = modexp_native_from_ops(squares + multiplies, digits);
+    let reduction_cost = if requires_initial_reduction(base, modulus) {
+        let modulus_digits = significant_word_count(modulus);
+        // The honest quotient q = base / modulus occupies at most
+        // `base_digits - modulus_digits + 1` words (guaranteed >= 1 here, since
+        // `requires_initial_reduction` implies `base_digits >= modulus_digits`).
+        let quotient_digits = significant_word_count(base)
+            .saturating_sub(modulus_digits)
+            .saturating_add(1);
+        modexp_initial_reduction_native_cost(quotient_digits, modulus_digits)
+    } else {
+        0
+    };
+    let cost = modexp_native_from_ops(squares + multiplies, digits).saturating_add(reduction_cost);
     Ok(<R::Native as Computational>::from_computational(cost))
 }
 
@@ -395,6 +478,305 @@ fn native_cost<R: Resources>(
     };
     // Worst case: all bits set → squares = multiplies = bit_len - 1.
     let total_ops = 2u64.saturating_mul(bit_len.saturating_sub(1));
-    let cost = modexp_native_from_ops(total_ops, digits);
+    // Conservative upper bound on the exact reduction charge. The exact charge
+    // (`native_cost_from_exp_data`) adds `quotient_digits * modulus_digits`,
+    // where `quotient_digits <= base_digits` and `modulus_digits` are the
+    // significant word counts. We cannot strip leading zeroes here without
+    // materializing the operands, so we upper-bound both dimensions by the
+    // header word counts (`base_size`/`mod_size`, which dominate the significant
+    // counts) and charge the reduction whenever both operands are non-empty.
+    // This keeps the gate a true upper bound (it also covers the `modulus == 1`
+    // case, which the exact charge skips). `base_words * mod_words >=
+    // quotient_digits * modulus_digits`.
+    let reduction_cost = if mod_size != 0 && base_size != 0 {
+        let modulus_words = core::cmp::max(1, mod_size.div_ceil(32));
+        let base_words = core::cmp::max(1, base_size.div_ceil(32));
+        modexp_initial_reduction_native_cost(base_words, modulus_words)
+    } else {
+        0
+    };
+    let cost = modexp_native_from_ops(total_ops, digits).saturating_add(reduction_cost);
     Ok(<R::Native as Computational>::from_computational(cost))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::alloc::Global;
+    use zk_ee::oracle::IOOracle;
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::system::{
+        errors::{
+            runtime::{FatalRuntimeError, RuntimeError},
+            subsystem::SubsystemError,
+        },
+        NullLogger, Resources,
+    };
+
+    type TestResources = BaseResources<DecreasingNative>;
+
+    struct DummyOracle;
+    struct AlwaysFailDst;
+
+    impl IOOracle for DummyOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<
+            'a,
+            I: zk_ee::oracle::usize_serialization::UsizeSerializable
+                + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+        >(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+            unreachable!("oracle should not be consulted on native targets");
+        }
+    }
+
+    impl TryExtend<u8> for AlwaysFailDst {
+        type Error = ();
+
+        fn try_extend<I>(&mut self, _iter: I) -> Result<(), Self::Error>
+        where
+            I: IntoIterator<Item = u8>,
+        {
+            Err(())
+        }
+    }
+
+    fn encode_len(len: usize) -> [u8; 32] {
+        U256::from(len).to_be_bytes::<32>()
+    }
+
+    fn modexp_input(base: &[u8], exponent: &[u8], modulus: &[u8]) -> Vec<u8> {
+        let mut input = Vec::with_capacity(96 + base.len() + exponent.len() + modulus.len());
+        input.extend_from_slice(&encode_len(base.len()));
+        input.extend_from_slice(&encode_len(exponent.len()));
+        input.extend_from_slice(&encode_len(modulus.len()));
+        input.extend_from_slice(base);
+        input.extend_from_slice(exponent);
+        input.extend_from_slice(modulus);
+        input
+    }
+
+    fn assert_out_of_native(err: SubsystemError<ModExpErrors>) {
+        assert!(matches!(
+            err,
+            SubsystemError::LeafRuntime(RuntimeError::FatalRuntimeError(
+                FatalRuntimeError::OutOfNativeResources(_)
+            ))
+        ));
+    }
+
+    fn assert_out_of_return_memory(err: SubsystemError<ModExpErrors>) {
+        assert!(matches!(
+            err,
+            SubsystemError::LeafRuntime(RuntimeError::FatalRuntimeError(
+                FatalRuntimeError::OutOfReturnMemory(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn returns_out_of_native_when_minimal_native_missing() {
+        let input = modexp_input(&[2], &[1], &[3]);
+        let mut output = Vec::new();
+        let mut resources = TestResources::from_ergs_and_native(
+            MODEXP_MINIMAL_COST_ERGS,
+            DecreasingNative::from_computational(MODEXP_BASE_NATIVE_COST - 1),
+        );
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("native, not ergs, should be exhausted");
+
+        assert_out_of_native(err);
+    }
+
+    #[test]
+    fn returns_out_of_native_when_conservative_native_gate_fails() {
+        let base = vec![0x11; 64];
+        let exponent = vec![0xff; 1];
+        let modulus = vec![0x33; 64];
+        let input = modexp_input(&base, &exponent, &modulus);
+        let exp_highp = U256::from_be_slice(&exponent);
+        let conservative_native = native_cost::<TestResources>(
+            base.len() as u64,
+            exponent.len() as u64,
+            modulus.len() as u64,
+            &exp_highp,
+        )
+        .expect("cost must be computable");
+        let mut output = Vec::new();
+        let mut resources = TestResources::from_ergs_and_native(
+            Ergs::FORMAL_INFINITE,
+            DecreasingNative::from_computational(conservative_native.as_u64() - 1),
+        );
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("native conservative gate should fail first");
+
+        assert_out_of_native(err);
+    }
+
+    #[test]
+    fn returns_out_of_return_memory_when_output_does_not_fit() {
+        let base = [2u8];
+        let exponent = [2u8];
+        let modulus = [1u8];
+        let input = modexp_input(&base, &exponent, &modulus);
+        let mut output = AlwaysFailDst;
+        let mut resources = TestResources::FORMAL_INFINITE;
+
+        let err = ModExpImpl::<false>::execute(
+            &input,
+            &mut output,
+            &mut resources,
+            &mut DummyOracle,
+            &mut NullLogger,
+            Global,
+        )
+        .expect_err("output buffer should be the failing resource");
+
+        assert_out_of_return_memory(err);
+    }
+
+    #[test]
+    fn exact_native_cost_accounts_for_initial_reduction() {
+        let base = vec![0xff; 64]; // 2 words
+        let exponent = [1u8];
+        let modulus = vec![0x01; 32]; // 1 word, value != 1
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // quotient = base / modulus occupies at most base_digits - mod_digits + 1
+        // = 2 - 1 + 1 = 2 words; the reduction FMA is quotient_digits * mod_digits.
+        assert_eq!(
+            native.as_u64(),
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(2, 1)
+        );
+    }
+
+    #[test]
+    fn exact_native_cost_scales_reduction_with_quotient_for_small_modulus() {
+        // Oversized base reduced by a single-word modulus: the reduction FMA
+        // scales with the quotient (~base_digits), not modulus_digits^2. With
+        // exponent == 1 the exponent loop contributes no ops, so the reduction
+        // is the only variable cost — this is the case the old modulus_digits^2
+        // charge undercharged.
+        let base = vec![0xff; 32 * 8]; // 8 words
+        let exponent = [1u8];
+        let modulus = vec![0x03]; // 1 word, value != 1
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // quotient_digits = 8 - 1 + 1 = 8, modulus_digits = 1.
+        assert_eq!(
+            native.as_u64(),
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(8, 1)
+        );
+    }
+
+    #[test]
+    fn exact_native_cost_skips_initial_reduction_for_modulus_one() {
+        // `base^exp mod 1 == 0`: the delegated `modexp_inner` returns before
+        // parsing the base or calling `modpow`, so no reduction runs and none
+        // must be charged, however oversized the base is.
+        let base = vec![0xff; 32 * 8];
+        let exponent = [1u8];
+        let modulus = [1u8];
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // exponent == 1 => no square/multiply ops, and modulus == 1 => no
+        // reduction, so only the base cost remains.
+        assert_eq!(native.as_u64(), MODEXP_BASE_NATIVE_COST);
+    }
+
+    #[test]
+    fn exact_native_cost_skips_initial_reduction_when_base_has_fewer_words() {
+        // Base occupies fewer 32-byte words than the modulus, so the delegated
+        // implementation does not perform the initial reduction.
+        let base = [1u8];
+        let exponent = [1u8];
+        let modulus = vec![0x01; 33]; // 2 words vs the base's 1 word
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        assert_eq!(native.as_u64(), MODEXP_BASE_NATIVE_COST);
+    }
+
+    #[test]
+    fn exact_native_cost_accounts_for_reduction_when_base_and_modulus_share_word_count() {
+        // The base is numerically smaller than the modulus but occupies the same
+        // number of 32-byte words, so the delegated implementation still runs the
+        // initial reduction FMA (`current.digits >= modulus.digits`) and it must
+        // be charged. Comparing values instead of word counts would undercharge
+        // this common case (e.g. RSA verification with base < modulus).
+        let base = [1u8];
+        let exponent = [1u8];
+        let modulus = [2u8];
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // quotient_digits = 1 - 1 + 1 = 1, modulus_digits = 1.
+        assert_eq!(
+            native.as_u64(),
+            MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(1, 1)
+        );
+    }
+
+    #[test]
+    fn conservative_native_upper_bounds_exact_native() {
+        // The conservative gate must never under-approximate the exact charge,
+        // even when the modulus has leading zero bytes that the exact
+        // (materialized) charge strips away. Otherwise `resources.charge` could
+        // fail after the conservative gate already passed.
+        let cases: &[(&[u8], &[u8], &[u8])] = &[
+            (&[0x07], &[0xff], &[0x00, 0x05]), // modulus strips to fewer words
+            (&[0x01], &[0x01], &[0x02]),       // same word count, base < modulus
+            (&[0xff; 64], &[0xff; 4], &[0x01; 32]),
+            (&[0x00, 0x00, 0x01], &[0x01], &[0x00, 0x00, 0x03]),
+            (&[0xff; 32 * 8], &[0x01], &[0x03]), // oversized base, single-word modulus
+            (&[0xff; 32 * 8], &[0xff; 4], &[0x01]), // modulus == 1: exact skips reduction
+            (&[0xff; 32 * 4], &[0xff; 8], &[0x00, 0x01]), // modulus == 1 with leading zero byte
+        ];
+        for (base, exp, modulus) in cases {
+            let exact = native_cost_from_exp_data::<TestResources>(base, exp, modulus)
+                .expect("exact cost must be computable")
+                .as_u64();
+            let exp_highp = U256::from_be_slice(exp);
+            let conservative = native_cost::<TestResources>(
+                base.len() as u64,
+                exp.len() as u64,
+                modulus.len() as u64,
+                &exp_highp,
+            )
+            .expect("conservative cost must be computable")
+            .as_u64();
+            assert!(
+                exact <= conservative,
+                "exact {exact} exceeded conservative {conservative} for base={base:?} modulus={modulus:?}"
+            );
+        }
+    }
 }

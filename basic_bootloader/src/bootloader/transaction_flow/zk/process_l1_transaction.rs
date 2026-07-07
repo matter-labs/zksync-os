@@ -279,7 +279,10 @@ where
     // These cannot fail due to resource exhaustion. Their native cost is
     // accounted for as intrinsic and is not included in
     // computational_native_used (native_used only reflects native for
-    // pubdata + native used for charged computation).
+    // pubdata + native used for charged computation). For intrinsic-native
+    // verification we add the calldata copy term separately, since that work
+    // is charged during the main execution path rather than through
+    // `inf_resources`.
     let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
     let coinbase = system.get_coinbase();
@@ -369,14 +372,20 @@ where
 
     // Verify that the L1 intrinsic native formula covers the actual
     // post-execution inf_resources consumption. The formula also includes
-    // pre-budgeted costs (event log, rolling hash keccak) that are not
-    // charged to inf_resources, giving a small surplus (~4%). This matches
-    // the L2 verify_intrinsic_native pattern.
+    // the calldata-copy term, which is charged outside `inf_resources`, so we
+    // add it back explicitly here. The formula also includes pre-budgeted
+    // costs (event log, rolling hash keccak) that are not charged to
+    // `inf_resources`, giving a small surplus. This matches the L2
+    // verify_intrinsic_native pattern.
     #[cfg(feature = "verify_intrinsic_native")]
     {
         let inf_initial = S::Resources::FORMAL_INFINITE.native().as_u64();
         let inf_remaining = inf_resources.native().as_u64();
-        let actual_used = inf_initial.saturating_sub(inf_remaining);
+        let inf_resources_used = inf_initial.saturating_sub(inf_remaining);
+        let actual_used = intrinsic_native_used_for_l1_verification(
+            transaction.calldata().len() as u64,
+            inf_resources_used,
+        );
         let formula = intrinsic_computational_native;
         system_log!(
             system,
@@ -446,6 +455,17 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
     /// `computational_native_used` reported at end-of-tx (since
     /// `initial_resources` is captured after the precharge).
     intrinsic_computational_native: u64,
+}
+
+#[cfg(any(feature = "verify_intrinsic_native", test))]
+fn intrinsic_native_used_for_l1_verification(
+    calldata_byte_length: u64,
+    inf_resources_used: u64,
+) -> u64 {
+    use crate::bootloader::constants::L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE;
+    inf_resources_used.saturating_add(
+        calldata_byte_length.saturating_mul(L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE),
+    )
 }
 
 ///
@@ -960,4 +980,25 @@ where
         )
         .expect("must read L2AssetTracker L1_CHAIN_ID");
     U256::from_be_bytes(chain_id.as_u8_array())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::intrinsic_native_used_for_l1_verification;
+    use crate::bootloader::constants::L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE;
+
+    #[test]
+    fn l1_intrinsic_native_verification_accounts_for_calldata_copy() {
+        let inf_resources_used = 123_456;
+        let calldata_len = 321;
+
+        let actual_used =
+            intrinsic_native_used_for_l1_verification(calldata_len, inf_resources_used);
+
+        assert_eq!(
+            actual_used,
+            inf_resources_used
+                + calldata_len * L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE
+        );
+    }
 }
