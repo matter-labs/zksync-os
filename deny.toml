@@ -1,8 +1,11 @@
 [advisories]
 ignore = [
-    # Pulled in transitively via `inferno` in Airbender flamegraph/diagnostic
-    # tooling. `inferno 0.12.x` pins `quick-xml = "0.39"`, so lifting these
-    # requires an upstream dependency update rather than a local lockfile bump.
+    # quick-xml < 0.41 memory-exhaustion / quadratic-parse advisories. Pulled in
+    # only transitively by `inferno` (flamegraph SVG rendering) via the
+    # git-pinned `riscv_transpiler`, whose `inferno = "^0.12"` in turn pins
+    # `quick-xml = "^0.39"`, so it cannot be bumped without moving those git
+    # revs. It is host-side benchmarking/test tooling that never parses
+    # untrusted XML and is not part of the proving runtime.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 ]
