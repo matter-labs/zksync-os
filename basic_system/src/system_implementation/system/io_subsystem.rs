@@ -6,6 +6,7 @@ use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
 use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
 use cost_constants::NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST;
+use cost_constants::RECEIPT_LOG_RLP_OVERHEAD_BYTES;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use evm_interpreter::gas_constants::LOG;
@@ -173,10 +174,24 @@ impl<
                 Ergs(ergs)
             }
         };
+        // This log is also hashed into the block's receipt-root leaf (a blake2s
+        // over the receipt RLP; see `compute_receipt_hash`). Charge the tx for the
+        // blake2s rounds its log contributes so that log-heavy txs pay for the
+        // induced prover work out of their own budget rather than only counting
+        // against the block native limit. The log's receipt-RLP length is bounded
+        // by a fixed framing overhead plus 33 bytes per topic (32-byte topic + RLP
+        // header) plus the data bytes. The fixed receipt base (status, gas, zero
+        // bloom, framing) is charged per-tx in the block flow.
+        let receipt_rlp_len_upper_bound =
+            RECEIPT_LOG_RLP_OVERHEAD_BYTES + 33 * (topics.len() as u64) + (data.len() as u64);
+        let receipt_hash_native = receipt_rlp_len_upper_bound
+            .div_ceil(crate::cost_constants::BLAKE2S_CHUNK_SIZE as u64)
+            .saturating_mul(crate::cost_constants::BLAKE2S_ROUND_NATIVE_COST);
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST
                 + EVENT_TOPIC_NATIVE_COST * (topics.len() as u64)
-                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64),
+                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64)
+                + receipt_hash_native,
         );
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 

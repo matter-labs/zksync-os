@@ -24,6 +24,16 @@ pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
 
+/// Upper bound on the RLP length of a transaction receipt with no logs: a 1-byte
+/// status, an up-to-9-byte cumulative gas, the 256-byte zero logs bloom, an empty
+/// logs list, plus list framing and an optional type-prefix byte.
+const RECEIPT_STATIC_RLP_MAX_LEN: usize = 280;
+/// Native cost of hashing the fixed part of a transaction receipt (status,
+/// cumulative gas, zero logs bloom and RLP framing, with no logs). Each log's
+/// contribution to the receipt hash is charged to the transaction at emit time
+/// (see `emit_event`); this fixed base is accounted once per tx in the block flow.
+pub const RECEIPT_HASH_BASE_NATIVE_COST: u64 = blake2s_native_cost(RECEIPT_STATIC_RLP_MAX_LEN);
+
 const _: () = const {
     assert!(MAX_TX_LEN_BYTES.is_multiple_of(core::mem::size_of::<usize>()));
 };

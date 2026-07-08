@@ -52,6 +52,11 @@ pub const WARM_TSTORAGE_WRITE_NATIVE_COST: u64 = 4000;
 pub const EVENT_STORAGE_BASE_NATIVE_COST: u64 = 6000;
 pub const EVENT_TOPIC_NATIVE_COST: u64 = 200;
 pub const EVENT_DATA_PER_BYTE_COST: u64 = 2;
+/// Upper bound on the RLP framing overhead of a single log inside a receipt
+/// (log list header + address string header/20 bytes + topics list header +
+/// data string header), excluding the per-topic and data payload bytes. Used to
+/// bound the log's contribution to the receipt-hash length charged at emit time.
+pub const RECEIPT_LOG_RLP_OVERHEAD_BYTES: u64 = 32;
 
 const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 3;
 // Same costs as for events, as the same structure is used.
