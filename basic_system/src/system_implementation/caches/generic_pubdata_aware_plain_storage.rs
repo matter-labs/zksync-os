@@ -165,6 +165,26 @@ impl<
     {
         resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
+        // Conservative pre-gate for a cold read: the slot IO in the insertion
+        // closure runs unmetered and the real cold charge only happens at warm-up,
+        // so without this a tx could force that (prover) work and then fail the
+        // charge, leaving it unpaid. So we check up front that the worst-case cold
+        // read is affordable. Charging a throwaway copy of the resources here is
+        // just a way to check we have enough — nothing is spent, the real charge
+        // still happens at warm-up. A new slot is the costliest cold read (an extra
+        // non-inclusion merkle path), so it upper-bounds the existing-slot case and
+        // the real warm-up charge below cannot fail. The bound is data-independent
+        // and warmth is rollback-aware, so the gate is identical across sequencer
+        // and proving and never depends on cache-entry presence.
+        let is_cold = match cache.get(key) {
+            Some(item) => !item.current().metadata().considered_warm(current_tx_id),
+            None => true,
+        };
+        if is_cold {
+            let mut probe = resources.clone();
+            resources_policy.charge_cold_storage_read_extra(ee_type, &mut probe, true)?;
+        }
+
         cache
             .get_or_insert(key, || {
                 // Element doesn't exist in cache yet, initialize it.

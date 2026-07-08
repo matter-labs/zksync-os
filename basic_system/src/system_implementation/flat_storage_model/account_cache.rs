@@ -242,6 +242,42 @@ impl<
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
+        // Conservative pre-gate for a cold access: the property IO / decommit in
+        // the insertion closure run on infinite resources and the real cold charge
+        // only happens at warm-up, so without this a tx could force that (prover)
+        // work and then fail the charge, leaving it unpaid. So we check up front
+        // that the worst-case cold access is affordable. Charging a throwaway copy
+        // of the resources here is just a way to check we have enough — nothing is
+        // spent, the real charge still happens at warm-up. Charging the new-account
+        // branch (the larger, extra-merkle-path one) plus a properties decommit
+        // upper-bounds either branch the IO ends up taking, so the real warm-up
+        // charge below cannot fail. The bound is data-independent and warmth is
+        // rollback-aware, so the gate is identical across sequencer and proving and
+        // never depends on cache-entry presence.
+        let current_tx_id = self.current_tx_id;
+        let is_cold = match self.cache.get(address.into()) {
+            Some(item) => !item
+                .current()
+                .metadata()
+                .basic
+                .considered_warm(current_tx_id),
+            None => true,
+        };
+        if is_cold {
+            let mut probe = resources.clone();
+            Self::charge_ergs_for_cold_access(ee_type, &mut probe, address, is_selfdestruct)?;
+            Self::charge_native_for_cold_access(
+                ee_type,
+                &mut probe,
+                true,
+                &storage.0.resources_policy,
+            )?;
+            BytecodeAndAccountDataPreimagesStorage::<R, A>::charge_decommitment_native_cost(
+                &mut probe,
+                AccountProperties::ENCODED_SIZE,
+            )?;
+        }
+
         self.cache
             .get_or_insert(address.into(), || {
                 // Element doesn't exist in cache yet, initialize it.
