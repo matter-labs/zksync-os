@@ -436,9 +436,12 @@ pub fn native_cost_from_exp_data<R: Resources>(
     exp_data: &[u8],
     modulus: &[u8],
 ) -> Result<R::Native, SystemError> {
-    let base_size = base.len() as u64;
-    let mod_size = modulus.len() as u64;
-    let digits = core::cmp::max(1, core::cmp::max(base_size, mod_size).div_ceil(32));
+    // Per-op cost tracks the operands actually multiplied in the exponent loop.
+    // After the initial reduction every square/multiply operand is reduced mod
+    // `modulus` (operands are asserted `<= modulus.digits` in `advice/bigint.rs`),
+    // so the per-op work is `modulus_digits^2`, not `max(base, modulus)_digits^2`.
+    // The base size only affects the separate initial-reduction term below.
+    let digits = core::cmp::max(1, significant_word_count(modulus));
     let (bit_len, popcount) = exp_bit_len_and_popcount(exp_data);
     let squares = bit_len.saturating_sub(1);
     let multiplies = popcount.saturating_sub(1);
@@ -467,7 +470,11 @@ fn native_cost<R: Resources>(
     mod_size: u64,
     exp_highp: &U256,
 ) -> Result<R::Native, SystemError> {
-    let digits = core::cmp::max(1, core::cmp::max(base_size, mod_size).div_ceil(32));
+    // Per-op cost is bounded by the modulus size (exponent-loop operands are
+    // reduced mod `modulus`); the base only affects the reduction term below.
+    // The header modulus word count upper-bounds the significant modulus digits
+    // the exact charge uses, keeping this gate a true upper bound.
+    let digits = core::cmp::max(1, mod_size.div_ceil(32));
     let bit_len = if exp_size <= 32 && exp_highp.is_zero() {
         0u64
     } else if exp_size <= 32 {
@@ -742,6 +749,28 @@ mod tests {
         assert_eq!(
             native.as_u64(),
             MODEXP_BASE_NATIVE_COST + modexp_initial_reduction_native_cost(1, 1)
+        );
+    }
+
+    #[test]
+    fn exact_native_cost_charges_ops_on_modulus_digits_not_base() {
+        // After the initial reduction every square/multiply operates on a value
+        // reduced mod `modulus`, so the per-op cost scales with modulus_digits^2,
+        // not max(base, modulus)_digits^2. A large base with a small modulus and a
+        // non-trivial exponent exercises this: the per-op charge must use the
+        // single modulus word, while the base only feeds the initial reduction.
+        let base = vec![0xff; 32 * 4]; // 4 words
+        let exponent = [0x03u8]; // bits `11`: 1 square + 1 multiply
+        let modulus = vec![0x03]; // 1 word, value != 1
+
+        let native = native_cost_from_exp_data::<TestResources>(&base, &exponent, &modulus)
+            .expect("cost must be computable");
+
+        // 2 ops charged on modulus_digits = 1 (not base_digits = 4), plus the
+        // quotient-scaled initial reduction (quotient_digits = 4 - 1 + 1 = 4).
+        assert_eq!(
+            native.as_u64(),
+            modexp_native_from_ops(2, 1) + modexp_initial_reduction_native_cost(4, 1)
         );
     }
 
