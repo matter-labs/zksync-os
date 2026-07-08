@@ -261,31 +261,18 @@ pub fn read_multichain_root<
     .expect("must read MessageRoot multichain root")
 }
 
-/// Fixed depth of the interop commitment tree's Indexed Merkle Tree. Mirrors `IMT_DEPTH` in
-/// `l1-contracts/contracts/common/libraries/IndexedMerkleTree.sol`.
-const INTEROP_COMMITMENT_TREE_IMT_DEPTH: u8 = 32;
-
-/// Storage slot of `_imt.nodes[IMT_DEPTH][0]` — the interop commitment tree's root node — in the
-/// L2InteropCommitmentTree(0x10012) contract.
-///
-/// Derived from the Solidity storage layout (verified with `forge inspect`): `_imt` sits at slot 0;
-/// inside `struct IMT` the `bytes32[IMT_DEPTH + 1] zeros` array occupies slots `0..=IMT_DEPTH`, so the
-/// `mapping(uint256 => mapping(uint256 => bytes32)) nodes` base slot is `IMT_DEPTH + 1` (= 33). For a
-/// nested mapping: `inner = keccak256(pad32(IMT_DEPTH) || pad32(33))`, then
-/// `slot = keccak256(pad32(0) || inner)`. Locked against the formula by
-/// `commitment_tree_root_slot_matches_layout` below.
-const COMMITMENT_TREE_ROOT_NODE_SLOT: [u8; 32] = [
-    0xf7, 0x00, 0x9d, 0x13, 0x71, 0x93, 0xf8, 0x68, 0x7e, 0x15, 0x07, 0x32, 0x6b, 0x04, 0x75, 0xde,
-    0xd1, 0xa0, 0xd0, 0x9a, 0xa4, 0xd4, 0x61, 0x6a, 0xc9, 0xb1, 0x95, 0xb2, 0xfb, 0x33, 0x3f, 0x81,
-];
+/// Storage slot of `_currentRoot` in the L2InteropCommitmentTree(0x10012) contract: **fixed slot 0**,
+/// a deliberate, consensus-critical storage ABI (see `L2InteropCommitmentTree.sol`). The contract
+/// caches its root there on every insert precisely because the underlying dynamic-height engine has
+/// no fixed root slot.
+const COMMITMENT_TREE_CURRENT_ROOT_SLOT: [u8; 32] = [0u8; 32];
 
 ///
 /// Reads the interop commitment tree root from the L2InteropCommitmentTree(0x10012) contract.
 ///
-/// Returns `_imt.nodes[IMT_DEPTH][0]` (the tree root node). When that node has not been written yet —
-/// an empty / freshly-seeded tree — it falls back to `_imt.zeros[IMT_DEPTH]` (the last element of the
-/// `zeros` array, at slot `IMT_DEPTH`), exactly mirroring `IndexedMerkleTreeLib.root`. On a chain that
-/// does not have the tree deployed the reads return zero, so this yields `Bytes32::zero()`.
+/// Returns the `_currentRoot` cache (slot 0), which the contract seeds in `initialize` and refreshes
+/// on every insert. On a chain that does not have the tree deployed (or before seeding) the read
+/// returns zero, so this yields `Bytes32::zero()`.
 ///
 /// Generic over the IO subsystem (like `read_settlement_layer_chain_id`) so it can be called both
 /// before the tx loop (batch-begin snapshot) and after it (batch-end snapshot).
@@ -296,31 +283,13 @@ where
 {
     let mut inf_resources = IO::Resources::FORMAL_INFINITE;
 
-    let root_node = io
-        .storage_read::<false>(
-            ExecutionEnvironmentType::NoEE,
-            &mut inf_resources,
-            &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
-            &Bytes32::from_array(COMMITMENT_TREE_ROOT_NODE_SLOT),
-        )
-        .expect("must read InteropCommitmentTree root node");
-
-    if !root_node.is_zero() {
-        return root_node;
-    }
-
-    // Empty / freshly-seeded tree: the top node is unwritten, so the canonical root is
-    // `zeros[IMT_DEPTH]`, stored at slot `IMT_DEPTH` (last element of `bytes32[IMT_DEPTH + 1] zeros`,
-    // which starts at slot 0).
-    let mut zeros_root_slot = [0u8; 32];
-    zeros_root_slot[31] = INTEROP_COMMITMENT_TREE_IMT_DEPTH;
     io.storage_read::<false>(
         ExecutionEnvironmentType::NoEE,
         &mut inf_resources,
         &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
-        &Bytes32::from_array(zeros_root_slot),
+        &Bytes32::from_array(COMMITMENT_TREE_CURRENT_ROOT_SLOT),
     )
-    .expect("must read InteropCommitmentTree zeros root")
+    .expect("must read InteropCommitmentTree current root")
 }
 
 ///
@@ -432,39 +401,6 @@ mod tests {
             root_slot.as_u8_array().to_vec(),
             hex::decode("35817d789b7a6dbe8b95b0f21e189fb26d3d329de699cac7a267a9568298e0a5")
                 .unwrap()
-        );
-    }
-
-    /// Recomputes the interop-commitment-tree root slot from the storage layout and locks the
-    /// hardcoded `COMMITMENT_TREE_ROOT_NODE_SLOT` against it. `_imt` is at slot 0; `IMT.zeros` is
-    /// `bytes32[IMT_DEPTH + 1]` occupying slots `0..=IMT_DEPTH`, so the `nodes` mapping base slot is
-    /// `IMT_DEPTH + 1`. Then `nodes[IMT_DEPTH][0]` follows the nested-mapping rule.
-    fn calculate_commitment_tree_root_slot() -> [u8; 32] {
-        let nodes_base_slot = INTEROP_COMMITMENT_TREE_IMT_DEPTH + 1;
-
-        let mut level = [0u8; 32];
-        level[31] = INTEROP_COMMITMENT_TREE_IMT_DEPTH;
-        let mut base = [0u8; 32];
-        base[31] = nodes_base_slot;
-        // inner mapping slot: keccak256(pad32(IMT_DEPTH) || pad32(nodes_base_slot))
-        let mut hasher = crypto::sha3::Keccak256::new();
-        hasher.update(level);
-        hasher.update(base);
-        let inner = hasher.finalize();
-
-        // element [0] of the inner mapping: keccak256(pad32(0) || inner)
-        let index = [0u8; 32];
-        let mut hasher = crypto::sha3::Keccak256::new();
-        hasher.update(index);
-        hasher.update(inner);
-        hasher.finalize()
-    }
-
-    #[test]
-    fn commitment_tree_root_slot_matches_layout() {
-        assert_eq!(
-            calculate_commitment_tree_root_slot(),
-            COMMITMENT_TREE_ROOT_NODE_SLOT
         );
     }
 

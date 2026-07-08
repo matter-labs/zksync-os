@@ -1,8 +1,8 @@
 use super::post_tx_op::da_commitment_generator::DACommitmentGenerator;
+use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
 use crate::bootloader::block_flow::zk::post_tx_op::{
     calculate_interop_roots_rolling_hash, compute_chain_batch_root,
 };
-use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
 use crate::bootloader::block_flow::{TransactionsRollingKeccakHasher, TxHashesAccumulator};
 use arrayvec::ArrayVec;
 use basic_system::system_implementation::flat_storage_model::{FlatStorageCommitment, TREE_HEIGHT};

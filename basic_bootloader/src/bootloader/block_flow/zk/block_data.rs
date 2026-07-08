@@ -258,7 +258,10 @@ impl<EA: TxHashesAccumulator + core::fmt::Debug, A: Allocator + Clone + Default>
                 &self.block_computational_native_used,
             )
             .field("block_blob_gas_used", &self.block_blob_gas_used)
-            .field("commitment_tree_root_begin", &self.commitment_tree_root_begin)
+            .field(
+                "commitment_tree_root_begin",
+                &self.commitment_tree_root_begin,
+            )
             .finish()
     }
 }
