@@ -100,10 +100,47 @@ transaction ID that touched it. On access:
 1. `materialize_element()` always charges a warm read first via `charge_warm_storage_read()`.
 2. If the element's `last_touched_in_tx` does not match the current transaction ID
    (i.e. the access is "cold"), it additionally charges `charge_cold_storage_read_extra()`.
+   For native resources this cold extra comes in two sizes: NEW (slot absent from the
+   tree at block start, priced for the non-inclusion check) and EXISTING. The NEW extra
+   is charged once per slot per block; which accesses pay it is tracked by the
+   `new_read_extra_charged` metadata flag (see the charging invariant below).
 3. `last_touched_in_tx` is updated to the current transaction ID, making all
    subsequent accesses within the same transaction "warm".
 4. At the transaction boundary, `begin_new_tx()` increments the transaction ID counter,
    resetting all elements to "cold" for the next transaction.
+
+#### Charging invariant: independence from cache state
+
+Resource charging must be a pure function of the *included* transactions. The
+sequencer run also executes transactions that end up dropped from the block — a
+transaction can fail validation late (e.g. on the balance check, after its access
+list, nonce and authorization list were already processed) or be evicted when it
+hits a block limit. The proving run re-executes only the included transactions,
+so any charge that depends on side effects of dropped transactions diverges
+between the two runs and makes the block unprovable.
+
+The caches make this subtle: `HistoryMap` initial records (the entry materialized
+on first access, via `get_or_insert`) deliberately survive frame rollback, so a
+dropped transaction leaves its materialized entries behind in the sequencer's
+caches. Metadata updates, by contrast, are rolled back with the transaction.
+
+Every charging decision must therefore be derived only from:
+
+- **block-start facts** fetched from the oracle and fixed at materialization
+  (`CacheElementProperties::is_new_element`), which are identical in both runs;
+- **rollback-aware metadata** updated through `HistoryMap` records
+  (`last_touched_in_tx`, `write_extra_charged_in_tx`, `new_read_extra_charged`,
+  `persist_charged_in_tx`), so a dropped payer's marker disappears with it;
+- **cache values** (`initial` / `committed` / `current`), which also roll back.
+
+In particular, "this slot/account is already in the cache" carries no information
+about who paid for it and must never select a charge amount. The preimage cache
+follows the same principle by charging the full decommitment cost on every
+access, cache hit or not.
+
+Regression tests: `test_dropped_tx_does_not_discount_new_slot_read` and
+`test_dropped_tx_does_not_discount_new_account_access` in
+[`tests/instances/transactions/src/storage_charging.rs`](../../../tests/instances/transactions/src/storage_charging.rs).
 
 #### EVM gas refund accounting
 

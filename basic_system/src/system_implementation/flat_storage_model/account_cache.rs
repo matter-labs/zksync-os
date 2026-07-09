@@ -141,7 +141,7 @@ impl<
     fn charge_native_for_cold_access(
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        empty_account: bool,
+        charge_as_new: bool,
         policy: &P,
     ) -> Result<(), SystemError> {
         // We charge for 2 things:
@@ -154,12 +154,13 @@ impl<
             policy.charge_warm_storage_read(ee_type, res)
         })?;
         resources.with_infinite_ergs(|res| {
-            // We determine if it's a new slot by proxy of empty_account.
-            policy.charge_cold_storage_read_extra(ee_type, res, empty_account)
+            // A new (empty at block start) account is a new slot in the tree.
+            policy.charge_cold_storage_read_extra(ee_type, res, charge_as_new)
         })?;
 
-        // 2. Charging the decommitment (only when account isn't empty)
-        if !empty_account {
+        // 2. Charging the decommitment. When charging as NEW there is no
+        // properties preimage to decommit.
+        if !charge_as_new {
             BytecodeAndAccountDataPreimagesStorage::<R, A>::charge_decommitment_native_cost(
                 resources,
                 AccountProperties::ENCODED_SIZE,
@@ -241,15 +242,49 @@ impl<
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
-        let mut initialized_element = false;
+        // Conservative pre-gate for a cold access: the property IO / decommit in
+        // the insertion closure run on infinite resources and the real cold charge
+        // only happens at warm-up, so without this a tx could force that (prover)
+        // work and then fail the charge, leaving it unpaid. So we check up front
+        // that the worst-case cold access is affordable. Charging a throwaway copy
+        // of the resources here is just a way to check we have enough — nothing is
+        // spent, the real charge still happens at warm-up. Charging the new-account
+        // branch (the larger, extra-merkle-path one) plus a properties decommit
+        // upper-bounds either branch the IO ends up taking, so the real warm-up
+        // charge below cannot fail. The bound is data-independent and warmth is
+        // rollback-aware, so the gate is identical across sequencer and proving and
+        // never depends on cache-entry presence.
+        let current_tx_id = self.current_tx_id;
+        let is_cold = match self.cache.get(address.into()) {
+            Some(item) => !item
+                .current()
+                .metadata()
+                .basic
+                .considered_warm(current_tx_id),
+            None => true,
+        };
+        if is_cold {
+            let mut probe = resources.clone();
+            Self::charge_ergs_for_cold_access(ee_type, &mut probe, address, is_selfdestruct)?;
+            Self::charge_native_for_cold_access(
+                ee_type,
+                &mut probe,
+                true,
+                &storage.0.resources_policy,
+            )?;
+            BytecodeAndAccountDataPreimagesStorage::<R, A>::charge_decommitment_native_cost(
+                &mut probe,
+                AccountProperties::ENCODED_SIZE,
+            )?;
+        }
 
         self.cache
             .get_or_insert(address.into(), || {
-                // Element doesn't exist in cache yet, initialize it
-                initialized_element = true;
-
-                // - first get a hash of properties from storage
-                Self::charge_ergs_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
+                // Element doesn't exist in cache yet, initialize it.
+                // Cold access charging happens at warm-up below: the initial
+                // record persists even if the inserting transaction is dropped
+                // from the block, so anything charging-related must live in
+                // rollback-aware metadata.
 
                 // We use infinite resources to perform IO. This costs are charged
                 // every time we charge for "cold" access, to avoid native charging
@@ -265,12 +300,6 @@ impl<
                 )?;
 
                 let empty_account = hash == Bytes32::ZERO;
-                Self::charge_native_for_cold_access(
-                    ee_type,
-                    resources,
-                    empty_account,
-                    &storage.0.resources_policy,
-                )?;
 
                 let acc_data = match empty_account {
                     true => AccountProperties::default(),
@@ -313,26 +342,32 @@ impl<
                     x.element_properties_mut().mark_value_as_observed();
                 }
                 if is_warm == false {
-                    if initialized_element == false {
-                        // Element is in cache from a prior access — that access already
-                        // paid the NEW read cost if the account was new. Charge EXISTING.
-                        Self::charge_ergs_for_cold_access(
-                            ee_type,
-                            resources,
-                            address,
-                            is_selfdestruct,
-                        )?;
-                        Self::charge_native_for_cold_access(
-                            ee_type,
-                            resources,
-                            false,
-                            &storage.0.resources_policy,
-                        )?;
-                    }
+                    Self::charge_ergs_for_cold_access(
+                        ee_type,
+                        resources,
+                        address,
+                        is_selfdestruct,
+                    )?;
+                    // The NEW read extra (tree non-inclusion check) is charged once
+                    // per account per block; later cold accesses pay EXISTING plus
+                    // decommitment. "Already paid" is tracked in metadata so that it
+                    // rolls back together with the paying transaction if it's dropped
+                    // from the block.
+                    let charge_as_new = x.element_properties().is_new_element()
+                        && !x.current().metadata().basic.new_read_extra_charged;
+                    Self::charge_native_for_cold_access(
+                        ee_type,
+                        resources,
+                        charge_as_new,
+                        &storage.0.resources_policy,
+                    )?;
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.basic.last_touched_in_tx = Some(self.current_tx_id);
+                            if charge_as_new {
+                                m.basic.new_read_extra_charged = true;
+                            }
                             Ok(())
                         })
                     })?;
