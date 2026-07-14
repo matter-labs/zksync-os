@@ -24,7 +24,7 @@ where
         // Snapshot the interop commitment tree (IMT) root before any transaction runs. For the first
         // block of a batch this is the batch-begin root; the batch data keeper commits it (alongside
         // the batch-end root read in `post_op`) into the chain batch root.
-        block_data.commitment_tree_root_begin = read_commitment_tree_root(&mut system.io);
+        block_data.commitment_tree_root_begin = read_interop_commitment_tree_root(&mut system.io);
 
         // EIP-2935: store parent block hash in history storage contract
         {
