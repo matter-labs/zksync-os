@@ -17,6 +17,7 @@ pub mod fri;
 pub mod predeployed_contracts;
 pub mod revm_consistency_checker;
 pub mod run_config;
+pub(crate) mod state_dump;
 pub mod testing_utils;
 pub mod utils;
 
