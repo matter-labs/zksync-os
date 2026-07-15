@@ -10,10 +10,11 @@ use zk_ee::{
     system::errors::system::SystemError, system::MAX_EVENT_TOPICS, utils::Bytes32,
 };
 
-// InteropRootAdded(uint256,uint256,bytes32[]) - 6b451b8422636e45b93bf7f594fa2c1769d039766c4254a6e7f9c0ee1715cdb0
+// InteropRootAdded(uint256,uint256,uint256,bytes32[]) - c5f80b0e9650b87668477e939fc0d8a933964de6b8c4bdc2ae5fdb5723d1f84a
+// (chainId and blockNumber indexed; data carries the root's creation timestamp + sides)
 pub const INTEROP_ROOT_ADDED_EVENT_SIG: [u8; 32] = [
-    0x6b, 0x45, 0x1b, 0x84, 0x22, 0x63, 0x6e, 0x45, 0xb9, 0x3b, 0xf7, 0xf5, 0x94, 0xfa, 0x2c, 0x17,
-    0x69, 0xd0, 0x39, 0x76, 0x6c, 0x42, 0x54, 0xa6, 0xe7, 0xf9, 0xc0, 0xee, 0x17, 0x15, 0xcd, 0xb0,
+    0xc5, 0xf8, 0x0b, 0x0e, 0x96, 0x50, 0xb8, 0x76, 0x68, 0x47, 0x7e, 0x93, 0x9f, 0xc0, 0xd8, 0xa9,
+    0x33, 0x96, 0x4d, 0xe6, 0xb8, 0xc4, 0xbd, 0xc2, 0xae, 0x5f, 0xdb, 0x57, 0x23, 0xd1, 0xf8, 0x4a,
 ];
 
 pub fn interop_root_reporter_event_hook<S: EthereumLikeTypes>(
@@ -29,13 +30,15 @@ where
     if topics.is_empty() || topics[0].as_u8_array() != INTEROP_ROOT_ADDED_EVENT_SIG {
         return Ok(());
     }
-    // Internal error if the data supplied doesn't match the expected value
-    if data.len() != 96 {
+    // Event data is `abi.encode(uint256 timestamp, bytes32[] sides)`:
+    // [timestamp][offset of sides = 0x40][sides length = 1][root] = 128 bytes.
+    if data.len() != 128 {
         return Err(internal_error!("Interop root reporter event hook received bad data").into());
     }
 
     // Parse data
-    let offset: u32 = match U256::from_be_slice(&data[..32]).try_into() {
+    let timestamp = U256::from_be_slice(&data[..32]);
+    let offset: u32 = match U256::from_be_slice(&data[32..64]).try_into() {
         Ok(offset) => offset,
         Err(_) => {
             return Err(
@@ -44,11 +47,11 @@ where
         }
     };
     // This event is part of the system, but we check it anyways
-    if offset != 32 {
+    if offset != 64 {
         return Err(internal_error!("Interop root reporter event hook received bad offset").into());
     }
 
-    let len: u32 = match U256::from_be_slice(&data[32..64]).try_into() {
+    let len: u32 = match U256::from_be_slice(&data[64..96]).try_into() {
         Ok(offset) => offset,
         Err(_) => {
             return Err(
@@ -65,7 +68,7 @@ where
         return Err(internal_error!("Interop root reporter event hook received bad topics").into());
     }
 
-    let root = Bytes32::from_array(data[64..96].try_into().unwrap());
+    let root = Bytes32::from_array(data[96..128].try_into().unwrap());
     let chain_id = U256::from_be_bytes(topics[1].as_u8_array());
     let block_or_batch_number = U256::from_be_bytes(topics[2].as_u8_array());
     system.io.add_interop_root(
@@ -75,6 +78,7 @@ where
             root,
             block_or_batch_number,
             chain_id,
+            timestamp,
         },
     )?;
 

@@ -21,9 +21,10 @@ pub(crate) struct ServiceTx<'a> {
 }
 
 /// Selector for
-/// addInteropRootsInBatch((uint256,uint256,bytes32[])[])
-/// -> 0xcca2f7bc
-pub const ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR: [u8; 4] = [0xcc, 0xa2, 0xf7, 0xbc];
+/// addInteropRootsInBatch((uint256,uint256,uint256,bytes32[])[])
+/// (the InteropRoot tuple carries the root's creation timestamp)
+/// -> 0xc17a9fbd
+pub const ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR: [u8; 4] = [0xc1, 0x7a, 0x9f, 0xbd];
 
 /// Selector for
 /// setSettlementLayerChainId(uint256)

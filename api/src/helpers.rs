@@ -328,6 +328,7 @@ pub fn encode_service_tx(to: &[u8; 20], data: &[u8], salt: u64) -> EncodedTx {
 /// struct InteropRoot {
 ///     uint256 chainId;
 ///     uint256 blockOrBatchNumber;
+///     uint256 timestamp;
 ///     bytes32[] sides;
 /// }
 ///
@@ -337,6 +338,7 @@ pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>
       struct InteropRoot {
           uint256 chainId;
           uint256 blockOrBatchNumber;
+          uint256 timestamp;
           bytes32[] sides;
       }
 
@@ -351,6 +353,7 @@ pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>
             InteropRoot {
                 chainId: r.chain_id,
                 blockOrBatchNumber: r.block_or_batch_number,
+                timestamp: r.timestamp,
                 sides: vec![root_b256],
             }
         })

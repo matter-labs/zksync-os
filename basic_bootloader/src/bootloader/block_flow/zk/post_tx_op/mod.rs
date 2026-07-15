@@ -109,19 +109,23 @@ fn form_block_header<S: EthereumLikeTypes>(
 /// Calculates a rolling hash over a sequence of interop roots.
 /// This creates a cumulative digest that can be verified on settlement layers.
 ///
-/// For each root: rolling_hash = keccak256(old_rolling_hash || chain_id || block_number || root_hash)
+/// For each root:
+/// rolling_hash = keccak256(old_rolling_hash || chain_id || block_number || timestamp || root_hash),
+/// mirroring `ExecutorFacet._verifyDependencyInteropRoots` on the settlement layer
+/// (`abi.encodePacked(prev, chainId, blockOrBatchNumber, timestamp, sides)`).
 pub fn calculate_interop_roots_rolling_hash<'a>(
     old_rolling_hash: Bytes32,
     roots: impl Iterator<Item = &'a InteropRoot>,
     hasher: &mut crypto::sha3::Keccak256,
 ) -> Bytes32 {
-    let mut data = [0u8; 96];
+    let mut data = [0u8; 128];
 
     let mut rolling_hash = old_rolling_hash;
     for root in roots {
         data[0..32].copy_from_slice(&rolling_hash.as_u8_ref());
         data[32..64].copy_from_slice(&root.chain_id.to_be_bytes::<{ U256::BYTES }>());
         data[64..96].copy_from_slice(&root.block_or_batch_number.to_be_bytes::<{ U256::BYTES }>());
+        data[96..128].copy_from_slice(&root.timestamp.to_be_bytes::<{ U256::BYTES }>());
         hasher.update(data);
 
         // Note: now we have only one side
