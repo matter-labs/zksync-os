@@ -473,6 +473,17 @@ impl<
         Ok(())
     }
 
+    /// Returns an upper bound on raw-cache space needed for final account snapshots.
+    /// Every cached account can add at most one fixed-size entry. Counting all cached
+    /// accounts avoids rehashing every changed account after every transaction.
+    pub fn max_pending_preimage_bytes(&self) -> usize {
+        let entry_bytes = BytecodeAndAccountDataPreimagesStorage::<R, A>::estimated_entry_bytes(
+            AccountProperties::ENCODED_SIZE,
+        )
+        .expect("fixed account encoding size must fit in usize");
+        self.cache.iter().len().saturating_mul(entry_bytes)
+    }
+
     // special method, not part of the trait as it's not overly generic
     pub fn persist_changes(
         &self,
@@ -492,8 +503,7 @@ impl<
             // Not part of a transaction, should be included in other costs.
             let mut inf_resources = R::FORMAL_INFINITE;
 
-            let _ = preimages_cache.record_preimage::<false>(
-                ExecutionEnvironmentType::NoEE,
+            let _ = preimages_cache.record_preimage_for_block_finalization(
                 &(PreimageRequest {
                     hash: properties_hash,
                     expected_preimage_len_in_bytes: AccountProperties::ENCODED_SIZE as u32,

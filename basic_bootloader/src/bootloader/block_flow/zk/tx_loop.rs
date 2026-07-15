@@ -105,6 +105,28 @@ where
 
                     tracer.finish_tx();
 
+                    if system
+                        .io
+                        .transaction_cache_memory_limit_hit_for_current_tx()
+                    {
+                        system_log!(
+                            system,
+                            "Tx exhausted its preimage-cache memory budget (OON)\n",
+                        );
+                    }
+
+                    // Raw preimages are retained for the whole block and are
+                    // intentionally not part of frame rollback. If this tx
+                    // encountered their hard memory cap, treat it like any
+                    // other block limit before fees or tx effects can commit.
+                    if system.io.block_scoped_cache_limit_hit_for_current_tx() {
+                        system_log!(system, "Tx reached block-scoped cache limit\n",);
+                        system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
+                        result_keeper
+                            .tx_processed(Err(InvalidTransaction::BlockNativeLimitReached));
+                        continue;
+                    }
+
                     match tx_result {
                         Err(TxError::Internal(err)) => {
                             system_log!(system, "Tx execution result: Internal error = {err:?}\n",);
@@ -122,6 +144,20 @@ where
                             result_keeper.tx_processed(Err(err));
                         }
                         Ok(tx_processing_result) => {
+                            // Account snapshots are inserted only during block
+                            // finalization. Check their exact pending cache
+                            // footprint before accepting this transaction.
+                            if system.io.deferred_cache_writes_exceed_block_limit() {
+                                system_log!(
+                                    system,
+                                    "Tx reached block-scoped cache limit through deferred writes\n",
+                                );
+                                system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
+                                result_keeper
+                                    .tx_processed(Err(InvalidTransaction::BlockNativeLimitReached));
+                                continue;
+                            }
+
                             system_log!(
                                 system,
                                 "Tx execution result = {:?}\n",

@@ -550,6 +550,19 @@ impl<
         self.events_storage.begin_new_tx();
     }
 
+    fn block_scoped_cache_limit_hit_for_current_tx(&self) -> bool {
+        self.storage.block_scoped_cache_limit_hit_for_current_tx()
+    }
+
+    fn deferred_cache_writes_exceed_block_limit(&self) -> bool {
+        self.storage.deferred_cache_writes_exceed_block_limit()
+    }
+
+    fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
+        self.storage
+            .transaction_cache_memory_limit_hit_for_current_tx()
+    }
+
     fn finish_tx(&mut self) -> Result<(), InternalError> {
         self.storage.finish_tx()?;
         self.tx_number += 1;
