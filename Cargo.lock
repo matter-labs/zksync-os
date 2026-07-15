@@ -7057,6 +7057,8 @@ dependencies = [
  "once_cell",
  "oracle_provider",
  "ruint",
+ "serde",
+ "serde_json",
  "system_hooks",
  "zk_ee",
  "zksync_os_api",

@@ -213,6 +213,82 @@ impl Default for BlockContext {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Neutral state dump for external test rigs (equivalence checkers, second
+// provers). All 32-byte values are lowercase hex WITHOUT a 0x prefix.
+// ---------------------------------------------------------------------------
+
+/// A single flat-storage tree leaf, dumped in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct LeafDump {
+    /// Enumeration index of the leaf in the dense tree.
+    pub index: u64,
+    /// Flat-storage key, lowercase hex without 0x.
+    pub key: String,
+    /// Stored 32-byte value, lowercase hex without 0x.
+    pub value: String,
+    /// Enumeration index of the next leaf in key order (linked-list pointer).
+    pub next: u64,
+}
+
+/// A single preimage (hash -> bytes), dumped in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PreimageDump {
+    /// Preimage hash, lowercase hex without 0x.
+    pub hash: String,
+    /// Preimage bytes, lowercase hex without 0x.
+    pub bytes: String,
+}
+
+/// Full flat-storage state snapshot in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct StateDump {
+    /// Flat-storage tree root, lowercase hex without 0x.
+    pub root: String,
+    /// Next free enumeration slot (== dense leaf count, includes the 2 guards).
+    pub next_free_slot: u64,
+    /// Number of leaves in `leaves`.
+    pub leaf_count: u64,
+    /// All tree leaves.
+    pub leaves: Vec<LeafDump>,
+    /// All known preimages (bytecodes and account data are reachable here).
+    pub preimages: Vec<PreimageDump>,
+}
+
+/// Dump a flat-storage state (all leaves + all preimages + root) in a
+/// prover-neutral, JSON-serializable form.
+pub(crate) fn dump_state_from<const RANDOMIZED_TREE: bool>(
+    state_tree: &InMemoryTree<RANDOMIZED_TREE>,
+    preimage_source: &InMemoryPreimageSource,
+) -> StateDump {
+    let leaves: Vec<LeafDump> = state_tree
+        .storage_tree
+        .leaves
+        .iter()
+        .map(|(idx, leaf)| LeafDump {
+            index: *idx,
+            key: hex::encode(leaf.key.as_u8_ref()),
+            value: hex::encode(leaf.value.as_u8_ref()),
+            next: leaf.next,
+        })
+        .collect();
+    let preimages: Vec<PreimageDump> = preimage_source
+        .inner
+        .iter()
+        .map(|(hash, bytes)| PreimageDump {
+            hash: hex::encode(hash.as_u8_ref()),
+            bytes: hex::encode(bytes),
+        })
+        .collect();
+    StateDump {
+        root: hex::encode(state_tree.storage_tree.root().as_u8_ref()),
+        next_free_slot: state_tree.storage_tree.next_free_slot,
+        leaf_count: leaves.len() as u64,
+        leaves,
+        preimages,
+    }
+}
+
 #[derive(Clone)]
 pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
@@ -653,6 +729,23 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.block_hashes
     }
 
+    /// Current flat-storage tree root.
+    pub fn state_tree_root(&self) -> Bytes32 {
+        *self.state_tree.storage_tree.root()
+    }
+
+    /// Next free enumeration slot (== dense leaf count, includes the 2 guards).
+    pub fn next_free_slot(&self) -> u64 {
+        self.state_tree.storage_tree.next_free_slot
+    }
+
+    /// Dump the full flat-storage state (all leaves + all preimages + root) in
+    /// a prover-neutral, JSON-serializable form. Consumed by external test
+    /// rigs (equivalence checkers, second provers) via the state dump hook.
+    pub fn dump_state(&self) -> StateDump {
+        dump_state_from(&self.state_tree, &self.preimage_source)
+    }
+
     pub fn set_timestamp(&mut self, timestamp: u64) {
         self.block_timestamp = timestamp;
     }
@@ -1041,6 +1134,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             state_root_view: state_commitment,
             last_block_timestamp: self.block_timestamp,
         };
+
+        // STATE DUMP HOOK (pre): when ZKOS_STATE_DUMP_DIR is set, snapshot the
+        // batch initial state exactly as the STF sees it via `proof_data`
+        // above, i.e. after `ensure_account_exists(coinbase)` (the only
+        // pre-block state mutation on this path) and before any transaction
+        // executes.
+        let state_dump_snapshot =
+            crate::state_dump::dump_dir().map(|dir| crate::state_dump::PreBlockSnapshot {
+                dir,
+                signed_txs: transactions
+                    .iter()
+                    .map(|tx| match tx {
+                        EncodedTx::Rlp(bytes, _signer) => hex::encode(bytes),
+                        EncodedTx::Abi(bytes) => hex::encode(bytes),
+                    })
+                    .collect(),
+                pre: self.dump_state(),
+                root_before: self.state_tree_root(),
+                next_free_slot_before: self.next_free_slot(),
+                block_hashes_before: self.block_hashes,
+                previous_block_number: self.previous_block_number,
+                last_block_timestamp_before: self.block_timestamp,
+                chain_config,
+            });
+
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
@@ -1112,6 +1230,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // prover_input forward run below appends to a clean LABELS.
         #[cfg(feature = "cycle_marker")]
         drop(_seq_labels_guard);
+
+        // STATE DUMP HOOK: keep the native (pre-conversion) block header so
+        // the dump can expose every field the STF actually produced. The
+        // `Sealed<Header>` on `BlockOutput` carries the same values, but the
+        // native struct is the authoritative one the header hash commits to.
+        let native_block_header = if state_dump_snapshot.is_some() {
+            result_keeper.block_header.clone()
+        } else {
+            None
+        };
 
         let block_output: BlockOutput = result_keeper.into();
 
@@ -1310,6 +1438,55 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 run_prover(proof_input);
             }
         }
+        // STATE DUMP HOOK (post): the block executed successfully (a failed
+        // run returns/propagates earlier and writes no dump), so snapshot the
+        // post state and write the prover-neutral JSON bundle.
+        if let Some(snapshot) = state_dump_snapshot {
+            let (post, root_after, next_free_slot_after) = if update_state_after_block_execution {
+                // `self` was already advanced to the post-block state above.
+                (
+                    self.dump_state(),
+                    self.state_tree_root(),
+                    self.next_free_slot(),
+                )
+            } else {
+                // The chain state was intentionally left untouched; apply the
+                // block's net writes to clones to obtain the post state.
+                let mut state_tree = self.state_tree.clone();
+                let mut preimage_source = self.preimage_source.clone();
+                for storage_write in block_output.storage_writes.iter() {
+                    state_tree
+                        .cold_storage
+                        .insert(storage_write.key.0.into(), storage_write.value.0.into());
+                    state_tree
+                        .storage_tree
+                        .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
+                }
+                for (hash, preimage) in block_output.published_preimages.iter() {
+                    preimage_source
+                        .inner
+                        .insert(hash.0.into(), preimage.clone());
+                }
+                let post = dump_state_from(&state_tree, &preimage_source);
+                let root_after = *state_tree.storage_tree.root();
+                let next_free_slot_after = state_tree.storage_tree.next_free_slot;
+                (post, root_after, next_free_slot_after)
+            };
+            let native_block_header = native_block_header
+                .expect("native block header must be present after a successful run");
+            crate::state_dump::write_block_dump(
+                snapshot,
+                post,
+                root_after,
+                next_free_slot_after,
+                &block_output,
+                &native_block_header,
+                prover_input.as_ref().map(|p| &p.batch_output),
+                prover_input.as_ref().map(|p| p.pubdata.as_slice()),
+                da_commitment_scheme,
+            );
+        }
+
         Ok(ExecutedBlockArtifacts {
             block_output,
             block_extra_stats: stats,
