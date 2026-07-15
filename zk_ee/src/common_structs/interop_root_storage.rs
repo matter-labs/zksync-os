@@ -18,6 +18,10 @@ pub struct InteropRoot {
     pub block_or_batch_number: U256,
     /// Source chain identifier (must be non-zero)
     pub chain_id: U256,
+    /// Block timestamp at which the root was created on the source chain. Zero when the root was
+    /// imported through the timestamp-less entry point; part of the `(blockNumber, root, timestamp)`
+    /// tuple double checked on the settlement layer during batch execution.
+    pub timestamp: U256,
 }
 
 pub struct InteropRootStorage<SF: StackFactory<M>, const M: usize, A: Allocator + Clone = Global> {

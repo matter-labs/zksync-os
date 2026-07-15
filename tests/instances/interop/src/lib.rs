@@ -125,7 +125,8 @@ fn read_sl_chain_id_slot(tester: &mut TestingFramework) -> U256 {
 }
 
 fn interop_root_mapping_slot(chain_id: U256, block_or_batch_number: U256) -> U256 {
-    // mapping(uint256 => mapping(uint256 => bytes32)) interopRoots; // slot 0
+    // mapping(uint256 => mapping(uint256 => StoredInteropRoot)) storedInteropRoots; // slot 0
+    // The struct's first member (`root`) sits at the value slot, `timestamp` at value slot + 1.
     let mut hasher = rig::crypto::sha3::Keccak256::new();
     hasher.update(chain_id.to_be_bytes::<32>());
     hasher.update(U256::ZERO.to_be_bytes::<32>());
@@ -145,6 +146,17 @@ fn read_interop_root_slot(
     tester.get_storage_slot(
         &b160_to_address(L2_INTEROP_ROOT_STORAGE_ADDRESS),
         interop_root_mapping_slot(chain_id, block_or_batch_number),
+    )
+}
+
+fn read_interop_root_timestamp_slot(
+    tester: &mut TestingFramework,
+    chain_id: U256,
+    block_or_batch_number: U256,
+) -> Option<Bytes32> {
+    tester.get_storage_slot(
+        &b160_to_address(L2_INTEROP_ROOT_STORAGE_ADDRESS),
+        interop_root_mapping_slot(chain_id, block_or_batch_number) + U256::ONE,
     )
 }
 
@@ -264,6 +276,7 @@ fn run_processes_one_interop_root() {
         root: Bytes32::from_u256_be(&U256::ONE),
         block_or_batch_number: U256::from(42),
         chain_id: U256::ONE,
+        timestamp: U256::from(1_700_000_042u64),
     }];
 
     let (mut tester, output) = run_interop_roots_test_inner(interop_roots.clone());
@@ -271,6 +284,10 @@ fn run_processes_one_interop_root() {
     assert_eq!(
         read_interop_root_slot(&mut tester, U256::ONE, U256::from(42)),
         Some(Bytes32::from_u256_be(&U256::ONE))
+    );
+    assert_eq!(
+        read_interop_root_timestamp_slot(&mut tester, U256::ONE, U256::from(42)),
+        Some(Bytes32::from_u256_be(&U256::from(1_700_000_042u64)))
     );
     assert_eq!(
         last_prover_input_batch_output(&tester).interop_roots_rolling_hash,
@@ -284,6 +301,7 @@ fn run_fails_if_interop_root_is_incorrect() {
         root: Bytes32::zero(), // Root cannot be zero.
         block_or_batch_number: U256::from(42),
         chain_id: U256::ONE,
+        timestamp: U256::from(1_700_000_042u64),
     }];
 
     let (mut tester, output) = run_interop_roots_test_inner(interop_roots);
@@ -309,6 +327,7 @@ fn run_processes_several_interop_roots() {
             root: Bytes32::from_u256_be(&U256::from(0x1000 + i)),
             block_or_batch_number: U256::from(100 + i),
             chain_id: U256::from(i),
+            timestamp: U256::from(1_700_000_000u64 + i as u64),
         });
     }
 
@@ -347,16 +366,19 @@ fn run_processes_interop_roots_max_amount() {
             root: Bytes32::from_u256_be(&U256::MAX),
             block_or_batch_number: U256::MAX,
             chain_id: U256::MAX,
+            timestamp: U256::MAX,
         },
         StoredInteropRoot {
             root: Bytes32::from_u256_be(&U256::ONE),
             block_or_batch_number: U256::ZERO,
             chain_id: U256::ONE,
+            timestamp: U256::ZERO,
         },
         StoredInteropRoot {
             root: Bytes32::from_u256_be(&(U256::MAX - U256::ONE)),
             block_or_batch_number: U256::ONE,
             chain_id: U256::ONE,
+            timestamp: U256::ONE,
         },
     ];
 
