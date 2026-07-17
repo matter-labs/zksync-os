@@ -222,7 +222,7 @@ impl<
         resources: &mut R,
         address: &B160,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         observe: bool,
@@ -255,13 +255,16 @@ impl<
         // rollback-aware, so the gate is identical across sequencer and proving and
         // never depends on cache-entry presence.
         let current_tx_id = self.current_tx_id;
-        let is_cold = match self.cache.get(address.into()) {
-            Some(item) => !item
-                .current()
-                .metadata()
-                .basic
-                .considered_warm(current_tx_id),
-            None => true,
+        let (is_cold, is_missing) = match self.cache.get(address.into()) {
+            Some(item) => (
+                !item
+                    .current()
+                    .metadata()
+                    .basic
+                    .considered_warm(current_tx_id),
+                false,
+            ),
+            None => (true, true),
         };
         if is_cold {
             let mut probe = resources.clone();
@@ -276,6 +279,14 @@ impl<
                 &mut probe,
                 AccountProperties::ENCODED_SIZE,
             )?;
+        }
+
+        // Every cached account can produce at most one final account snapshot.
+        // Precharge it before materialization so raw entries retained by this or
+        // later invalid candidates can never consume finalization headroom.
+        if is_missing {
+            preimages_cache
+                .reserve_preimage_for_block_finalization(AccountProperties::ENCODED_SIZE)?;
         }
 
         self.cache
@@ -383,7 +394,7 @@ impl<
         address: &B160,
         update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         fee_payment_in_simulation: bool,
@@ -431,7 +442,7 @@ impl<
         to: &B160,
         amount: &U256,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
     ) -> Result<(), BalanceSubsystemError> {
@@ -471,17 +482,6 @@ impl<
         )?;
 
         Ok(())
-    }
-
-    /// Returns an upper bound on raw-cache space needed for final account snapshots.
-    /// Every cached account can add at most one fixed-size entry. Counting all cached
-    /// accounts avoids rehashing every changed account after every transaction.
-    pub fn max_pending_preimage_bytes(&self) -> usize {
-        let entry_bytes = BytecodeAndAccountDataPreimagesStorage::<R, A>::estimated_entry_bytes(
-            AccountProperties::ENCODED_SIZE,
-        )
-        .expect("fixed account encoding size must fit in usize");
-        self.cache.iter().len().saturating_mul(entry_bytes)
     }
 
     // special method, not part of the trait as it's not overly generic
@@ -1451,6 +1451,7 @@ mod tests {
 
         let mut resources = TestResources::FORMAL_INFINITE;
         let initial_native = resources.native().as_u64();
+        let initial_retained_bytes = preimages_cache.estimated_retained_bytes();
 
         let previous_balance = account_cache
             .update_nominal_token_value::<false>(
@@ -1476,6 +1477,33 @@ mod tests {
         assert_eq!(
             charged_native, expected_native,
             "no-op balance updates must still pay the warm account-cache write cost"
+        );
+
+        let reserved_entry_bytes =
+            BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::estimated_entry_bytes(
+                AccountProperties::ENCODED_SIZE,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_retained_bytes(),
+            initial_retained_bytes + reserved_entry_bytes,
+            "first materialization must precharge one final account snapshot"
+        );
+
+        account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_retained_bytes(),
+            initial_retained_bytes + reserved_entry_bytes,
+            "an already cached account must not reserve twice"
         );
     }
 }

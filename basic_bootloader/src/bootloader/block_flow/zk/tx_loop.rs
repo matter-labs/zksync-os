@@ -144,20 +144,6 @@ where
                             result_keeper.tx_processed(Err(err));
                         }
                         Ok(tx_processing_result) => {
-                            // Account snapshots are inserted only during block
-                            // finalization. Check their exact pending cache
-                            // footprint before accepting this transaction.
-                            if system.io.deferred_cache_writes_exceed_block_limit() {
-                                system_log!(
-                                    system,
-                                    "Tx reached block-scoped cache limit through deferred writes\n",
-                                );
-                                system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
-                                result_keeper
-                                    .tx_processed(Err(InvalidTransaction::BlockNativeLimitReached));
-                                continue;
-                            }
-
                             system_log!(
                                 system,
                                 "Tx execution result = {:?}\n",

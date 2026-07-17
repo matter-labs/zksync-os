@@ -234,12 +234,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
         false
     }
 
-    /// Returns whether deferred cache writes from the candidate block state
-    /// would exceed a block-scoped retained-memory limit.
-    fn deferred_cache_writes_exceed_block_limit(&self) -> bool {
-        false
-    }
-
     /// Returns whether the current transaction exhausted a transaction-local
     /// cache memory budget.
     fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {

@@ -124,13 +124,6 @@ impl<
         self.preimages_cache.block_limit_hit_for_current_tx()
     }
 
-    fn deferred_cache_writes_exceed_block_limit(&self) -> bool {
-        let pending_account_preimage_bytes = self.account_data_cache.max_pending_preimage_bytes();
-        !self
-            .preimages_cache
-            .can_retain_additional_bytes(pending_account_preimage_bytes)
-    }
-
     fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
         self.preimages_cache.tx_limit_hit_for_current_tx()
     }

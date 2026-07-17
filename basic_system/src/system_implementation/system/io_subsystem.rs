@@ -554,10 +554,6 @@ impl<
         self.storage.block_scoped_cache_limit_hit_for_current_tx()
     }
 
-    fn deferred_cache_writes_exceed_block_limit(&self) -> bool {
-        self.storage.deferred_cache_writes_exceed_block_limit()
-    }
-
     fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
         self.storage
             .transaction_cache_memory_limit_hit_for_current_tx()

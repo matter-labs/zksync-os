@@ -49,16 +49,16 @@ pub struct PreimageRequest {
 
 /// Block-scoped cache whose raw entries survive transaction and frame rollback.
 ///
-/// Cache hits do not consume either memory budget. Before allocating a miss,
-/// the cache checks both the bytes added by the current transaction and the
-/// total bytes retained by the block. Counters are updated only after a
-/// successful insertion.
+/// The block budget includes physical entries and conservative precharges for
+/// final account snapshots. Cache hits do not consume either memory budget.
+/// Before allocating a miss, the cache checks both the bytes added by the
+/// current transaction and the total bytes retained or reserved by the block.
 ///
 /// Exceeding the transaction budget returns ordinary OON. Exceeding the block
 /// cap sets `block_limit_hit_for_current_tx`; the bootloader then rolls the
 /// transaction back as `BlockNativeLimitReached` without committing effects or
 /// fees. `begin_new_tx` resets transaction-local accounting and flags, but the
-/// raw entries and block-retained byte counter deliberately remain.
+/// raw entries and block-retained-or-reserved byte counter deliberately remain.
 pub struct BytecodeAndAccountDataPreimagesStorage<R: Resources, A: Allocator + Clone = Global> {
     pub(crate) storage: BTreeMap<Bytes32, UsizeAlignedByteBox<A>, A>,
     pub(crate) publication_storage: NewPreimagesPublicationStorage<A>,
@@ -106,6 +106,11 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         aligned_allocation.checked_add(PREIMAGE_CACHE_ENTRY_MEMORY_OVERHEAD)
     }
 
+    #[cfg(test)]
+    pub(super) fn estimated_retained_bytes(&self) -> usize {
+        self.estimated_retained_bytes
+    }
+
     /// Checks a cache miss against the transaction budget and then the block
     /// cap. The caller commits the returned totals only after insertion.
     fn next_estimated_byte_totals(
@@ -146,13 +151,34 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         Ok((next_tx_bytes, next_retained_bytes))
     }
 
-    /// Returns whether `additional_bytes` fit under the block-wide retained
-    /// cache cap. This is used to reserve room for deferred account snapshots
-    /// before a transaction is accepted.
-    pub(super) fn can_retain_additional_bytes(&self, additional_bytes: usize) -> bool {
-        self.estimated_retained_bytes
-            .checked_add(additional_bytes)
-            .is_some_and(|total| total <= MAX_PREIMAGE_CACHE_RETAINED_BYTES)
+    /// Conservatively precharges one cache entry that may be materialized
+    /// during block finalization. Reservations deliberately survive rollback,
+    /// just like raw cache entries and account-cache materialization.
+    pub(super) fn reserve_preimage_for_block_finalization(
+        &mut self,
+        preimage_len: usize,
+    ) -> Result<(), SystemError> {
+        let estimated_entry_bytes = match Self::estimated_entry_bytes(preimage_len) {
+            Some(estimated_bytes) => estimated_bytes,
+            None => {
+                self.block_limit_hit_for_current_tx = true;
+                return Err(out_of_native_resources!().into());
+            }
+        };
+        let Some(next_retained_bytes) = self
+            .estimated_retained_bytes
+            .checked_add(estimated_entry_bytes)
+        else {
+            self.block_limit_hit_for_current_tx = true;
+            return Err(out_of_native_resources!().into());
+        };
+        if next_retained_bytes > MAX_PREIMAGE_CACHE_RETAINED_BYTES {
+            self.block_limit_hit_for_current_tx = true;
+            return Err(out_of_native_resources!().into());
+        }
+
+        self.estimated_retained_bytes = next_retained_bytes;
+        Ok(())
     }
 
     pub fn report_new_preimages(
@@ -302,12 +328,9 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         }
     }
 
-    /// Records an account snapshot during block finalization.
-    ///
-    /// Transactions have already been accepted at this point, so this skips
-    /// the transaction-local budget. The block-wide retained-memory cap still
-    /// applies, and room for these snapshots is checked before each candidate
-    /// transaction is accepted.
+    /// Records an account snapshot during block finalization. Its retained
+    /// memory was conservatively precharged when the account first entered the
+    /// account cache, so insertion must not charge either budget again.
     pub(super) fn record_preimage_for_block_finalization(
         &mut self,
         preimage_type: &PreimageRequest,
@@ -364,8 +387,14 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             return Ok(unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) });
         }
 
-        let (next_tx_bytes, next_retained_bytes) =
-            self.next_estimated_byte_totals(estimated_entry_bytes, apply_transaction_budget)?;
+        let (next_tx_bytes, next_retained_bytes) = if apply_transaction_budget {
+            self.next_estimated_byte_totals(estimated_entry_bytes, true)?
+        } else {
+            (
+                self.estimated_bytes_added_in_current_tx,
+                self.estimated_retained_bytes,
+            )
+        };
         let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
         self.publication_storage
             .add_preimage(hash, preimage_len, *preimage_type)?;
@@ -720,7 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn block_finalization_skips_tx_budget_but_still_checks_block_cap() {
+    fn block_finalization_uses_precharged_budget() {
         let preimage = [7u8; 16];
         let request = PreimageRequest {
             hash: Bytes32::from_array(Blake2s256::digest(preimage)),
@@ -730,36 +759,88 @@ mod tests {
         let estimated_entry_bytes = TestCache::estimated_entry_bytes(preimage.len()).unwrap();
         let mut cache = TestCache::new_from_parts(Global);
         cache.estimated_bytes_added_in_current_tx = MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX;
+        cache.estimated_retained_bytes = MAX_PREIMAGE_CACHE_RETAINED_BYTES - estimated_entry_bytes;
+        cache
+            .reserve_preimage_for_block_finalization(preimage.len())
+            .unwrap();
         let mut resources = resources_with_native(record_native_cost());
 
         cache
             .record_preimage_for_block_finalization(&request, &mut resources, &[&preimage])
             .unwrap();
-        assert_eq!(cache.estimated_retained_bytes, estimated_entry_bytes);
+        assert_eq!(
+            cache.estimated_retained_bytes,
+            MAX_PREIMAGE_CACHE_RETAINED_BYTES
+        );
         assert_eq!(
             cache.estimated_bytes_added_in_current_tx,
             MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX
         );
         assert!(!cache.tx_limit_hit_for_current_tx());
+        assert!(!cache.block_limit_hit_for_current_tx());
+    }
 
-        let second_preimage = [8u8; 16];
-        let second_request = PreimageRequest {
-            hash: Bytes32::from_array(Blake2s256::digest(second_preimage)),
-            expected_preimage_len_in_bytes: second_preimage.len() as u32,
+    #[test]
+    fn precharge_prevents_candidate_from_consuming_finalization_space() {
+        let final_preimage = [7u8; 16];
+        let final_request = PreimageRequest {
+            hash: Bytes32::from_array(Blake2s256::digest(final_preimage)),
+            expected_preimage_len_in_bytes: final_preimage.len() as u32,
             preimage_type: PreimageType::AccountData,
         };
-        cache.estimated_retained_bytes =
-            MAX_PREIMAGE_CACHE_RETAINED_BYTES - estimated_entry_bytes + 1;
-        let mut second_resources = resources_with_native(record_native_cost());
+        let estimated_entry_bytes = TestCache::estimated_entry_bytes(final_preimage.len()).unwrap();
+        let mut cache = TestCache::new_from_parts(Global);
+        cache.estimated_retained_bytes = MAX_PREIMAGE_CACHE_RETAINED_BYTES - estimated_entry_bytes;
+        cache
+            .reserve_preimage_for_block_finalization(final_preimage.len())
+            .unwrap();
+
+        cache.begin_new_tx();
+        let (candidate_request, mut oracle) = request_and_oracle();
+        let candidate_len = candidate_request.expected_preimage_len_in_bytes as usize;
+        let mut candidate_resources =
+            resources_with_native(decommitment_native_cost(candidate_len));
         assert!(cache
-            .record_preimage_for_block_finalization(
-                &second_request,
-                &mut second_resources,
-                &[&second_preimage],
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &candidate_request,
+                &mut candidate_resources,
+                &mut oracle,
             )
             .is_err());
-        assert!(!cache.tx_limit_hit_for_current_tx());
         assert!(cache.block_limit_hit_for_current_tx());
+
+        let mut finalization_resources = resources_with_native(record_native_cost());
+        cache
+            .record_preimage_for_block_finalization(
+                &final_request,
+                &mut finalization_resources,
+                &[&final_preimage],
+            )
+            .unwrap();
+        assert_eq!(
+            cache.estimated_retained_bytes,
+            MAX_PREIMAGE_CACHE_RETAINED_BYTES
+        );
+    }
+
+    #[test]
+    fn finalization_precharge_survives_frame_rollback() {
+        let preimage_len = 16;
+        let estimated_entry_bytes = TestCache::estimated_entry_bytes(preimage_len).unwrap();
+        let mut cache = TestCache::new_from_parts(Global);
+        cache.begin_new_tx();
+        let rollback_handle = cache.start_frame();
+
+        cache
+            .reserve_preimage_for_block_finalization(preimage_len)
+            .unwrap();
+        cache.finish_frame(Some(&rollback_handle)).unwrap();
+
+        assert_eq!(
+            cache.estimated_retained_bytes,
+            ACCEPTED_TX_BITMAP_BYTES + estimated_entry_bytes
+        );
     }
 
     #[test]
