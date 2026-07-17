@@ -1,5 +1,6 @@
 use alloc::{alloc::Global, collections::BTreeMap};
 use core::{alloc::Allocator, marker::PhantomData};
+use evm_interpreter::BitMapOwned;
 use storage_models::common_structs::{snapshottable_io::SnapshottableIo, PreimageCacheModel};
 use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
@@ -23,13 +24,15 @@ use crate::cost_constants::blake2s_native_cost;
 pub const FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: u32 =
     PREIMAGE_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
 
-/// `UsizeAlignedByteBox` rounds allocations to pairs of native words. Sixteen
-/// bytes covers that rounding on both 32- and 64-bit targets without making
-/// resource charging architecture-dependent.
-const PREIMAGE_CACHE_ALLOCATION_ALIGNMENT: usize = 16;
+/// On the 32-bit proving target, `UsizeAlignedByteBox` rounds allocations to
+/// pairs of four-byte native words.
+const PREIMAGE_CACHE_ALLOCATION_ALIGNMENT: usize = 8;
 /// Conservative allowance for the key, value, B-tree node, and allocator
 /// metadata retained by each raw cache entry.
 const PREIMAGE_CACHE_ENTRY_MEMORY_OVERHEAD: usize = 256;
+/// Transaction indices in logs are `u16`. Cache candidate IDs deliberately
+/// use the same fixed domain; `begin_new_tx` rejects any attempt to exceed it.
+const MAX_PREIMAGE_CACHE_TX_IDS: usize = u16::MAX as usize + 1;
 /// The raw preimage cache may retain at most 256 MiB, including conservative
 /// per-entry map and allocator overhead.
 pub const MAX_PREIMAGE_CACHE_RETAINED_BYTES: usize = 256 * 1024 * 1024;
@@ -47,12 +50,34 @@ pub struct PreimageRequest {
     pub preimage_type: PreimageType,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreimageAdmission {
+    /// The entry was introduced by a transaction known to be included in the
+    /// block, or by block finalization.
+    Accepted,
+    /// The entry was first retained while this candidate transaction was
+    /// executing. Its acceptance is resolved lazily through the bitmap.
+    Pending(u16),
+}
+
+struct CachedPreimage<A: Allocator> {
+    bytes: UsizeAlignedByteBox<A>,
+    admission: PreimageAdmission,
+}
+
+impl<A: Allocator> CachedPreimage<A> {
+    fn as_slice(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+}
+
 /// Block-scoped cache whose raw entries survive transaction and frame rollback.
 ///
 /// The block budget includes physical entries and conservative precharges for
-/// final account snapshots. Cache hits do not consume either memory budget.
-/// Before allocating a miss, the cache checks both the bytes added by the
-/// current transaction and the total bytes retained or reserved by the block.
+/// final account snapshots. Physical cache hits do not consume it. They bypass
+/// the transaction budget only when the entry was introduced by an accepted
+/// transaction or was already counted for the current candidate. Before a
+/// physical miss is allocated, the cache checks both budgets.
 ///
 /// Exceeding the transaction budget returns ordinary OON. Exceeding the block
 /// cap sets `block_limit_hit_for_current_tx`; the bootloader then rolls the
@@ -60,9 +85,16 @@ pub struct PreimageRequest {
 /// fees. `begin_new_tx` resets transaction-local accounting and flags, but the
 /// raw entries and block-retained-or-reserved byte counter deliberately remain.
 pub struct BytecodeAndAccountDataPreimagesStorage<R: Resources, A: Allocator + Clone = Global> {
-    pub(crate) storage: BTreeMap<Bytes32, UsizeAlignedByteBox<A>, A>,
+    storage: BTreeMap<Bytes32, CachedPreimage<A>, A>,
     pub(crate) publication_storage: NewPreimagesPublicationStorage<A>,
     pub(crate) allocator: A,
+    accepted_transactions: BitMapOwned<A>,
+    /// ID of the candidate currently executing, or `None` outside candidate
+    /// execution and after the fixed `u16` ID space is exhausted.
+    current_tx_id: Option<u16>,
+    /// ID to assign to the next candidate. `None` means all `u16` IDs have
+    /// already been used.
+    next_tx_id: Option<u16>,
     estimated_retained_bytes: usize,
     estimated_bytes_added_in_current_tx: usize,
     tx_limit_hit_for_current_tx: bool,
@@ -73,10 +105,15 @@ pub struct BytecodeAndAccountDataPreimagesStorage<R: Resources, A: Allocator + C
 impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<R, A> {
     pub fn new_from_parts(allocator: A) -> Self {
         let publication_storage = NewPreimagesPublicationStorage::new_from_parts(allocator.clone());
+        let accepted_transactions =
+            BitMapOwned::allocate_for_bit_capacity(MAX_PREIMAGE_CACHE_TX_IDS, allocator.clone());
         Self {
             storage: BTreeMap::new_in(allocator.clone()),
             publication_storage,
             allocator,
+            accepted_transactions,
+            current_tx_id: None,
+            next_tx_id: Some(0),
             estimated_retained_bytes: 0,
             estimated_bytes_added_in_current_tx: 0,
             tx_limit_hit_for_current_tx: false,
@@ -111,26 +148,39 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         self.estimated_retained_bytes
     }
 
-    /// Checks a cache miss against the transaction budget and then the block
-    /// cap. The caller commits the returned totals only after insertion.
+    /// Computes the transaction-local total after charging one logically new
+    /// cache entry. On overflow or limit exhaustion it sets the transaction
+    /// flag and returns OON; otherwise the caller commits the returned total
+    /// only after admission or insertion succeeds.
+    fn next_estimated_tx_bytes(
+        &mut self,
+        estimated_entry_bytes: usize,
+    ) -> Result<usize, SystemError> {
+        let Some(next_tx_bytes) = self
+            .estimated_bytes_added_in_current_tx
+            .checked_add(estimated_entry_bytes)
+        else {
+            self.tx_limit_hit_for_current_tx = true;
+            return Err(out_of_native_resources!().into());
+        };
+        if next_tx_bytes > MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX {
+            self.tx_limit_hit_for_current_tx = true;
+            return Err(out_of_native_resources!().into());
+        }
+
+        Ok(next_tx_bytes)
+    }
+
+    /// Checks a physical cache miss against the transaction budget and then
+    /// the block cap. The caller commits the returned totals only after a
+    /// successful insertion.
     fn next_estimated_byte_totals(
         &mut self,
         estimated_entry_bytes: usize,
         apply_transaction_budget: bool,
     ) -> Result<(usize, usize), SystemError> {
         let next_tx_bytes = if apply_transaction_budget {
-            let Some(next_tx_bytes) = self
-                .estimated_bytes_added_in_current_tx
-                .checked_add(estimated_entry_bytes)
-            else {
-                self.tx_limit_hit_for_current_tx = true;
-                return Err(out_of_native_resources!().into());
-            };
-            if next_tx_bytes > MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX {
-                self.tx_limit_hit_for_current_tx = true;
-                return Err(out_of_native_resources!().into());
-            }
-            next_tx_bytes
+            self.next_estimated_tx_bytes(estimated_entry_bytes)?
         } else {
             self.estimated_bytes_added_in_current_tx
         };
@@ -149,6 +199,84 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         }
 
         Ok((next_tx_bytes, next_retained_bytes))
+    }
+
+    /// Returns the ID of the candidate that may own a `Pending` entry.
+    fn active_candidate_id(&self) -> Result<u16, SystemError> {
+        match self.current_tx_id {
+            Some(tx_id) => Ok(tx_id),
+            None if self.block_limit_hit_for_current_tx => Err(out_of_native_resources!().into()),
+            None => Err(
+                internal_error!("pending preimage admission requires an active candidate").into(),
+            ),
+        }
+    }
+
+    /// Chooses admission for a physical miss. Work outside candidate execution
+    /// is common to sequencing and proving and is accepted immediately.
+    fn admission_for_new_preimage(&self) -> Result<PreimageAdmission, SystemError> {
+        match self.current_tx_id {
+            Some(tx_id) => Ok(PreimageAdmission::Pending(tx_id)),
+            None if self.block_limit_hit_for_current_tx => Err(out_of_native_resources!().into()),
+            None => Ok(PreimageAdmission::Accepted),
+        }
+    }
+
+    /// Makes a physical cache hit logically visible to the current candidate.
+    /// Entries introduced by invalidated candidates are charged again, while
+    /// entries introduced by accepted candidates are lazily canonicalized.
+    fn admit_cached_preimage_for_current_tx(
+        &mut self,
+        hash: &Bytes32,
+        admission: PreimageAdmission,
+        preimage_len: usize,
+    ) -> Result<(), SystemError> {
+        match admission {
+            // Block-level work or a previous lookup already established that
+            // this entry belongs to the accepted block state.
+            PreimageAdmission::Accepted => Ok(()),
+            // The entry is still tagged with its creator, but that candidate
+            // was accepted. Canonicalize it lazily; the current candidate does
+            // not pay the transaction-local cache charge again.
+            PreimageAdmission::Pending(tx_id)
+                if self
+                    .accepted_transactions
+                    .get_bit(tx_id as usize)
+                    .unwrap_or(false) =>
+            {
+                self.storage
+                    .get_mut(hash)
+                    .expect("cached preimage must remain present")
+                    .admission = PreimageAdmission::Accepted;
+                Ok(())
+            }
+            PreimageAdmission::Pending(tx_id) => {
+                let current_tx_id = self.active_candidate_id()?;
+                // The current candidate created or already re-admitted this
+                // entry, so it has already paid the transaction-local charge.
+                if tx_id == current_tx_id {
+                    return Ok(());
+                }
+                // The creator was not accepted and is not the current
+                // candidate. Its bytes remain physically cached, but the entry
+                // is logically new here: charge it and transfer Pending
+                // ownership to the current candidate.
+                let estimated_entry_bytes = match Self::estimated_entry_bytes(preimage_len) {
+                    Some(estimated_bytes) => estimated_bytes,
+                    None => {
+                        self.tx_limit_hit_for_current_tx = true;
+                        return Err(out_of_native_resources!().into());
+                    }
+                };
+                let next_tx_bytes = self.next_estimated_tx_bytes(estimated_entry_bytes)?;
+                self.storage
+                    .get_mut(hash)
+                    .expect("cached preimage must remain present")
+                    .admission = PreimageAdmission::Pending(current_tx_id);
+                self.estimated_bytes_added_in_current_tx = next_tx_bytes;
+                Ok(())
+            }
+        }
     }
 
     /// Conservatively precharges one cache entry that may be materialized
@@ -234,12 +362,18 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         Self::charge_decommitment_native_cost(resources, expected_preimage_len_in_bytes)?;
 
         if let Some(cached) = self.storage.get(hash) {
-            unsafe {
-                let cached: &'static [u8] = core::mem::transmute(cached.as_slice());
-
-                Ok(cached)
-            }
+            let admission = cached.admission;
+            // Safety: the backing allocation is owned by the block-scoped
+            // cache and entries are never removed.
+            let cached = unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) };
+            self.admit_cached_preimage_for_current_tx(
+                hash,
+                admission,
+                expected_preimage_len_in_bytes,
+            )?;
+            Ok(cached)
         } else {
+            let admission = self.admission_for_new_preimage()?;
             let estimated_entry_bytes =
                 match Self::estimated_entry_bytes(expected_preimage_len_in_bytes) {
                     Some(estimated_bytes) => estimated_bytes,
@@ -315,7 +449,10 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 });
             }
 
-            let inserted = self.storage.entry(*hash).or_insert(buffered);
+            let inserted = self.storage.entry(*hash).or_insert(CachedPreimage {
+                bytes: buffered,
+                admission,
+            });
             self.estimated_bytes_added_in_current_tx = next_tx_bytes;
             self.estimated_retained_bytes = next_retained_bytes;
             // Safety: IO implementer that will use it is expected to live beyond any frame (as it's part of the OS),
@@ -379,14 +516,29 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             PREIMAGE_CACHE_SET_NATIVE_COST,
         )))?;
 
-        if self.storage.contains_key(hash) {
+        if let Some(cached) = self.storage.get(hash) {
+            let admission = cached.admission;
+            // Safety: the backing allocation is owned by the block-scoped
+            // cache and entries are never removed.
+            let cached = unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) };
+            if apply_transaction_budget {
+                self.admit_cached_preimage_for_current_tx(hash, admission, preimage_len)?;
+            } else if admission != PreimageAdmission::Accepted {
+                self.storage
+                    .get_mut(hash)
+                    .expect("cached preimage must remain present")
+                    .admission = PreimageAdmission::Accepted;
+            }
             self.publication_storage
                 .add_preimage(hash, preimage_len, *preimage_type)?;
-            let cached = self.storage.get(hash).expect("preimage was found above");
-            // Safety: the cache is part of the OS and lives beyond every frame.
-            return Ok(unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) });
+            return Ok(cached);
         }
 
+        let admission = if apply_transaction_budget {
+            PreimageAdmission::Pending(self.active_candidate_id()?)
+        } else {
+            PreimageAdmission::Accepted
+        };
         let (next_tx_bytes, next_retained_bytes) = if apply_transaction_budget {
             self.next_estimated_byte_totals(estimated_entry_bytes, true)?
         } else {
@@ -398,7 +550,10 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
         self.publication_storage
             .add_preimage(hash, preimage_len, *preimage_type)?;
-        let inserted = self.storage.entry(*hash).or_insert(boxed_data);
+        let inserted = self.storage.entry(*hash).or_insert(CachedPreimage {
+            bytes: boxed_data,
+            admission,
+        });
         self.estimated_bytes_added_in_current_tx = next_tx_bytes;
         self.estimated_retained_bytes = next_retained_bytes;
 
@@ -459,11 +614,27 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
     fn begin_new_tx(&mut self) {
         self.estimated_bytes_added_in_current_tx = 0;
         self.tx_limit_hit_for_current_tx = false;
-        self.block_limit_hit_for_current_tx = false;
+        self.current_tx_id = self.next_tx_id;
+        if let Some(tx_id) = self.current_tx_id {
+            self.next_tx_id = tx_id.checked_add(1);
+            self.block_limit_hit_for_current_tx = false;
+        } else {
+            // All `u16` candidate IDs were used. Do not wrap and alias an
+            // earlier candidate's acceptance bit.
+            self.block_limit_hit_for_current_tx = true;
+        }
         self.publication_storage.begin_new_tx();
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {
+        let tx_id = self.current_tx_id.take().ok_or_else(|| {
+            internal_error!("cannot accept a transaction without a valid u16 candidate ID")
+        })?;
+        if !self.accepted_transactions.set_bit_on(tx_id as usize) {
+            return Err(internal_error!(
+                "transaction ID is outside the acceptance bitmap"
+            ));
+        }
         self.publication_storage.finish_tx();
         Ok(())
     }
@@ -579,8 +750,167 @@ mod tests {
         assert_eq!(cache.estimated_retained_bytes, retained_bytes_after_miss);
         assert_eq!(
             cache.estimated_bytes_added_in_current_tx,
-            retained_bytes_after_miss
+            TestCache::estimated_entry_bytes(request.expected_preimage_len_in_bytes as usize)
+                .unwrap()
         );
+    }
+
+    #[test]
+    fn cache_entry_from_invalidated_tx_is_charged_again() {
+        let (request, mut oracle) = request_and_oracle();
+        let preimage_len = request.expected_preimage_len_in_bytes as usize;
+        let native_cost = decommitment_native_cost(preimage_len);
+        let estimated_entry_bytes = TestCache::estimated_entry_bytes(preimage_len).unwrap();
+        let mut cache = TestCache::new_from_parts(Global);
+
+        cache.begin_new_tx();
+        let rollback_handle = cache.start_frame();
+        let mut first_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut first_resources,
+                &mut oracle,
+            )
+            .unwrap();
+        cache.finish_frame(Some(&rollback_handle)).unwrap();
+        let retained_bytes = cache.estimated_retained_bytes;
+
+        // Starting the next candidate without finishing the previous one
+        // leaves transaction 0 invalidated.
+        cache.begin_new_tx();
+        let mut second_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut second_resources,
+                &mut oracle,
+            )
+            .unwrap();
+
+        assert_eq!(oracle.queries, 1);
+        assert_eq!(cache.estimated_retained_bytes, retained_bytes);
+        assert_eq!(
+            cache.estimated_bytes_added_in_current_tx,
+            estimated_entry_bytes
+        );
+        assert_eq!(
+            cache.storage.get(&request.hash).unwrap().admission,
+            PreimageAdmission::Pending(1)
+        );
+    }
+
+    #[test]
+    fn block_level_entry_is_accepted_before_first_candidate() {
+        let (request, mut oracle) = request_and_oracle();
+        let preimage_len = request.expected_preimage_len_in_bytes as usize;
+        let native_cost = decommitment_native_cost(preimage_len);
+        let mut cache = TestCache::new_from_parts(Global);
+
+        let mut block_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &request,
+                &mut block_resources,
+                &mut oracle,
+            )
+            .unwrap();
+        assert_eq!(
+            cache.storage.get(&request.hash).unwrap().admission,
+            PreimageAdmission::Accepted
+        );
+
+        // Candidate 0 is invalidated without touching the entry. Candidate 1
+        // must still see the common block-level entry as accepted.
+        cache.begin_new_tx();
+        cache.begin_new_tx();
+        let mut tx_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut tx_resources,
+                &mut oracle,
+            )
+            .unwrap();
+
+        assert_eq!(oracle.queries, 1);
+        assert_eq!(cache.estimated_bytes_added_in_current_tx, 0);
+    }
+
+    #[test]
+    fn cache_entry_from_accepted_tx_is_lazily_promoted() {
+        let (request, mut oracle) = request_and_oracle();
+        let preimage_len = request.expected_preimage_len_in_bytes as usize;
+        let native_cost = decommitment_native_cost(preimage_len);
+        let mut cache = TestCache::new_from_parts(Global);
+
+        cache.begin_new_tx();
+        let rollback_handle = cache.start_frame();
+        let mut first_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut first_resources,
+                &mut oracle,
+            )
+            .unwrap();
+        // Raw preimages and their pending admission survive internal frame
+        // rollback. Accepting the transaction resolves the pending tx ID.
+        cache.finish_frame(Some(&rollback_handle)).unwrap();
+        cache.finish_tx().unwrap();
+
+        cache.begin_new_tx();
+        let mut second_resources = resources_with_native(native_cost);
+        cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut second_resources,
+                &mut oracle,
+            )
+            .unwrap();
+
+        assert_eq!(oracle.queries, 1);
+        assert_eq!(cache.estimated_bytes_added_in_current_tx, 0);
+        assert_eq!(
+            cache.storage.get(&request.hash).unwrap().admission,
+            PreimageAdmission::Accepted
+        );
+    }
+
+    #[test]
+    fn transaction_id_limit_does_not_wrap() {
+        let (request, mut oracle) = request_and_oracle();
+        let preimage_len = request.expected_preimage_len_in_bytes as usize;
+        let native_cost = decommitment_native_cost(preimage_len);
+        let mut cache = TestCache::new_from_parts(Global);
+        cache.next_tx_id = Some(u16::MAX);
+
+        cache.begin_new_tx();
+        assert_eq!(cache.current_tx_id, Some(u16::MAX));
+        assert_eq!(cache.next_tx_id, None);
+        assert!(!cache.block_limit_hit_for_current_tx());
+        cache.finish_tx().unwrap();
+
+        cache.begin_new_tx();
+        assert_eq!(cache.current_tx_id, None);
+        assert!(cache.block_limit_hit_for_current_tx());
+        let mut resources = resources_with_native(native_cost);
+        assert!(cache
+            .get_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &request,
+                &mut resources,
+                &mut oracle,
+            )
+            .is_err());
+        assert_eq!(oracle.queries, 0);
+        assert!(cache.finish_tx().is_err());
     }
 
     #[test]
@@ -730,6 +1060,7 @@ mod tests {
         let estimated_entry_bytes = TestCache::estimated_entry_bytes(preimage.len()).unwrap();
         let initial_tx_bytes = MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX - estimated_entry_bytes + 1;
         let mut cache = TestCache::new_from_parts(Global);
+        cache.begin_new_tx();
         cache.estimated_bytes_added_in_current_tx = initial_tx_bytes;
         let mut resources = resources_with_native(record_native_cost());
 
@@ -837,10 +1168,7 @@ mod tests {
             .unwrap();
         cache.finish_frame(Some(&rollback_handle)).unwrap();
 
-        assert_eq!(
-            cache.estimated_retained_bytes,
-            ACCEPTED_TX_BITMAP_BYTES + estimated_entry_bytes
-        );
+        assert_eq!(cache.estimated_retained_bytes, estimated_entry_bytes);
     }
 
     #[test]

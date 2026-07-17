@@ -317,8 +317,8 @@ pub struct BitMapOwned<A: Allocator> {
 }
 
 impl<A: Allocator> BitMapOwned<A> {
-    /// Allocates a bitmap for a bytecode of length [capacity].
-    pub(crate) fn allocate_for_bit_capacity(capacity: usize, allocator: A) -> Self {
+    /// Allocates a zeroed bitmap with space for at least `capacity` bits.
+    pub fn allocate_for_bit_capacity(capacity: usize, allocator: A) -> Self {
         let u64_capacity = capacity.div_ceil(u64::BITS as usize);
         let word_capacity = u64_capacity * (u64::BITS as usize / usize::BITS as usize);
         let mut storage = Vec::with_capacity_in(word_capacity, allocator);
@@ -330,6 +330,26 @@ impl<A: Allocator> BitMapOwned<A> {
     #[inline(always)]
     pub fn as_words(&self) -> &[usize] {
         &self.inner
+    }
+
+    /// Returns the bit at `pos`, or `None` if it is outside the bitmap.
+    #[inline(always)]
+    pub fn get_bit(&self, pos: usize) -> Option<bool> {
+        let (word_idx, bit_idx) = (pos / usize::BITS as usize, pos % usize::BITS as usize);
+        self.inner
+            .get(word_idx)
+            .map(|word| word & (1usize << bit_idx) != 0)
+    }
+
+    /// Sets the bit at `pos`. Returns `false` if it is outside the bitmap.
+    #[inline(always)]
+    pub fn set_bit_on(&mut self, pos: usize) -> bool {
+        let (word_idx, bit_idx) = (pos / usize::BITS as usize, pos % usize::BITS as usize);
+        let Some(word) = self.inner.get_mut(word_idx) else {
+            return false;
+        };
+        *word |= 1usize << bit_idx;
+        true
     }
 
     /// # Safety

@@ -455,6 +455,7 @@ mod tests {
     use crypto::MiniDigest;
     use ruint::aliases::U256;
     use std::alloc::Global;
+    use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -559,6 +560,7 @@ mod tests {
         let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
             BaseResources<DecreasingNative>,
         > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        preimages_cache.begin_new_tx();
         let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
         preimages_cache
             .record_preimage::<false>(
@@ -648,6 +650,7 @@ mod tests {
         let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
             BaseResources<DecreasingNative>,
         > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        preimages_cache.begin_new_tx();
         let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
         preimages_cache
             .record_preimage::<false>(
