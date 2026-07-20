@@ -24,15 +24,14 @@ pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
 
-/// Upper bound on the RLP length of a transaction receipt with no logs: a 1-byte
-/// status, an up-to-9-byte cumulative gas, the 256-byte zero logs bloom, an empty
-/// logs list, plus list framing and an optional type-prefix byte.
-const RECEIPT_STATIC_RLP_MAX_LEN: usize = 280;
-/// Native cost of hashing the fixed part of a transaction receipt (status,
-/// cumulative gas, zero logs bloom and RLP framing, with no logs). Each log's
-/// contribution to the receipt hash is charged to the transaction at emit time
-/// (see `emit_event`); this fixed base is accounted once per tx in the block flow.
-pub const RECEIPT_HASH_BASE_NATIVE_COST: u64 = blake2s_native_cost(RECEIPT_STATIC_RLP_MAX_LEN);
+/// Upper bound on the receipt bytes outside its encoded logs: optional type byte
+/// (1), status (1), cumulative gas (9), zero bloom (259), and the logs-list and
+/// receipt-list headers (up to 9 each on a 64-bit host).
+const RECEIPT_FIXED_AND_FRAMING_MAX_LEN: usize = 288;
+/// Intrinsic native cost of hashing the fixed receipt fields and enclosing list
+/// framing. Each encoded log's blake2s rounds are charged at emit time.
+pub const RECEIPT_HASH_BASE_NATIVE_COST: u64 =
+    blake2s_native_cost(RECEIPT_FIXED_AND_FRAMING_MAX_LEN);
 
 const _: () = const {
     assert!(MAX_TX_LEN_BYTES.is_multiple_of(core::mem::size_of::<usize>()));
@@ -102,7 +101,8 @@ pub const EXISTING_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIV
 /// pricing modes. Holds everything except the sender's cold account read and
 /// persist — the only parts that depend on whether the sender may be new. The
 /// two modes below add only the sender delta, so they cannot drift apart.
-const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_COMMON: u64 = ECRECOVER_NATIVE_COST +
+const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_COMMON: u64 = RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
+    ECRECOVER_NATIVE_COST +
     ACCOUNT_UPDATE_COST + // nonce update
     keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
@@ -126,7 +126,8 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
 /// Service tx intrinsic computational native cost.
 /// Service txs are not signed, so there is no ecrecover and only a single
 /// (full-tx) keccak is performed.
-pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = NEW_COLD_ACCOUNT_READ_COST + // worst case sender (bootloader) cold read
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
+    NEW_COLD_ACCOUNT_READ_COST + // worst case sender (bootloader) cold read
     keccak256_native_cost_for_rounds_u64(2) + // keccak for full hash, 1 round worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
     ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // coinbase + refund materializes, hashing of tx hash into rolling hash; no persist (gas_price=0, all balance updates are no-ops)
@@ -240,6 +241,7 @@ const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
 
 pub const L1_TX_INTRINSIC_NATIVE_COST: u64 =
     // Pre-budgeted (not charged against inf_resources, but reserved upfront):
+    RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
     EVENT_STORAGE_BASE_NATIVE_COST + 3 * keccak256_native_cost_for_rounds_u64(1) + // L1 tx log: storage + keccak(88) + 2 * keccak(64)
     3 * keccak256_native_cost_for_rounds_u64(1) + // hashing tx hash into rolling hash and linear hashers
     // Coinbase mint (notify AssetTracker + transfer treasury→coinbase):

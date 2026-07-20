@@ -154,14 +154,8 @@ where
                                 &next_block_gas_used,
                                 system.io.events_in_this_tx_iterator(),
                             );
-                            // Per-log receipt hashing is charged to the tx at emit
-                            // time (see `emit_event`), so it is already part of
-                            // `computational_native_used`. The fixed receipt base
-                            // (status, gas, zero bloom, framing) is accounted here
-                            // for the block native total.
-                            let computational_native_used = tx_processing_result
-                                .computational_native_used
-                                + crate::bootloader::constants::RECEIPT_HASH_BASE_NATIVE_COST;
+                            let computational_native_used =
+                                tx_processing_result.computational_native_used;
                             let next_block_computational_native_used = block_data
                                 .block_computational_native_used
                                 + computational_native_used;
