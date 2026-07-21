@@ -15,7 +15,7 @@ basic_system = { package = "basic_system_forward", path = "../basic_system_forwa
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 arrayvec = { version = "0.7.4", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "7b7bd958b3abae3ba8c77e546098008b8c287b1a", package = "airbender-crypto", default-features = false }
 hex = {version = "*", optional = true}
 strum_macros = "0.27.1"
 paste = "1.0.15"
