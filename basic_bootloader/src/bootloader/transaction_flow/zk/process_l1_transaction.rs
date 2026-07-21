@@ -40,7 +40,8 @@ use zk_ee::utils::{u256_to_b160_checked, Bytes32};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 use system_hooks::addresses_constants::{
-    L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+    BASE_TOKEN_HOLDER_ADDRESS, L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
+    L2_CHAIN_ASSET_HANDLER_ADDRESS, L2_NATIVE_TOKEN_VAULT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
 
 use super::validation_impl::compute_calldata_tokens;
@@ -593,6 +594,71 @@ struct L1ExecutionOutcome<S: EthereumLikeTypes> {
     resources_before_refund: S::Resources,
 }
 
+/// Materializes every account preimage used by mandatory L1 post-processing
+/// before attacker-controlled execution can exhaust the transaction-local
+/// preimage-cache budget.
+fn prewarm_l1_postprocessing_accounts<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    refund_recipient: B160,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    let mut resources = S::Resources::FORMAL_INFINITE;
+
+    // L2 base token is the caller of the AssetTracker notification, and the
+    // notification may call back into it to read totalSupply().
+    system.io.read_account_properties(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &L2_BASE_TOKEN_ADDRESS,
+        AccountDataRequest::empty()
+            .with_ee_version()
+            .with_bytecode(),
+    )?;
+
+    // AssetTracker is the callee, so its bytecode preimage is needed as well.
+    system.io.read_account_properties(
+        ExecutionEnvironmentType::EVM,
+        &mut resources,
+        &L2_ASSET_TRACKER_ADDRESS,
+        AccountDataRequest::empty().with_bytecode(),
+    )?;
+
+    // AssetTracker's positive-amount path reads SystemContext and may query the
+    // chain asset handler while initializing migration state. The native token
+    // vault is only reached if the base token registration invariant is broken,
+    // but warming it keeps mandatory post-processing safe in that state too.
+    for address in [
+        SYSTEM_CONTEXT_ADDRESS,
+        L2_CHAIN_ASSET_HANDLER_ADDRESS,
+        L2_NATIVE_TOKEN_VAULT_ADDRESS,
+    ] {
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::EVM,
+            &mut resources,
+            &address,
+            AccountDataRequest::empty().with_bytecode(),
+        )?;
+    }
+
+    // The remaining mandatory operations only read or update nominal balances.
+    for address in [
+        BASE_TOKEN_HOLDER_ADDRESS,
+        system.get_coinbase(),
+        refund_recipient,
+    ] {
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::EVM,
+            &mut resources,
+            &address,
+            AccountDataRequest::empty().with_nominal_token_balance(),
+        )?;
+    }
+
+    Ok(())
+}
+
 fn execute_l1_transaction_and_notify_result<
     'a,
     S: EthereumLikeTypes + 'a,
@@ -646,6 +712,9 @@ where
         .checked_sub(max_fee_commitment)
         .ok_or(internal_error!("td-mfc"))?;
 
+    let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
+    prewarm_l1_postprocessing_accounts(system, refund_recipient)?;
+
     // Transfer value from treasury to sender (the deposit minus max fee).
     // Run this even for a zero amount so that every preimage needed by the
     // mandatory post-execution mint is admitted before user execution can
@@ -685,32 +754,6 @@ where
             }
             _ => e,
         })?;
-
-    // The refund recipient may differ from both the sender and the coinbase.
-    // Admit its account preimage before user execution so that the mandatory
-    // refund cannot be the first operation to materialize it after the user
-    // has exhausted the transaction-local preimage-cache budget.
-    let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
-    let mut prewarm_resources = S::Resources::FORMAL_INFINITE;
-    system.io.read_account_properties(
-        ExecutionEnvironmentType::EVM,
-        &mut prewarm_resources,
-        &refund_recipient,
-        AccountDataRequest::empty().with_nominal_token_balance(),
-    )?;
-
-    // A zero-amount AssetTracker notification returns before its call to
-    // SystemContext, while positive post-execution notifications take that
-    // branch. Materialize SystemContext's account and bytecode explicitly so
-    // the zero-amount pre-execution path still covers the positive path's
-    // preimages. Its native cost is already conservatively included in the L1
-    // intrinsic budget's cold AssetTracker notification.
-    system.io.read_account_properties(
-        ExecutionEnvironmentType::EVM,
-        &mut prewarm_resources,
-        &SYSTEM_CONTEXT_ADDRESS,
-        AccountDataRequest::empty().with_bytecode(),
-    )?;
 
     let resources_for_tx = resources.clone();
 
@@ -809,7 +852,7 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    notify_l2_asset_tracker::<S, Config>(
+    notify_l2_asset_tracker::<S>(
         system,
         system_functions,
         memories,
@@ -843,7 +886,7 @@ where
         "Transferring {nominal_token_value:?} tokens from treasury to {to:?}\n"
     );
 
-    let treasury_address = &system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
+    let treasury_address = &BASE_TOKEN_HOLDER_ADDRESS;
 
     let _ = system
         .io
@@ -907,7 +950,7 @@ where
 /// If no contract is deployed at L2AssetTracker, the call succeeds silently
 /// (a call to an empty address returns success with no returndata in EVM).
 /// However, we are certain that L2AssetTracker is available after the upgrade.
-fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecutionConfig>(
+fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
