@@ -57,10 +57,6 @@ pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
 #[derive(Default, Clone)]
 pub struct AccountPropertiesMetadata {
     pub basic: BasicAccountPropertiesMetadata,
-    /// Whether this account's block-start properties preimage was admitted to
-    /// the transaction-local preimage budget. This is rollback-aware because
-    /// the decoded account-cache entry itself survives a dropped transaction.
-    pub initial_preimage_admitted: bool,
     /// Special flag that allows avoiding publishing bytecode for deployed account.
     /// In practice, it can be set to `true` only during special protocol upgrade txs.
     /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
@@ -358,18 +354,22 @@ impl<
                 }
                 if is_warm == false {
                     // The initial account-cache record survives a dropped
-                    // candidate. If it represents an existing account, the
-                    // decoded value can bypass `get_preimage` on the next
-                    // candidate, so explicitly re-admit its backing preimage.
-                    // This keeps the per-transaction cache budget identical to
-                    // proving, where the dropped candidate never populated
-                    // either cache.
+                    // candidate, including accesses made before the
+                    // transaction rollback frame was opened. If it represents
+                    // an existing account and was already cached, the decoded
+                    // value bypasses `get_preimage`, so explicitly resolve its
+                    // backing preimage's admission on every cold cache hit.
+                    // The preimage cache's accepted-candidate bitmap, rather
+                    // than rollback placement, decides whether this tx pays.
                     let existing_account = !x.element_properties().is_new_element();
-                    if !is_missing
-                        && existing_account
-                        && !x.current().metadata().initial_preimage_admitted
-                    {
-                        let initial_preimage_hash = x.initial().value().compute_hash();
+                    if !is_missing && existing_account {
+                        let initial_preimage_hash = storage
+                            .initial_account_properties_hash(address)
+                            .ok_or_else(|| {
+                                internal_error!(
+                                    "Materialized account is missing its initial storage hash"
+                                )
+                            })?;
                         preimages_cache.admit_cached_preimage_for_current_tx(
                             &initial_preimage_hash,
                             AccountProperties::ENCODED_SIZE,
@@ -400,9 +400,6 @@ impl<
                             m.basic.last_touched_in_tx = Some(self.current_tx_id);
                             if charge_as_new {
                                 m.basic.new_read_extra_charged = true;
-                            }
-                            if existing_account {
-                                m.initial_preimage_admitted = true;
                             }
                             Ok(())
                         })
@@ -1610,10 +1607,9 @@ mod tests {
         storage.begin_new_tx();
         preimages_cache.begin_new_tx();
         account_cache.begin_new_tx();
-        let storage_rollback = storage.start_frame();
-        let preimage_rollback = preimages_cache.start_frame();
-        let account_rollback = account_cache.start_frame();
 
+        // Match tx_loop's coinbase warm-up: materialize the account before the
+        // transaction rollback handle exists.
         let mut first_resources = TestResources::FORMAL_INFINITE;
         account_cache
             .touch_account::<false>(
@@ -1630,21 +1626,15 @@ mod tests {
             estimated_entry_bytes
         );
 
+        let storage_rollback = storage.start_frame();
+        let preimage_rollback = preimages_cache.start_frame();
+        let account_rollback = account_cache.start_frame();
         storage.finish_frame(Some(&storage_rollback)).unwrap();
         preimages_cache
             .finish_frame(Some(&preimage_rollback))
             .unwrap();
         account_cache.finish_frame(Some(&account_rollback)).unwrap();
         let retained_bytes = preimages_cache.estimated_retained_bytes();
-        assert!(
-            !account_cache
-                .cache
-                .get((&address).into())
-                .unwrap()
-                .current()
-                .metadata()
-                .initial_preimage_admitted
-        );
 
         // Do not finish the first candidate: it was dropped. Its initial
         // account-cache record and raw preimage survive, but neither is part of
@@ -1709,15 +1699,6 @@ mod tests {
         );
         assert_eq!(oracle.preimage_queries, 1);
         assert_eq!(preimages_cache.estimated_retained_bytes(), retained_bytes);
-        assert!(
-            account_cache
-                .cache
-                .get((&address).into())
-                .unwrap()
-                .current()
-                .metadata()
-                .initial_preimage_admitted
-        );
 
         account_cache.finish_tx(&mut storage).unwrap();
         storage.finish_tx().unwrap();

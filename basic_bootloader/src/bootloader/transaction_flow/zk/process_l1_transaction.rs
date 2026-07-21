@@ -31,7 +31,7 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::system::Resource;
 use zk_ee::system::System;
-use zk_ee::system::{CompletedExecution, Computational};
+use zk_ee::system::{AccountDataRequest, CompletedExecution, Computational};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{IOSubsystem, IOSubsystemExt, MAX_NATIVE_COMPUTATIONAL};
@@ -39,7 +39,9 @@ use zk_ee::system_log;
 use zk_ee::utils::{u256_to_b160_checked, Bytes32};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
-use system_hooks::addresses_constants::{L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
+use system_hooks::addresses_constants::{
+    L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+};
 
 use super::validation_impl::compute_calldata_tokens;
 use super::{ZkTransactionFlowOnlyEOA, ZkTxResult};
@@ -645,14 +647,11 @@ where
         .ok_or(internal_error!("td-mfc"))?;
 
     // Transfer value from treasury to sender (the deposit minus max fee).
-    // We want to ensure that the simulation of a transaction
-    // never underestimates gas/pubdata compared to the actual execution
-    // of said transaction.
-    // During simulation the gas price is typically set to 0. So we need
-    // to be conservative about operations that incur in gas/pubdata depending
-    // on the value of the fee. For that reason, we always perform the
-    // following transfer on simulation, and avoid compressing the pubdata
-    // for the balance changes resulting from it.
+    // Run this even for a zero amount so that every preimage needed by the
+    // mandatory post-execution mint is admitted before user execution can
+    // exhaust the transaction-local preimage-cache budget. In simulation we
+    // additionally avoid compressing the pubdata for the resulting balance
+    // changes.
     //
     // Mint the value portion of the deposit (total deposited minus max fee)
     // to the sender inside the execution frame, it does not
@@ -660,34 +659,58 @@ where
     //
     // Use with_infinite_ergs so the call cannot fail due to out-of-gas,
     // but native consumption is still tracked against the user's resources.
-    if to_transfer > U256::ZERO || Config::SIMULATION {
-        resources
-            .with_infinite_ergs(|inf_resources| {
-                mint_base_token::<S, Config>(
+    resources
+        .with_infinite_ergs(|inf_resources| {
+            mint_base_token::<S, Config>(
+                system,
+                system_functions,
+                memories.reborrow(),
+                &to_transfer,
+                &from,
+                l1_chain_id,
+                inf_resources,
+                tracer,
+                validator,
+            )
+        })
+        .map_err(|e| match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                system_log!(
                     system,
-                    system_functions,
-                    memories.reborrow(),
-                    &to_transfer,
-                    &from,
-                    l1_chain_id,
-                    inf_resources,
-                    tracer,
-                    validator,
-                )
-            })
-            .map_err(|e| match e.root_cause() {
-                RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                    system_log!(
-                        system,
-                        "Out of ergs on infinite ergs: inner error was {e:?}"
-                    );
-                    BootloaderSubsystemError::LeafDefect(internal_error!(
-                        "Out of ergs on infinite ergs"
-                    ))
-                }
-                _ => e,
-            })?;
-    }
+                    "Out of ergs on infinite ergs: inner error was {e:?}"
+                );
+                BootloaderSubsystemError::LeafDefect(internal_error!(
+                    "Out of ergs on infinite ergs"
+                ))
+            }
+            _ => e,
+        })?;
+
+    // The refund recipient may differ from both the sender and the coinbase.
+    // Admit its account preimage before user execution so that the mandatory
+    // refund cannot be the first operation to materialize it after the user
+    // has exhausted the transaction-local preimage-cache budget.
+    let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
+    let mut prewarm_resources = S::Resources::FORMAL_INFINITE;
+    system.io.read_account_properties(
+        ExecutionEnvironmentType::EVM,
+        &mut prewarm_resources,
+        &refund_recipient,
+        AccountDataRequest::empty().with_nominal_token_balance(),
+    )?;
+
+    // A zero-amount AssetTracker notification returns before its call to
+    // SystemContext, while positive post-execution notifications take that
+    // branch. Materialize SystemContext's account and bytecode explicitly so
+    // the zero-amount pre-execution path still covers the positive path's
+    // preimages. Its native cost is already conservatively included in the L1
+    // intrinsic budget's cold AssetTracker notification.
+    system.io.read_account_properties(
+        ExecutionEnvironmentType::EVM,
+        &mut prewarm_resources,
+        &SYSTEM_CONTEXT_ADDRESS,
+        AccountDataRequest::empty().with_bytecode(),
+    )?;
 
     let resources_for_tx = resources.clone();
 
@@ -899,56 +922,56 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    if amount > U256::ZERO || Config::SIMULATION {
-        let notify_native_before = resources.native().as_u64();
-        // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
-        // selector 0x03117c8c + abi-encoded (fromChainId, amount)
-        let mut calldata = [0u8; 68];
-        calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
-        calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
-        calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
+    // Run the notification even for a zero amount. Besides keeping the call
+    // path uniform, this admits the base-token caller and asset-tracker
+    // account/bytecode preimages before user execution.
+    let notify_native_before = resources.native().as_u64();
+    // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
+    // selector 0x03117c8c + abi-encoded (fromChainId, amount)
+    let mut calldata = [0u8; 68];
+    calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
+    calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
+    calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
 
-        let failed = resources.with_infinite_ergs(|inf_ergs| {
-            let CompletedExecution {
-                resources_returned,
-                result: asset_tracker_result,
-            } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
-                system,
-                system_functions,
-                memories,
-                &calldata,
-                &L2_BASE_TOKEN_ADDRESS,
-                &L2_ASSET_TRACKER_ADDRESS,
-                inf_ergs.clone(),
-                &U256::ZERO,
-                true, // should_make_frame - isolate state changes
-                tracer,
-                validator,
-            )?;
-            // Overwrite resources inside the closure so that
-            // with_infinite_ergs correctly restores ergs afterwards.
-            *inf_ergs = resources_returned;
-            Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
-        })?;
+    let failed = resources.with_infinite_ergs(|inf_ergs| {
+        let CompletedExecution {
+            resources_returned,
+            result: asset_tracker_result,
+        } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+            system,
+            system_functions,
+            memories,
+            &calldata,
+            &L2_BASE_TOKEN_ADDRESS,
+            &L2_ASSET_TRACKER_ADDRESS,
+            inf_ergs.clone(),
+            &U256::ZERO,
+            true, // should_make_frame - isolate state changes
+            tracer,
+            validator,
+        )?;
+        // Overwrite resources inside the closure so that
+        // with_infinite_ergs correctly restores ergs afterwards.
+        *inf_ergs = resources_returned;
+        Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
+    })?;
 
-        let notify_native_used = notify_native_before - resources.native().as_u64();
+    let notify_native_used = notify_native_before - resources.native().as_u64();
+    system_log!(
+        system,
+        "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+    );
+
+    if failed {
         system_log!(
             system,
-            "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+            "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 failed for amount {amount:?}\n"
         );
-
-        if failed {
-            system_log!(
-                system,
-                "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 failed for amount {amount:?}\n"
-            );
-            // A revert here means the chain's token accounting would be inconsistent.
-            // Treated as a fatal system error — block processing cannot continue.
-            return Err(internal_error!(
-                "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted"
-            )
-            .into());
-        }
+        // A revert here means the chain's token accounting would be inconsistent.
+        // Treated as a fatal system error — block processing cannot continue.
+        return Err(
+            internal_error!("L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted").into(),
+        );
     }
     Ok(())
 }

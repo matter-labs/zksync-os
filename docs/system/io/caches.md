@@ -76,12 +76,13 @@ estimated bytes to the current transaction before reuse.
 
 Account properties need one additional bridge between cache layers. The account
 cache retains its decoded initial record too, so a later transaction may reuse
-it without calling `get_preimage()` again. Its rollback-aware
-`initial_preimage_admitted` marker records whether the transaction that admitted
-the backing preimage survived. On a cold account-cache hit with no surviving
-marker, the account cache explicitly re-admits the backing preimage. Thus a
-dropped sequencing candidate cannot reduce the next included transaction's
-preimage-cache byte count relative to proving.
+it without calling `get_preimage()` again. On every cold hit for an existing
+account, the account cache retrieves the block-start preimage hash from the
+storage cache's surviving initial record and asks the preimage cache to resolve
+its admission. Entries introduced by accepted transactions are free; entries
+owned by earlier unaccepted candidates are charged to the current candidate.
+This remains correct even when an account (such as the coinbase) was warmed
+before the transaction rollback frame was created.
 
 ## Account cache
 
@@ -145,8 +146,7 @@ Every charging decision must therefore be derived only from:
   (`CacheElementProperties::is_new_element`), which are identical in both runs;
 - **rollback-aware metadata** updated through `HistoryMap` records
   (`last_touched_in_tx`, `write_extra_charged_in_tx`, `new_read_extra_charged`,
-  `persist_charged_in_tx`, `initial_preimage_admitted`), so a dropped payer's
-  marker disappears with it;
+  `persist_charged_in_tx`), so a dropped payer's marker disappears with it;
 - **cache values** (`initial` / `committed` / `current`), which also roll back.
 
 In particular, "this slot/account is already in the cache" carries no information

@@ -2,11 +2,12 @@
 //! Tests for the L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 calls
 //! that the bootloader makes during L1 transaction processing.
 //!
-//! When an L1 transaction deposits base tokens (total_deposited > 0), the
-//! bootloader calls handleFinalizeBaseTokenBridgingOnL2(uint256, uint256)
-//! on the real L2AssetTracker contract up to three times — once for the
-//! value mint, once for the operator fee, and once for the refund. If any
-//! of these amounts is zero the corresponding call is skipped.
+//! When an L1 transaction is processed, the bootloader calls
+//! handleFinalizeBaseTokenBridgingOnL2(uint256, uint256)
+//! on the real L2AssetTracker contract for the value mint and operator fee,
+//! even when either amount is zero, and once more for a non-zero refund. The
+//! unconditional pre-execution call admits the preimages needed by mandatory
+//! post-execution accounting before user execution begins.
 //!
 //! When the source chain matches `L1_CHAIN_ID` and the current settlement
 //! layer also matches `L1_CHAIN_ID`, the contract records the aggregate
@@ -195,9 +196,9 @@ fn test_asset_tracker_predeploy_is_usable_in_l1_flow() {
     }
 }
 
-/// Verify that no deposit is recorded when total_deposited == 0.
+/// Verify that an unconditional zero-amount notification records no deposit.
 #[test]
-fn test_asset_tracker_not_called_without_deposit() {
+fn test_asset_tracker_does_not_record_zero_deposit() {
     let from = address!("1234000000000000000000000000000000000000");
     let to = address!("abcd000000000000000000000000000000000000");
     let gas_price: u128 = 0;
