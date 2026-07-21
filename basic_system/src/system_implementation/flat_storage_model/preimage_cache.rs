@@ -148,6 +148,16 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         self.estimated_retained_bytes
     }
 
+    #[cfg(test)]
+    pub(super) fn estimated_bytes_added_in_current_tx(&self) -> usize {
+        self.estimated_bytes_added_in_current_tx
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_estimated_bytes_added_in_current_tx(&mut self, bytes: usize) {
+        self.estimated_bytes_added_in_current_tx = bytes;
+    }
+
     /// Computes the transaction-local total after charging one logically new
     /// cache entry. On overflow or limit exhaustion it sets the transaction
     /// flag and returns OON; otherwise the caller commits the returned total
@@ -225,7 +235,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
     /// Makes a physical cache hit logically visible to the current candidate.
     /// Entries introduced by invalidated candidates are charged again, while
     /// entries introduced by accepted candidates are lazily canonicalized.
-    fn admit_cached_preimage_for_current_tx(
+    fn admit_cached_preimage_with_admission_for_current_tx(
         &mut self,
         hash: &Bytes32,
         admission: PreimageAdmission,
@@ -277,6 +287,34 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 Ok(())
             }
         }
+    }
+
+    /// Re-admits a preimage whose decoded value was served by a higher-level
+    /// cache instead of through `get_preimage`.
+    ///
+    /// Account-cache entries survive a dropped candidate. On a later cold
+    /// account access, the decoded properties can therefore be reused without
+    /// another preimage-cache lookup. Admission must still be resolved here so
+    /// a preimage introduced only by the dropped candidate consumes the later
+    /// candidate's transaction-local budget, just as it does in proving.
+    pub(super) fn admit_cached_preimage_for_current_tx(
+        &mut self,
+        hash: &Bytes32,
+        expected_preimage_len: usize,
+    ) -> Result<(), SystemError> {
+        let admission = match self.storage.get(hash) {
+            Some(cached) if cached.as_slice().len() == expected_preimage_len => cached.admission,
+            Some(_) => return Err(internal_error!("Cached preimage length mismatch").into()),
+            None => {
+                return Err(internal_error!("Materialized preimage is missing from cache").into());
+            }
+        };
+
+        self.admit_cached_preimage_with_admission_for_current_tx(
+            hash,
+            admission,
+            expected_preimage_len,
+        )
     }
 
     /// Conservatively precharges one cache entry that may be materialized
@@ -366,7 +404,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // Safety: the backing allocation is owned by the block-scoped
             // cache and entries are never removed.
             let cached = unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) };
-            self.admit_cached_preimage_for_current_tx(
+            self.admit_cached_preimage_with_admission_for_current_tx(
                 hash,
                 admission,
                 expected_preimage_len_in_bytes,
@@ -522,7 +560,11 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // cache and entries are never removed.
             let cached = unsafe { core::mem::transmute::<&[u8], &'static [u8]>(cached.as_slice()) };
             if apply_transaction_budget {
-                self.admit_cached_preimage_for_current_tx(hash, admission, preimage_len)?;
+                self.admit_cached_preimage_with_admission_for_current_tx(
+                    hash,
+                    admission,
+                    preimage_len,
+                )?;
             } else if admission != PreimageAdmission::Accepted {
                 self.storage
                     .get_mut(hash)

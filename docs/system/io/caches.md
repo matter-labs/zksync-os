@@ -68,6 +68,21 @@ The preimage cache is used for account properties preimages and bytecodes. It's 
 
 This latter keeps a map of hashes to be published (whose preimage is saved in `storage`) to some publication metadata (number of uses and size). The `publication_storage` also keeps a stack of hashes with a pointer to the start of the current frame (and a stack of pointers for previous frames). For rolling back the current frame, the cache goes through all the hashes pushed to the stack in this frame and decreases the use counter. Only preimages with non-zero use counter are published.
 
+Raw preimages are retained for the block even when the candidate transaction
+that introduced them is dropped. Each entry therefore records whether it was
+introduced by an accepted transaction or is still pending under a candidate
+transaction ID. A hit on an entry owned by a dropped candidate re-admits its
+estimated bytes to the current transaction before reuse.
+
+Account properties need one additional bridge between cache layers. The account
+cache retains its decoded initial record too, so a later transaction may reuse
+it without calling `get_preimage()` again. Its rollback-aware
+`initial_preimage_admitted` marker records whether the transaction that admitted
+the backing preimage survived. On a cold account-cache hit with no surviving
+marker, the account cache explicitly re-admits the backing preimage. Thus a
+dropped sequencing candidate cannot reduce the next included transaction's
+preimage-cache byte count relative to proving.
+
 ## Account cache
 
 The [account cache](../../../basic_system/src/system_implementation/flat_storage_model/account_cache.rs) is used to temporarily store the account properties that will later be hashed and stored into the corresponding account properties hash slot.
@@ -130,7 +145,8 @@ Every charging decision must therefore be derived only from:
   (`CacheElementProperties::is_new_element`), which are identical in both runs;
 - **rollback-aware metadata** updated through `HistoryMap` records
   (`last_touched_in_tx`, `write_extra_charged_in_tx`, `new_read_extra_charged`,
-  `persist_charged_in_tx`), so a dropped payer's marker disappears with it;
+  `persist_charged_in_tx`, `initial_preimage_admitted`), so a dropped payer's
+  marker disappears with it;
 - **cache values** (`initial` / `committed` / `current`), which also roll back.
 
 In particular, "this slot/account is already in the cache" carries no information
