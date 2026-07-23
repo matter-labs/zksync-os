@@ -107,11 +107,20 @@ where
         });
 
         let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
+        // IMT root snapshots: `begin` was taken in `pre_op` (before the block), `end` is taken now
+        // (after the block).
+        let commitment_tree_root_begin = block_data.commitment_tree_root_begin;
+        let commitment_tree_root_end = read_interop_commitment_tree_root(&mut io);
 
-        let mut full_root_hasher = crypto::sha3::Keccak256::new();
-        full_root_hasher.update(io.logs_storage.tree_root().as_u8_ref());
-        full_root_hasher.update(multichain_root.as_u8_ref());
-        let full_l2_to_l1_logs_root = full_root_hasher.finalize().into();
+        // Chain batch root: a fixed height-3 (8-leaf) keccak Merkle tree, computed identically to the
+        // multiblock keeper (see `ZKBatchDataKeeper::into_public_input_and_output` and
+        // `compute_chain_batch_root` for the leaf layout) so both proving paths agree on the value.
+        let chain_batch_root = compute_chain_batch_root(
+            io.logs_storage.tree_root(),
+            multichain_root,
+            commitment_tree_root_begin,
+            commitment_tree_root_end,
+        );
 
         let (priority_operations_hash, number_of_layer_1_txs) =
             block_data.enforced_transaction_hashes_accumulator.finish();
@@ -204,7 +213,7 @@ where
             number_of_layer_1_txs: U256::try_from(number_of_layer_1_txs).unwrap(),
             number_of_layer_2_txs: U256::from(number_of_layer_2_txs),
             priority_operations_hash,
-            l2_logs_tree_root: full_l2_to_l1_logs_root,
+            l2_logs_tree_root: chain_batch_root,
             upgrade_tx_hash,
             interop_roots_rolling_hash,
             settlement_layer_chain_id,
