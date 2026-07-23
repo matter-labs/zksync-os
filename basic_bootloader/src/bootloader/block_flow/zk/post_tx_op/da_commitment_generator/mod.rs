@@ -43,9 +43,6 @@ pub fn da_commitment_generator_from_scheme<A: Allocator, O: IOOracle>(
     da_commitment_scheme: DACommitmentScheme,
     alloc: A,
 ) -> Result<Box<dyn DACommitmentGenerator<O>, A>, InternalError> {
-    // The generator is chosen purely by the commitment *mechanism*. Whether the full pubdata or only
-    // the mandatory logs section is fed into it is decided by the DA *mode* (see `write_pubdata` and
-    // `ChainConfig::da_mode`), not here.
     match da_commitment_scheme {
         DACommitmentScheme::BlobsAndPubdataKeccak256 => Ok(alloc::boxed::Box::new_in(
             Keccak256CommitmentGenerator::new(),
@@ -58,8 +55,6 @@ pub fn da_commitment_generator_from_scheme<A: Allocator, O: IOOracle>(
             BlobCommitmentGenerator::new(),
             alloc,
         )),
-        DACommitmentScheme::None | DACommitmentScheme::PubdataKeccak256 => {
-            Err(internal_error!("Unsupported DA commitment scheme"))
-        }
+        _ => Err(internal_error!("Unsupported DA commitment scheme")),
     }
 }
