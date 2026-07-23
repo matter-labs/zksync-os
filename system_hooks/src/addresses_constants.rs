@@ -58,6 +58,11 @@ pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
 pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
     B160::from_limbs([BASE_TOKEN_HOLDER_ADDRESS_LOW as u64, 0, 0]);
 
+// L2 interop commitment tree (Indexed Merkle Tree of atomic-interop commit values) system contract
+pub const L2_INTEROP_COMMITMENT_TREE_ADDRESS_LOW: u32 = 0x10012;
+pub const L2_INTEROP_COMMITMENT_TREE_ADDRESS: B160 =
+    B160::from_limbs([L2_INTEROP_COMMITMENT_TREE_ADDRESS_LOW as u64, 0, 0]);
+
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE
 pub const ACCOUNT_CODE_STORAGE_STORAGE_ADDRESS: B160 = B160::from_limbs([0x8002, 0, 0]);
