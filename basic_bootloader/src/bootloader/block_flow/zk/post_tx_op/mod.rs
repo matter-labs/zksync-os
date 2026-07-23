@@ -8,6 +8,7 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     L2_INTEROP_COMMITMENT_TREE_ADDRESS, MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
+use zk_ee::common_structs::da_commitment_scheme::DAMode;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::merkle_root_in_place;
 use zk_ee::memory::stack_trait::StackFactory;
@@ -23,69 +24,32 @@ mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
 pub mod public_input;
 
-/// Version byte for pubdata encoding format.
+/// Pubdata encoding version byte for `Rollup` mode.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata
-/// Version 3: Split the stream into a mandatory logs prefix and an optional
-///            tail (block context, state diffs, message payloads)
-pub const PUBDATA_ENCODING_VERSION: u8 = 3;
-
-/// Length in bytes of the mandatory pubdata prefix (`[version, logs_count,
-/// log records]`, see [`write_pubdata`]) at the start of a block's pubdata
-/// stream.
 ///
-/// Used on the host side to recover the DA-committed part of the stream in
-/// `Validium` mode.
-///
-/// # Panics
-///
-/// Panics if the slice is too short or the version byte doesn't match: the
-/// input is expected to be a stream produced by [`write_pubdata`].
-pub fn mandatory_pubdata_prefix_len(block_pubdata: &[u8]) -> usize {
-    assert!(
-        block_pubdata.len() >= 5,
-        "pubdata is too short to contain the mandatory prefix header"
-    );
-    assert_eq!(
-        block_pubdata[0], PUBDATA_ENCODING_VERSION,
-        "unexpected pubdata encoding version"
-    );
-    let logs_count = u32::from_be_bytes(block_pubdata[1..5].try_into().expect("Always valid"));
-    let len = 1 + 4 + (logs_count as usize) * zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
-    assert!(
-        block_pubdata.len() >= len,
-        "pubdata is shorter than its mandatory prefix"
-    );
-    len
-}
+/// The `Rollup` layout is unchanged from version 2 (full pubdata: block context,
+/// state diffs, logs and message payloads), so existing rollup DA consumers keep
+/// working.
+pub const ROLLUP_PUBDATA_ENCODING_VERSION: u8 = 2;
 
-/// `WriteBytes` adapter that forwards writes to the wrapped destination only
-/// when enabled. Used to exclude the optional pubdata tail from the DA
-/// commitment in `Validium` mode, while the bytes are still streamed to
-/// the result keeper.
-struct GatedWriteBytes<'a, DST: WriteBytes + ?Sized> {
-    dst: &'a mut DST,
-    enabled: bool,
-}
-
-impl<DST: WriteBytes + ?Sized> WriteBytes for GatedWriteBytes<'_, DST> {
-    fn write(&mut self, buf: &[u8]) {
-        if self.enabled {
-            self.dst.write(buf);
-        }
-    }
-}
+/// Pubdata encoding version byte for `Validium` mode.
+/// Version 3: only the mandatory L2->L1 log section (`[version, logs_count, log
+/// records]`); state diffs and message payloads are not published.
+pub const VALIDIUM_PUBDATA_ENCODING_VERSION: u8 = 3;
 
 /// Streams the block's pubdata into the DA commitment generator (`pubdata_dst`)
 /// and the result keeper.
 ///
-/// The stream consists of two sections:
-/// - Mandatory prefix, always included in the DA commitment:
-///   `[PUBDATA_ENCODING_VERSION, logs_count, l2 -> l1 log records]`.
-/// - Optional tail, included in the DA commitment only when
-///   `commit_full_pubdata` is set (`Rollup` mode), always forwarded to
-///   the result keeper so the sequencer can publish it at its discretion:
-///   `[block_hash, timestamp, state diffs, messages_count, message payloads]`.
+/// The exact same bytes go to both sinks, so the pubdata reported to the
+/// sequencer/prover is byte-for-byte what the batch commits to. The layout is
+/// chosen by the DA mode:
+/// - `Rollup` (version 2): the full pubdata —
+///   `[version, block_hash, timestamp, state diffs, logs, message payloads]`.
+/// - `Validium` (version 3): only the mandatory log section —
+///   `[version, logs_count, log records]`. State diffs and message payloads are
+///   neither committed nor reported here; the sequencer receives them through
+///   the dedicated result-keeper channels (`storage_diffs`, `logs`).
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,
@@ -110,32 +74,34 @@ fn write_pubdata<
         FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
         PROOF_ENV,
     >,
-    commit_full_pubdata: bool,
+    da_mode: DAMode,
 ) {
-    // Write version byte first to enable future pubdata format upgrades.
-    // It's part of the mandatory section, so the committed stream stays
-    // self-describing for logs-only schemes.
-    pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
-    result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
+    match da_mode {
+        DAMode::Rollup => {
+            // Full pubdata, version 2 — identical byte layout to the pre-split rollup format.
+            pubdata_dst.write(&[ROLLUP_PUBDATA_ENCODING_VERSION]);
+            pubdata_dst.write(block_hash.as_u8_ref());
+            pubdata_dst.write(&timestamp.to_be_bytes());
+            result_keeper.pubdata(&[ROLLUP_PUBDATA_ENCODING_VERSION]);
+            result_keeper.pubdata(block_hash.as_u8_ref());
+            result_keeper.pubdata(&timestamp.to_be_bytes());
 
-    io.logs_storage
-        .apply_logs_pubdata(pubdata_dst, result_keeper);
-
-    let mut tail_dst = GatedWriteBytes {
-        dst: pubdata_dst,
-        enabled: commit_full_pubdata,
-    };
-
-    tail_dst.write(block_hash.as_u8_ref());
-    tail_dst.write(&timestamp.to_be_bytes());
-    result_keeper.pubdata(block_hash.as_u8_ref());
-    result_keeper.pubdata(&timestamp.to_be_bytes());
-
-    io.storage
-        .apply_storage_diffs_pubdata(result_keeper, &mut tail_dst, &mut io.oracle);
-
-    io.logs_storage
-        .apply_messages_pubdata(&mut tail_dst, result_keeper);
+            io.storage
+                .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
+            // logs then message payloads (matches the pre-split combined encoding).
+            io.logs_storage
+                .apply_logs_pubdata(pubdata_dst, result_keeper);
+            io.logs_storage
+                .apply_messages_pubdata(pubdata_dst, result_keeper);
+        }
+        DAMode::Validium => {
+            // Only the mandatory L2->L1 log section is committed and reported, version 3.
+            pubdata_dst.write(&[VALIDIUM_PUBDATA_ENCODING_VERSION]);
+            result_keeper.pubdata(&[VALIDIUM_PUBDATA_ENCODING_VERSION]);
+            io.logs_storage
+                .apply_logs_pubdata(pubdata_dst, result_keeper);
+        }
+    }
 }
 
 /// Helper method to create block header.

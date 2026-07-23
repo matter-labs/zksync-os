@@ -7,7 +7,6 @@ use rig::alloy::consensus::{TxEip1559, TxLegacy};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::keccak256;
 use rig::alloy::primitives::TxKind;
-use rig::basic_bootloader::bootloader::block_flow::mandatory_pubdata_prefix_len;
 use rig::chain::{get_zksync_os_dist_dir, RunConfig};
 use rig::forward_system::run::{
     generate_batch_proof_input, generate_legacy_batch_proof_input, BatchBlockInput,
@@ -177,7 +176,6 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_m
     let legacy_batch_input = generate_legacy_batch_proof_input(
         vec![&block1_proof_input, &block2_proof_input],
         da_commitment_scheme,
-        da_mode,
         vec![block1_pubdata.as_slice(), block2_pubdata.as_slice()],
     );
     let batch_output = generate_batch_proof_input(
@@ -224,20 +222,13 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_m
         "batch pubdata mismatch"
     );
     // Cross-check the DA commitment against an independent recomputation for the calldata-keccak
-    // mechanism (`BlobsAndPubdataKeccak256`). The commitment shape is the Era-compatible structured
-    // `keccak256(stateDiffHash(0) || keccak(committed) || 1 || blobHash(0))`; the *committed* bytes
-    // depend on the DA mode — the full pubdata stream in `Rollup`, or only the mandatory logs prefix
-    // in `Validium`. (The blob mechanism is exercised by the RISC-V proof check below.)
+    // mechanism (`BlobsAndPubdataKeccak256`). Since `write_pubdata` streams identical bytes to the DA
+    // generator and the result keeper, the committed bytes are exactly the reported pubdata — the full
+    // stream in Rollup, the logs-only stream in Validium — regardless of mode. The commitment shape is
+    // the Era-compatible structured `keccak256(stateDiffHash(0) || keccak(pubdata) || 1 || blobHash(0))`.
+    // (The blob mechanism is exercised by the RISC-V proof check below.)
     if da_commitment_scheme == DACommitmentScheme::BlobsAndPubdataKeccak256 {
-        let committed_pubdata = if da_mode.commits_full_pubdata() {
-            [block1_pubdata.as_slice(), block2_pubdata.as_slice()].concat()
-        } else {
-            [
-                &block1_pubdata[..mandatory_pubdata_prefix_len(&block1_pubdata)],
-                &block2_pubdata[..mandatory_pubdata_prefix_len(&block2_pubdata)],
-            ]
-            .concat()
-        };
+        let committed_pubdata = [block1_pubdata.as_slice(), block2_pubdata.as_slice()].concat();
         let pubdata_keccak = keccak256(&committed_pubdata);
         let mut da_commitment_preimage = Vec::new();
         da_commitment_preimage.extend_from_slice(&[0u8; 32]); // state diffs hash is not validated
@@ -335,7 +326,6 @@ fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_
     let legacy_batch_input = generate_legacy_batch_proof_input(
         vec![legacy_proof_input.as_slice()],
         da_commitment_scheme,
-        da_mode,
         vec![legacy_pubdata.as_slice()],
     );
     let batch_output = generate_batch_proof_input(

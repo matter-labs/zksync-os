@@ -11,17 +11,12 @@ DA commitment schemes determine how pubdata (the data needed to reconstruct chai
 
 ## Pubdata Stream Layout
 
-The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) consists of two sections:
+The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) is chosen by the DA mode, and the **exact same bytes are streamed to the DA commitment and to the sequencer/prover** — the reported pubdata is byte-for-byte what the batch commits to. A version byte distinguishes the two layouts:
 
-1. **Mandatory prefix** — always included in the DA commitment, regardless of the mode:
-   - Pubdata encoding version byte
-   - L2 -> L1 log records (count + serialized logs), including user message logs, L1 tx result logs, and interop commitment tree (IMT) leaf logs
-2. **Optional tail** — included in the DA commitment only in `Rollup` mode; always forwarded to the sequencer, which may publish it at its discretion:
-   - Block hash and timestamp
-   - State diffs
-   - User message payloads (count + length-prefixed data)
+- **Rollup — version 2** (unchanged from before): `[version, block_hash, timestamp, state diffs, logs, message payloads]`. The full pubdata, so existing rollup DA consumers keep working.
+- **Validium — version 3**: `[version, logs_count, log records]` only. Log records include user-message logs, L1-tx result logs and interop commitment tree (IMT) leaf logs. State diffs and message payloads are neither committed nor part of this stream; the sequencer receives them through the dedicated result-keeper channels (`storage_diffs`, `logs`).
 
-This guarantees that L2 -> L1 logs and IMT leaves are always publicly available (the settlement layer always validates the DA commitment via blobs or calldata), while state diffs and message payloads can be left to the operator for validium-style chains.
+This guarantees that L2 -> L1 logs and IMT leaves are always publicly available (the settlement layer always validates the DA commitment via blobs or calldata), while state diffs and message payloads can be left to the operator for validium-style chains. Pubdata *charging* follows the same split — a Validium tx pays only for the committed log records (see the DA Mode section).
 
 ## Two orthogonal axes: scheme (mechanism) and mode (scope)
 
