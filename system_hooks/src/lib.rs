@@ -25,6 +25,7 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
+use crate::call_hooks::interop_commitment_leaf::interop_commitment_leaf_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
@@ -308,6 +309,15 @@ pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks.add_call_hook(
         L1_MESSENGER_ADDRESS_HOOK_LOW,
         SystemCallHook::new(l1_messenger_hook),
+    )
+}
+
+pub fn add_interop_commitment_leaf_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError> {
+    hooks.add_call_hook(
+        INTEROP_COMMITMENT_LEAF_HOOK_ADDRESS_LOW,
+        SystemCallHook::new(interop_commitment_leaf_hook),
     )
 }
 

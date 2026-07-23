@@ -77,6 +77,8 @@ where
         // Sequencing-mode post-op uses NopCommitmentGenerator (no DA work),
         // but we still mark `da_commitment` for parity with the proving
         // paths so the bench label set is consistent across STFs.
+        // `commit_full_pubdata` is irrelevant with the nop generator; pass
+        // `true` so the result keeper semantics stay scheme-independent.
         cycle_marker::wrap!("da_commitment", {
             write_pubdata(
                 &mut NopCommitmentGenerator,
@@ -84,6 +86,7 @@ where
                 block_hash,
                 metadata.block_timestamp(),
                 &mut io,
+                true,
             );
         });
 

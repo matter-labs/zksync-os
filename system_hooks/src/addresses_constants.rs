@@ -37,6 +37,12 @@ pub const FRI_PRECOMPILE_ADDRESS_LOW: u16 = 0x7003;
 pub const FRI_PRECOMPILE_ADDRESS: B160 =
     B160::from_limbs([FRI_PRECOMPILE_ADDRESS_LOW as u64, 0, 0]);
 
+// Interop commitment leaf reporting hook, used by the L2InteropCommitmentTree
+// system contract to record inserted IMT leaves as l2 -> l1 logs
+pub const INTEROP_COMMITMENT_LEAF_HOOK_ADDRESS_LOW: u16 = 0x7004;
+pub const INTEROP_COMMITMENT_LEAF_HOOK_ADDRESS: B160 =
+    B160::from_limbs([INTEROP_COMMITMENT_LEAF_HOOK_ADDRESS_LOW as u64, 0, 0]);
+
 // L2 message root storage contract
 pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
 

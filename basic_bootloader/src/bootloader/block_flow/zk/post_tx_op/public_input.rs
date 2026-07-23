@@ -54,7 +54,7 @@ pub struct BatchOutput {
     pub first_block_timestamp: u64,
     /// Last block timestamp.
     pub last_block_timestamp: u64,
-    /// DA commitment scheme.
+    /// DA commitment scheme (the commitment *mechanism*: calldata keccak vs blobs).
     pub da_commitment_scheme: DACommitmentScheme,
     /// Pubdata commitment.
     pub pubdata_commitment: Bytes32,
