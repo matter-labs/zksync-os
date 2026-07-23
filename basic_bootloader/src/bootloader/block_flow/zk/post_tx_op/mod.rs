@@ -109,19 +109,23 @@ fn form_block_header<S: EthereumLikeTypes>(
 /// Calculates a rolling hash over a sequence of interop roots.
 /// This creates a cumulative digest that can be verified on settlement layers.
 ///
-/// For each root: rolling_hash = keccak256(old_rolling_hash || chain_id || block_number || root_hash)
+/// For each root:
+/// rolling_hash = keccak256(old_rolling_hash || chain_id || block_number || timestamp || root_hash),
+/// mirroring `ExecutorFacet._verifyDependencyInteropRoots` on the settlement layer
+/// (`abi.encodePacked(prev, chainId, blockOrBatchNumber, timestamp, sides)`).
 pub fn calculate_interop_roots_rolling_hash<'a>(
     old_rolling_hash: Bytes32,
     roots: impl Iterator<Item = &'a InteropRoot>,
     hasher: &mut crypto::sha3::Keccak256,
 ) -> Bytes32 {
-    let mut data = [0u8; 96];
+    let mut data = [0u8; 128];
 
     let mut rolling_hash = old_rolling_hash;
     for root in roots {
         data[0..32].copy_from_slice(&rolling_hash.as_u8_ref());
         data[32..64].copy_from_slice(&root.chain_id.to_be_bytes::<{ U256::BYTES }>());
         data[64..96].copy_from_slice(&root.block_or_batch_number.to_be_bytes::<{ U256::BYTES }>());
+        data[96..128].copy_from_slice(&root.timestamp.to_be_bytes::<{ U256::BYTES }>());
         hasher.update(data);
 
         // Note: now we have only one side
@@ -262,18 +266,18 @@ pub fn read_multichain_root<
     .expect("must read MessageRoot multichain root")
 }
 
-/// Storage slot of `_currentRoot` in the L2InteropCommitmentTree(0x10012) contract: **fixed slot 0**,
-/// a deliberate, consensus-critical storage ABI (see `L2InteropCommitmentTree.sol`). The contract
-/// caches its root there on every insert precisely because the underlying dynamic-height engine has
-/// no fixed root slot.
-const COMMITMENT_TREE_CURRENT_ROOT_SLOT: [u8; 32] = [0u8; 32];
+/// Storage slot of `_imt.tree._height` in the L2InteropCommitmentTree(0x10012) contract: the IMT
+/// is the contract's first state variable and `FullMerkle.FullTree` puts `_height` at offset 0 —
+/// a deliberate, consensus-critical storage ABI (see `L2InteropCommitmentTree.sol`).
+const COMMITMENT_TREE_HEIGHT_STORAGE_SLOT: [u8; 32] = [0u8; 32];
 
 ///
-/// Reads the interop commitment tree root from the L2InteropCommitmentTree(0x10012) contract.
+/// Reads the interop commitment tree (IMT) root from the L2InteropCommitmentTree(0x10012) contract.
 ///
-/// Returns the `_currentRoot` cache (slot 0), which the contract seeds in `initialize` and refreshes
-/// on every insert. On a chain that does not have the tree deployed (or before seeding) the read
-/// returns zero, so this yields `Bytes32::zero()`.
+/// Mirrors `read_multichain_root`: the contract keeps the root in its dynamic-height `FullMerkle`
+/// engine at `_imt.tree._nodes[_height][0]`, so the read loads `_height` (slot 0) and derives the
+/// `_nodes[_height][0]` slot from the `_nodes` base slot 2. On a chain that does not have the tree
+/// deployed (or before seeding) both reads return zero storage, so this yields `Bytes32::zero()`.
 ///
 pub fn read_interop_commitment_tree_root<IO: IOSubsystem>(io: &mut IO) -> Bytes32
 where
@@ -281,13 +285,49 @@ where
 {
     let mut inf_resources = IO::Resources::FORMAL_INFINITE;
 
+    let tree_height = io
+        .storage_read::<false>(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
+            &Bytes32::from_array(COMMITMENT_TREE_HEIGHT_STORAGE_SLOT),
+        )
+        .expect("must read InteropCommitmentTree height");
+
+    let root_slot = calculate_imt_root_slot(tree_height);
+
     io.storage_read::<false>(
         ExecutionEnvironmentType::NoEE,
         &mut inf_resources,
         &L2_INTEROP_COMMITMENT_TREE_ADDRESS,
-        &Bytes32::from_array(COMMITMENT_TREE_CURRENT_ROOT_SLOT),
+        &root_slot,
     )
-    .expect("must read InteropCommitmentTree current root")
+    .expect("must read InteropCommitmentTree root")
+}
+
+///
+/// Calculates the storage slot of the IMT root in the L2InteropCommitmentTree(0x10012) contract.
+///
+/// By convention the slot depends only on `tree_height`. It is the solidity dynamic array access
+/// `_imt.tree._nodes[height][0]`, where `_nodes` is located at slot 2 (same derivation as
+/// `calculate_multichain_root_slot`, which reads the L2MessageRoot's `FullMerkle` at slot 6).
+///
+fn calculate_imt_root_slot(tree_height: Bytes32) -> Bytes32 {
+    use core::ops::Add;
+    // keccak256(0x0000000000000000000000000000000000000000000000000000000000000002)
+    const NODES_FIRST_ELEMENT_SLOT: [u8; 32] = [
+        0x40, 0x57, 0x87, 0xfa, 0x12, 0xa8, 0x23, 0xe0, 0xf2, 0xb7, 0x63, 0x1c, 0xc4, 0x1b, 0x3b,
+        0xa8, 0x82, 0x8b, 0x33, 0x21, 0xca, 0x81, 0x11, 0x11, 0xfa, 0x75, 0xcd, 0x3a, 0xa3, 0xbb,
+        0x5a, 0xce,
+    ];
+
+    // _nodes[height] slot
+    let nodes_height_array_slot = U256::from_be_bytes(NODES_FIRST_ELEMENT_SLOT)
+        .add(U256::from_be_bytes(tree_height.as_u8_array()));
+    let mut hasher = crypto::sha3::Keccak256::new();
+    hasher.update(nodes_height_array_slot.to_be_bytes::<32>());
+    // _nodes[height][0]
+    Bytes32::from_array(hasher.finalize())
 }
 
 ///
@@ -398,6 +438,34 @@ mod tests {
         assert_eq!(
             root_slot.as_u8_array().to_vec(),
             hex::decode("35817d789b7a6dbe8b95b0f21e189fb26d3d329de699cac7a267a9568298e0a5")
+                .unwrap()
+        );
+    }
+
+    // Expected values: keccak256(keccak256(uint256(2)) + height), cross-checked against the
+    // solidity layout lock test (`L2InteropCommitmentTreeStorage.t.sol`).
+    #[test]
+    fn test_calculate_imt_root_slot_tree_height_0() {
+        let root_slot = calculate_imt_root_slot(Bytes32::ZERO);
+
+        assert_eq!(
+            root_slot.as_u8_array().to_vec(),
+            hex::decode("1ab0c6948a275349ae45a06aad66a8bd65ac18074615d53676c09b67809099e0")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_calculate_imt_root_slot_tree_height_4() {
+        let tree_height = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 4,
+        ];
+        let root_slot = calculate_imt_root_slot(Bytes32::from_array(tree_height));
+
+        assert_eq!(
+            root_slot.as_u8_array().to_vec(),
+            hex::decode("cc034019b449ad16908580172ec972745a229ec6575a8d785eaa22043f92c453")
                 .unwrap()
         );
     }
