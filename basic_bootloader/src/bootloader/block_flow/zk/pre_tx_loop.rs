@@ -27,6 +27,11 @@ where
         block_data.block_computational_native_used = BLOCK_INTRINSIC_NATIVE;
         block_data.block_pubdata_used = BLOCK_INTRINSIC_PUBDATA_BYTES;
 
+        // Snapshot the interop commitment tree (IMT) root before any transaction runs. For the first
+        // block of a batch this is the batch-begin root; the batch data keeper commits it (alongside
+        // the batch-end root read in `post_op`) into the chain batch root.
+        block_data.commitment_tree_root_begin = read_interop_commitment_tree_root(&mut system.io);
+
         // EIP-2935: store parent block hash in history storage contract
         {
             use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;

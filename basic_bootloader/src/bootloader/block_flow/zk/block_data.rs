@@ -227,6 +227,10 @@ pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator, A: Allocator + Clone 
     pub block_computational_native_used: u64,
     /// Amount of blob gas used in the block
     pub block_blob_gas_used: u64,
+    /// Interop commitment tree (IMT) root snapshot taken before this block's transactions ran.
+    /// For the first block of a batch this is the batch-begin root, which the batch data keeper
+    /// commits into the chain batch root. Read from L2InteropCommitmentTree(0x10012) in `pre_op`.
+    pub commitment_tree_root_begin: Bytes32,
 }
 
 // Manual `Debug` (like `EthereumBasicTransactionDataKeeper`) so the allocator
@@ -254,6 +258,10 @@ impl<EA: TxHashesAccumulator + core::fmt::Debug, A: Allocator + Clone + Default>
                 &self.block_computational_native_used,
             )
             .field("block_blob_gas_used", &self.block_blob_gas_used)
+            .field(
+                "commitment_tree_root_begin",
+                &self.commitment_tree_root_begin,
+            )
             .finish()
     }
 }
@@ -272,6 +280,7 @@ impl<EA: TxHashesAccumulator, A: Allocator + Clone + Default> ZKBasicBlockDataKe
             block_pubdata_used: 0,
             block_computational_native_used: 0,
             block_blob_gas_used: 0,
+            commitment_tree_root_begin: Bytes32::ZERO,
         }
     }
 
