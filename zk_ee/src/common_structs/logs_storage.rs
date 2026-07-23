@@ -274,6 +274,10 @@ pub type LogContent<A: Allocator = Global> = GenericLogContent<EthereumIOTypesCo
 pub struct LogsStorage<SF: StackFactory<M>, const M: usize, A: Allocator + Clone = Global> {
     list: HistoryList<LogContent<A>, u32, SF, M, A>,
     pubdata_used_by_committed_logs: u32,
+    /// Number of logs already committed to prior transactions, snapshotted at
+    /// [`begin_new_tx`](Self::begin_new_tx). Used to charge only the mandatory
+    /// log-record pubdata in Validium mode (see [`calculate_log_records_pubdata_used_by_tx`]).
+    logs_count_by_committed_logs: u32,
     _marker: core::marker::PhantomData<A>,
 }
 
@@ -282,12 +286,14 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         Self {
             list: HistoryList::new(allocator),
             pubdata_used_by_committed_logs: 0,
+            logs_count_by_committed_logs: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
     pub fn begin_new_tx(&mut self) {
         self.pubdata_used_by_committed_logs = self.list.top().map_or(0, |(_, m)| *m);
+        self.logs_count_by_committed_logs = self.list.len() as u32;
     }
 
     #[track_caller]
@@ -415,6 +421,23 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
             ))
         } else {
             Ok(total_pubdata_used - self.pubdata_used_by_committed_logs)
+        }
+    }
+
+    ///
+    /// Pubdata used by this tx's mandatory L2->L1 log *records* only — the bytes always committed to
+    /// DA (`L2_TO_L1_LOG_SERIALIZE_SIZE` per log), excluding the optional message payloads. This is
+    /// what a Validium tx is charged for; see [`DAMode`](crate::common_structs::da_commitment_scheme::DAMode)
+    /// and `write_pubdata`.
+    ///
+    pub fn calculate_log_records_pubdata_used_by_tx(&self) -> Result<u32, InternalError> {
+        let logs_count = self.list.len() as u32;
+
+        if logs_count < self.logs_count_by_committed_logs {
+            Err(internal_error!("Logs count unexpectedly decreased"))
+        } else {
+            Ok((logs_count - self.logs_count_by_committed_logs)
+                * L2_TO_L1_LOG_SERIALIZE_SIZE as u32)
         }
     }
 

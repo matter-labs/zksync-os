@@ -431,6 +431,13 @@ impl<
             + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
     }
 
+    fn net_committed_log_records_pubdata_used(&self) -> Result<u64, InternalError> {
+        // Validium: only the mandatory log records are committed — no state diffs, no message payloads.
+        Ok(self
+            .logs_storage
+            .calculate_log_records_pubdata_used_by_tx()? as u64)
+    }
+
     fn start_io_frame(&mut self) -> Result<Self::StateSnapshot, InternalError> {
         let io = self.storage.start_frame();
         let transient = self.transient_storage.start_frame();
