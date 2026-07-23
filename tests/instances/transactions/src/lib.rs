@@ -8,7 +8,9 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
-use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::zk::{
+    mandatory_pubdata_prefix_len, PUBDATA_ENCODING_VERSION,
+};
 use rig::basic_bootloader::bootloader::block_flow::{
     TransactionsRollingKeccakHasher, TxHashesAccumulator,
 };
@@ -1409,8 +1411,10 @@ fn test_check_pubdata_has_timestamp() {
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    // Pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
-    let pubdata_timestamp_bytes = &pubdata.as_slice()[33..41];
+    // Pubdata format is the mandatory logs prefix followed by the optional
+    // tail: [VERSION(1)][LOGS_COUNT(4)][LOGS...][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
+    let tail_offset = mandatory_pubdata_prefix_len(pubdata.as_slice());
+    let pubdata_timestamp_bytes = &pubdata.as_slice()[tail_offset + 32..tail_offset + 40];
     let pubdata_timestamp = u64::from_be_bytes(
         pubdata_timestamp_bytes
             .try_into()

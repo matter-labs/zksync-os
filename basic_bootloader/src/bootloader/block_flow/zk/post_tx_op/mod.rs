@@ -26,9 +26,66 @@ pub mod public_input;
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata
-pub const PUBDATA_ENCODING_VERSION: u8 = 2;
+/// Version 3: Split the stream into a mandatory logs prefix and an optional
+///            tail (block context, state diffs, message payloads)
+pub const PUBDATA_ENCODING_VERSION: u8 = 3;
 
-/// Helper method to write the pubdata to the DA commitment generator and result keeper.
+/// Length in bytes of the mandatory pubdata prefix (`[version, logs_count,
+/// log records]`, see [`write_pubdata`]) at the start of a block's pubdata
+/// stream.
+///
+/// Used on the host side to recover the DA-committed part of the stream in
+/// `Validium` mode.
+///
+/// # Panics
+///
+/// Panics if the slice is too short or the version byte doesn't match: the
+/// input is expected to be a stream produced by [`write_pubdata`].
+pub fn mandatory_pubdata_prefix_len(block_pubdata: &[u8]) -> usize {
+    assert!(
+        block_pubdata.len() >= 5,
+        "pubdata is too short to contain the mandatory prefix header"
+    );
+    assert_eq!(
+        block_pubdata[0], PUBDATA_ENCODING_VERSION,
+        "unexpected pubdata encoding version"
+    );
+    let logs_count = u32::from_be_bytes(block_pubdata[1..5].try_into().expect("Always valid"));
+    let len = 1 + 4 + (logs_count as usize) * zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
+    assert!(
+        block_pubdata.len() >= len,
+        "pubdata is shorter than its mandatory prefix"
+    );
+    len
+}
+
+/// `WriteBytes` adapter that forwards writes to the wrapped destination only
+/// when enabled. Used to exclude the optional pubdata tail from the DA
+/// commitment in `Validium` mode, while the bytes are still streamed to
+/// the result keeper.
+struct GatedWriteBytes<'a, DST: WriteBytes + ?Sized> {
+    dst: &'a mut DST,
+    enabled: bool,
+}
+
+impl<DST: WriteBytes + ?Sized> WriteBytes for GatedWriteBytes<'_, DST> {
+    fn write(&mut self, buf: &[u8]) {
+        if self.enabled {
+            self.dst.write(buf);
+        }
+    }
+}
+
+/// Streams the block's pubdata into the DA commitment generator (`pubdata_dst`)
+/// and the result keeper.
+///
+/// The stream consists of two sections:
+/// - Mandatory prefix, always included in the DA commitment:
+///   `[PUBDATA_ENCODING_VERSION, logs_count, l2 -> l1 log records]`.
+/// - Optional tail, included in the DA commitment only when
+///   `commit_full_pubdata` is set (`Rollup` mode), always forwarded to
+///   the result keeper so the sequencer can publish it at its discretion:
+///   `[block_hash, timestamp, state diffs, messages_count, message payloads]`.
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,
@@ -53,20 +110,32 @@ fn write_pubdata<
         FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
         PROOF_ENV,
     >,
+    commit_full_pubdata: bool,
 ) {
-    // Write version byte first to enable future pubdata format upgrades
+    // Write version byte first to enable future pubdata format upgrades.
+    // It's part of the mandatory section, so the committed stream stays
+    // self-describing for logs-only schemes.
     pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
-    pubdata_dst.write(block_hash.as_u8_ref());
-    pubdata_dst.write(&timestamp.to_be_bytes());
-
     result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
+
+    io.logs_storage
+        .apply_logs_pubdata(pubdata_dst, result_keeper);
+
+    let mut tail_dst = GatedWriteBytes {
+        dst: pubdata_dst,
+        enabled: commit_full_pubdata,
+    };
+
+    tail_dst.write(block_hash.as_u8_ref());
+    tail_dst.write(&timestamp.to_be_bytes());
     result_keeper.pubdata(block_hash.as_u8_ref());
     result_keeper.pubdata(&timestamp.to_be_bytes());
 
     io.storage
-        .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
+        .apply_storage_diffs_pubdata(result_keeper, &mut tail_dst, &mut io.oracle);
 
-    io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
+    io.logs_storage
+        .apply_messages_pubdata(&mut tail_dst, result_keeper);
 }
 
 /// Helper method to create block header.

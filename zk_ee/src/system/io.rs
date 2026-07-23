@@ -114,6 +114,15 @@ pub trait IOSubsystem: Sized {
         data: &[u8],
     ) -> Result<Bytes32, SystemError>;
 
+    /// Record an interop commitment tree (IMT) leaf as an l2 -> l1 log,
+    /// so that the leaf is always committed to DA.
+    fn emit_interop_commitment_leaf(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        leaf_hash: Bytes32,
+    ) -> Result<(), SystemError>;
+
     /// Add an interop root.
     fn add_interop_root(
         &mut self,

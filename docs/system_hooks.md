@@ -28,6 +28,7 @@ System hooks have two distinct use cases:
   - FRI proof verification (`0x7003`, behind `fri_precompile`, disabled in default builds) — see the [FRI precompile design](./fri_precompile.md)
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
+  - Interop commitment leaf system hook
   - Set bytecode on address system hook
   - Contract deployer system hook (temporary for backward compatibility)
   - Mint base token system hook (used only for system-level mints)
@@ -39,6 +40,20 @@ It can only be called by the L1 messenger system contract at address `0x8008`.
 The input should be the ABI-encoded parameters: sender address and message bytes.
 
 Implementation of the L1 messenger system hook decodes the input and records the message using the system method.
+Calls from any other caller are treated as calls to an empty account: success with empty returndata and no side effects.
+
+## Interop commitment leaf system hook
+
+The interop commitment leaf system hook (at address `0x7004`) records interop commitment tree (IMT)
+leaves as l2 -> l1 logs, so that the leaves are always committed to DA (see
+[DA commitment schemes](./da_commitment_schemes.md)) and the tree stays reconstructible from
+published data.
+It can only be called by the L2InteropCommitmentTree system contract at address `0x10012`,
+which invokes it on every leaf insertion.
+The input must be exactly the 32-byte leaf hash; any other input reverts.
+
+The recorded log has the `L2InteropCommitmentTree` address as the sender, zero key and the leaf
+hash as the value.
 Calls from any other caller are treated as calls to an empty account: success with empty returndata and no side effects.
 
 ## Set bytecode on address system hook

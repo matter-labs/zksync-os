@@ -9,9 +9,32 @@ DA commitment schemes determine how pubdata (the data needed to reconstruct chai
 - **Security**: The level of data availability guarantees
 - **Compatibility**: Integration with different settlement layers and DA solutions
 
+## Pubdata Stream Layout
+
+The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) consists of two sections:
+
+1. **Mandatory prefix** — always included in the DA commitment, regardless of the mode:
+   - Pubdata encoding version byte
+   - L2 -> L1 log records (count + serialized logs), including user message logs, L1 tx result logs, and interop commitment tree (IMT) leaf logs
+2. **Optional tail** — included in the DA commitment only in `Rollup` mode; always forwarded to the sequencer, which may publish it at its discretion:
+   - Block hash and timestamp
+   - State diffs
+   - User message payloads (count + length-prefixed data)
+
+This guarantees that L2 -> L1 logs and IMT leaves are always publicly available (the settlement layer always validates the DA commitment via blobs or calldata), while state diffs and message payloads can be left to the operator for validium-style chains.
+
+## Two orthogonal axes: scheme (mechanism) and mode (scope)
+
+DA is configured along two independent axes:
+
+- **`DACommitmentScheme`** — the commitment *mechanism*: how the committed bytes are published/hashed (calldata keccak vs EIP-4844 blobs). Sourced per batch from the oracle and committed in the batch output.
+- **`DAMode`** — the committed *scope*: `Rollup` commits the whole pubdata; `Validium` commits only the mandatory logs prefix. `DAMode` is a chain-level rule carried in [`ChainConfig`](../zk_ee/src/system/metadata/chain_config.rs) and thereby committed into the public input via the chain config hash, so the settlement layer can enforce the chain's configured mode. On zksync-os it is read together with the rest of the chain config.
+
+The scheme selects the generator; the mode selects whether the full stream or only the mandatory prefix is fed into it.
+
 ## Supported DA Commitment Schemes
 
-ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commitment_scheme.rs`](../zk_ee/src/common_structs/da_commitment_scheme.rs):
+ZKsync OS defines the following DA commitment scheme (mechanism) IDs in [`da_commitment_scheme.rs`](../zk_ee/src/common_structs/da_commitment_scheme.rs):
 
 ### 1. None (ID: 0)
 **Purpose**: Invalid/uninitialized state
@@ -21,16 +44,11 @@ ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commit
 **Use Case**: Internal system state only
 
 ### 2. EmptyNoDA (ID: 1)
-**Purpose**: Validium mode - no data availability guarantees
+**Purpose**: No data availability guarantees (zero commitment)
 
-**Implementation**: [`NopCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/mod.rs)
+**Implementation**: [`NopCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/mod.rs) — always returns the zero hash.
 
-**Commitment**: Always returns zero hash (`0x000...000`)
-
-**Use Case**:
-- Validiums where DA is handled off-chain
-- Private chains where data availability is not required
-- Reduced fees due to lower pubdata costs
+**Note**: Validium chains that must keep logs/IMT reconstructible do **not** use this; they use a real mechanism (calldata or blobs) with `DAMode::Validium`.
 
 ### 3. PubdataKeccak256 (ID: 2)
 **Purpose**: Custom DA solutions using keccak256
@@ -102,6 +120,10 @@ final_commitment = keccak256(all_versioned_hashes)
 - EIP-4844 enabled Ethereum rollups
 - Cost-optimized for large amounts of pubdata
 - Up to ~90% cost reduction compared to calldata
+
+## DA Mode (scope)
+
+Validium is expressed by pairing any real mechanism above (calldata `BlobsAndPubdataKeccak256` or blobs `BlobsZKsyncOS`) with `DAMode::Validium` in the chain config. In `Validium` mode only the mandatory logs prefix is fed into the chosen generator (so a calldata validium commits `keccak256(structured(prefix))` and a blob validium commits the blob versioned hashes over the prefix); in `Rollup` mode the full pubdata stream is committed. The generator (commitment shape) is unchanged by the mode — only the committed byte range differs. `DAMode` mirrors era-contracts' DA-mode field carried in diamond storage and hashed into the batch public input via the chain config.
 
 ## DA Commitment Generation Process
 

@@ -1,7 +1,9 @@
 //! Storage of L2->L1 logs.
-//! There are two kinds of such logs:
+//! There are three kinds of such logs:
 //! - user messages (sent via l1 messenger system hook).
 //! - l1 -> l2 txs logs, to prove execution result on l1.
+//! - interop commitment tree (IMT) leaves (reported via the interop
+//!   commitment leaf system hook), to make the IMT reconstructible from DA.
 use super::history_list::HistoryList;
 use super::merkle_tree::merkle_root_in_place;
 use crate::internal_error;
@@ -117,8 +119,8 @@ pub const L2_TO_L1_LOG_EMPTY_SUBTREE_HASHES: [[u8; 32]; L2_TO_L1_LOG_TREE_HEIGHT
 
 ///
 /// L2 to l1 log structure, used for merkle tree leaves.
-/// This structure holds both kinds of logs (user messages
-/// and l1 -> l2 tx logs).
+/// This structure holds all kinds of logs (user messages,
+/// l1 -> l2 tx logs and interop commitment tree leaves).
 ///
 #[derive(Default, Debug, Clone)]
 pub struct L2ToL1Log {
@@ -139,19 +141,22 @@ pub struct L2ToL1Log {
     ///
     /// The L2 address which sent the log.
     /// For user messages set to `L1Messenger` system hook address,
-    /// for l1 -> l2 txs logs - `BootloaderFormalAddress`.
+    /// for l1 -> l2 txs logs - `BootloaderFormalAddress`,
+    /// for interop commitment tree leaves - `L2InteropCommitmentTree` address.
     ///
     pub sender: B160,
     ///
     /// The 32 bytes of information that was sent in the log.
     /// For user messages used to save message sender address(padded),
-    /// for l1 -> l2 txs logs - transaction hash.
+    /// for l1 -> l2 txs logs - transaction hash,
+    /// for interop commitment tree leaves - zero.
     ///
     pub key: Bytes32,
     ///
     /// The 32 bytes of information that was sent in the log.
-    /// For user messages used to save message hash.
-    /// for l1 -> l2 txs logs - success flag(padded).
+    /// For user messages used to save message hash,
+    /// for l1 -> l2 txs logs - success flag(padded),
+    /// for interop commitment tree leaves - leaf hash.
     ///
     pub value: Bytes32,
 }
@@ -174,6 +179,7 @@ pub struct GenericLogContent<IOTypes: SystemIOTypesConfig, A: Allocator = Global
 pub enum GenericLogContentData<DATA, HASH, ADDRESS> {
     UserMsg(UserMsgData<DATA, HASH, ADDRESS>),
     L1TxLog(L1TxLog<HASH>),
+    InteropCommitmentLeaf(InteropCommitmentLeafLog<HASH>),
 }
 ///
 /// Data stored for a user message.
@@ -196,6 +202,16 @@ pub struct L1TxLog<HASH> {
     pub success: bool,
 }
 
+///
+/// Data stored for an interop commitment tree (IMT) leaf log.
+/// Reported by the `L2InteropCommitmentTree` system contract on every
+/// leaf insertion so that the leaves are always publishable to DA.
+///
+#[derive(Clone, Debug)]
+pub struct InteropCommitmentLeafLog<HASH> {
+    pub leaf_hash: HASH,
+}
+
 /// Log content reference to be returned from the storage
 ///
 #[derive(Clone, Debug)]
@@ -216,6 +232,11 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
                 data: m.data.as_slice(),
                 data_hash: &m.data_hash,
             }),
+            GenericLogContentData::InteropCommitmentLeaf(l) => {
+                GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                    leaf_hash: &l.leaf_hash,
+                })
+            }
         };
         GenericLogContentWithTxRef {
             tx_number: self.tx_number,
@@ -234,6 +255,11 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
                 data: UsizeAlignedByteBox::from_slice_in(m.data, allocator),
                 data_hash: *m.data_hash,
             }),
+            GenericLogContentData::InteropCommitmentLeaf(l) => {
+                GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                    leaf_hash: *l.leaf_hash,
+                })
+            }
         };
         GenericLogContent {
             tx_number: r.tx_number,
@@ -326,6 +352,32 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         Ok(())
     }
 
+    pub fn push_interop_commitment_leaf(
+        &mut self,
+        tx_number: u32,
+        leaf_hash: Bytes32,
+    ) -> Result<(), SystemError> {
+        let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
+        let total_pubdata = total_pubdata as u32;
+
+        let total_pubdata = self
+            .list
+            .top()
+            .map_or(total_pubdata, |(_, m)| *m + total_pubdata);
+
+        self.list.push(
+            LogContent {
+                tx_number,
+                data: GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                    leaf_hash,
+                }),
+            },
+            total_pubdata,
+        );
+
+        Ok(())
+    }
+
     pub fn len(&self) -> u64 {
         self.list.len() as u64
     }
@@ -366,7 +418,13 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         }
     }
 
-    pub fn apply_pubdata<T: WriteBytes + ?Sized>(
+    ///
+    /// Encode the l2 -> l1 log records (count + serialized logs) into the pubdata.
+    ///
+    /// This is the mandatory part of the logs pubdata: it must always be included
+    /// in the DA commitment, regardless of the DA commitment scheme.
+    ///
+    pub fn apply_logs_pubdata<T: WriteBytes + ?Sized>(
         &self,
         dst: &mut T,
         results_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
@@ -374,17 +432,31 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         let logs_count = (self.list.len() as u32).to_be_bytes();
         dst.write(&logs_count);
         results_keeper.pubdata(&logs_count);
-        let mut messages_count: u32 = 0;
-        // First we encode all the L2L1 log information.
         self.list.iter().for_each(|el| {
-            if let GenericLogContentData::UserMsg(_) = el.data {
-                messages_count += 1;
-            }
             let log: L2ToL1Log = el.into();
             log.write_encoding(dst);
             log.pubdata(results_keeper);
         });
-        // Then, we do a second pass to publish messages
+    }
+
+    ///
+    /// Encode the user message payloads (count + length-prefixed data) into the
+    /// pubdata.
+    ///
+    /// This is the optional part of the logs pubdata: only the message hashes
+    /// (part of the log records) are guaranteed to be committed to DA.
+    ///
+    pub fn apply_messages_pubdata<T: WriteBytes + ?Sized>(
+        &self,
+        dst: &mut T,
+        results_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+    ) {
+        let mut messages_count: u32 = 0;
+        self.list.iter().for_each(|el| {
+            if let GenericLogContentData::UserMsg(_) = el.data {
+                messages_count += 1;
+            }
+        });
         let messages_count = messages_count.to_be_bytes();
         dst.write(&messages_count);
         results_keeper.pubdata(&messages_count);
@@ -491,6 +563,17 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                     Bytes32::from_u256_be(&data),
                 )
             }
+            GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                leaf_hash,
+            }) => {
+                // L2InteropCommitmentTree system contract address
+                (
+                    // TODO: move into const
+                    B160::from_limbs([0x10012, 0, 0]),
+                    Bytes32::ZERO,
+                    leaf_hash,
+                )
+            }
         };
         Self {
             l2_shard_id: 0,
@@ -500,5 +583,51 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
             key,
             value,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interop_commitment_leaf_log_field_mapping() {
+        let leaf_hash = Bytes32::from_byte_fill(0xab);
+        let content: LogContent = GenericLogContent {
+            tx_number: 7,
+            data: GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                leaf_hash,
+            }),
+        };
+
+        let log = L2ToL1Log::from(&content);
+        assert_eq!(log.l2_shard_id, 0);
+        assert!(log.is_service);
+        assert_eq!(log.tx_number_in_block, 7);
+        // L2InteropCommitmentTree system contract address
+        assert_eq!(log.sender, B160::from_limbs([0x10012, 0, 0]));
+        assert_eq!(log.key, Bytes32::ZERO);
+        assert_eq!(log.value, leaf_hash);
+    }
+
+    #[test]
+    fn interop_commitment_leaf_log_encoding_layout() {
+        let leaf_hash = Bytes32::from_byte_fill(0xab);
+        let content: LogContent = GenericLogContent {
+            tx_number: 0x0102,
+            data: GenericLogContentData::InteropCommitmentLeaf(InteropCommitmentLeafLog {
+                leaf_hash,
+            }),
+        };
+
+        let encoding = L2ToL1Log::from(&content).encode();
+        // Packed layout: [shard(1), is_service(1), tx_number(2), sender(20), key(32), value(32)]
+        let mut expected = [0u8; L2_TO_L1_LOG_SERIALIZE_SIZE];
+        expected[1] = 1; // is_service
+        expected[2..4].copy_from_slice(&[0x01, 0x02]); // tx number, big-endian
+        expected[21..24].copy_from_slice(&[0x01, 0x00, 0x12]); // sender 0x10012, low bytes of B160
+                                                               // key stays zero
+        expected[56..88].copy_from_slice(leaf_hash.as_u8_ref()); // value = leaf hash
+        assert_eq!(encoding, expected);
     }
 }

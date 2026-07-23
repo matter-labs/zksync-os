@@ -201,7 +201,6 @@ fn run_with_tracer<const RANDOMIZED: bool>(
                 DACommitmentScheme::BlobsAndPubdataKeccak256
             }
             "blobs_zksync_os" | "blobs" => DACommitmentScheme::BlobsZKsyncOS,
-            "empty_no_da" => DACommitmentScheme::EmptyNoDA,
             other => panic!("Unknown BENCH_DA_SCHEME: {other}"),
         }
     });

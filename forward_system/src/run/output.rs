@@ -224,6 +224,7 @@ fn parse_l2_to_l1_log_w_preimages(
     let preimage = match &value.data {
         GenericLogContentData::UserMsg(UserMsgData { data, .. }) => Some(data.as_slice().to_vec()),
         GenericLogContentData::L1TxLog(_) => None,
+        GenericLogContentData::InteropCommitmentLeaf(_) => None,
     };
     let log: zk_ee::common_structs::L2ToL1Log = value.into();
     let log = log.into_interface();

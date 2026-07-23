@@ -205,14 +205,14 @@ mod tx_encoding_format {
 }
 
 mod da_commitment_scheme {
-    //! Unit tests for DA commitment scheme validation.
+    //! Unit tests for DA commitment scheme + DA mode validation.
     //!
-    //! DACommitmentScheme::try_from validates the oracle-provided scheme ID.
-    //! Only values 0-4 are valid. Invalid IDs should be rejected.
-    //! Note: the oracle query for DA commitment scheme only runs in PROOF_ENV,
-    //! so this is tested at the type level rather than through the full execution path.
+    //! `DACommitmentScheme::try_from`/`DAMode::try_from` validate oracle-provided
+    //! ids. Only scheme values 0-4 and mode values 0-1 are valid; invalid ids are
+    //! rejected. Note: these are only read in PROOF_ENV, so they are tested at the
+    //! type level rather than through the full execution path.
 
-    use rig::zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+    use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, DAMode};
 
     #[test]
     fn test_da_commitment_scheme_accepts_all_valid_ids() {
@@ -240,12 +240,22 @@ mod da_commitment_scheme {
 
     #[test]
     fn test_da_commitment_scheme_rejects_invalid_ids() {
-        // Value just above the valid range
+        // Value just above the valid range (logs-only is no longer a scheme; it is a DA mode)
         assert!(DACommitmentScheme::try_from(5u8).is_err());
         // Middle of invalid range
         assert!(DACommitmentScheme::try_from(128u8).is_err());
         // Maximum u8 value
         assert!(DACommitmentScheme::try_from(255u8).is_err());
+    }
+
+    #[test]
+    fn test_da_mode_ids_and_scope() {
+        assert_eq!(DAMode::try_from(0u8), Ok(DAMode::Rollup));
+        assert_eq!(DAMode::try_from(1u8), Ok(DAMode::Validium));
+        assert!(DAMode::try_from(2u8).is_err());
+
+        assert!(DAMode::Rollup.commits_full_pubdata());
+        assert!(!DAMode::Validium.commits_full_pubdata());
     }
 }
 
