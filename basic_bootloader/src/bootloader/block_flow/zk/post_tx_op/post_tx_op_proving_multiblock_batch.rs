@@ -115,8 +115,11 @@ where
         io.logs_storage
             .apply_to_array_vec(&mut batch_data.logs_storage);
 
+        let commitment_tree_root_begin = block_data.commitment_tree_root_begin;
         let upgrade_tx_hash = block_data.upgrade_tx_recorder.finish();
         let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
+        // Batch-end IMT root snapshot, taken after this block's transactions (see `read_interop_commitment_tree_root`).
+        let commitment_tree_root_end = read_interop_commitment_tree_root(&mut io);
 
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
@@ -190,6 +193,8 @@ where
             io.interop_root_storage.iter(),
             settlement_layer_chain_id,
             block_data.current_transaction_number,
+            commitment_tree_root_begin,
+            commitment_tree_root_end,
         );
 
         Ok(io.oracle)
