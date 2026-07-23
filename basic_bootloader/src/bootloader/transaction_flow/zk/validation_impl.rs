@@ -180,8 +180,11 @@ where
             is_service: transaction.is_service(),
             free_native: native_per_gas == 0,
         });
-    let intrinsic_pubdata =
-        calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
+    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
+        authorization_list_num,
+        transaction.is_service(),
+        system.get_chain_config().da_mode(),
+    );
 
     // Materialize the tx's resource budget and charge the intrinsic overheads.
     // Underflow on any of the charges surfaces as a validation error
