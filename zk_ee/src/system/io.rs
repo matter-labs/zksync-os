@@ -154,6 +154,11 @@ pub trait IOSubsystem: Sized {
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
+    /// Net pubdata this tx commits in Validium mode: only the mandatory L2->L1 log *records* (the
+    /// bytes always published to DA), excluding state diffs and message payloads. See
+    /// [`DAMode`](crate::common_structs::da_commitment_scheme::DAMode).
+    fn net_committed_log_records_pubdata_used(&self) -> Result<u64, InternalError>;
+
     /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
     fn start_io_frame(&mut self) -> Result<<Self as IOSubsystem>::StateSnapshot, InternalError>;

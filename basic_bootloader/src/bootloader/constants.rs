@@ -318,6 +318,11 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
 
+/// Validium (`DAMode::Validium`) L1 tx intrinsic pubdata: only the 88-byte L1->L2 tx log record is
+/// committed to DA. The coinbase/treasury/refund balance diffs and the asset-tracker diff folded into
+/// `L1_TX_INTRINSIC_PUBDATA` are state diffs that Validium does not commit (see `write_pubdata`).
+pub const VALIDIUM_L1_TX_INTRINSIC_PUBDATA: u64 = 88;
+
 /// Native cost of the EIP-2935 pre-tx-loop work: a cold read of the
 /// `HISTORY_STORAGE_ADDRESS` account properties followed by a cold write of
 /// the history slot.
@@ -365,6 +370,12 @@ pub const BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES: u64 = 3 * 4;
 /// - the EIP-2935 history-slot diff when the feature is enabled.
 pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
     1 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
+
+/// Validium (`DAMode::Validium`) per-block intrinsic pubdata: only the mandatory committed prefix
+/// header — the `PUBDATA_ENCODING_VERSION` byte plus the 4-byte log count. The block hash, timestamp,
+/// the state-diff/message counters, and the EIP-2935 history-slot diff live in the optional tail that
+/// Validium does not commit (see `write_pubdata`), so they are not charged.
+pub const VALIDIUM_BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 4;
 
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
 /// from block start. Covers fixed pre-tx-loop system work: the EIP-2935
