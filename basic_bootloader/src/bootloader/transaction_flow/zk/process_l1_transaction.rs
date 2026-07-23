@@ -27,8 +27,8 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
-use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::TxValidator;
+use zk_ee::system::tracer::{NopTracer, Tracer};
+use zk_ee::system::validator::{NopTxValidator, TxValidator};
 use zk_ee::system::Resource;
 use zk_ee::system::System;
 use zk_ee::system::{AccountDataRequest, CompletedExecution, Computational};
@@ -41,7 +41,7 @@ use zk_ee::{interface_error, internal_error, wrap_error};
 
 use system_hooks::addresses_constants::{
     BASE_TOKEN_HOLDER_ADDRESS, L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
-    L2_CHAIN_ASSET_HANDLER_ADDRESS, L2_NATIVE_TOKEN_VAULT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+    L2_CHAIN_ASSET_HANDLER_ADDRESS,
 };
 
 use super::validation_impl::compute_calldata_tokens;
@@ -594,10 +594,121 @@ struct L1ExecutionOutcome<S: EthereumLikeTypes> {
     resources_before_refund: S::Resources,
 }
 
-/// Materializes every account preimage used by mandatory L1 post-processing
-/// before attacker-controlled execution can exhaust the transaction-local
-/// preimage-cache budget.
-fn prewarm_l1_postprocessing_accounts<S: EthereumLikeTypes>(
+/// Executes the mandatory non-zero L1 finalization path once before the first
+/// transaction and then rolls all of its state changes back.
+///
+/// This runs before `begin_new_tx`, so every proxy, implementation, and
+/// transitive callee preimage loaded by the real execution path is admitted as
+/// block-level `Accepted`. Raw preimages intentionally survive frame rollback;
+/// storage, events, logs, and messages do not.
+pub(crate) fn prewarm_l1_postprocessing<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    system_functions: &mut HooksStorage<S, S::Allocator>,
+    mut memories: RunnerMemoryBuffers<'_>,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    let mut resources = S::Resources::FORMAL_INFINITE;
+    let rollback_handle = system.start_global_frame()?;
+    let l1_chain_id = read_l1_chain_id(system);
+    let chain_id = U256::from(system.get_chain_id());
+    let mut tracer = NopTracer::default();
+    let mut validator = NopTxValidator;
+
+    // AssetTracker only reads the chain migration number when the saved asset
+    // migration number is zero and the base-token total supply is zero. The
+    // total supply may change during an L1 transaction, so execute this
+    // conditional dependency unconditionally before transaction-local cache
+    // metering starts.
+    // Keep both synthetic calls in one fallible operation so a subsystem
+    // failure short-circuits further execution, but defer propagating it until
+    // after the outer frame has been rolled back.
+    let prewarm_result = (|| {
+        prewarm_l2_chain_asset_handler::<S>(
+            system,
+            system_functions,
+            memories.reborrow(),
+            chain_id,
+            &mut resources,
+            &mut tracer,
+            &mut validator,
+        )?;
+
+        notify_l2_asset_tracker::<S>(
+            system,
+            system_functions,
+            memories,
+            U256::from(1),
+            l1_chain_id,
+            &mut resources,
+            &mut tracer,
+            &mut validator,
+        )
+    })();
+
+    // The synthetic call must never change block state.
+    system.finish_global_frame(Some(&rollback_handle))?;
+    prewarm_result
+}
+
+/// Unconditionally admits the preimages behind
+/// `L2ChainAssetHandler.migrationNumber(block.chainid)`.
+///
+/// The real AssetTracker call reaches this getter only when both the saved
+/// asset migration number and base-token supply are zero. Calling it directly
+/// removes that state-dependent branch from transaction-local cache
+/// accounting. An EVM-level revert is harmless: the proxy and implementation
+/// preimages loaded before the revert have already been admitted, while
+/// subsystem failures still propagate.
+fn prewarm_l2_chain_asset_handler<'a, S: EthereumLikeTypes + 'a>(
+    system: &mut System<S>,
+    system_functions: &mut HooksStorage<S, S::Allocator>,
+    memories: RunnerMemoryBuffers<'a>,
+    chain_id: U256,
+    resources: &mut S::Resources,
+    tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    // migrationNumber(uint256): selector 0xb2157716 + ABI-encoded chain ID.
+    let mut calldata = [0u8; 36];
+    calldata[0..4].copy_from_slice(&[0xb2, 0x15, 0x77, 0x16]);
+    calldata[4..36].copy_from_slice(&chain_id.to_be_bytes::<32>());
+
+    resources.with_infinite_ergs(|inf_ergs| {
+        let CompletedExecution {
+            resources_returned,
+            result: _,
+        } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+            system,
+            system_functions,
+            memories,
+            &calldata,
+            &L2_ASSET_TRACKER_ADDRESS,
+            &L2_CHAIN_ASSET_HANDLER_ADDRESS,
+            inf_ergs.clone(),
+            &U256::ZERO,
+            true, // should_make_frame - isolate an EVM-level revert
+            tracer,
+            validator,
+        )?;
+        *inf_ergs = resources_returned;
+        Ok::<(), BootloaderSubsystemError>(())
+    })
+}
+
+/// Materializes the account preimages used by mandatory balance updates before
+/// attacker-controlled execution can exhaust the transaction-local cache
+/// budget. Contract preimages are admitted at block level by
+/// `prewarm_l1_postprocessing`.
+fn prewarm_l1_postprocessing_balance_accounts<S: EthereumLikeTypes>(
     system: &mut System<S>,
     refund_recipient: B160,
 ) -> Result<(), BootloaderSubsystemError>
@@ -606,48 +717,7 @@ where
 {
     let mut resources = S::Resources::FORMAL_INFINITE;
 
-    // L2 base token is the caller of the AssetTracker notification, and the
-    // notification may call back into it to read totalSupply().
-    system.io.read_account_properties(
-        ExecutionEnvironmentType::NoEE,
-        &mut resources,
-        &L2_BASE_TOKEN_ADDRESS,
-        AccountDataRequest::empty()
-            .with_ee_version()
-            .with_bytecode(),
-    )?;
-
-    // AssetTracker is the callee, so its bytecode preimage is needed as well.
-    system.io.read_account_properties(
-        ExecutionEnvironmentType::EVM,
-        &mut resources,
-        &L2_ASSET_TRACKER_ADDRESS,
-        AccountDataRequest::empty().with_bytecode(),
-    )?;
-
-    // AssetTracker's positive-amount path reads SystemContext and may query the
-    // chain asset handler while initializing migration state. The native token
-    // vault is only reached if the base token registration invariant is broken,
-    // but warming it keeps mandatory post-processing safe in that state too.
-    for address in [
-        SYSTEM_CONTEXT_ADDRESS,
-        L2_CHAIN_ASSET_HANDLER_ADDRESS,
-        L2_NATIVE_TOKEN_VAULT_ADDRESS,
-    ] {
-        system.io.read_account_properties(
-            ExecutionEnvironmentType::EVM,
-            &mut resources,
-            &address,
-            AccountDataRequest::empty().with_bytecode(),
-        )?;
-    }
-
-    // The remaining mandatory operations only read or update nominal balances.
-    for address in [
-        BASE_TOKEN_HOLDER_ADDRESS,
-        system.get_coinbase(),
-        refund_recipient,
-    ] {
+    for address in [BASE_TOKEN_HOLDER_ADDRESS, refund_recipient] {
         system.io.read_account_properties(
             ExecutionEnvironmentType::EVM,
             &mut resources,
@@ -713,7 +783,7 @@ where
         .ok_or(internal_error!("td-mfc"))?;
 
     let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
-    prewarm_l1_postprocessing_accounts(system, refund_recipient)?;
+    prewarm_l1_postprocessing_balance_accounts(system, refund_recipient)?;
 
     // Transfer value from treasury to sender (the deposit minus max fee).
     // Run this even for a zero amount so that every preimage needed by the
