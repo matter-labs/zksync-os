@@ -230,6 +230,33 @@ impl<
         Ok(data_hash)
     }
 
+    fn emit_interop_commitment_leaf(
+        &mut self,
+        _ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        leaf_hash: Bytes32,
+    ) -> Result<(), SystemError> {
+        // We need to charge cost of hashing:
+        // - keccak256_native_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) and
+        //   keccak256_native_cost(64) when reconstructing L2ToL1Log
+        // - at most 1 time keccak256_native_cost(64) when building the
+        //   Merkle tree (see `emit_l1_message` for details).
+        let hashing_native_cost =
+            keccak256_native_cost::<Self::Resources>(L2_TO_L1_LOG_SERIALIZE_SIZE).as_u64()
+                + 2 * keccak256_native_cost::<Self::Resources>(64).as_u64();
+
+        // We also charge some native resource for storing the log.
+        // As for `emit_l1_message`, this function must not charge ergs — EVM gas
+        // accounting is the caller's responsibility (the L2InteropCommitmentTree
+        // system contract charges it before invoking the hook).
+        let native = hashing_native_cost + EVENT_STORAGE_BASE_NATIVE_COST;
+
+        resources.charge(&R::from_native(R::Native::from_computational(native)))?;
+
+        self.logs_storage
+            .push_interop_commitment_leaf(self.tx_number, leaf_hash)
+    }
+
     fn add_interop_root(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
