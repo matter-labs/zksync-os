@@ -38,6 +38,7 @@ use crate::system::system_types::BatchProverInputBootloader;
 use crate::system::system_types::CallSimulationBootloader;
 use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::ForwardRunningSystem;
+use basic_bootloader::bootloader::block_flow::mandatory_pubdata_prefix_len;
 use basic_bootloader::bootloader::block_flow::public_input::{BatchOutput, BatchPublicInput};
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
@@ -85,7 +86,7 @@ use crate::run::output::TxResult;
 use crate::run::test_impl::NoopTxCallback;
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
-use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, DAMode};
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
@@ -287,6 +288,7 @@ pub fn generate_proof_input<
 pub fn generate_legacy_batch_proof_input(
     blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
+    da_mode: DAMode,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
     fn disconnect_marker_idx(block_proof_input: &[u32]) -> usize {
@@ -306,6 +308,19 @@ pub fn generate_legacy_batch_proof_input(
     let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
+            // In `Validium` mode only the mandatory prefix of each block's pubdata
+            // (the logs section) is committed to blobs, see `write_pubdata`; the
+            // blob advice must be regenerated over the same bytes the guest committed.
+            let blocks_pubdata: Vec<&[u8]> = if da_mode == DAMode::Validium {
+                blocks_pubdata
+                    .into_iter()
+                    .map(|block_pubdata| {
+                        &block_pubdata[..mandatory_pubdata_prefix_len(block_pubdata)]
+                    })
+                    .collect()
+            } else {
+                blocks_pubdata
+            };
             let total_pubdata_length: usize = blocks_pubdata
                 .iter()
                 .map(|blocks_pubdata| blocks_pubdata.len())
@@ -953,7 +968,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zk_ee::common_structs::DACommitmentScheme;
+    use zk_ee::common_structs::{DACommitmentScheme, DAMode};
 
     fn chain_config_response() -> Vec<u32> {
         let len = chain_config_response_len_in_u32_words();
@@ -973,6 +988,7 @@ mod tests {
         let batch_input = generate_legacy_batch_proof_input(
             vec![block_proof_input.as_slice()],
             DACommitmentScheme::BlobsZKsyncOS,
+            DAMode::Rollup,
             vec![&[1, 2, 3]],
         );
 
@@ -1023,6 +1039,7 @@ mod tests {
         let batch_witness = generate_legacy_batch_proof_input(
             vec![single_block_witness.as_slice()],
             DACommitmentScheme::BlobsZKsyncOS,
+            DAMode::Rollup,
             vec![&[]],
         );
 
@@ -1046,6 +1063,7 @@ mod tests {
         let batch_input = generate_legacy_batch_proof_input(
             vec![first.as_slice(), second.as_slice()],
             DACommitmentScheme::PubdataKeccak256,
+            DAMode::Rollup,
             vec![&[], &[]],
         );
 
@@ -1068,6 +1086,7 @@ mod tests {
         generate_legacy_batch_proof_input(
             vec![first.as_slice(), second.as_slice()],
             DACommitmentScheme::PubdataKeccak256,
+            DAMode::Rollup,
             vec![&[], &[]],
         );
     }

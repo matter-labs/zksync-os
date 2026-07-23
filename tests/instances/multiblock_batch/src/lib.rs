@@ -5,7 +5,9 @@
 
 use rig::alloy::consensus::{TxEip1559, TxLegacy};
 use rig::alloy::primitives::address;
+use rig::alloy::primitives::keccak256;
 use rig::alloy::primitives::TxKind;
+use rig::basic_bootloader::bootloader::block_flow::mandatory_pubdata_prefix_len;
 use rig::chain::{get_zksync_os_dist_dir, RunConfig};
 use rig::forward_system::run::{
     generate_batch_proof_input, generate_legacy_batch_proof_input, BatchBlockInput,
@@ -13,7 +15,8 @@ use rig::forward_system::run::{
 use rig::log::debug;
 use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
-use rig::zk_ee::common_structs::DACommitmentScheme;
+use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, DAMode};
+use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{testing_signer, BlockContext, BlockOutput, TestingFramework};
 
@@ -79,10 +82,16 @@ fn new_multiblock_batch_tester() -> TestingFramework {
         .with_minted_tokens_to_treasury()
 }
 
-fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
+fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_mode: DAMode) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
-    let mut batch_tester = new_multiblock_batch_tester();
+    // The DA mode is a chain-level rule carried in the chain config (and thereby committed via the
+    // public input's chain config hash), so both the batch run and the per-block legacy runs must use
+    // a config with this mode.
+    let chain_config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
+        .unwrap()
+        .with_da_mode(da_mode);
+    let mut batch_tester = new_multiblock_batch_tester().with_chain_config(chain_config);
     let block1_context = BlockContext {
         timestamp: 42,
         ..Default::default()
@@ -119,6 +128,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     // and stitches the resulting witnesses/pubdata together afterwards.
     let mut legacy_tester = new_multiblock_batch_tester()
         .with_da_commitment_scheme(da_commitment_scheme)
+        .with_chain_config(chain_config)
         .with_run_config(legacy_singleblock_run_config());
     legacy_tester.set_block_context(Some(block1_context.clone()));
     let _ = legacy_tester.execute_block(vec![mint_tx]);
@@ -167,6 +177,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let legacy_batch_input = generate_legacy_batch_proof_input(
         vec![&block1_proof_input, &block2_proof_input],
         da_commitment_scheme,
+        da_mode,
         vec![block1_pubdata.as_slice(), block2_pubdata.as_slice()],
     );
     let batch_output = generate_batch_proof_input(
@@ -212,6 +223,34 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         [block1_pubdata.clone(), block2_pubdata.clone()].concat(),
         "batch pubdata mismatch"
     );
+    // Cross-check the DA commitment against an independent recomputation for the calldata-keccak
+    // mechanism (`BlobsAndPubdataKeccak256`). The commitment shape is the Era-compatible structured
+    // `keccak256(stateDiffHash(0) || keccak(committed) || 1 || blobHash(0))`; the *committed* bytes
+    // depend on the DA mode — the full pubdata stream in `Rollup`, or only the mandatory logs prefix
+    // in `Validium`. (The blob mechanism is exercised by the RISC-V proof check below.)
+    if da_commitment_scheme == DACommitmentScheme::BlobsAndPubdataKeccak256 {
+        let committed_pubdata = if da_mode.commits_full_pubdata() {
+            [block1_pubdata.as_slice(), block2_pubdata.as_slice()].concat()
+        } else {
+            [
+                &block1_pubdata[..mandatory_pubdata_prefix_len(&block1_pubdata)],
+                &block2_pubdata[..mandatory_pubdata_prefix_len(&block2_pubdata)],
+            ]
+            .concat()
+        };
+        let pubdata_keccak = keccak256(&committed_pubdata);
+        let mut da_commitment_preimage = Vec::new();
+        da_commitment_preimage.extend_from_slice(&[0u8; 32]); // state diffs hash is not validated
+        da_commitment_preimage.extend_from_slice(pubdata_keccak.as_slice());
+        da_commitment_preimage.push(1); // single "fake" blob for calldata schemes
+        da_commitment_preimage.extend_from_slice(&[0u8; 32]); // blob hash ignored on the settlement layer
+        let expected_commitment = keccak256(&da_commitment_preimage);
+        assert_eq!(
+            batch_output.batch_output.pubdata_commitment.as_u8_ref(),
+            expected_commitment.as_slice(),
+            "DA commitment mismatch for {da_commitment_scheme:?} / {da_mode:?}"
+        );
+    }
     assert_eq!(
         batch_output.block_outputs.len(),
         2,
@@ -248,10 +287,13 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     );
 }
 
-fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
+fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_mode: DAMode) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
-    let mut batch_tester = new_multiblock_batch_tester();
+    let chain_config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
+        .unwrap()
+        .with_da_mode(da_mode);
+    let mut batch_tester = new_multiblock_batch_tester().with_chain_config(chain_config);
     let block_context = BlockContext {
         timestamp: 42,
         ..Default::default()
@@ -279,6 +321,7 @@ fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
 
     let mut legacy_tester = new_multiblock_batch_tester()
         .with_da_commitment_scheme(da_commitment_scheme)
+        .with_chain_config(chain_config)
         .with_run_config(legacy_singleblock_run_config());
     legacy_tester.set_block_context(Some(block_context.clone()));
     let _ = legacy_tester.execute_block(vec![mint_tx]);
@@ -292,6 +335,7 @@ fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let legacy_batch_input = generate_legacy_batch_proof_input(
         vec![legacy_proof_input.as_slice()],
         da_commitment_scheme,
+        da_mode,
         vec![legacy_pubdata.as_slice()],
     );
     let batch_output = generate_batch_proof_input(
@@ -354,7 +398,12 @@ fn run_multiblock_batch_proof_run_calldata() {
     std::thread::Builder::new()
         .name("multiblock_batch_calldata".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsAndPubdataKeccak256))
+        .spawn(|| {
+            run_multiblock_batch_proof_run(
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                DAMode::Rollup,
+            )
+        })
         .unwrap()
         .join()
         .unwrap();
@@ -365,7 +414,7 @@ fn run_multiblock_batch_proof_run_blobs() {
     std::thread::Builder::new()
         .name("multiblock_batch_blobs".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS))
+        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, DAMode::Rollup))
         .unwrap()
         .join()
         .unwrap();
@@ -373,10 +422,30 @@ fn run_multiblock_batch_proof_run_blobs() {
 
 #[test]
 fn run_multiblock_batch_proof_run_validium() {
+    // Validium = the calldata mechanism with the DA mode set to `Validium`, so only the mandatory
+    // logs section is committed.
     std::thread::Builder::new()
         .name("multiblock_batch_validium".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::EmptyNoDA))
+        .spawn(|| {
+            run_multiblock_batch_proof_run(
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                DAMode::Validium,
+            )
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn run_multiblock_batch_proof_run_validium_blobs() {
+    std::thread::Builder::new()
+        .name("multiblock_batch_validium_blobs".to_owned())
+        .stack_size(TEST_STACK_SIZE)
+        .spawn(|| {
+            run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, DAMode::Validium)
+        })
         .unwrap()
         .join()
         .unwrap();
@@ -411,7 +480,12 @@ fn run_singleblock_batch_proof_run_calldata() {
     std::thread::Builder::new()
         .name("singleblock_batch_calldata".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_singleblock_batch_proof_run(DACommitmentScheme::BlobsAndPubdataKeccak256))
+        .spawn(|| {
+            run_singleblock_batch_proof_run(
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                DAMode::Rollup,
+            )
+        })
         .unwrap()
         .join()
         .unwrap();
