@@ -8,6 +8,10 @@ permissions:
   contents: write
   packages: read
 
+env:
+  # No CUDA toolkit on the runner; build prover deps against stubs.
+  ZKSYNC_USE_CUDA_STUBS: true
+
 # Log all shell steps
 defaults:
   run:
