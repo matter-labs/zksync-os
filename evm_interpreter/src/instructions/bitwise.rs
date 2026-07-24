@@ -1,6 +1,20 @@
 use super::*;
 use native_resource_constants::*;
 
+#[inline(always)]
+fn apply_sar(shift: &U256, value: &mut U256) {
+    match shift.try_to_usize() {
+        None => value.arithmetic_shr_assign(256),
+        Some(shift) => {
+            if shift >= 256 {
+                value.arithmetic_shr_assign(256);
+            } else {
+                value.arithmetic_shr_assign(shift);
+            }
+        }
+    }
+}
+
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn lt(&mut self) -> InstructionResult {
         self.gas
@@ -157,8 +171,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        let shift = op1.to_usize_saturated();
-        op2.arithmetic_shr_assign(shift);
+        apply_sar(op1, op2);
         Ok(())
     }
 
@@ -177,6 +190,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
 #[cfg(test)]
 mod tests {
+    use super::apply_sar;
     use ruint::aliases::U256 as HostU256;
     use u256::U256;
 
@@ -185,6 +199,13 @@ mod tests {
         actual.arithmetic_shr_assign(shift);
         let actual_host: HostU256 = actual.into();
         assert_eq!(actual_host, input.arithmetic_shr(shift));
+    }
+
+    fn sar_with_evm_shift(input: HostU256, shift: HostU256) -> HostU256 {
+        let shift: U256 = shift.into();
+        let mut result: U256 = input.into();
+        apply_sar(&shift, &mut result);
+        result.into()
     }
 
     #[test]
@@ -204,6 +225,23 @@ mod tests {
             for shift in [0usize, 1, 128, 255, 256, 257] {
                 assert_sar_matches_host(value, shift);
             }
+        }
+    }
+
+    #[test]
+    fn sar_saturates_large_evm_shift_amounts() {
+        let positive = HostU256::from(1u64) << 250;
+        let negative = HostU256::from(1u64) << 255;
+        let large_shifts = [
+            HostU256::from(256u64),
+            HostU256::from(1u64 << 32),
+            HostU256::from((1u64 << 32) + 100),
+            HostU256::MAX,
+        ];
+
+        for shift in large_shifts {
+            assert_eq!(sar_with_evm_shift(positive, shift), HostU256::ZERO);
+            assert_eq!(sar_with_evm_shift(negative, shift), HostU256::MAX);
         }
     }
 
