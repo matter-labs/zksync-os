@@ -81,7 +81,10 @@ fn new_multiblock_batch_tester() -> TestingFramework {
         .with_minted_tokens_to_treasury()
 }
 
-fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, pubdata_content: PubdataContent) {
+fn run_multiblock_batch_proof_run(
+    da_commitment_scheme: DACommitmentScheme,
+    pubdata_content: PubdataContent,
+) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     // The DA mode is a chain-level rule carried in the chain config (and thereby committed via the
@@ -278,7 +281,10 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, pubd
     );
 }
 
-fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, pubdata_content: PubdataContent) {
+fn run_singleblock_batch_proof_run(
+    da_commitment_scheme: DACommitmentScheme,
+    pubdata_content: PubdataContent,
+) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     let chain_config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
@@ -404,7 +410,12 @@ fn run_multiblock_batch_proof_run_blobs() {
     std::thread::Builder::new()
         .name("multiblock_batch_blobs".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, PubdataContent::FullPubdata))
+        .spawn(|| {
+            run_multiblock_batch_proof_run(
+                DACommitmentScheme::BlobsZKsyncOS,
+                PubdataContent::FullPubdata,
+            )
+        })
         .unwrap()
         .join()
         .unwrap();
@@ -434,7 +445,10 @@ fn run_multiblock_batch_proof_run_validium_blobs() {
         .name("multiblock_batch_validium_blobs".to_owned())
         .stack_size(TEST_STACK_SIZE)
         .spawn(|| {
-            run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, PubdataContent::LogsOnly)
+            run_multiblock_batch_proof_run(
+                DACommitmentScheme::BlobsZKsyncOS,
+                PubdataContent::LogsOnly,
+            )
         })
         .unwrap()
         .join()

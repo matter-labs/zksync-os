@@ -11,10 +11,10 @@ DA commitment schemes determine how pubdata (the data needed to reconstruct chai
 
 ## Pubdata Stream Layout
 
-The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) is chosen by the pubdata content, and the **exact same bytes are streamed to the DA commitment and to the sequencer/prover** — the reported pubdata is byte-for-byte what the batch commits to. A version byte distinguishes the two layouts:
+The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) is chosen by the pubdata content, and the **exact same bytes are streamed to the DA commitment and to the sequencer/prover** — the reported pubdata is byte-for-byte what the batch commits to. Every layout starts with a shared two-byte header: the encoding version (`3` — versions 1/2 were the pre-split full-pubdata formats without a mode byte) followed by a `PubdataContent` mode byte that selects the payload:
 
-- **Full pubdata (`FullPubdata`) — version 2** (unchanged from before): `[version, block_hash, timestamp, state diffs, logs, message payloads]`. The full pubdata, so existing rollup DA consumers keep working.
-- **Logs-only (`LogsOnly`) — version 3**: `[version, logs_count, log records]` only. Log records include user-message logs, L1-tx result logs and interop commitment tree (IMT) leaf logs. State diffs and message payloads are neither committed nor part of this stream; the sequencer receives them through the dedicated result-keeper channels (`storage_diffs`, `logs`).
+- **Full pubdata (`FullPubdata`) — mode 0**: `[version, mode, block_hash, timestamp, state diffs, logs, message payloads]`. The full pubdata; the payload after the header is unchanged from version 2.
+- **Logs-only (`LogsOnly`) — mode 1**: `[version, mode, logs_count, log records]` only. Log records include user-message logs, L1-tx result logs and interop commitment tree (IMT) leaf logs. State diffs and message payloads are neither committed nor part of this stream; the sequencer receives them through the dedicated result-keeper channels (`storage_diffs`, `logs`).
 
 This guarantees that L2 -> L1 logs and IMT leaves are always publicly available (the settlement layer always validates the DA commitment via blobs or calldata), while state diffs and message payloads can be left to the operator for validium-style chains. Pubdata *charging* follows the same split — a logs-only tx pays only for the committed log records (see the Pubdata content section).
 

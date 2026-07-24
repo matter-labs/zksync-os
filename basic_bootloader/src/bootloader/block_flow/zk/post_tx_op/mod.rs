@@ -24,30 +24,25 @@ mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
 pub mod public_input;
 
-/// Pubdata encoding version byte for `FullPubdata` mode.
+/// Pubdata encoding version byte, shared by all pubdata contents.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata
-///
-/// The `FullPubdata` layout is unchanged from version 2 (full pubdata: block context,
-/// state diffs, logs and message payloads), so existing rollup DA consumers keep
-/// working.
-pub const FULL_PUBDATA_ENCODING_VERSION: u8 = 2;
-
-/// Pubdata encoding version byte for `LogsOnly` mode.
-/// Version 3: only the mandatory L2->L1 log section (`[version, logs_count, log
-/// records]`); state diffs and message payloads are not published.
-pub const LOGS_ONLY_PUBDATA_ENCODING_VERSION: u8 = 3;
+/// Version 3: A `PubdataContent` mode byte follows the version byte and
+/// selects the payload layout (full pubdata vs logs-only)
+pub const PUBDATA_ENCODING_VERSION: u8 = 3;
 
 /// Streams the block's pubdata into the DA commitment generator (`pubdata_dst`)
 /// and the result keeper.
 ///
 /// The exact same bytes go to both sinks, so the pubdata reported to the
-/// sequencer/prover is byte-for-byte what the batch commits to. The layout is
-/// chosen by the pubdata content:
-/// - `FullPubdata` (version 2): the full pubdata —
-///   `[version, block_hash, timestamp, state diffs, logs, message payloads]`.
-/// - `LogsOnly` (version 3): only the mandatory log section —
-///   `[version, logs_count, log records]`. State diffs and message payloads are
+/// sequencer/prover is byte-for-byte what the batch commits to. Every layout
+/// starts with the shared two-byte header `[PUBDATA_ENCODING_VERSION, mode]`,
+/// where the mode byte is the `PubdataContent` discriminant selecting the
+/// payload that follows:
+/// - `FullPubdata` (mode 0): the full pubdata —
+///   `[block_hash, timestamp, state diffs, logs, message payloads]`.
+/// - `LogsOnly` (mode 1): only the mandatory log section —
+///   `[logs_count, log records]`. State diffs and message payloads are
 ///   neither committed nor reported here; the sequencer receives them through
 ///   the dedicated result-keeper channels (`storage_diffs`, `logs`).
 fn write_pubdata<
@@ -76,13 +71,14 @@ fn write_pubdata<
     >,
     pubdata_content: PubdataContent,
 ) {
+    // Shared header: the encoding version byte followed by the mode byte.
+    let header = [PUBDATA_ENCODING_VERSION, pubdata_content as u8];
+    pubdata_dst.write(&header);
+    result_keeper.pubdata(&header);
     match pubdata_content {
         PubdataContent::FullPubdata => {
-            // Full pubdata, version 2 — identical byte layout to the pre-split rollup format.
-            pubdata_dst.write(&[FULL_PUBDATA_ENCODING_VERSION]);
             pubdata_dst.write(block_hash.as_u8_ref());
             pubdata_dst.write(&timestamp.to_be_bytes());
-            result_keeper.pubdata(&[FULL_PUBDATA_ENCODING_VERSION]);
             result_keeper.pubdata(block_hash.as_u8_ref());
             result_keeper.pubdata(&timestamp.to_be_bytes());
 
@@ -95,9 +91,7 @@ fn write_pubdata<
                 .apply_messages_pubdata(pubdata_dst, result_keeper);
         }
         PubdataContent::LogsOnly => {
-            // Only the mandatory L2->L1 log section is committed and reported, version 3.
-            pubdata_dst.write(&[LOGS_ONLY_PUBDATA_ENCODING_VERSION]);
-            result_keeper.pubdata(&[LOGS_ONLY_PUBDATA_ENCODING_VERSION]);
+            // Only the mandatory L2->L1 log section is committed and reported.
             io.logs_storage
                 .apply_logs_pubdata(pubdata_dst, result_keeper);
         }
