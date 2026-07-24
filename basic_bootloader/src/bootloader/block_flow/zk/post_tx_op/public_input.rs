@@ -133,7 +133,7 @@ impl BatchPublicInput {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
-    use zk_ee::common_structs::da_commitment_scheme::DAMode;
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
     use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 
     fn sample_chain_config() -> ChainConfig {
@@ -188,9 +188,9 @@ mod tests {
 
     #[test]
     fn chain_config_hash_golden_vector() {
-        // Pins the four-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit, da_mode)
+        // Pins the four-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit, pubdata_content)
         // shared with era-contracts (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI
-        // disabled, the default max tx gas limit and DA mode `Rollup` (0). Changing the encoding on
+        // disabled, the default max tx gas limit and pubdata content `FullPubdata` (0). Changing the encoding on
         // either side must update both.
         assert_eq!(
             sample_chain_config().hash(),
@@ -211,13 +211,13 @@ mod tests {
     }
 
     #[test]
-    fn batch_public_input_hash_commits_to_da_mode() {
-        let rollup = sample_chain_config(); // `ChainConfig::new` defaults to `DAMode::Rollup`
-        let validium = rollup.with_da_mode(DAMode::Validium);
+    fn batch_public_input_hash_commits_to_pubdata_content() {
+        let full_pubdata = sample_chain_config(); // `ChainConfig::new` defaults to `PubdataContent::FullPubdata`
+        let logs_only = full_pubdata.with_pubdata_content(PubdataContent::LogsOnly);
 
         assert_ne!(
-            sample_public_input(rollup).hash(),
-            sample_public_input(validium).hash()
+            sample_public_input(full_pubdata).hash(),
+            sample_public_input(logs_only).hash()
         );
     }
 

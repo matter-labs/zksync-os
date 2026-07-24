@@ -22,7 +22,7 @@ use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
 use std::cmp::min;
-use zk_ee::common_structs::da_commitment_scheme::DAMode;
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
@@ -406,7 +406,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     statement_versioned_hashes_num: u64,
     max_fee_per_gas: U256,
     max_priority_fee_per_gas: U256,
-    da_mode: DAMode,
+    pubdata_content: PubdataContent,
 ) -> Result<(), ()> {
     // Validate fee fields
     if max_priority_fee_per_gas > max_fee_per_gas {
@@ -438,7 +438,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
 
     // Intrinsic pubdata
     let intrinsic_pubdata =
-        calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false, da_mode);
+        calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false, pubdata_content);
     let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
 
     let native_limit = native_prepaid
@@ -473,7 +473,7 @@ pub fn validate_l2_tx_intrinsic_native_resources(
 mod tests {
     use super::validate_l2_tx_intrinsic_native_resources;
     use ruint::aliases::U256;
-    use zk_ee::common_structs::da_commitment_scheme::DAMode;
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 
     #[test]
     fn intrinsic_native_validation_allows_zero_native_price() {
@@ -491,7 +491,7 @@ mod tests {
                 0,
                 U256::from(1000u64),
                 U256::from(0u64),
-                DAMode::Rollup,
+                PubdataContent::FullPubdata,
             ),
             Ok(())
         );

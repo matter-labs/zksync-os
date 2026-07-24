@@ -13,7 +13,7 @@ use crate::{
 ///
 /// This is the DA commitment *mechanism* — how the committed pubdata is
 /// published and hashed. Which *part* of the pubdata is committed (full vs
-/// logs-only) is a separate, orthogonal axis, [`DAMode`], carried in the chain
+/// logs-only) is a separate, orthogonal axis, [`PubdataContent`], carried in the chain
 /// config.
 ///
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,53 +59,53 @@ impl DACommitmentScheme {
 }
 
 ///
-/// Data availability mode: which part of the pubdata the batch commits to.
+/// Pubdata content: which part of the pubdata the batch commits to.
 ///
 /// This is orthogonal to [`DACommitmentScheme`] (which selects the *mechanism* —
-/// calldata keccak vs EIP-4844 blobs). The mode selects the *scope*:
-/// - `Rollup` commits the full pubdata (state diffs + logs + message payloads).
-/// - `Validium` commits only the mandatory L2->L1 log section (log records,
+/// calldata keccak vs EIP-4844 blobs). The content selects the *scope*:
+/// - `FullPubdata` commits the full pubdata (state diffs + logs + message payloads).
+/// - `LogsOnly` commits only the mandatory L2->L1 log section (log records,
 ///   including the interop commitment (IMT) leaves), leaving state diffs and
 ///   message payloads to the operator.
 ///
 /// It is a chain-level rule carried in [`ChainConfig`](crate::system::metadata::chain_config)
 /// and thereby committed into the batch public input via the chain config hash,
-/// so the settlement layer can enforce the chain's configured mode.
+/// so the settlement layer can enforce the chain's configured content.
 ///
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
-pub enum DAMode {
+pub enum PubdataContent {
     /// The whole pubdata is committed and must be published.
-    Rollup,
+    FullPubdata,
     /// Only the mandatory L2->L1 log section is committed; state diffs and
     /// message payloads are published at the operator's discretion.
-    Validium,
+    LogsOnly,
 }
 
-impl TryFrom<u8> for DAMode {
+impl TryFrom<u8> for PubdataContent {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(DAMode::Rollup),
-            1 => Ok(DAMode::Validium),
+            0 => Ok(PubdataContent::FullPubdata),
+            1 => Ok(PubdataContent::LogsOnly),
             _ => Err(()),
         }
     }
 }
 
-impl DAMode {
-    /// Whether the batch commits the full pubdata (`Rollup`) or only the
-    /// mandatory logs section (`Validium`).
+impl PubdataContent {
+    /// Whether the batch commits the full pubdata (`FullPubdata`) or only the
+    /// mandatory logs section (`LogsOnly`).
     pub fn commits_full_pubdata(&self) -> bool {
-        matches!(self, DAMode::Rollup)
+        matches!(self, PubdataContent::FullPubdata)
     }
 }
 
 // Serialized as a single `u64`-width word (mirrors `bool`), so it composes with
 // the other `ChainConfig` fields and works on the 32-bit proving target.
-impl UsizeSerializable for DAMode {
+impl UsizeSerializable for PubdataContent {
     const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -123,12 +123,12 @@ impl UsizeSerializable for DAMode {
     }
 }
 
-impl UsizeDeserializable for DAMode {
+impl UsizeDeserializable for PubdataContent {
     const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let word = <u64 as UsizeDeserializable>::from_iter(src)?;
-        let raw = u8::try_from(word).map_err(|_| internal_error!("Invalid DA mode"))?;
-        DAMode::try_from(raw).map_err(|_| internal_error!("Invalid DA mode"))
+        let raw = u8::try_from(word).map_err(|_| internal_error!("Invalid pubdata content"))?;
+        PubdataContent::try_from(raw).map_err(|_| internal_error!("Invalid pubdata content"))
     }
 }

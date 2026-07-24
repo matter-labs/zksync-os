@@ -8,7 +8,7 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     L2_INTEROP_COMMITMENT_TREE_ADDRESS, MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
-use zk_ee::common_structs::da_commitment_scheme::DAMode;
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::merkle_root_in_place;
 use zk_ee::memory::stack_trait::StackFactory;
@@ -24,29 +24,29 @@ mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
 pub mod public_input;
 
-/// Pubdata encoding version byte for `Rollup` mode.
+/// Pubdata encoding version byte for `FullPubdata` mode.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata
 ///
-/// The `Rollup` layout is unchanged from version 2 (full pubdata: block context,
+/// The `FullPubdata` layout is unchanged from version 2 (full pubdata: block context,
 /// state diffs, logs and message payloads), so existing rollup DA consumers keep
 /// working.
-pub const ROLLUP_PUBDATA_ENCODING_VERSION: u8 = 2;
+pub const FULL_PUBDATA_ENCODING_VERSION: u8 = 2;
 
-/// Pubdata encoding version byte for `Validium` mode.
+/// Pubdata encoding version byte for `LogsOnly` mode.
 /// Version 3: only the mandatory L2->L1 log section (`[version, logs_count, log
 /// records]`); state diffs and message payloads are not published.
-pub const VALIDIUM_PUBDATA_ENCODING_VERSION: u8 = 3;
+pub const LOGS_ONLY_PUBDATA_ENCODING_VERSION: u8 = 3;
 
 /// Streams the block's pubdata into the DA commitment generator (`pubdata_dst`)
 /// and the result keeper.
 ///
 /// The exact same bytes go to both sinks, so the pubdata reported to the
 /// sequencer/prover is byte-for-byte what the batch commits to. The layout is
-/// chosen by the DA mode:
-/// - `Rollup` (version 2): the full pubdata —
+/// chosen by the pubdata content:
+/// - `FullPubdata` (version 2): the full pubdata —
 ///   `[version, block_hash, timestamp, state diffs, logs, message payloads]`.
-/// - `Validium` (version 3): only the mandatory log section —
+/// - `LogsOnly` (version 3): only the mandatory log section —
 ///   `[version, logs_count, log records]`. State diffs and message payloads are
 ///   neither committed nor reported here; the sequencer receives them through
 ///   the dedicated result-keeper channels (`storage_diffs`, `logs`).
@@ -74,15 +74,15 @@ fn write_pubdata<
         FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
         PROOF_ENV,
     >,
-    da_mode: DAMode,
+    pubdata_content: PubdataContent,
 ) {
-    match da_mode {
-        DAMode::Rollup => {
+    match pubdata_content {
+        PubdataContent::FullPubdata => {
             // Full pubdata, version 2 — identical byte layout to the pre-split rollup format.
-            pubdata_dst.write(&[ROLLUP_PUBDATA_ENCODING_VERSION]);
+            pubdata_dst.write(&[FULL_PUBDATA_ENCODING_VERSION]);
             pubdata_dst.write(block_hash.as_u8_ref());
             pubdata_dst.write(&timestamp.to_be_bytes());
-            result_keeper.pubdata(&[ROLLUP_PUBDATA_ENCODING_VERSION]);
+            result_keeper.pubdata(&[FULL_PUBDATA_ENCODING_VERSION]);
             result_keeper.pubdata(block_hash.as_u8_ref());
             result_keeper.pubdata(&timestamp.to_be_bytes());
 
@@ -94,10 +94,10 @@ fn write_pubdata<
             io.logs_storage
                 .apply_messages_pubdata(pubdata_dst, result_keeper);
         }
-        DAMode::Validium => {
+        PubdataContent::LogsOnly => {
             // Only the mandatory L2->L1 log section is committed and reported, version 3.
-            pubdata_dst.write(&[VALIDIUM_PUBDATA_ENCODING_VERSION]);
-            result_keeper.pubdata(&[VALIDIUM_PUBDATA_ENCODING_VERSION]);
+            pubdata_dst.write(&[LOGS_ONLY_PUBDATA_ENCODING_VERSION]);
+            result_keeper.pubdata(&[LOGS_ONLY_PUBDATA_ENCODING_VERSION]);
             io.logs_storage
                 .apply_logs_pubdata(pubdata_dst, result_keeper);
         }

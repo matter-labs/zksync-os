@@ -603,7 +603,7 @@ where
         let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
             context.authorization_list_num,
             transaction.is_service(),
-            system.get_chain_config().da_mode(),
+            system.get_chain_config().pubdata_content(),
         );
 
         ZkTxResult {
