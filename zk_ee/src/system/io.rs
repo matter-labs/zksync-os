@@ -154,9 +154,9 @@ pub trait IOSubsystem: Sized {
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
-    /// Net pubdata this tx commits in Validium mode: only the mandatory L2->L1 log *records* (the
+    /// Net pubdata this tx commits in `LogsOnly` mode: only the mandatory L2->L1 log *records* (the
     /// bytes always published to DA), excluding state diffs and message payloads. See
-    /// [`DAMode`](crate::common_structs::da_commitment_scheme::DAMode).
+    /// [`PubdataContent`](crate::common_structs::da_commitment_scheme::PubdataContent).
     fn net_committed_log_records_pubdata_used(&self) -> Result<u64, InternalError>;
 
     /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).

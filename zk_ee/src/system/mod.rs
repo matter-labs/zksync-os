@@ -57,7 +57,7 @@ use self::{
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
 use crate::utils::Bytes32;
 use crate::{
-    common_structs::da_commitment_scheme::DAMode,
+    common_structs::da_commitment_scheme::PubdataContent,
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -198,12 +198,12 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
-        // The DA mode decides what is committed, and therefore what is charged: `Rollup` commits the
-        // whole pubdata; `Validium` commits only the mandatory L2->L1 log records (see `write_pubdata`
-        // and `DAMode`), so state diffs and message payloads are not charged.
-        match self.metadata.chain_config().da_mode() {
-            DAMode::Rollup => self.io.net_pubdata_used(),
-            DAMode::Validium => self.io.net_committed_log_records_pubdata_used(),
+        // The pubdata content decides what is committed, and therefore what is charged: `FullPubdata` commits the
+        // whole pubdata; `LogsOnly` commits only the mandatory L2->L1 log records (see `write_pubdata`
+        // and `PubdataContent`), so state diffs and message payloads are not charged.
+        match self.metadata.chain_config().pubdata_content() {
+            PubdataContent::FullPubdata => self.io.net_pubdata_used(),
+            PubdataContent::LogsOnly => self.io.net_committed_log_records_pubdata_used(),
         }
     }
 

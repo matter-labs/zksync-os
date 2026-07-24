@@ -14,7 +14,7 @@ use rig::forward_system::run::{
 use rig::log::debug;
 use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
-use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, DAMode};
+use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, PubdataContent};
 use rig::zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::{testing_signer, BlockContext, BlockOutput, TestingFramework};
@@ -81,7 +81,7 @@ fn new_multiblock_batch_tester() -> TestingFramework {
         .with_minted_tokens_to_treasury()
 }
 
-fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_mode: DAMode) {
+fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, pubdata_content: PubdataContent) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     // The DA mode is a chain-level rule carried in the chain config (and thereby committed via the
@@ -89,7 +89,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_m
     // a config with this mode.
     let chain_config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
         .unwrap()
-        .with_da_mode(da_mode);
+        .with_pubdata_content(pubdata_content);
     let mut batch_tester = new_multiblock_batch_tester().with_chain_config(chain_config);
     let block1_context = BlockContext {
         timestamp: 42,
@@ -239,7 +239,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_m
         assert_eq!(
             batch_output.batch_output.pubdata_commitment.as_u8_ref(),
             expected_commitment.as_slice(),
-            "DA commitment mismatch for {da_commitment_scheme:?} / {da_mode:?}"
+            "DA commitment mismatch for {da_commitment_scheme:?} / {pubdata_content:?}"
         );
     }
     assert_eq!(
@@ -278,12 +278,12 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_m
     );
 }
 
-fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, da_mode: DAMode) {
+fn run_singleblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme, pubdata_content: PubdataContent) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     let chain_config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
         .unwrap()
-        .with_da_mode(da_mode);
+        .with_pubdata_content(pubdata_content);
     let mut batch_tester = new_multiblock_batch_tester().with_chain_config(chain_config);
     let block_context = BlockContext {
         timestamp: 42,
@@ -391,7 +391,7 @@ fn run_multiblock_batch_proof_run_calldata() {
         .spawn(|| {
             run_multiblock_batch_proof_run(
                 DACommitmentScheme::BlobsAndPubdataKeccak256,
-                DAMode::Rollup,
+                PubdataContent::FullPubdata,
             )
         })
         .unwrap()
@@ -404,7 +404,7 @@ fn run_multiblock_batch_proof_run_blobs() {
     std::thread::Builder::new()
         .name("multiblock_batch_blobs".to_owned())
         .stack_size(TEST_STACK_SIZE)
-        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, DAMode::Rollup))
+        .spawn(|| run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, PubdataContent::FullPubdata))
         .unwrap()
         .join()
         .unwrap();
@@ -420,7 +420,7 @@ fn run_multiblock_batch_proof_run_validium() {
         .spawn(|| {
             run_multiblock_batch_proof_run(
                 DACommitmentScheme::BlobsAndPubdataKeccak256,
-                DAMode::Validium,
+                PubdataContent::LogsOnly,
             )
         })
         .unwrap()
@@ -434,7 +434,7 @@ fn run_multiblock_batch_proof_run_validium_blobs() {
         .name("multiblock_batch_validium_blobs".to_owned())
         .stack_size(TEST_STACK_SIZE)
         .spawn(|| {
-            run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, DAMode::Validium)
+            run_multiblock_batch_proof_run(DACommitmentScheme::BlobsZKsyncOS, PubdataContent::LogsOnly)
         })
         .unwrap()
         .join()
@@ -473,7 +473,7 @@ fn run_singleblock_batch_proof_run_calldata() {
         .spawn(|| {
             run_singleblock_batch_proof_run(
                 DACommitmentScheme::BlobsAndPubdataKeccak256,
-                DAMode::Rollup,
+                PubdataContent::FullPubdata,
             )
         })
         .unwrap()

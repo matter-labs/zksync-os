@@ -103,7 +103,7 @@ where
                 block_hash,
                 metadata.block_timestamp(),
                 &mut io,
-                metadata.chain_config.da_mode(),
+                metadata.chain_config.pubdata_content(),
             );
         });
 
