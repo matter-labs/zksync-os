@@ -250,7 +250,10 @@ mod da_commitment_scheme {
 
     #[test]
     fn test_pubdata_content_ids_and_scope() {
-        assert_eq!(PubdataContent::try_from(0u8), Ok(PubdataContent::FullPubdata));
+        assert_eq!(
+            PubdataContent::try_from(0u8),
+            Ok(PubdataContent::FullPubdata)
+        );
         assert_eq!(PubdataContent::try_from(1u8), Ok(PubdataContent::LogsOnly));
         assert!(PubdataContent::try_from(2u8).is_err());
 

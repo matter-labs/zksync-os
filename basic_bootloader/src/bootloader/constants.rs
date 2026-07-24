@@ -14,6 +14,7 @@ use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
+use zk_ee::common_structs::logs_storage::L2_TO_L1_LOG_SERIALIZE_SIZE;
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
@@ -292,16 +293,16 @@ pub const ASSET_TRACKER_INTRINSIC_PUBDATA: u64 = 32 + 33;
 
 // Needed to publish the L1 tx log, coinbase balance, treasury balance, refund
 // recipient balance, and asset tracker state diff.
-pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
+pub const L1_TX_INTRINSIC_PUBDATA: u64 = L2_TO_L1_LOG_SERIALIZE_SIZE as u64
     + COINBASE_BALANCE_INTRINSIC_PUBDATA
     + TREASURY_BALANCE_INTRINSIC_PUBDATA
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
 
-/// Logs-only (`PubdataContent::LogsOnly`) L1 tx intrinsic pubdata: only the 88-byte L1->L2 tx log record is
+/// Logs-only (`PubdataContent::LogsOnly`) L1 tx intrinsic pubdata: only the L1->L2 tx log record is
 /// committed to DA. The coinbase/treasury/refund balance diffs and the asset-tracker diff folded into
 /// `L1_TX_INTRINSIC_PUBDATA` are state diffs that `LogsOnly` does not commit (see `write_pubdata`).
-pub const LOGS_ONLY_L1_TX_INTRINSIC_PUBDATA: u64 = 88;
+pub const LOGS_ONLY_L1_TX_INTRINSIC_PUBDATA: u64 = L2_TO_L1_LOG_SERIALIZE_SIZE as u64;
 
 /// Native cost of the EIP-2935 pre-tx-loop work: a cold read of the
 /// `HISTORY_STORAGE_ADDRESS` account properties followed by a cold write of
@@ -344,18 +345,20 @@ pub const BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES: u64 = 3 * 4;
 
 /// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
 /// from block start. Accounts for:
-/// - the fixed envelope written by `write_pubdata`: 1 byte
-///   (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash) + 8 bytes (timestamp),
+/// - the fixed envelope written by `write_pubdata`: 2 bytes
+///   (PUBDATA_ENCODING_VERSION + `PubdataContent` mode) + 32 bytes (block
+///   hash) + 8 bytes (timestamp),
 /// - the fixed serialized counters for state diffs, logs, and messages,
 /// - the EIP-2935 history-slot diff when the feature is enabled.
 pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
-    1 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
+    2 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
 
-/// Logs-only (`PubdataContent::LogsOnly`) per-block intrinsic pubdata: only the mandatory committed prefix
-/// header — the `PUBDATA_ENCODING_VERSION` byte plus the 4-byte log count. The block hash, timestamp,
-/// the state-diff/message counters, and the EIP-2935 history-slot diff live in the optional tail that
-/// `LogsOnly` does not commit (see `write_pubdata`), so they are not charged.
-pub const LOGS_ONLY_BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 1 + 4;
+/// Logs-only (`PubdataContent::LogsOnly`) per-block intrinsic pubdata: only the mandatory committed
+/// prefix — the 2-byte header (`PUBDATA_ENCODING_VERSION` + `PubdataContent` mode) plus the 4-byte
+/// log count. The block hash, timestamp, the state-diff/message counters, and the EIP-2935
+/// history-slot diff live in the optional tail that `LogsOnly` does not commit (see
+/// `write_pubdata`), so they are not charged.
+pub const LOGS_ONLY_BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 2 + 4;
 
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
 /// from block start. Covers fixed pre-tx-loop system work — currently just
