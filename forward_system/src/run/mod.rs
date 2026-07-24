@@ -306,6 +306,9 @@ pub fn generate_legacy_batch_proof_input(
     let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
+            // The reported pubdata is exactly what the guest committed to blobs (`write_pubdata`
+            // streams identical bytes to the DA generator and the result keeper), so the blob advice
+            // is regenerated over `blocks_pubdata` as-is in both Rollup and Validium.
             let total_pubdata_length: usize = blocks_pubdata
                 .iter()
                 .map(|blocks_pubdata| blocks_pubdata.len())

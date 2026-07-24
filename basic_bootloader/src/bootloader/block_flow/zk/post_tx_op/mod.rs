@@ -8,6 +8,7 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     L2_INTEROP_COMMITMENT_TREE_ADDRESS, MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::merkle_root_in_place;
 use zk_ee::memory::stack_trait::StackFactory;
@@ -23,12 +24,27 @@ mod post_tx_op_proving_singleblock_batch;
 mod post_tx_op_sequencing;
 pub mod public_input;
 
-/// Version byte for pubdata encoding format.
+/// Pubdata encoding version byte, shared by all pubdata contents.
 /// Version 1: Initial versioned pubdata format
 /// Version 2: Remove artifacts_len and artifacts from pubdata
-pub const PUBDATA_ENCODING_VERSION: u8 = 2;
+/// Version 3: A `PubdataContent` mode byte follows the version byte and
+/// selects the payload layout (full pubdata vs logs-only)
+pub const PUBDATA_ENCODING_VERSION: u8 = 3;
 
-/// Helper method to write the pubdata to the DA commitment generator and result keeper.
+/// Streams the block's pubdata into the DA commitment generator (`pubdata_dst`)
+/// and the result keeper.
+///
+/// The exact same bytes go to both sinks, so the pubdata reported to the
+/// sequencer/prover is byte-for-byte what the batch commits to. Every layout
+/// starts with the shared two-byte header `[PUBDATA_ENCODING_VERSION, mode]`,
+/// where the mode byte is the `PubdataContent` discriminant selecting the
+/// payload that follows:
+/// - `FullPubdata` (mode 0): the full pubdata —
+///   `[block_hash, timestamp, state diffs, logs, message payloads]`.
+/// - `LogsOnly` (mode 1): only the mandatory log section —
+///   `[logs_count, log records]`. State diffs and message payloads are
+///   neither committed nor reported here; the sequencer receives them through
+///   the dedicated result-keeper channels (`storage_diffs`, `logs`).
 fn write_pubdata<
     DST: WriteBytes + ?Sized,
     A: Allocator + Clone + Default,
@@ -53,20 +69,33 @@ fn write_pubdata<
         FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
         PROOF_ENV,
     >,
+    pubdata_content: PubdataContent,
 ) {
-    // Write version byte first to enable future pubdata format upgrades
-    pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
-    pubdata_dst.write(block_hash.as_u8_ref());
-    pubdata_dst.write(&timestamp.to_be_bytes());
+    // Shared header: the encoding version byte followed by the mode byte.
+    let header = [PUBDATA_ENCODING_VERSION, pubdata_content as u8];
+    pubdata_dst.write(&header);
+    result_keeper.pubdata(&header);
+    match pubdata_content {
+        PubdataContent::FullPubdata => {
+            pubdata_dst.write(block_hash.as_u8_ref());
+            pubdata_dst.write(&timestamp.to_be_bytes());
+            result_keeper.pubdata(block_hash.as_u8_ref());
+            result_keeper.pubdata(&timestamp.to_be_bytes());
 
-    result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
-    result_keeper.pubdata(block_hash.as_u8_ref());
-    result_keeper.pubdata(&timestamp.to_be_bytes());
-
-    io.storage
-        .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
-
-    io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
+            io.storage
+                .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
+            // logs then message payloads (matches the pre-split combined encoding).
+            io.logs_storage
+                .apply_logs_pubdata(pubdata_dst, result_keeper);
+            io.logs_storage
+                .apply_messages_pubdata(pubdata_dst, result_keeper);
+        }
+        PubdataContent::LogsOnly => {
+            // Only the mandatory L2->L1 log section is committed and reported.
+            io.logs_storage
+                .apply_logs_pubdata(pubdata_dst, result_keeper);
+        }
+    }
 }
 
 /// Helper method to create block header.

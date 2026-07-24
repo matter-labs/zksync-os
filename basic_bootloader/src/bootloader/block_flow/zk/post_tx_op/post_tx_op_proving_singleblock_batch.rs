@@ -86,9 +86,9 @@ where
         result_keeper.logs(io.logs_storage.messages_ref_iter());
         result_keeper.events(io.events_storage.events_ref_iter());
 
+        let da_commitment_scheme = io.da_commitment_scheme.unwrap();
         let mut da_commitment_generator =
-            da_commitment_generator_from_scheme(io.da_commitment_scheme.unwrap(), A::default())
-                .unwrap();
+            da_commitment_generator_from_scheme(da_commitment_scheme, A::default()).unwrap();
         // For keccak DA (`BlobsAndPubdataKeccak256`), `write_pubdata` streams
         // bytes through `Keccak256CommitmentGenerator`, which absorbs them
         // into the keccak state — this is where the bulk of keccak
@@ -103,6 +103,7 @@ where
                 block_hash,
                 metadata.block_timestamp(),
                 &mut io,
+                metadata.chain_config.pubdata_content(),
             );
         });
 
@@ -208,7 +209,7 @@ where
         let batch_output = BatchOutput {
             first_block_timestamp: metadata.block_timestamp(),
             last_block_timestamp: metadata.block_timestamp(),
-            da_commitment_scheme: io.da_commitment_scheme.unwrap(),
+            da_commitment_scheme,
             pubdata_commitment: da_commitment,
             number_of_layer_1_txs: U256::try_from(number_of_layer_1_txs).unwrap(),
             number_of_layer_2_txs: U256::from(number_of_layer_2_txs),

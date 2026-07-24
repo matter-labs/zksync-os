@@ -1,3 +1,4 @@
+use crate::common_structs::da_commitment_scheme::PubdataContent;
 use crate::internal_error;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::oracle::{query_ids::CHAIN_CONFIG_QUERY_ID, IOOracle};
@@ -33,11 +34,22 @@ pub struct ChainConfig {
     // without this field deserialize to current behavior.
     #[cfg_attr(feature = "serde", serde(default = "default_max_tx_gas_limit"))]
     max_tx_gas_limit: u64,
+    /// Data availability mode: whether the batch commits the full pubdata
+    /// (`FullPubdata`) or only the mandatory L2->L1 log section (`LogsOnly`).
+    // Defaults to `FullPubdata` (commit everything) so that older dumps without this
+    // field deserialize to the behavior-preserving choice.
+    #[cfg_attr(feature = "serde", serde(default = "default_pubdata_content"))]
+    pubdata_content: PubdataContent,
 }
 
 #[cfg(feature = "serde")]
 fn default_max_tx_gas_limit() -> u64 {
     DEFAULT_MAX_TX_GAS_LIMIT
+}
+
+#[cfg(feature = "serde")]
+fn default_pubdata_content() -> PubdataContent {
+    PubdataContent::FullPubdata
 }
 
 impl ChainConfig {
@@ -57,10 +69,18 @@ impl ChainConfig {
             chain_id,
             fri_proof_verification_enabled,
             max_tx_gas_limit,
+            pubdata_content: PubdataContent::FullPubdata,
         };
         config.validate()?;
 
         Ok(config)
+    }
+
+    /// Returns the config with the given pubdata content set. Chained after [`Self::new`]
+    /// (which defaults to [`PubdataContent::FullPubdata`]) for validium chains.
+    pub const fn with_pubdata_content(mut self, pubdata_content: PubdataContent) -> Self {
+        self.pubdata_content = pubdata_content;
+        self
     }
 
     /// Canonical default configuration: chain id `0`, FRI proof verification
@@ -73,6 +93,7 @@ impl ChainConfig {
             chain_id: 0,
             fri_proof_verification_enabled: false,
             max_tx_gas_limit: DEFAULT_MAX_TX_GAS_LIMIT,
+            pubdata_content: PubdataContent::FullPubdata,
         }
     }
 
@@ -88,6 +109,10 @@ impl ChainConfig {
         self.max_tx_gas_limit
     }
 
+    pub const fn pubdata_content(&self) -> PubdataContent {
+        self.pubdata_content
+    }
+
     /// Canonical keccak256 commitment to the chain config.
     ///
     /// Committed into the batch public input so that the public-input layout
@@ -96,6 +121,7 @@ impl ChainConfig {
     /// - `chain_id`: uint256 big-endian (32-byte word)
     /// - `fri_proof_verification_enabled`: 32-byte word, last byte `0`/`1`
     /// - `max_tx_gas_limit`: uint64 big-endian, right-aligned in a 32-byte word
+    /// - `pubdata_content`: 32-byte word, last byte the mode id (`FullPubdata=0`/`LogsOnly=1`)
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(U256::from(self.chain_id).to_be_bytes::<32>());
@@ -105,6 +131,9 @@ impl ChainConfig {
         let mut gas_word = [0u8; 32];
         gas_word[24..].copy_from_slice(&self.max_tx_gas_limit.to_be_bytes());
         hasher.update(gas_word);
+        let mut pubdata_content_word = [0u8; 32];
+        pubdata_content_word[31] = self.pubdata_content as u8;
+        hasher.update(pubdata_content_word);
         hasher.finalize()
     }
 
@@ -132,14 +161,18 @@ impl Default for ChainConfig {
 impl UsizeSerializable for ChainConfig {
     const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
         + <bool as UsizeSerializable>::USIZE_LEN
-        + <u64 as UsizeSerializable>::USIZE_LEN;
+        + <u64 as UsizeSerializable>::USIZE_LEN
+        + <PubdataContent as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
             UsizeSerializable::iter(&self.chain_id),
             ExactSizeChain::new(
                 UsizeSerializable::iter(&self.fri_proof_verification_enabled),
-                UsizeSerializable::iter(&self.max_tx_gas_limit),
+                ExactSizeChain::new(
+                    UsizeSerializable::iter(&self.max_tx_gas_limit),
+                    UsizeSerializable::iter(&self.pubdata_content),
+                ),
             ),
         )
     }
@@ -152,11 +185,13 @@ impl UsizeDeserializable for ChainConfig {
         let chain_id = UsizeDeserializable::from_iter(src)?;
         let fri_proof_verification_enabled = UsizeDeserializable::from_iter(src)?;
         let max_tx_gas_limit = UsizeDeserializable::from_iter(src)?;
+        let pubdata_content = UsizeDeserializable::from_iter(src)?;
 
         Ok(Self {
             chain_id,
             fri_proof_verification_enabled,
             max_tx_gas_limit,
+            pubdata_content,
         })
     }
 }
@@ -188,6 +223,27 @@ mod tests {
         assert_eq!(config.chain_id(), 37);
         assert!(config.fri_proof_verification_enabled());
         assert_eq!(config.max_tx_gas_limit(), DEFAULT_MAX_TX_GAS_LIMIT + 1);
+        // `new` defaults to `FullPubdata`; `LogsOnly` is opted into via `with_pubdata_content`.
+        assert_eq!(config.pubdata_content(), PubdataContent::FullPubdata);
+    }
+
+    #[test]
+    fn chain_config_with_pubdata_content_sets_validium_and_roundtrips() {
+        let config = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
+            .unwrap()
+            .with_pubdata_content(PubdataContent::LogsOnly);
+        assert_eq!(config.pubdata_content(), PubdataContent::LogsOnly);
+
+        let serialized: Vec<usize> = config.iter().collect();
+        let mut iter = serialized.into_iter();
+        assert_eq!(ChainConfig::from_iter(&mut iter).unwrap(), config);
+    }
+
+    #[test]
+    fn chain_config_hash_commits_to_pubdata_content() {
+        let full_pubdata = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let logs_only = full_pubdata.with_pubdata_content(PubdataContent::LogsOnly);
+        assert_ne!(full_pubdata.hash(), logs_only.hash());
     }
 
     #[test]
@@ -206,8 +262,9 @@ mod tests {
         // deserialization, so a below-floor value parses successfully and is
         // only rejected by an explicit `validate()`.
         let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
-        // Last field is max_tx_gas_limit; drop it below the floor.
-        *serialized.last_mut().unwrap() = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
+        // Field order is [chain_id, fri, max_tx_gas_limit, pubdata_content], one word each on
+        // the 64-bit test host; drop max_tx_gas_limit (index 2) below the floor.
+        serialized[2] = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
         let mut iter = serialized.into_iter();
 
         let config = ChainConfig::from_iter(&mut iter).expect("deserialization must not validate");

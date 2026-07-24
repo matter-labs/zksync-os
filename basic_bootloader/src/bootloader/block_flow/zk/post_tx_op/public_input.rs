@@ -54,7 +54,7 @@ pub struct BatchOutput {
     pub first_block_timestamp: u64,
     /// Last block timestamp.
     pub last_block_timestamp: u64,
-    /// DA commitment scheme.
+    /// DA commitment scheme (the commitment *mechanism*: calldata keccak vs blobs).
     pub da_commitment_scheme: DACommitmentScheme,
     /// Pubdata commitment.
     pub pubdata_commitment: Bytes32,
@@ -133,6 +133,7 @@ impl BatchPublicInput {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
     use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 
     fn sample_chain_config() -> ChainConfig {
@@ -182,6 +183,41 @@ mod tests {
         assert_eq!(
             default_hash,
             hex!("1c24f398aa0701f9348912ecca748ba93bfb84bfe4f283c16514311419f4f658")
+        );
+    }
+
+    #[test]
+    fn chain_config_hash_golden_vector() {
+        // Pins the four-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit, pubdata_content)
+        // shared with era-contracts (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI
+        // disabled, the default max tx gas limit and pubdata content `FullPubdata` (0). Changing the encoding on
+        // either side must update both.
+        assert_eq!(
+            sample_chain_config().hash(),
+            hex!("9bba8b838beaad59a5dec253b49be1f496d47df8c2086b561298cae2cc232c0a")
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_golden_vector() {
+        // Shared with era-contracts `ZKsyncOSPublicInput.t.sol::PUBLIC_INPUT_HASH_GOLDEN`: the full
+        // `keccak256(state_before, state_after, chain_config_hash, batch_output)` for zero state
+        // commitments, `sample_chain_config()` and `BATCH_OUTPUT_HASH_GOLDEN`. Both repos must pin the
+        // same value; changing the public-input encoding on either side must update both.
+        assert_eq!(
+            sample_public_input(sample_chain_config()).hash(),
+            hex!("0a5143e28ed3fc1728ef4d96319f2306bb5a81bfccd908154e44029988ef9e7c")
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_pubdata_content() {
+        let full_pubdata = sample_chain_config(); // `ChainConfig::new` defaults to `PubdataContent::FullPubdata`
+        let logs_only = full_pubdata.with_pubdata_content(PubdataContent::LogsOnly);
+
+        assert_ne!(
+            sample_public_input(full_pubdata).hash(),
+            sample_public_input(logs_only).hash()
         );
     }
 

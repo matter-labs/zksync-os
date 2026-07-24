@@ -59,6 +59,10 @@ where
         let mut logger = system.get_logger();
         logger_log!(logger, "Basic header information was created\n");
 
+        // Capture the pubdata content before consuming `system` (the generic sequencing metadata is not the
+        // concrete `ZkMetadata`, so its `chain_config` field is not directly accessible below).
+        let pubdata_content = system.get_chain_config().pubdata_content();
+
         let System {
             mut io, metadata, ..
         } = system;
@@ -76,7 +80,8 @@ where
 
         // Sequencing-mode post-op uses NopCommitmentGenerator (no DA work),
         // but we still mark `da_commitment` for parity with the proving
-        // paths so the bench label set is consistent across STFs.
+        // paths so the bench label set is consistent across STFs. The reported
+        // pubdata layout follows the chain's pubdata content, same as the proving paths.
         cycle_marker::wrap!("da_commitment", {
             write_pubdata(
                 &mut NopCommitmentGenerator,
@@ -84,6 +89,7 @@ where
                 block_hash,
                 metadata.block_timestamp(),
                 &mut io,
+                pubdata_content,
             );
         });
 

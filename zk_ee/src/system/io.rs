@@ -114,6 +114,15 @@ pub trait IOSubsystem: Sized {
         data: &[u8],
     ) -> Result<Bytes32, SystemError>;
 
+    /// Record an interop commitment tree (IMT) leaf as an l2 -> l1 log,
+    /// so that the leaf is always committed to DA.
+    fn emit_interop_commitment_leaf(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        leaf_hash: Bytes32,
+    ) -> Result<(), SystemError>;
+
     /// Add an interop root.
     fn add_interop_root(
         &mut self,
@@ -145,6 +154,11 @@ pub trait IOSubsystem: Sized {
     >;
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
+
+    /// Net pubdata this tx commits in `LogsOnly` mode: only the mandatory L2->L1 log *records* (the
+    /// bytes always published to DA), excluding state diffs and message payloads. See
+    /// [`PubdataContent`](crate::common_structs::da_commitment_scheme::PubdataContent).
+    fn net_committed_log_records_pubdata_used(&self) -> Result<u64, InternalError>;
 
     /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.

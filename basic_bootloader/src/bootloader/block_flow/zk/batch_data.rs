@@ -198,10 +198,11 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             number_of_layer_2_txs -= U256::ONE;
         }
         let chain_config = self.chain_config.unwrap();
+        let da_commitment_scheme = self.da_commitment_scheme.unwrap();
         let batch_output = BatchOutput {
             first_block_timestamp: self.first_block_timestamp.unwrap(),
             last_block_timestamp: self.current_block_timestamp.unwrap(),
-            da_commitment_scheme: self.da_commitment_scheme.unwrap(),
+            da_commitment_scheme,
             pubdata_commitment: self.da_commitment_generator.unwrap().finalize(oracle),
             number_of_layer_1_txs,
             number_of_layer_2_txs,

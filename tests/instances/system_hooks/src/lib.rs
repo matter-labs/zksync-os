@@ -674,6 +674,155 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
 }
 
 #[test]
+fn test_interop_commitment_leaf_hook_succeeds() {
+    // making sure hooks are installed
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
+
+    let interop_commitment_tree_contract = address!("0000000000000000000000000000000000010012");
+
+    let interop_commitment_leaf_hook = address!("0000000000000000000000000000000000007004");
+
+    // Calldata is exactly the 32-byte leaf hash
+    let leaf_hash = [0xabu8; 32];
+
+    let tx = L1TxBuilder::new()
+        .from(interop_commitment_tree_contract)
+        .to(interop_commitment_leaf_hook)
+        .input(leaf_hash.to_vec())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+
+    let tx_output = output.tx_results.first().unwrap().as_ref().unwrap();
+
+    match &tx_output.execution_result {
+        ExecutionResult::Success(_) => {
+            // ok
+        }
+        tx_result => {
+            panic!(
+                "interop commitment leaf hook call from authorized sender did not succeed: {tx_result:?}"
+            );
+        }
+    }
+
+    let leaf_log = tx_output
+        .l2_to_l1_logs
+        .iter()
+        .find(|log_with_preimage| log_with_preimage.log.sender == interop_commitment_tree_contract)
+        .expect("interop commitment leaf log must be emitted");
+    assert_eq!(
+        leaf_log.log.value.0, leaf_hash,
+        "leaf log value must be the leaf hash"
+    );
+    assert_eq!(
+        leaf_log.log.key,
+        alloy::primitives::B256::ZERO,
+        "leaf log key must be zero"
+    );
+    assert!(leaf_log.log.is_service);
+    assert!(
+        leaf_log.preimage.is_none(),
+        "leaf log must not carry a preimage"
+    );
+}
+
+#[test]
+fn test_interop_commitment_leaf_hook_fails_with_invalid_calldata() {
+    // making sure hooks are installed
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
+
+    let interop_commitment_tree_contract = address!("0000000000000000000000000000000000010012");
+
+    let interop_commitment_leaf_hook = address!("0000000000000000000000000000000000007004");
+
+    // Invalid calldata: not exactly 32 bytes
+    let hook_calldata = vec![0xabu8; 31];
+
+    let tx = L1TxBuilder::new()
+        .from(interop_commitment_tree_contract)
+        .to(interop_commitment_leaf_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+
+    let tx_output = output.tx_results.first().unwrap().as_ref().unwrap();
+
+    assert!(matches!(
+        tx_output.execution_result,
+        ExecutionResult::Revert { .. }
+    ));
+    assert!(
+        tx_output
+            .l2_to_l1_logs
+            .iter()
+            .all(|log_with_preimage| log_with_preimage.log.sender
+                != interop_commitment_tree_contract),
+        "no interop commitment leaf log must be emitted on revert"
+    );
+}
+
+#[test]
+fn test_interop_commitment_leaf_hook_unauthorized_sender_ignored() {
+    // making sure hooks are installed
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
+
+    // ❌ this should NOT be the L2InteropCommitmentTree system contract address
+    let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    let interop_commitment_tree_contract = address!("0000000000000000000000000000000000010012");
+
+    let interop_commitment_leaf_hook = address!("0000000000000000000000000000000000007004");
+
+    let hook_calldata = [0xabu8; 32].to_vec();
+
+    let tx = L1TxBuilder::new()
+        .from(unauthorized_from)
+        .to(interop_commitment_leaf_hook)
+        .input(hook_calldata.clone())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+
+    let tx_output = output.tx_results.first().unwrap().as_ref().unwrap();
+
+    match &tx_output.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(return_data)) => {
+            assert!(
+                return_data.is_empty(),
+                "unauthorized call must return empty data"
+            );
+        }
+        tx_result => panic!("unauthorized call must succeed as empty account, got: {tx_result:?}"),
+    }
+
+    assert!(
+        tx_output
+            .l2_to_l1_logs
+            .iter()
+            .all(|log_with_preimage| log_with_preimage.log.sender
+                != interop_commitment_tree_contract),
+        "unauthorized caller must not emit an interop commitment leaf log"
+    );
+
+    let gas_used = call_address_and_measure_gas_cost(
+        interop_commitment_leaf_hook,
+        unauthorized_from,
+        0,
+        hook_calldata,
+        vec![],
+    );
+    assert_eq!(gas_used, 0, "hook must not burn EVM gas");
+}
+
+#[test]
 fn test_l2_base_token_withdraw_events() {
     // L2 base token address is 0x800a
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");

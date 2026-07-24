@@ -9,9 +9,27 @@ DA commitment schemes determine how pubdata (the data needed to reconstruct chai
 - **Security**: The level of data availability guarantees
 - **Compatibility**: Integration with different settlement layers and DA solutions
 
+## Pubdata Stream Layout
+
+The pubdata stream produced per block by [`write_pubdata`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/mod.rs) is chosen by the pubdata content, and the **exact same bytes are streamed to the DA commitment and to the sequencer/prover** — the reported pubdata is byte-for-byte what the batch commits to. Every layout starts with a shared two-byte header: the encoding version (`3` — versions 1/2 were the pre-split full-pubdata formats without a mode byte) followed by a `PubdataContent` mode byte that selects the payload:
+
+- **Full pubdata (`FullPubdata`) — mode 0**: `[version, mode, block_hash, timestamp, state diffs, logs, message payloads]`. The full pubdata; the payload after the header is unchanged from version 2.
+- **Logs-only (`LogsOnly`) — mode 1**: `[version, mode, logs_count, log records]` only. Log records include user-message logs, L1-tx result logs and interop commitment tree (IMT) leaf logs. State diffs and message payloads are neither committed nor part of this stream; the sequencer receives them through the dedicated result-keeper channels (`storage_diffs`, `logs`).
+
+This guarantees that L2 -> L1 logs and IMT leaves are always publicly available (the settlement layer always validates the DA commitment via blobs or calldata), while state diffs and message payloads can be left to the operator for validium-style chains. Pubdata *charging* follows the same split — a logs-only tx pays only for the committed log records (see the Pubdata content section).
+
+## Two orthogonal axes: scheme (mechanism) and content (scope)
+
+DA is configured along two independent axes:
+
+- **`DACommitmentScheme`** — the commitment *mechanism*: how the committed bytes are published/hashed (calldata keccak vs EIP-4844 blobs). Sourced per batch from the oracle and committed in the batch output.
+- **`PubdataContent`** — the committed *scope*: `FullPubdata` commits the whole pubdata; `LogsOnly` commits only the mandatory logs prefix. `PubdataContent` is a chain-level rule carried in [`ChainConfig`](../zk_ee/src/system/metadata/chain_config.rs) and thereby committed into the public input via the chain config hash, so the settlement layer can enforce the chain's configured mode. On zksync-os it is read together with the rest of the chain config.
+
+The scheme selects the generator; the mode selects whether the full stream or only the mandatory prefix is fed into it.
+
 ## Supported DA Commitment Schemes
 
-ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commitment_scheme.rs`](../zk_ee/src/common_structs/da_commitment_scheme.rs):
+ZKsync OS defines the following DA commitment scheme (mechanism) IDs in [`da_commitment_scheme.rs`](../zk_ee/src/common_structs/da_commitment_scheme.rs):
 
 ### 1. None (ID: 0)
 **Purpose**: Invalid/uninitialized state
@@ -21,16 +39,11 @@ ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commit
 **Use Case**: Internal system state only
 
 ### 2. EmptyNoDA (ID: 1)
-**Purpose**: Validium mode - no data availability guarantees
+**Purpose**: No data availability guarantees (zero commitment)
 
-**Implementation**: [`NopCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/mod.rs)
+**Implementation**: [`NopCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/mod.rs) — always returns the zero hash.
 
-**Commitment**: Always returns zero hash (`0x000...000`)
-
-**Use Case**:
-- Validiums where DA is handled off-chain
-- Private chains where data availability is not required
-- Reduced fees due to lower pubdata costs
+**Note**: Validium chains that must keep logs/IMT reconstructible do **not** use this; they use a real mechanism (calldata or blobs) with `PubdataContent::LogsOnly`.
 
 ### 3. PubdataKeccak256 (ID: 2)
 **Purpose**: Custom DA solutions using keccak256
@@ -102,6 +115,10 @@ final_commitment = keccak256(all_versioned_hashes)
 - EIP-4844 enabled Ethereum rollups
 - Cost-optimized for large amounts of pubdata
 - Up to ~90% cost reduction compared to calldata
+
+## Pubdata content (scope)
+
+Validium is expressed by pairing any real mechanism above (calldata `BlobsAndPubdataKeccak256` or blobs `BlobsZKsyncOS`) with `PubdataContent::LogsOnly` in the chain config. In `LogsOnly` mode only the mandatory logs prefix is fed into the chosen generator (so a calldata validium commits `keccak256(structured(prefix))` and a blob validium commits the blob versioned hashes over the prefix); in `FullPubdata` mode the full pubdata stream is committed. The generator (commitment shape) is unchanged by the mode — only the committed byte range differs. `PubdataContent` mirrors era-contracts' `pubdataContent` field carried in diamond storage and hashed into the batch public input via the chain config.
 
 ## DA Commitment Generation Process
 

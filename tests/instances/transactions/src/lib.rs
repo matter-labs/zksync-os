@@ -1359,7 +1359,13 @@ fn test_check_pubdata_encoding_version() {
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
+    // Default chain config is Rollup: shared `[version, mode]` header with the
+    // `FullPubdata` mode byte.
     assert_eq!(pubdata[0], PUBDATA_ENCODING_VERSION);
+    assert_eq!(
+        pubdata[1],
+        rig::zk_ee::common_structs::PubdataContent::FullPubdata as u8
+    );
 }
 
 #[test]
@@ -1407,8 +1413,8 @@ fn test_check_pubdata_has_timestamp() {
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    // Pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
-    let pubdata_timestamp_bytes = &pubdata.as_slice()[33..41];
+    // Rollup (default) pubdata format is [VERSION(1)][MODE(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...][LOGS...]
+    let pubdata_timestamp_bytes = &pubdata.as_slice()[34..42];
     let pubdata_timestamp = u64::from_be_bytes(
         pubdata_timestamp_bytes
             .try_into()

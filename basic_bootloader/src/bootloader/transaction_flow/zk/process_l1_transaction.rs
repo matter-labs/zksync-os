@@ -1,6 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
     ASSET_TRACKER_INTRINSIC_PUBDATA, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PER_GAS,
+    LOGS_ONLY_L1_TX_INTRINSIC_PUBDATA,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -19,6 +20,7 @@ use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::root_cause::GetRootCause;
@@ -94,7 +96,13 @@ where
     } else {
         0
     };
-    let intrinsic_pubdata = L1_TX_INTRINSIC_PUBDATA + extra_pubdata_for_simulation;
+    // In Validium only the L1->L2 tx log record (88 bytes) is committed; the balance/asset-tracker
+    // state diffs in `L1_TX_INTRINSIC_PUBDATA` (and the simulation extra, itself a state diff) are not
+    // (see `PubdataContent` and `write_pubdata`).
+    let intrinsic_pubdata = match system.get_chain_config().pubdata_content() {
+        PubdataContent::FullPubdata => L1_TX_INTRINSIC_PUBDATA + extra_pubdata_for_simulation,
+        PubdataContent::LogsOnly => LOGS_ONLY_L1_TX_INTRINSIC_PUBDATA,
+    };
 
     // Compute resource and fee information, making sure we handle
     // all possible validation errors carefully.
