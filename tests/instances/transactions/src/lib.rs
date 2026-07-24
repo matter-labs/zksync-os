@@ -8,7 +8,7 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
-use rig::basic_bootloader::bootloader::block_flow::zk::FULL_PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::basic_bootloader::bootloader::block_flow::{
     TransactionsRollingKeccakHasher, TxHashesAccumulator,
 };
@@ -1361,8 +1361,13 @@ fn test_check_pubdata_encoding_version() {
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    // Default chain config is Rollup, which uses the version-2 full-pubdata layout.
-    assert_eq!(pubdata[0], FULL_PUBDATA_ENCODING_VERSION);
+    // Default chain config is Rollup: shared `[version, mode]` header with the
+    // `FullPubdata` mode byte.
+    assert_eq!(pubdata[0], PUBDATA_ENCODING_VERSION);
+    assert_eq!(
+        pubdata[1],
+        rig::zk_ee::common_structs::PubdataContent::FullPubdata as u8
+    );
 }
 
 #[test]
@@ -1410,8 +1415,8 @@ fn test_check_pubdata_has_timestamp() {
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    // Rollup (default) pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...][LOGS...]
-    let pubdata_timestamp_bytes = &pubdata.as_slice()[33..41];
+    // Rollup (default) pubdata format is [VERSION(1)][MODE(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...][LOGS...]
+    let pubdata_timestamp_bytes = &pubdata.as_slice()[34..42];
     let pubdata_timestamp = u64::from_be_bytes(
         pubdata_timestamp_bytes
             .try_into()
