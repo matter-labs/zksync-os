@@ -8,7 +8,7 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
-use rig::basic_bootloader::bootloader::block_flow::zk::ROLLUP_PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::zk::FULL_PUBDATA_ENCODING_VERSION;
 use rig::basic_bootloader::bootloader::block_flow::{
     TransactionsRollingKeccakHasher, TxHashesAccumulator,
 };
@@ -1360,7 +1360,7 @@ fn test_check_pubdata_encoding_version() {
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
     // Default chain config is Rollup, which uses the version-2 full-pubdata layout.
-    assert_eq!(pubdata[0], ROLLUP_PUBDATA_ENCODING_VERSION);
+    assert_eq!(pubdata[0], FULL_PUBDATA_ENCODING_VERSION);
 }
 
 #[test]

@@ -207,12 +207,12 @@ mod tx_encoding_format {
 mod da_commitment_scheme {
     //! Unit tests for DA commitment scheme + DA mode validation.
     //!
-    //! `DACommitmentScheme::try_from`/`DAMode::try_from` validate oracle-provided
+    //! `DACommitmentScheme::try_from`/`PubdataContent::try_from` validate oracle-provided
     //! ids. Only scheme values 0-4 and mode values 0-1 are valid; invalid ids are
     //! rejected. Note: these are only read in PROOF_ENV, so they are tested at the
     //! type level rather than through the full execution path.
 
-    use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, DAMode};
+    use rig::zk_ee::common_structs::da_commitment_scheme::{DACommitmentScheme, PubdataContent};
 
     #[test]
     fn test_da_commitment_scheme_accepts_all_valid_ids() {
@@ -249,13 +249,13 @@ mod da_commitment_scheme {
     }
 
     #[test]
-    fn test_da_mode_ids_and_scope() {
-        assert_eq!(DAMode::try_from(0u8), Ok(DAMode::Rollup));
-        assert_eq!(DAMode::try_from(1u8), Ok(DAMode::Validium));
-        assert!(DAMode::try_from(2u8).is_err());
+    fn test_pubdata_content_ids_and_scope() {
+        assert_eq!(PubdataContent::try_from(0u8), Ok(PubdataContent::FullPubdata));
+        assert_eq!(PubdataContent::try_from(1u8), Ok(PubdataContent::LogsOnly));
+        assert!(PubdataContent::try_from(2u8).is_err());
 
-        assert!(DAMode::Rollup.commits_full_pubdata());
-        assert!(!DAMode::Validium.commits_full_pubdata());
+        assert!(PubdataContent::FullPubdata.commits_full_pubdata());
+        assert!(!PubdataContent::LogsOnly.commits_full_pubdata());
     }
 }
 
