@@ -183,7 +183,7 @@ where
     let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
         authorization_list_num,
         transaction.is_service(),
-        system.get_chain_config().da_mode(),
+        system.get_chain_config().pubdata_content(),
     );
 
     // Materialize the tx's resource budget and charge the intrinsic overheads.

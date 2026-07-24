@@ -14,7 +14,7 @@ use crate::bootloader::constants::{
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
 use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::common_structs::da_commitment_scheme::DAMode;
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::out_of_native_resources;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
@@ -186,16 +186,16 @@ pub fn calculate_tx_intrinsic_gas(
 pub fn calculate_l2_tx_intrinsic_pubdata(
     authorization_list_num: u64,
     is_service: bool,
-    da_mode: DAMode,
+    pubdata_content: PubdataContent,
 ) -> u64 {
     if is_service {
         // there is no intrinsic pubdata for service txs
         return 0;
     }
     // The L2 tx intrinsic pubdata is entirely state diffs (sender/coinbase balance changes and the
-    // per-authorization nonce/delegation diffs). In Validium those are not committed to DA, so nothing
-    // intrinsic is charged (see `DAMode` and `write_pubdata`).
-    if da_mode == DAMode::Validium {
+    // per-authorization nonce/delegation diffs). In `LogsOnly` those are not committed to DA, so nothing
+    // intrinsic is charged (see `PubdataContent` and `write_pubdata`).
+    if pubdata_content == PubdataContent::LogsOnly {
         return 0;
     }
     let mut intrinsic_pubdata = L2_TX_INTRINSIC_PUBDATA;
@@ -376,6 +376,8 @@ pub(crate) fn get_gas_price<S: EthereumLikeTypes, Config: BasicBootloaderExecuti
 
 #[cfg(test)]
 mod tests {
+    use zk_ee::common_structs::PubdataContent;
+
     use super::{
         calculate_l1_tx_intrinsic_computational_native_resources,
         calculate_l2_tx_intrinsic_computational_native_resources, L2TxIntrinsicNativeInput,
@@ -389,7 +391,6 @@ mod tests {
         },
         transaction_flow::gas_helpers::calculate_l2_tx_intrinsic_pubdata,
     };
-    use zk_ee::common_structs::da_commitment_scheme::DAMode;
 
     #[test]
     fn fixed_receipt_hash_is_charged_intrinsically_for_every_tx_class() {
@@ -443,25 +444,25 @@ mod tests {
 
     #[test]
     fn l2_intrinsic_pubdata_is_zero_in_validium() {
-        // The L2 tx intrinsic pubdata is entirely state diffs, which Validium does not commit.
+        // The L2 tx intrinsic pubdata is entirely state diffs, which `LogsOnly` does not commit.
         assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(0, false, DAMode::Validium),
+            calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::LogsOnly),
             0
         );
         assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(3, false, DAMode::Validium),
+            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::LogsOnly),
             0
         );
-        // Rollup charges the state-diff intrinsic (non-zero for a non-service tx).
-        assert!(calculate_l2_tx_intrinsic_pubdata(0, false, DAMode::Rollup) > 0);
-        // Per-authorization diffs add pubdata only in Rollup.
+        // `FullPubdata` charges the state-diff intrinsic (non-zero for a non-service tx).
+        assert!(calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata) > 0);
+        // Per-authorization diffs add pubdata only in `FullPubdata`.
         assert!(
-            calculate_l2_tx_intrinsic_pubdata(3, false, DAMode::Rollup)
-                > calculate_l2_tx_intrinsic_pubdata(0, false, DAMode::Rollup)
+            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::FullPubdata)
+                > calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata)
         );
         // Service txs never have intrinsic pubdata, in either mode.
         assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(0, true, DAMode::Rollup),
+            calculate_l2_tx_intrinsic_pubdata(0, true, PubdataContent::FullPubdata),
             0
         );
     }

@@ -7,10 +7,10 @@ use crate::bootloader::{
     block_flow::pre_tx_loop_op::PreTxLoopOp,
     constants::{
         BLOCK_INTRINSIC_NATIVE, BLOCK_INTRINSIC_PUBDATA_BYTES,
-        VALIDIUM_BLOCK_INTRINSIC_PUBDATA_BYTES,
+        LOGS_ONLY_BLOCK_INTRINSIC_PUBDATA_BYTES,
     },
 };
-use zk_ee::common_structs::da_commitment_scheme::DAMode;
+use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 
 impl<S: EthereumLikeTypes, EA: TxHashesAccumulator> PreTxLoopOp<S> for ZKHeaderStructurePreTxOp<EA>
 where
@@ -31,9 +31,9 @@ where
         block_data.block_computational_native_used = BLOCK_INTRINSIC_NATIVE;
         // In Validium only the mandatory logs prefix header is committed; the rest of the block
         // intrinsic pubdata (block context, counters, EIP-2935 diff) is not (see `write_pubdata`).
-        block_data.block_pubdata_used = match system.get_chain_config().da_mode() {
-            DAMode::Rollup => BLOCK_INTRINSIC_PUBDATA_BYTES,
-            DAMode::Validium => VALIDIUM_BLOCK_INTRINSIC_PUBDATA_BYTES,
+        block_data.block_pubdata_used = match system.get_chain_config().pubdata_content() {
+            PubdataContent::FullPubdata => BLOCK_INTRINSIC_PUBDATA_BYTES,
+            PubdataContent::LogsOnly => LOGS_ONLY_BLOCK_INTRINSIC_PUBDATA_BYTES,
         };
 
         // Snapshot the interop commitment tree (IMT) root before any transaction runs. For the first

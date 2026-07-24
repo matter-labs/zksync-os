@@ -276,7 +276,7 @@ pub struct LogsStorage<SF: StackFactory<M>, const M: usize, A: Allocator + Clone
     pubdata_used_by_committed_logs: u32,
     /// Number of logs already committed to prior transactions, snapshotted at
     /// [`begin_new_tx`](Self::begin_new_tx). Used to charge only the mandatory
-    /// log-record pubdata in Validium mode (see [`calculate_log_records_pubdata_used_by_tx`]).
+    /// log-record pubdata in `LogsOnly` mode (see [`calculate_log_records_pubdata_used_by_tx`]).
     logs_count_by_committed_logs: u32,
     _marker: core::marker::PhantomData<A>,
 }
@@ -427,7 +427,7 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
     ///
     /// Pubdata used by this tx's mandatory L2->L1 log *records* only — the bytes always committed to
     /// DA (`L2_TO_L1_LOG_SERIALIZE_SIZE` per log), excluding the optional message payloads. This is
-    /// what a Validium tx is charged for; see [`DAMode`](crate::common_structs::da_commitment_scheme::DAMode)
+    /// what a `LogsOnly` tx is charged for; see [`PubdataContent`](crate::common_structs::da_commitment_scheme::PubdataContent)
     /// and `write_pubdata`.
     ///
     pub fn calculate_log_records_pubdata_used_by_tx(&self) -> Result<u32, InternalError> {
