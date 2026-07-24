@@ -332,7 +332,9 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                 current.fri_proof_verification_enabled(),
                 max_tx_gas_limit,
             )
-            .expect("max_tx_gas_limit below the EIP-7825 floor"),
+            .expect("max_tx_gas_limit below the EIP-7825 floor")
+            // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
+            .with_pubdata_content(current.pubdata_content()),
         )
     }
 

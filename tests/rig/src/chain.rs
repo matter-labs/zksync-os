@@ -722,7 +722,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             enabled,
             self.chain_config.max_tx_gas_limit(),
         )
-        .unwrap();
+        .unwrap()
+        // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
+        .with_pubdata_content(self.chain_config.pubdata_content());
     }
 
     pub fn block_hashes(&self) -> [U256; 256] {
@@ -761,7 +763,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             self.chain_config.fri_proof_verification_enabled(),
             self.chain_config.max_tx_gas_limit(),
         )
-        .unwrap();
+        .unwrap()
+        // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
+        .with_pubdata_content(self.chain_config.pubdata_content());
     }
 
     /// Build the batch pre-state passed to the batch prover-input runner.
@@ -2003,9 +2007,37 @@ fn run_prover(input_words: &[u32]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chain, RunConfig};
+    use super::{Chain, ChainConfig, RunConfig, DEFAULT_MAX_TX_GAS_LIMIT};
     use ruint::aliases::U256;
     use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
+
+    #[test]
+    fn chain_config_mutators_preserve_pubdata_content() {
+        // Regression: these mutators rebuild the config via `ChainConfig::new`,
+        // which defaults to `FullPubdata` — they must not silently drop a
+        // configured `LogsOnly` content.
+        let mut chain = Chain::<false>::empty(Some(37));
+        chain.set_chain_config(
+            ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap()
+                .with_pubdata_content(PubdataContent::LogsOnly),
+        );
+
+        chain.set_fri_proof_verification_enabled(true);
+        assert_eq!(
+            chain.chain_config().pubdata_content(),
+            PubdataContent::LogsOnly
+        );
+        assert!(chain.chain_config().fri_proof_verification_enabled());
+
+        chain.set_chain_id(42);
+        assert_eq!(
+            chain.chain_config().pubdata_content(),
+            PubdataContent::LogsOnly
+        );
+        assert_eq!(chain.chain_config().chain_id(), 42);
+    }
 
     #[test]
     fn run_config_should_do_riscv_run_matches_env_signals() {
