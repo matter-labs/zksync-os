@@ -28,7 +28,6 @@ ruint = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive", "alloc"] }
 
 alloy = { workspace = true, features = ["consensus", "rpc-types-trace"] }
-alloy-consensus-v1 = { workspace = true }
 hex = { workspace = true }
 bincode = "1.3"
 bincode_v2 = { package = "bincode", version = "2.0.1", features = ["serde"], optional = true }

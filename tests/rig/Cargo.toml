@@ -32,7 +32,6 @@ ruint = { workspace = true, default-features = false }
 env_logger = { workspace = true }
 log = { workspace = true }
 alloy = { workspace = true, features = ["full", "eip712", "consensus"] }
-alloy-consensus-v1 = { workspace = true }
 alloy-rlp = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true }

@@ -560,7 +560,7 @@ fn emit_pre_frame_call_error<S: EthereumLikeTypes>(
             callee_account_properties: CalleeAccountProperties {
                 ee_type: 0,
                 nonce: 0,
-                nominal_token_balance: U256::ZERO,
+                nominal_token_balance: U256::ZERO.into(),
                 bytecode: &[],
                 code_version: 0,
                 unpadded_code_len: 0,

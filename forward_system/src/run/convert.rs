@@ -1,6 +1,6 @@
 use crate::run::convert_alloy::{FromAlloy, IntoAlloy};
+use alloy::consensus::{Header, Sealed};
 use alloy::primitives::Log;
-use alloy_consensus_v1::{Header, Sealed};
 use basic_bootloader::bootloader::block_header::BlockHeader;
 use zk_ee::common_structs::GenericEventContent;
 use zk_ee::system::evm::EvmError as ZkEvmError;
