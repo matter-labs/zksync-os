@@ -30,8 +30,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         // the per-call resource diff would be redundant.
         cycle_marker::wrap!("keccak_execution_environment", {
             let (memory_offset, len) = self.stack.pop_2()?;
-            let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
             self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
+            let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
 
             // Eagerly cast `memory_offset` to an owned `usize` so the
             // `&memory_offset` borrow on `self.stack` ends here and does not

@@ -16,7 +16,7 @@ categories = ["cryptography"]
 path = "../../../../../evm_interpreter/src/lib.rs"
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.20", default-features = false, features = ["alloc"] }
 u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving" }
 crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false, features = ["proving"] }
