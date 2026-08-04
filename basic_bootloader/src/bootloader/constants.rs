@@ -134,6 +134,11 @@ pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
     KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
 
+/// Maximum RLP length of one EIP-7702 authorization: 33-byte chain ID,
+/// 21-byte address, 9-byte nonce, 1-byte parity, two 33-byte signature
+/// scalars, and a 2-byte list prefix.
+const L2_TX_AUTHORIZATION_MAX_RLP_BYTES: u64 = 132;
+
 /// L2 tx calldata byte intrinsic computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
     COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
@@ -159,7 +164,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     ACCOUNT_UPDATE_COST + // nonce update
     ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
-    133 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash, 133 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 3 list overhead)
+    L2_TX_AUTHORIZATION_MAX_RLP_BYTES * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash
     ACCOUNT_PERSIST_NEW_NATIVE_COST; // delegatee persist (worst case: new account)
 
 /// L2 tx blob versioned-hash computational native cost per hash.
@@ -356,7 +361,21 @@ pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE;
 
 #[cfg(test)]
 mod tests {
-    use super::L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION;
+    use super::{L2_TX_AUTHORIZATION_MAX_RLP_BYTES, L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION};
+
+    #[test]
+    fn l2_authorization_max_rlp_length_matches_field_encoding() {
+        assert_eq!(
+            L2_TX_AUTHORIZATION_MAX_RLP_BYTES,
+            33 /* chain_id */
+                + 21 /* address */
+                + 9 /* nonce */
+                + 1 /* y_parity */
+                + 33 /* r */
+                + 33 /* s */
+                + 2 /* list prefix */
+        );
+    }
 
     #[test]
     fn l2_authorization_intrinsic_pubdata_matches_published_diff() {
