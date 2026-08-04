@@ -4,11 +4,11 @@ This page lists ZKsync OS behavior that is intentional, protocol-correct, or alr
 
 Use this page as a triage aid, not as a substitute for checking the code. If an observed behavior differs from what is described here, investigate it normally.
 
-## EVM / Cancun Behavior
+## EVM / Osaka (Fusaka) Behavior
 
-### Cancun is the supported EVM hardfork
+### Osaka (Fusaka) is the supported EVM hardfork
 
-ZKsync OS currently targets Cancun EVM semantics. Reports that assume later hardfork behavior are not valid unless they identify an issue under the supported hardfork.
+ZKsync OS 0.4.0 targets Osaka (Fusaka) EVM semantics, including changes introduced after Cancun. Reports about Pectra or Fusaka behavior must be evaluated against Osaka rather than dismissed as relying on an unsupported later hardfork. Only reports that assume behavior introduced after Osaka are outside the currently supported EVM hardfork.
 
 See [EVM Execution Environment](./execution_environments/evm.md).
 
