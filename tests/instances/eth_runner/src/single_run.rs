@@ -10,7 +10,6 @@ use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
 use zk_ee::system::tracer::NopTracer;
-use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
 
 #[allow(clippy::too_many_arguments)]
@@ -26,7 +25,6 @@ fn run<const RANDOMIZED: bool>(
     calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
-    flamegraph: Option<String>,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
 
@@ -41,15 +39,9 @@ fn run<const RANDOMIZED: bool>(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let profiler_config = flamegraph.map(|path| {
-        let mut pc = rig::ProfilerConfig::new(std::path::PathBuf::from(path));
-        pc.frequency_recip = 1;
-        pc
-    });
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
-        profiler_config,
-        do_riscv_run: true,
+        only_forward: false,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,
         ..Default::default()
@@ -61,13 +53,19 @@ fn run<const RANDOMIZED: bool>(
             None,
             Some(run_config),
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
         )
         .unwrap();
 
     let _ratio = compute_ratio(stats);
 
-    post_check(output, receipts, diff_trace, prestate_cache).unwrap();
+    post_check(
+        output,
+        receipts,
+        diff_trace,
+        prestate_cache,
+        ruint::aliases::B160::from_be_bytes(miner.into()),
+    )
+    .unwrap();
 
     Ok(())
 }
@@ -78,16 +76,8 @@ pub fn single_run(
     randomized: bool,
     witness_output_dir: Option<String>,
     chain_id: Option<u64>,
-    single_tx: Option<u64>,
-    flamegraph: Option<String>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
-
-    anyhow::ensure!(
-        witness_output_dir.is_none() || flamegraph.is_none(),
-        "--witness-output-dir and --flamegraph cannot be used together"
-    );
-
     let dir = Path::new(&block_dir);
     let block = fs::read_to_string(dir.join("block.json"))?;
     // TODO: ensure there are no calls to unsupported precompiles
@@ -115,7 +105,7 @@ pub fn single_run(
     let miner = block.result.header.beneficiary;
 
     let block_context = block.get_block_context();
-    let (transactions, skipped, _) = block.get_transactions(&calltrace, single_tx);
+    let (transactions, skipped) = block.get_transactions(&calltrace);
 
     let receipts = receipts
         .result
@@ -165,7 +155,6 @@ pub fn single_run(
             calltrace,
             block_hashes,
             witness_output_dir,
-            flamegraph,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -181,53 +170,6 @@ pub fn single_run(
             calltrace,
             block_hashes,
             witness_output_dir,
-            flamegraph,
         )
     }
-}
-
-pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
-    use rig::alloy_rlp::Encodable;
-    use rig::zksync_os_tests_common::zksync_tx::encoding::encode_alloy_rpc_tx;
-    use std::path::Path;
-
-    let dir = Path::new(&block_dir);
-    let block = fs::read_to_string(dir.join("block.json"))?;
-    let witness_file = File::open(dir.join("witness.json"))?;
-    let witness_reader = BufReader::new(witness_file);
-
-    let block: Block = serde_json::from_str(&block)?;
-
-    // Parse witness JSON - it has a "result" wrapper
-    #[derive(serde::Deserialize)]
-    struct WitnessWrapper {
-        result: alloy_rpc_types_debug::ExecutionWitness,
-    }
-    let witness_wrapper: WitnessWrapper = serde_json::from_reader(witness_reader)?;
-    let witness = witness_wrapper.result;
-
-    let transactions: Vec<EncodedTx> = block
-        .result
-        .transactions
-        .clone()
-        .into_transactions()
-        .map(encode_alloy_rpc_tx)
-        .collect();
-
-    let mut chain = Chain::empty(Some(1));
-
-    chain.set_last_block_number(block.result.number() - 1);
-
-    let header = block.result.header.clone().into();
-    let withdrawals_encoding = if let Some(withdrawals) = block.result.withdrawals.clone() {
-        let mut buff = vec![];
-        withdrawals.encode(&mut buff);
-
-        buff
-    } else {
-        Vec::new()
-    };
-
-    let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
-    Ok(())
 }

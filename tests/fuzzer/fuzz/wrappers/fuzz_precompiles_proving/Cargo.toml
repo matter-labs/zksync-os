@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 basic_system = { package = "basic_system_proving", path = "../basic_system_proving", features = ["proving"]}
 zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving" }
+crypto = { package = "crypto_proving", path = "../crypto_proving", features = ["proving"]}

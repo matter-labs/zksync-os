@@ -1,15 +1,18 @@
 #![no_main]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::TX_OFFSET;
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
+use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
-use common::{mock_oracle_balance, mutate_transaction, parse_abi_encoded_transaction};
+use common::{mock_oracle_balance, mutate_transaction};
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
-use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
+use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use system_hooks::HooksStorage;
 use zk_ee::system::tracer::NopTracer;
@@ -27,7 +30,7 @@ fn fuzz(data: &[u8]) {
         data.resize(TX_OFFSET + 1, 0);
     }
 
-    let Ok(decoded_tx) = parse_abi_encoded_transaction(&data) else {
+    let Ok(decoded_tx) = AbiEncodedTransaction::try_from_slice(&mut data) else {
         return;
     };
     let amount = U256::from_be_bytes([255 as u8; 32]);
@@ -54,17 +57,16 @@ fn fuzz(data: &[u8]) {
 
     let data_mut_ref: &'static mut [u8] = unsafe { core::mem::transmute(data.as_mut_slice()) };
 
-    let _ =
-        BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::process_transaction::<
-            BasicBootloaderForwardSimulationConfig,
-        >(
-            data_mut_ref,
-            &mut system,
-            &mut system_functions,
-            memories,
-            true,
-            &mut NopTracer::default(),
-        );
+    let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::process_transaction::<
+        BasicBootloaderForwardSimulationConfig,
+    >(
+        data_mut_ref,
+        &mut system,
+        &mut system_functions,
+        memories,
+        true,
+        &mut NopTracer::default(),
+    );
 }
 
 fuzz_target!(|data: &[u8]| {

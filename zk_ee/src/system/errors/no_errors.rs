@@ -19,7 +19,7 @@ impl InterfaceErrorKind for NoErrors {
     }
 }
 impl GetRootCause for NoErrors {
-    fn root_cause(&self) -> RootCause<'_> {
+    fn root_cause(&self) -> RootCause {
         unreachable!()
     }
 }

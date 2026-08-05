@@ -30,11 +30,3 @@ impl BasicBootloaderExecutionConfig for BasicBootloaderCallSimulationConfig {
     const VALIDATE_EOA_SIGNATURE: bool = true;
     const SIMULATION: bool = true;
 }
-
-#[derive(Clone, Copy, Debug)]
-pub struct BasicBootloaderForwardETHLikeConfig;
-
-impl BasicBootloaderExecutionConfig for BasicBootloaderForwardETHLikeConfig {
-    const VALIDATE_EOA_SIGNATURE: bool = true;
-    const SIMULATION: bool = false;
-}

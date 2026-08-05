@@ -2,30 +2,18 @@ use alloy::consensus::{EthereumTxEnvelope, SignableTransaction};
 use alloy::consensus::{Signed, TxEnvelope, TypedTransaction};
 use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
-use alloy::primitives::Address;
 use alloy::primitives::Signature;
-use alloy::primitives::B256;
-use alloy::rlp::{encode, BufMut, Encodable};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
-use alloy_sol_types::sol;
-use alloy_sol_types::SolCall;
-use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
-use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
-use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
-    calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-};
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
-use std::cmp::min;
-use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
+use std::ops::Add;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
-use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
-use zk_ee::utils::{u256_try_to_u64, Bytes32};
+use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 
 // Getters
@@ -55,16 +43,6 @@ pub fn get_code<P: PreimageSource>(
         None => vec![],
         Some(full_bytecode) => get_unpadded_code(&full_bytecode, account).to_vec(),
     }
-}
-
-/// Computes the canonical ZKsync OS bytecode hash for EVM bytecode.
-///
-/// This follows the same path as account code installation, including
-/// delegation marker handling and artifacts construction.
-pub fn compute_evm_bytecode_hash(evm_code: &[u8]) -> B256 {
-    let mut account = AccountProperties::default();
-    let _ = set_properties_code(&mut account, evm_code);
-    B256::from(account.bytecode_hash.as_u8_array())
 }
 
 /// Sets the balance for an account.
@@ -138,8 +116,6 @@ pub fn set_properties_code(account: &mut AccountProperties, evm_code: &[u8]) -> 
 ///
 /// Internal tx encoding method.
 ///
-/// TODO: cleanup
-///
 #[allow(clippy::too_many_arguments)]
 pub fn encode_tx(
     tx_type: u8,
@@ -183,7 +159,7 @@ pub fn encode_tx(
                     U256::ZERO
                 }
             } else if tx_type == 0x7f {
-                U256::from(gas_limit * max_fee_per_gas)
+                U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
             } else {
                 U256::ZERO
             })
@@ -234,14 +210,11 @@ pub fn encode_envelope_2718(env: &TxEnvelope) -> Vec<u8> {
             out.push(0x02);
             signed.rlp_encode(&mut out);
         }
-        EthereumTxEnvelope::Eip4844(signed) => {
-            out.push(0x03);
-            signed.rlp_encode(&mut out);
-        }
         EthereumTxEnvelope::Eip7702(signed) => {
             out.push(0x04);
             signed.rlp_encode(&mut out);
         }
+        _ => unimplemented!(),
     }
     out
 }
@@ -253,209 +226,12 @@ pub fn sign_and_encode_transaction_request(
     req: TransactionRequest,
     wallet: &PrivateKeySigner,
 ) -> EncodedTx {
-    let typed_tx = if req.blob_versioned_hashes.is_some() {
-        req.build_4844_without_sidecar()
-            .expect("Failed to build 4844 tx")
-            .into()
-    } else {
-        req.build_typed_tx().expect("Failed to build typed tx")
-    };
+    let typed_tx = req.build_typed_tx().expect("Failed to build typed tx");
     match typed_tx {
         TypedTransaction::Legacy(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip1559(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip7702(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip2930(tx) => sign_and_encode_alloy_tx(tx, wallet),
-        TypedTransaction::Eip4844(tx) => sign_and_encode_alloy_tx(tx, wallet),
+        TypedTransaction::Eip4844(_) => panic!("Unsupported tx type"),
     }
-}
-
-/// Helper wrapper representing the RLP *body* of a service tx:
-/// [to, data, salt]
-struct ServiceTxBody<'a> {
-    to: &'a [u8; 20],
-    data: &'a [u8],
-    salt: u64,
-}
-
-enum ServiceTxField<'b> {
-    Bytes(&'b [u8]),
-    U64(u64),
-}
-
-impl<'b> Encodable for ServiceTxField<'b> {
-    fn encode(&self, out: &mut dyn BufMut) {
-        match self {
-            ServiceTxField::Bytes(b) => (*b).encode(out),
-            ServiceTxField::U64(n) => n.encode(out),
-        }
-    }
-}
-
-impl<'a> Encodable for ServiceTxBody<'a> {
-    fn encode(&self, out: &mut dyn BufMut) {
-        let fields = vec![
-            ServiceTxField::Bytes(self.to.as_slice()),
-            ServiceTxField::Bytes(self.data),
-            ServiceTxField::U64(self.salt),
-        ];
-
-        fields.encode(out);
-    }
-}
-
-///
-/// Encode a service transaction
-///
-pub fn encode_service_tx(to: &[u8; 20], data: &[u8], salt: u64) -> EncodedTx {
-    let body = ServiceTxBody { to, data, salt };
-    let rlp_body = encode(&body);
-    let mut out = Vec::with_capacity(1 + rlp_body.len());
-    out.push(SERVICE_TX_TYPE);
-    out.extend_from_slice(&rlp_body);
-    let from = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
-    EncodedTx::Rlp(out, from)
-}
-
-///
-/// Calldata used by service transactions that import interop roots.
-///
-/// Constructs the calldata for:
-///
-/// function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
-///
-/// where
-///
-/// struct InteropRoot {
-///     uint256 chainId;
-///     uint256 blockOrBatchNumber;
-///     bytes32[] sides;
-/// }
-///
-pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>) -> Vec<u8> {
-    // Declare sol interface
-    sol! {
-      struct InteropRoot {
-          uint256 chainId;
-          uint256 blockOrBatchNumber;
-          bytes32[] sides;
-      }
-
-      function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
-    }
-
-    // Construct calldata
-    let interop_roots: Vec<InteropRoot> = interop_roots
-        .into_iter()
-        .map(|r: StoredInteropRoot| {
-            let root_b256 = alloy::primitives::B256::from_slice(r.root.as_u8_ref());
-            InteropRoot {
-                chainId: r.chain_id,
-                blockOrBatchNumber: r.block_or_batch_number,
-                sides: vec![root_b256],
-            }
-        })
-        .collect();
-    addInteropRootsInBatchCall {
-        interopRootsInput: interop_roots,
-    }
-    .abi_encode()
-}
-
-///
-/// Calldata used by service transactions that update the settlement layer chain id.
-///
-/// Constructs the calldata for:
-///
-/// function setSettlementLayerChainId(uint256 _newSettlementLayerChainId);
-///
-pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> Vec<u8> {
-    // Declare sol interface
-    sol! {
-       function setSettlementLayerChainId(uint256);
-    }
-
-    // Construct calldata
-    setSettlementLayerChainIdCall(new_sl_chain_id).abi_encode()
-}
-
-/// Validates that a transaction provides enough gas limit and gas price
-/// to cover intrinsic native resources (computational native + pubdata).
-///
-/// This mirrors the intrinsic-resource checks performed by the bootloader
-/// during L2 tx validation without requiring the full system infrastructure.
-/// It also validates fee fields(base_fee, native_price, max_fee_per_gas, max_priority_fee_per_gas)
-///
-/// Please note, that it works only for Ethereum tx types (doesn't work for service txs)
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::result_unit_err)]
-pub fn validate_l2_tx_intrinsic_native_resources(
-    base_fee: U256,
-    native_price: U256,
-    pubdata_price: U256,
-    gas_limit: u64,
-    calldata_length: u64,
-    access_list_accounts: u64,
-    access_list_storage_keys: u64,
-    authorization_list_num: u64,
-    max_fee_per_gas: U256,
-    max_priority_fee_per_gas: U256,
-) -> Result<(), ()> {
-    // Validate fee fields
-    if max_priority_fee_per_gas > max_fee_per_gas {
-        return Err(());
-    }
-    if base_fee > max_fee_per_gas {
-        return Err(());
-    }
-
-    // Compute effective gas price
-    let gas_price = if base_fee == 0 {
-        // Following bootloader: if base fee is zero, then we ignore priority fee
-        U256::ZERO
-    } else {
-        let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
-        base_fee + priority_fee
-    };
-
-    // native_per_gas = ceil(gas_price / native_price)
-    if native_price.is_zero() {
-        return Err(());
-    }
-    let native_per_gas = u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(())?;
-
-    // native_per_pubdata = pubdata_price / native_price
-    let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price)).ok_or(())?;
-
-    // following bootloader behavior
-    let native_limit = if native_per_gas == 0 {
-        u64::MAX - 1
-    } else {
-        native_per_gas.saturating_mul(gas_limit)
-    };
-
-    // Intrinsic pubdata
-    let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(authorization_list_num, false);
-    let intrinsic_pubdata_overhead = native_per_pubdata.saturating_mul(intrinsic_pubdata);
-
-    let native_limit = native_limit
-        .checked_sub(intrinsic_pubdata_overhead)
-        .ok_or(())?;
-
-    // Cap at MAX_NATIVE_COMPUTATIONAL (excess is withheld for pubdata only)
-    let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
-
-    // Intrinsic computational native
-    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
-        calldata_length,
-        access_list_accounts,
-        access_list_storage_keys,
-        authorization_list_num,
-        false,
-    );
-
-    native_limit
-        .checked_sub(intrinsic_computational_native)
-        .ok_or(())?;
-
-    Ok(())
 }

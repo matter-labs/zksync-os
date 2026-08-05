@@ -11,16 +11,16 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
-ruint = { workspace = true, default-features = false }
-arrayvec = { workspace = true, default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
 
-strum_macros = { workspace = true }
-paste = { workspace = true }
+arrayvec = { version = "0.7.4", default-features = false }
+strum_macros = "0.27.1"
+paste = "1.0.15"
 
 [features]
-point_eval_precompile = ["evm_interpreter/point_eval_precompile"]
-mock-unsupported-precompiles = ["evm_interpreter/mock-unsupported-precompiles"]
-p256_precompile = ["evm_interpreter/p256_precompile"]
+point_eval_precompile = []
+mock-unsupported-precompiles = []
+p256_precompile = []
 cycle_marker = ["cycle_marker/log_to_file"]

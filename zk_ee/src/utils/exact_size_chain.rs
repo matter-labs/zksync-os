@@ -124,18 +124,22 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<A::Item> {
-        and_then_or_clear(&mut self.a, Iterator::next).or_else(|| {
-            while self.b_idx < N {
-                if let Some(next) = self.b[self.b_idx].as_mut().unwrap().next() {
-                    return Some(next);
-                } else {
-                    self.b[self.b_idx] = None;
-                    self.b_idx += 1
+        if N == 0 {
+            and_then_or_clear(&mut self.a, Iterator::next)
+        } else {
+            and_then_or_clear(&mut self.a, Iterator::next).or_else(|| {
+                while self.b_idx < N {
+                    if let Some(next) = self.b[self.b_idx].as_mut().unwrap().next() {
+                        return Some(next);
+                    } else {
+                        self.b[self.b_idx] = None;
+                        self.b_idx += 1
+                    }
                 }
-            }
 
-            None
-        })
+                None
+            })
+        }
     }
 }
 

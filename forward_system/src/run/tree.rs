@@ -1,4 +1,3 @@
-use crate::run::convert_alloy::{FromAlloy, IntoAlloy};
 use basic_system::system_implementation::flat_storage_model::LeafProof as GenericLeafProof;
 use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::utils::Bytes32;
@@ -20,7 +19,7 @@ pub trait ReadStorageTree: ReadStorage {
 
 impl<T: zksync_os_interface::traits::ReadStorage> ReadStorage for T {
     fn read(&mut self, key: Bytes32) -> Option<Bytes32> {
-        self.read(key.into_alloy()).map(Bytes32::from_alloy)
+        self.read(key.as_u8_array().into()).map(|v| v.0.into())
     }
 }
 

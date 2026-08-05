@@ -21,8 +21,13 @@ impl DelegatedU256 {
 
     pub const fn from_be_bytes(input: &[u8; 32]) -> Self {
         unsafe {
-            let mut result = MaybeUninit::<DelegatedU256>::uninit();
-            let ptr = result.as_mut_ptr().cast::<u64>();
+            #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
+            // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
+            // This is safe because there are no references to result and it's initialized immediately
+            // (and on RISC-V all memory is init by default)
+            let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
+            let ptr = &mut result.0[0] as *mut u64;
             let src: *const [u8; 8] = input.as_ptr_range().end.cast();
 
             ptr.write(u64::from_be_bytes(src.sub(1).read()));
@@ -30,7 +35,7 @@ impl DelegatedU256 {
             ptr.add(2).write(u64::from_be_bytes(src.sub(3).read()));
             ptr.add(3).write(u64::from_be_bytes(src.sub(4).read()));
 
-            result.assume_init()
+            result
         }
     }
 
@@ -42,8 +47,13 @@ impl DelegatedU256 {
 
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
         unsafe {
-            let mut result = MaybeUninit::<DelegatedU256>::uninit();
-            let ptr = result.as_mut_ptr().cast::<u64>();
+            #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
+            // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
+            // This is safe because there are no references to result and it's initialized immediately
+            // (and on RISC-V all memory is init by default)
+            let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
+            let ptr = &mut result.0[0] as *mut u64;
             let src: *const [u8; 8] = input.as_ptr().cast();
 
             ptr.write(u64::from_le_bytes(src.read()));
@@ -51,7 +61,7 @@ impl DelegatedU256 {
             ptr.add(2).write(u64::from_le_bytes(src.add(2).read()));
             ptr.add(3).write(u64::from_le_bytes(src.add(3).read()));
 
-            result.assume_init()
+            result
         }
     }
 

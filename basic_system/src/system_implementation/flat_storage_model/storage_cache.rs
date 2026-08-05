@@ -1,26 +1,343 @@
 //! Storage cache, backed by a history map.
-use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::{
-    GenericPubdataAwarePlainStorage, StorageSnapshotId,
-};
-use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use alloc::collections::BTreeSet;
+use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
+use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
+use zk_ee::common_structs::history_counter::HistoryCounter;
+use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
+use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
+use zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
     memory::stack_trait::StackFactory,
+    oracle::simple_oracle_query::SimpleOracleQuery,
+    storage_types::StorageAddress,
     system::{errors::system::SystemError, Resources},
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::Bytes32,
 };
 
+use zk_ee::common_structs::history_map::*;
 use zk_ee::common_structs::ValueDiffCompressionStrategy;
+
+type AddressItem<'a, K, V, A> =
+    HistoryMapItemRefMut<'a, K, CacheRecord<V, StorageElementMetadata>, A>;
+
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub struct TransactionId(pub u32);
+
+pub struct StorageSnapshotId {
+    pub cache: CacheSnapshotId,
+    pub evm_refunds_counter: HistoryCounterSnapshotId,
+}
+
+/// EE-specific IO charging.
+pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
+    /// Charge for a warm read (already in cache).
+    fn charge_warm_storage_read(
+        &self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
+
+    /// Charge the extra cost of reading a key
+    /// not present in the cache. This cost is added
+    /// to the cost of a warm read.
+    fn charge_cold_storage_read_extra(
+        &self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        is_new_slot: bool,
+    ) -> Result<(), SystemError>;
+
+    /// Charge the additional cost of performing a write.
+    /// This cost is added to the cost of reading.
+    /// We assume writing is always at least as expensive
+    /// as reading.
+    fn charge_storage_write_extra(
+        &self,
+        ee_type: ExecutionEnvironmentType,
+        initial_value: &V,
+        current_value: &V,
+        new_value: &V,
+        resources: &mut R,
+        is_warm_write: bool,
+        is_new_slot: bool,
+    ) -> Result<(), SystemError>;
+}
+
+#[derive(Default, Clone)]
+pub struct StorageElementMetadata {
+    /// Transaction where this account was last accessed.
+    /// Considered warm if equal to Some(current_tx)
+    pub last_touched_in_tx: Option<TransactionId>,
+}
+
+impl StorageElementMetadata {
+    pub fn considered_warm(&self, current_tx_id: TransactionId) -> bool {
+        self.last_touched_in_tx == Some(current_tx_id)
+    }
+}
+
+pub struct GenericPubdataAwarePlainStorage<
+    K: KeyLikeWithBounds,
+    V,
+    A: Allocator + Clone, // = Global,
+    SF: StackFactory<M>,
+    const M: usize,
+    R: Resources,
+    P: StorageAccessPolicy<R, V>,
+> {
+    pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
+    pub(crate) resources_policy: P,
+    // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
+    pub(crate) current_tx_id: TransactionId,
+    pub(crate) evm_refunds_counter: HistoryCounter<u32, SF, M, A>, // Used to keep track of EVM gas refunds
+    alloc: A,
+    pub(crate) _marker: core::marker::PhantomData<(R, SF)>,
+}
+
+pub struct IsWarmRead(pub bool);
+
+impl<
+        K: 'static + KeyLikeWithBounds,
+        V: Default
+            + Clone
+            + Debug
+            + PartialEq
+            + From<<EthereumIOTypesConfig as SystemIOTypesConfig>::StorageValue>,
+        A: Allocator + Clone,
+        SF: StackFactory<M>,
+        const M: usize,
+        R: Resources,
+        P: StorageAccessPolicy<R, V>,
+    > GenericPubdataAwarePlainStorage<K, V, A, SF, M, R, P>
+{
+    pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
+        Self {
+            cache: HistoryMap::new(allocator.clone()),
+            current_tx_id: TransactionId(0),
+            resources_policy,
+            evm_refunds_counter: HistoryCounter::new(allocator.clone()),
+            alloc: allocator.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub fn begin_new_tx(&mut self) {
+        self.cache.commit();
+        self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
+    }
+
+    pub fn finish_tx(&mut self) {
+        self.current_tx_id.0 += 1;
+    }
+
+    #[track_caller]
+    pub fn start_frame(&mut self) -> StorageSnapshotId {
+        StorageSnapshotId {
+            cache: self.cache.snapshot(),
+            evm_refunds_counter: self.evm_refunds_counter.snapshot(),
+        }
+    }
+
+    #[track_caller]
+    #[must_use]
+    pub fn finish_frame_impl(
+        &mut self,
+        rollback_handle: Option<&StorageSnapshotId>,
+    ) -> Result<(), InternalError> {
+        if let Some(x) = rollback_handle {
+            self.evm_refunds_counter.rollback(x.evm_refunds_counter);
+            self.cache.rollback(x.cache)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Read element and initialize it if needed
+    fn materialize_element<'a>(
+        cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
+        resources_policy: &mut P,
+        current_tx_id: TransactionId,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        address: &StorageAddress<EthereumIOTypesConfig>,
+        key: &'a K,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(AddressItem<'a, K, V, A>, IsWarmRead), SystemError> {
+        resources_policy.charge_warm_storage_read(ee_type, resources, is_access_list)?;
+
+        let mut initialized_element = false;
+
+        cache
+            .get_or_insert(key, || {
+                // Element doesn't exist in cache yet, initialize it
+                initialized_element = true;
+
+                let data_from_oracle = InitialStorageSlotQuery::get(oracle, &address)
+                    .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
+
+                resources_policy.charge_cold_storage_read_extra(
+                    ee_type,
+                    resources,
+                    data_from_oracle.is_new_storage_slot,
+                )?;
+
+                let appearance = match data_from_oracle.is_new_storage_slot {
+                    true => Appearance::Unset,
+                    false => Appearance::Retrieved,
+                };
+
+                // We need to check that the initial value is default
+                if data_from_oracle.is_new_storage_slot {
+                    assert_eq!(
+                        V::default(),
+                        data_from_oracle.initial_value.into(),
+                        "Initial value of empty slot must be trivial"
+                    );
+                }
+
+                // Note: we initialize it as cold, should be warmed up separately
+                // Since in case of revert it should become cold again and initial record can't be rolled back
+                Ok(CacheRecord::new(
+                    data_from_oracle.initial_value.into(),
+                    appearance,
+                ))
+            })
+            .and_then(|mut x| {
+                // Warm up element according to EVM rules if needed
+                let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
+                if is_warm_read == false {
+                    if initialized_element == false {
+                        let is_new_storage_slot = x.current().appearance() == Appearance::Unset;
+                        // Element exists in cache, but wasn't touched in current tx yet
+                        resources_policy.charge_cold_storage_read_extra(
+                            ee_type,
+                            resources,
+                            is_new_storage_slot,
+                        )?;
+                    }
+
+                    x.update(|cache_record| {
+                        cache_record.update_metadata(|m| {
+                            m.last_touched_in_tx = Some(current_tx_id);
+                            Ok(())
+                        })
+                    })?;
+                }
+
+                Ok((x, IsWarmRead(is_warm_read)))
+            })
+    }
+
+    pub fn apply_read_impl(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        address: &StorageAddress<EthereumIOTypesConfig>,
+        key: &K,
+        resources: &mut R,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<V, SystemError>
+where {
+        let (addr_data, _) = Self::materialize_element(
+            &mut self.cache,
+            &mut self.resources_policy,
+            self.current_tx_id,
+            ee_type,
+            resources,
+            address,
+            key,
+            oracle,
+            is_access_list,
+        )?;
+
+        Ok(addr_data.current().value().clone())
+    }
+
+    pub fn apply_write_impl(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        address: &StorageAddress<EthereumIOTypesConfig>,
+        key: &K,
+        new_value: &V,
+        oracle: &mut impl IOOracle,
+        resources: &mut R,
+    ) -> Result<(V, V), SystemError>
+where {
+        let (mut addr_data, is_warm_read) = Self::materialize_element(
+            &mut self.cache,
+            &mut self.resources_policy,
+            self.current_tx_id,
+            ee_type,
+            resources,
+            address,
+            key,
+            oracle,
+            false,
+        )?;
+
+        let val_current = addr_data.current().value();
+
+        // Try to get initial value at the beginning of the tx.
+        let val_at_tx_start = addr_data.committed().value().clone();
+
+        self.resources_policy.charge_storage_write_extra(
+            ee_type,
+            &val_at_tx_start,
+            val_current,
+            new_value,
+            resources,
+            is_warm_read.0,
+            addr_data.current().appearance() == Appearance::Unset,
+        )?;
+
+        let old_value = addr_data.current().value().clone();
+        addr_data.update(|cache_record| {
+            cache_record.update(|x, _| {
+                *x = new_value.clone();
+                Ok(())
+            })
+        })?;
+
+        Ok((old_value, val_at_tx_start))
+    }
+
+    /// Clear state at specified address
+    pub fn clear_state_impl(&mut self, address: impl AsRef<B160>) -> Result<(), SystemError>
+    where
+        K::Subspace: TyEq<B160>,
+    {
+        use core::ops::Bound::Included;
+        let lower_bound = K::lower_bound(TyEq::rwi(*address.as_ref()));
+        let upper_bound = K::upper_bound(TyEq::rwi(*address.as_ref()));
+        self.cache
+            .for_each_range((Included(&lower_bound), Included(&upper_bound)), |mut x| {
+                x.update(|cache_record| {
+                    cache_record.update(|v, _| {
+                        *v = V::default();
+                        Ok(())
+                    })?;
+                    cache_record.unset();
+                    Ok(())
+                })
+            })?;
+
+        Ok(())
+    }
+}
 
 /// This storage knows concrete definitions where wer store account data hashes, etc
 ///
@@ -57,12 +374,18 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+        let sa = StorageAddress {
+            address: *address,
+            key: *key,
+        };
+
         let key = WarmStorageKey {
             address: *address,
             key: *key,
         };
 
-        self.0.apply_read_impl(ee_type, &key, resources, oracle)
+        self.0
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)
     }
 
     fn touch(
@@ -72,16 +395,22 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
+        let sa = StorageAddress {
+            address: *address,
+            key: *key,
+        };
 
         let key = WarmStorageKey {
             address: *address,
             key: *key,
         };
 
-        self.0.apply_read_impl(ee_type, &key, resources, oracle)?;
+        self.0
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, is_access_list)?;
         Ok(())
     }
 
@@ -94,6 +423,11 @@ impl<
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
+        let sa = StorageAddress {
+            address: *address,
+            key: *key,
+        };
+
         let key = WarmStorageKey {
             address: *address,
             key: *key,
@@ -102,7 +436,42 @@ impl<
         #[allow(unused_variables)]
         let (old_value, val_at_tx_start) = self
             .0
-            .apply_write_impl(ee_type, &key, new_value, oracle, resources)?;
+            .apply_write_impl(ee_type, &sa, &key, new_value, oracle, resources)?;
+
+        if ee_type == ExecutionEnvironmentType::EVM {
+            // EVM specific refunds calculation
+            if old_value != *new_value {
+                let mut gas_refunds = self
+                    .0
+                    .evm_refunds_counter
+                    .value()
+                    .copied()
+                    .unwrap_or_default();
+
+                if old_value == val_at_tx_start {
+                    if !val_at_tx_start.is_zero() && new_value.is_zero() {
+                        gas_refunds += 4800
+                    }
+                } else {
+                    if !val_at_tx_start.is_zero() {
+                        if old_value.is_zero() {
+                            gas_refunds -= 4800
+                        } else if new_value.is_zero() {
+                            gas_refunds += 4800
+                        }
+                    }
+                    if *new_value == val_at_tx_start {
+                        if val_at_tx_start.is_zero() {
+                            gas_refunds += 20000 - 100
+                        } else {
+                            gas_refunds += 5000 - 2100 - 100
+                        }
+                    }
+                }
+
+                self.0.evm_refunds_counter.update(gas_refunds);
+            }
+        }
 
         Ok(old_value)
     }
@@ -124,12 +493,19 @@ impl<
 
         // we just need to create a proper access function
 
+        let sa = StorageAddress {
+            address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+            key,
+        };
+
         let key = WarmStorageKey {
             address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             key,
         };
 
-        let raw_value = self.0.apply_read_impl(ee_type, &key, resources, oracle)?;
+        let raw_value = self
+            .0
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)?;
 
         let value = unsafe {
             // we checked TypeId above, so we reinterpret. No drop/forget needed
@@ -155,6 +531,11 @@ impl<
 
         let key = address_into_special_storage_key(address);
 
+        let sa = StorageAddress {
+            address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+            key,
+        };
+
         let key = WarmStorageKey {
             address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             key,
@@ -167,7 +548,7 @@ impl<
 
         let (old_value, _) = self
             .0
-            .apply_write_impl(ee_type, &key, &new_value, oracle, resources)?;
+            .apply_write_impl(ee_type, &sa, &key, &new_value, oracle, resources)?;
 
         let old_value = unsafe {
             // we checked TypeId above, so we reinterpret. No drop/forget needed
@@ -222,8 +603,6 @@ impl<
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>
     {
         self.0.cache.iter().map(|item| {
-            let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
             let current_record = item.current();
             let initial_record = item.initial();
             (
@@ -232,9 +611,9 @@ impl<
                 // not actually 'using' it.
                 WarmStorageValue {
                     current_value: *current_record.value(),
-                    is_new_storage_slot,
+                    is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
                     initial_value: *initial_record.value(),
-                    initial_value_used,
+                    initial_value_used: true,
                     ..Default::default()
                 },
             )

@@ -1,12 +1,10 @@
 //! Account cache, backed by a history map.
 //! This caches the actual account data, which will
 //! then be published into the preimage storage.
+use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
-use crate::cost_constants::blake2s_native_cost;
 use crate::system_functions::keccak256::keccak256_native_cost;
-use crate::system_implementation::caches::basic_account_properties::BasicAccountPropertiesMetadata;
-use crate::system_implementation::caches::cache_element_properties::CacheElementProperties;
 use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
 use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
@@ -22,6 +20,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
+use zk_ee::common_structs::cache_record::Appearance;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
@@ -52,27 +51,11 @@ use zk_ee::{
 };
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
-
-/// Extension of basic properties
-#[derive(Default, Clone)]
-pub struct AccountPropertiesMetadata {
-    pub basic: BasicAccountPropertiesMetadata,
-    /// Special flag that allows avoiding publishing bytecode for deployed account.
-    /// In practice, it can be set to `true` only during special protocol upgrade txs.
-    /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
-    pub not_publish_bytecode: bool,
-    /// Special flag to not compress balance diff for pubdata size estimation.
-    /// It's used to have a conservative approximation of pubdata in simulation,
-    /// when due to the gas price being set to 0 there might not be a diff.
-    pub not_compress_balance: bool,
-}
-
 type AddressItem<'a, A> = HistoryMapItemRefMut<
     'a,
     BitsOrd<160, 3>,
     CacheRecord<AccountProperties, AccountPropertiesMetadata>,
     A,
-    CacheElementProperties,
 >;
 
 pub struct NewModelAccountCache<
@@ -82,12 +65,8 @@ pub struct NewModelAccountCache<
     SF: StackFactory<M>,
     const M: usize,
 > {
-    pub(crate) cache: HistoryMap<
-        BitsOrd160,
-        CacheRecord<AccountProperties, AccountPropertiesMetadata>,
-        A,
-        CacheElementProperties,
-    >,
+    pub(crate) cache:
+        HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: u32,
     alloc: A,
@@ -151,7 +130,7 @@ impl<
         // 1. Charging for special access
         resources.with_infinite_ergs(|res: &mut R| {
             // Access list only matters for ergs, we set it to false
-            policy.charge_warm_storage_read(ee_type, res)
+            policy.charge_warm_storage_read(ee_type, res, false)
         })?;
         resources.with_infinite_ergs(|res| {
             // We determine if it's a new slot by proxy of empty_account.
@@ -179,10 +158,18 @@ impl<
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-        observe: bool,
-    ) -> Result<AddressItem<'_, A>, SystemError> {
+        is_access_list: bool,
+    ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                if is_access_list {
+                    // For access lists, EVM charges the full cost as many
+                    // times as an account is in the list.
+                    Ergs(2400 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM =>
             // For selfdestruct, there's no warm access cost
             {
@@ -228,7 +215,7 @@ impl<
                 )?;
 
                 let acc_data = match empty_account {
-                    true => AccountProperties::default(),
+                    true => (AccountProperties::default(), Appearance::Unset),
                     false => {
                         let preimage = preimages_cache.get_preimage::<PROOF_ENV>(
                             ee_type,
@@ -244,29 +231,22 @@ impl<
                         // it's redundant as preimages cache should just check it, but why not
                         assert_eq!(preimage.len(), AccountProperties::ENCODED_SIZE);
 
-                        AccountProperties::decode(preimage.try_into().map_err(|_| {
-                            internal_error!("Unexpected preimage length for AccountProperties")
-                        })?)
+                        let props =
+                            AccountProperties::decode(preimage.try_into().map_err(|_| {
+                                internal_error!("Unexpected preimage length for AccountProperties")
+                            })?);
+
+                        (props, Appearance::Retrieved)
                     }
                 };
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                Ok((
-                    CacheRecord::new(acc_data),
-                    CacheElementProperties::new(empty_account, observe),
-                ))
+                Ok(CacheRecord::new(acc_data.0, acc_data.1))
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
-                let is_warm = x
-                    .current()
-                    .metadata()
-                    .basic
-                    .considered_warm(self.current_tx_id);
-                if observe {
-                    x.element_properties_mut().mark_value_as_observed();
-                }
+                let is_warm = x.current().metadata().considered_warm(self.current_tx_id);
                 if is_warm == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
@@ -276,7 +256,7 @@ impl<
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.element_properties().is_new_element();
+                        let empty_account = x.current().appearance() == Appearance::Unset;
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
@@ -287,7 +267,7 @@ impl<
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
-                            m.basic.last_touched_in_tx = Some(self.current_tx_id);
+                            m.last_touched_in_tx = Some(self.current_tx_id);
                             Ok(())
                         })
                     })?;
@@ -316,7 +296,7 @@ impl<
             preimages_cache,
             oracle,
             is_selfdestruct,
-            true,
+            false,
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -453,11 +433,11 @@ impl<
             // we don't consider this diff in the pubdata charging.
             // This change will be optimized away, so it's actually reducing
             // pubdata.
-            if current.value() == initial.value() && !current.metadata().not_compress_balance {
+            if current.value() == initial.value() {
                 continue;
             }
 
-            if current.value() != at_tx_start.value() || current.metadata().not_compress_balance {
+            if current.value() != at_tx_start.value() {
                 pubdata_used += 32; // key
                 pubdata_used += AccountProperties::diff_compression_length(
                     at_tx_start.value(),
@@ -521,6 +501,7 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         self.materialize_element::<PROOF_ENV>(
             ee_type,
@@ -530,7 +511,7 @@ impl<
             preimages_cache,
             oracle,
             false,
-            false,
+            is_access_list,
         )?;
         Ok(())
     }
@@ -595,7 +576,7 @@ impl<
             preimages_cache,
             oracle,
             false,
-            true,
+            false,
         )?;
 
         let full_data = account_data.current().value();
@@ -678,7 +659,7 @@ impl<
             preimages_cache,
             oracle,
             false,
-            true,
+            false,
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -812,7 +793,7 @@ impl<
                 preimages_cache,
                 oracle,
                 false,
-                true,
+                false,
             )
         })?;
 
@@ -886,7 +867,7 @@ impl<
                 v.versioning_data.set_ee_version(from_ee as u8);
                 v.versioning_data.set_code_version(code_version);
 
-                m.basic.deployed_in_tx = Some(cur_tx);
+                m.deployed_in_tx = Some(cur_tx);
                 // This is unlikely to happen, this case shouldn't be reachable by higher level logic
                 // but just in case if force deployed contract was redeployed with regular deployment we want to publish it
                 m.not_publish_bytecode = false;
@@ -928,7 +909,7 @@ impl<
             preimages_cache,
             oracle,
             false,
-            true,
+            false,
         )?;
 
         let request = PreimageRequest {
@@ -995,7 +976,7 @@ impl<
                 v.versioning_data.set_ee_version(ee as u8);
                 v.versioning_data.set_code_version(code_version);
 
-                m.basic.deployed_in_tx = Some(cur_tx);
+                m.deployed_in_tx = Some(cur_tx);
                 m.not_publish_bytecode = true;
 
                 Ok(())
@@ -1023,7 +1004,7 @@ impl<
                 preimages_cache,
                 oracle,
                 false,
-                true,
+                false,
             )
         })?;
 
@@ -1131,6 +1112,7 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        in_constructor: bool,
     ) -> Result<U256, DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_id;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
@@ -1155,24 +1137,14 @@ impl<
         // Note that the contract is only deployed after finalization of
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
-        // We identify if the call happens within a constructor by checking the bytecode
-        // length. If it's empty, then the call must be in a constructor.
-        let in_constructor = account_data.current().value().observable_bytecode_len == 0;
-        let should_be_deconstructed = account_data.current().metadata().basic.deployed_in_tx
-            == Some(cur_tx)
-            || in_constructor;
+        let should_be_deconstructed =
+            account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
-            account_data
-                .element_properties_mut()
-                .mark_value_as_observed();
-            account_data.update(|data| {
-                data.update_metadata(|metadata| {
-                    metadata.basic.is_marked_for_deconstruction = true;
-
-                    Ok(())
-                })
-            })?;
+            account_data.update::<_, SystemError>(|cache_record| {
+                cache_record.deconstruct();
+                Ok(())
+            })?
         }
 
         // First do the token transfer
@@ -1234,14 +1206,11 @@ impl<
         self.current_tx_id += 1;
 
         // Actually deconstructing accounts
-        self.cache.apply_to_last_record_of_pending_changes(
-            |key, (_initial, current), cache_appearance| {
-                if current.value.metadata().basic.is_marked_for_deconstruction {
-                    // NOTE: it can only happen if the account is initially empty,
-                    // so we need to make sure that it was observed earlier - when bytecode was deployed
-                    assert!(cache_appearance.is_value_observed());
-                    current.value.update(|x, metadata| {
-                        metadata.basic.is_marked_for_deconstruction = false;
+        self.cache
+            .apply_to_last_record_of_pending_changes(|key, head_history_record| {
+                if head_history_record.value.appearance() == Appearance::Deconstructed {
+                    head_history_record.value.finish_deconstruction()?;
+                    head_history_record.value.update(|x, _| {
                         *x = AccountProperties::TRIVIAL_VALUE;
                         Ok(())
                     })?;
@@ -1251,8 +1220,7 @@ impl<
                         .expect("must clear state for code deconstruction in same TX");
                 }
                 Ok(())
-            },
-        )?;
+            })?;
 
         Ok(())
     }

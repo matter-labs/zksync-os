@@ -1,44 +1,25 @@
 use crate::{colors, init_logger};
-use alloy::consensus::Header;
-use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
-use alloy_rlp::{Decodable, Encodable};
-use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
-use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
-use basic_bootloader::bootloader::BasicBootloader;
-use basic_system::system_implementation::ethereum_storage_model::caches::account_properties::EthereumAccountProperties;
-use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
-use basic_system::system_implementation::ethereum_storage_model::EthereumMPT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
 use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
-use forward_system::run::query_processors::DACommitmentSchemeResponder;
-use forward_system::run::query_processors::EthereumCLResponder;
-use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
-use forward_system::run::query_processors::GenericPreimageResponder;
-use forward_system::run::query_processors::InMemoryEthereumInitialAccountStateResponder;
-use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotValueResponder;
-use forward_system::run::query_processors::TxDataResponder;
-use forward_system::run::query_processors::UARTPrintResponder;
+use ethers::signers::LocalWallet;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
-use forward_system::system::system_types::ForwardRunningSystem;
-use log::warn;
+use forward_system::system::system::ForwardRunningSystem;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
-use oracle_provider::{DummyMemorySource, ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
-use std::alloc::Global;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -48,8 +29,6 @@ use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::NopTxValidator;
-use zk_ee::system::validator::TxValidator;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
@@ -59,28 +38,16 @@ use zksync_os_interface::types::StorageWrite;
 /// Trait for creating oracles with custom configuration
 pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     #[allow(clippy::too_many_arguments)]
-    fn create_forward_oracle(
+    fn create_oracle<M: MemorySource + 'static>(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource>;
-
-    #[allow(clippy::too_many_arguments)]
-    fn create_proof_oracle(
-        &self,
-        block_metadata: BlockMetadataFromOracle,
-        state_tree: InMemoryTree<RANDOMIZED_TREE>,
-        preimage_source: InMemoryPreimageSource,
-        tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        add_uart: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
+    ) -> ZkEENonDeterminismSource<M>;
 }
 
 /// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
@@ -89,37 +56,16 @@ pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     for DefaultOracleFactory<RANDOMIZED_TREE>
 {
-    fn create_forward_oracle(
+    fn create_oracle<M: MemorySource + 'static>(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
-            block_metadata,
-            state_tree,
-            preimage_source,
-            tx_source,
-            proof_data,
-            da_commitment_scheme,
-            add_uart,
-        )
-    }
-
-    fn create_proof_oracle(
-        &self,
-        block_metadata: BlockMetadataFromOracle,
-        state_tree: InMemoryTree<RANDOMIZED_TREE>,
-        preimage_source: InMemoryPreimageSource,
-        tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        add_uart: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
+    ) -> ZkEENonDeterminismSource<M> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -135,9 +81,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
 ///
 /// In memory chain state, mainly to be used in tests.
 ///
-#[derive(Debug, Clone)]
 pub struct Chain<const RANDOMIZED_TREE: bool = false> {
-    pub(crate) state_tree: InMemoryTree<RANDOMIZED_TREE>,
+    state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
     previous_block_number: Option<u64>,
@@ -156,7 +101,6 @@ pub struct BlockContext {
     pub gas_limit: u64,
     pub pubdata_limit: u64,
     pub mix_hash: U256,
-    pub blob_fee: U256,
 }
 
 impl Default for BlockContext {
@@ -170,126 +114,24 @@ impl Default for BlockContext {
             gas_limit: MAX_BLOCK_GAS_LIMIT,
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
-            blob_fee: U256::ONE,
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Default)]
 pub struct RunConfig {
-    // Runtime execution controls for `Chain` block execution.
-    // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
     // Config for the profiler
     pub profiler_config: Option<ProfilerConfig>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
     pub app: Option<String>,
-    // Run RISC-V simulation
-    pub do_riscv_run: bool,
+    // Only run in forward mode, skip proving run
+    pub only_forward: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
-    // do_riscv_run is true
+    // only_forward is false
     pub check_storage_diff_hashes: bool,
-    // Whether to replay the block in REVM and assert no state divergences.
-    // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
-    pub check_revm_consistency: bool,
-    /// When true, REVM computes gas independently instead of using
-    /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
-    pub revm_independent_gas: bool,
-    pub update_state_after_block_execution: bool,
-}
-
-impl Default for RunConfig {
-    fn default() -> Self {
-        let zksync_risc_v_run =
-            Self::parse_explicit_bool("ZKSYNC_RISC_V_RUN", std::env::var("ZKSYNC_RISC_V_RUN").ok());
-        let ci_is_true =
-            Self::parse_explicit_bool("CI", std::env::var("CI").ok()).is_some_and(|value| value);
-        let do_riscv_run = Self::should_do_riscv_run(zksync_risc_v_run, ci_is_true);
-        let check_revm_consistency =
-            Self::should_check_revm_consistency(Self::parse_explicit_bool(
-                "ZKSYNC_REVM_CONSISTENCY_CHECK",
-                std::env::var("ZKSYNC_REVM_CONSISTENCY_CHECK").ok(),
-            ));
-
-        RunConfig {
-            app: Some("for_tests".to_string()),
-            do_riscv_run,
-            check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
-            check_revm_consistency,
-            revm_independent_gas: false,
-            profiler_config: None,
-            witness_output_file: None,
-            update_state_after_block_execution: true,
-        }
-    }
-}
-
-impl RunConfig {
-    fn parse_explicit_bool(var_name: &str, value: Option<String>) -> Option<bool> {
-        let raw_value = value?;
-        let normalized = raw_value.trim();
-
-        if normalized.eq_ignore_ascii_case("true")
-            || normalized.eq_ignore_ascii_case("yes")
-            || normalized.eq_ignore_ascii_case("on")
-            || normalized == "1"
-        {
-            return Some(true);
-        }
-
-        if normalized.eq_ignore_ascii_case("false")
-            || normalized.eq_ignore_ascii_case("no")
-            || normalized.eq_ignore_ascii_case("off")
-            || normalized == "0"
-        {
-            return Some(false);
-        }
-
-        if !normalized.is_empty() {
-            warn!(
-                "Ignoring unsupported value for {var_name}: '{raw_value}'. Supported values: true/false, 1/0, yes/no, on/off"
-            );
-        }
-
-        None
-    }
-
-    fn should_do_riscv_run(zksync_risc_v_run: Option<bool>, ci_is_true: bool) -> bool {
-        zksync_risc_v_run == Some(true) || (ci_is_true && zksync_risc_v_run != Some(false))
-    }
-
-    fn should_check_revm_consistency(zksync_revm_consistency: Option<bool>) -> bool {
-        zksync_revm_consistency == Some(true)
-    }
-
-    pub fn without_riscv_run() -> Self {
-        let mut config = Self::default();
-        config.disable_riscv_run();
-        config
-    }
-
-    pub fn with_riscv_run() -> Self {
-        Self {
-            do_riscv_run: true,
-            check_storage_diff_hashes: true, // Enable storage diff hash checks when doing RISC-V run
-            ..Default::default()
-        }
-    }
-
-    pub fn disable_riscv_run(&mut self) {
-        self.do_riscv_run = false;
-        self.check_storage_diff_hashes = false; // Disable storage diff hash checks when RISC-V run is disabled
-    }
-
-    pub fn enable_revm_consistency_check(&mut self) {
-        self.check_revm_consistency = true;
-    }
-
-    pub fn disable_revm_consistency_check(&mut self) {
-        self.check_revm_consistency = false;
-    }
 }
 
 impl Chain<false> {
@@ -352,24 +194,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.previous_block_number.map(|n| n + 1).unwrap_or(0)
     }
 
-    pub fn chain_id(&self) -> u64 {
-        self.chain_id
-    }
-
-    pub fn block_hashes(&self) -> [U256; 256] {
-        self.block_hashes
-    }
-
-    pub fn set_timestamp(&mut self, timestamp: u64) {
-        self.block_timestamp = timestamp;
-    }
-
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
-    }
-
-    pub fn set_chain_id(&mut self, chain_id: u64) {
-        self.chain_id = chain_id;
     }
 
     /// TODO: duplicated from API, unify.
@@ -428,14 +254,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
-            blob_fee: block_context.blob_fee,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let mut nop_tracer = NopTracer::default();
-        let mut nop_validator = NopTxValidator;
 
         let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
             _,
@@ -452,7 +276,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             None,
             None,
             &mut nop_tracer,
-            &mut nop_validator,
         )
         .unwrap();
 
@@ -484,7 +307,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator,
         )
         .unwrap()
         .0
@@ -496,13 +318,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     /// You can also pass a run config.
     ///
-    pub fn run_block_with_oracle_factory(
+    pub fn run_block_with_oracle_factory<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
-        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        oracle_factory: &OF,
     ) -> BlockOutput {
         self.run_block_with_extra_stats_with_oracle_factory(
             transactions,
@@ -510,7 +332,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator,
             oracle_factory,
         )
         .unwrap()
@@ -533,7 +354,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             run_config.unwrap_or_default(),
             &factory,
             &mut NopTracer::default(),
-            &mut NopTxValidator,
         )
         .map(|r| r.0)
     }
@@ -546,7 +366,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
-        validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
@@ -556,21 +375,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             run_config.unwrap_or_default(),
             &factory,
             tracer,
-            validator,
         )
     }
 
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_block_with_extra_stats_with_oracle_factory(
+    pub fn run_block_with_extra_stats_with_oracle_factory<
+        OF: TestingOracleFactory<RANDOMIZED_TREE>,
+    >(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
-        validator: &mut impl TxValidator<ForwardRunningSystem>,
-        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        oracle_factory: &OF,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
@@ -579,33 +397,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             run_config.unwrap_or_default(),
             oracle_factory,
             tracer,
-            validator,
         )
     }
 
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::too_many_arguments)]
-    fn run_inner(
+    fn run_inner<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: RunConfig,
-        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        oracle_factory: &OF,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
-        validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,
             witness_output_file,
             app,
-            do_riscv_run,
+            only_forward,
             check_storage_diff_hashes,
-            check_revm_consistency: _,
-            revm_independent_gas: _,
-            update_state_after_block_execution,
         } = run_config;
-
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -619,7 +430,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
-            blob_fee: block_context.blob_fee,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -635,7 +445,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let da_commitment_scheme =
             da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256);
-        let oracle = oracle_factory.create_proof_oracle(
+        let oracle = oracle_factory.create_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -645,7 +455,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             true,
         );
 
-        let forward_oracle = oracle_factory.create_forward_oracle(
+        let forward_oracle = oracle_factory.create_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -657,7 +467,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         #[cfg(feature = "simulate_witness_gen")]
         let source_for_witness_bench = {
-            oracle_factory.create_proof_oracle(
+            oracle_factory.create_oracle(
                 block_metadata,
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
@@ -677,7 +487,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             forward_oracle,
             &mut result_keeper,
             tracer,
-            validator,
         )?;
 
         let block_output: BlockOutput = result_keeper.into();
@@ -707,32 +516,30 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             stats.computational_native_used = Some(native_used);
         }
 
-        if update_state_after_block_execution {
-            // update state
-            self.previous_block_number = Some(self.next_block_number());
-            self.block_timestamp = block_context.timestamp;
-            for i in 0..255 {
-                self.block_hashes[i] = self.block_hashes[i + 1];
-            }
-            self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
+        // update state
+        self.previous_block_number = Some(self.next_block_number());
+        self.block_timestamp = block_context.timestamp;
+        for i in 0..255 {
+            self.block_hashes[i] = self.block_hashes[i + 1];
+        }
+        self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
 
-            for storage_write in block_output.storage_writes.iter() {
-                self.state_tree
-                    .cold_storage
-                    .insert(storage_write.key.0.into(), storage_write.value.0.into());
-                self.state_tree
-                    .storage_tree
-                    .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
-            }
-
-            for (hash, preimage) in block_output.published_preimages.iter() {
-                self.preimage_source
-                    .inner
-                    .insert(hash.0.into(), preimage.clone());
-            }
+        for storage_write in block_output.storage_writes.iter() {
+            self.state_tree
+                .cold_storage
+                .insert(storage_write.key.0.into(), storage_write.value.0.into());
+            self.state_tree
+                .storage_tree
+                .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
         }
 
-        let proof_input = if do_riscv_run {
+        for (hash, preimage) in block_output.published_preimages.iter() {
+            self.preimage_source
+                .inner
+                .insert(hash.0.into(), preimage.clone());
+        }
+
+        let proof_input = if !only_forward {
             if let Some(path) = witness_output_file {
                 let result = Self::run_block_generate_witness::<false>(oracle, &app);
                 let mut file = File::create(&path).expect("should create file");
@@ -834,248 +641,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         Ok((block_output, stats, proof_input))
     }
 
-    pub fn make_eth_block_oracle<M: MemorySource + 'static>(
-        transactions: Vec<EncodedTx>,
-        witness: alloy_rpc_types_debug::ExecutionWitness,
-        block_header: Header,
-        withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource<M> {
-        use crypto::MiniDigest;
-        use std::collections::BTreeMap;
-
-        let mut headers: Vec<Header> = witness
-            .headers
-            .iter()
-            .map(|el| {
-                let mut slice: &[u8] = &el.0;
-                Header::decode(&mut slice).unwrap()
-            })
-            .collect();
-
-        assert!(!headers.is_empty());
-        assert!(headers.is_sorted_by(|a, b| a.number < b.number));
-        headers.reverse();
-        assert_eq!(headers.len(), witness.headers.len());
-
-        let block_number = headers[0].number + 1;
-        assert_eq!(block_number, block_header.number);
-
-        let mut headers_encodings: Vec<_> =
-            witness.headers.iter().map(|el| el.0.to_vec()).collect();
-        headers_encodings.reverse();
-
-        let initial_root = headers[0].state_root;
-
-        let mut preimage_source = InMemoryPreimageSource::default();
-        let mut oracle: BTreeMap<Bytes32, Vec<u8>> = BTreeMap::new();
-
-        let mut hasher = crypto::sha3::Keccak256::new();
-
-        // make an oracle
-        for el in witness.state.iter() {
-            hasher.update(el);
-            let hash = hasher.finalize_reset();
-            oracle.insert(Bytes32::from_array(hash), el.to_vec());
-            preimage_source
-                .inner
-                .insert(Bytes32::from_array(hash), el.to_vec());
-        }
-
-        for el in witness.codes.iter() {
-            hasher.update(el);
-            let hash = hasher.finalize_reset();
-            oracle.insert(Bytes32::from_array(hash), el.to_vec());
-            preimage_source
-                .inner
-                .insert(Bytes32::from_array(hash), el.to_vec());
-        }
-
-        // we will do some really bad heuristics here
-        use basic_system::system_implementation::ethereum_storage_model::digits_from_key;
-        use basic_system::system_implementation::ethereum_storage_model::BoxInterner;
-        use basic_system::system_implementation::ethereum_storage_model::Path;
-
-        let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
-        let mut accounts_mpt: EthereumMPT<'_, Global, VecCtor, false> =
-            EthereumMPT::new_in(initial_root.0, &mut interner, Global).unwrap();
-        let mut account_properties = HashMap::<B160, EthereumAccountProperties>::new();
-        for el in witness.keys.iter() {
-            if el.len() == 20 {
-                hasher.update(el);
-                let hash = hasher.finalize_reset();
-                let digits = digits_from_key(&hash);
-                let path = Path::new(&digits);
-                if let Ok(props) = accounts_mpt.get(path, &mut oracle, &mut interner, &mut hasher) {
-                    let props = EthereumAccountProperties::parse_from_rlp_bytes(props)
-                        .expect("must parse account data");
-                    let key = B160::from_be_bytes::<20>(el[..].try_into().unwrap());
-                    account_properties.insert(key, props);
-                } else {
-                    warn!(
-                        "Account 0x{} is in preimages list, but there is no MTP witness to get its properties",
-                        hex::encode(el)
-                    );
-                }
-            }
-        }
-
-        info!("Will try to run {} transactions", transactions.len());
-
-        let tx_source = TxListSource {
-            transactions: transactions.into(),
-        };
-
-        let mut target_header_encoding = vec![];
-        block_header.encode(&mut target_header_encoding);
-
-        let target_header_responder = EthereumTargetBlockHeaderResponder {
-            target_header: block_header,
-            target_header_encoding,
-        };
-        let tx_data_responder = TxDataResponder {
-            tx_source,
-            next_tx: None,
-            next_tx_format: None,
-            next_tx_from: None,
-        };
-        let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-            da_commitment_scheme: Some(DACommitmentScheme::None),
-        };
-        let preimage_responder = GenericPreimageResponder { preimage_source };
-        let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
-            initial_root.0,
-            account_properties.clone(),
-            oracle.clone(),
-        );
-        let initial_values_responder =
-            InMemoryEthereumInitialStorageSlotValueResponder::new(account_properties, oracle);
-
-        let cl_responder = EthereumCLResponder {
-            withdrawals_list: withdrawals,
-            parent_headers_list: headers,
-            parent_headers_encodings_list: headers_encodings,
-        };
-
-        let mut oracle = ZkEENonDeterminismSource::default();
-        oracle.add_external_processor(target_header_responder.clone());
-        oracle.add_external_processor(tx_data_responder.clone());
-        oracle.add_external_processor(preimage_responder.clone());
-        oracle.add_external_processor(initial_account_state_responder.clone());
-        oracle.add_external_processor(initial_values_responder.clone());
-        oracle.add_external_processor(cl_responder.clone());
-        oracle.add_external_processor(da_commitment_scheme_responder);
-        oracle.add_external_processor(
-            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
-        );
-        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-        oracle.add_external_processor(UARTPrintResponder);
-
-        oracle
-    }
-
-    pub fn run_eth_block(
-        &mut self,
-        transactions: Vec<EncodedTx>,
-        witness: alloy_rpc_types_debug::ExecutionWitness,
-        block_header: Header,
-        withdrawals: Vec<u8>,
-    ) -> ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader> {
-        let (result_keeper, _witness) = self.run_eth_block_with_options(
-            transactions,
-            witness,
-            block_header,
-            withdrawals,
-            Some("eth_stf".to_string()),
-            false,
-        );
-        result_keeper.unwrap()
-    }
-
-    #[allow(clippy::too_many_arguments, unused_variables)]
-    pub fn run_eth_block_with_options(
-        &mut self,
-        transactions: Vec<EncodedTx>,
-        witness: alloy_rpc_types_debug::ExecutionWitness,
-        block_header: Header,
-        withdrawals: Vec<u8>,
-        app: Option<String>,
-        only_forward: bool,
-    ) -> (
-        Option<ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader>>,
-        Option<Vec<u32>>,
-    ) {
-        use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
-        use forward_system::run::result_keeper::ForwardRunningResultKeeper;
-
-        let oracle = Self::make_eth_block_oracle(
-            transactions.clone(),
-            witness.clone(),
-            block_header.clone(),
-            withdrawals.clone(),
-        );
-
-        // Forward run:
-        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
-        let mut nop_tracer = NopTracer::default();
-        let mut nop_validator = NopTxValidator;
-
-        BasicBootloader::<
-            EthereumStorageSystemTypesWithPostOps<_>,
-            EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
-        >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
-            oracle,
-            &mut (),
-            &mut result_keeper,
-            &mut nop_tracer,
-            &mut nop_validator,
-        )
-        .expect("must succeed");
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
-
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-
-        let proof_input = if only_forward {
-            None
-        } else {
-            let (proof_output, block_effective) = {
-                zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
-                    None,
-                    1 << 36,
-                    copy_source,
-                )
-            };
-            Some(items.borrow().iter().copied().collect::<Vec<u32>>())
-        };
-        (Some(result_keeper), proof_input)
-    }
-
-    pub fn get_account_properties_maybe(&mut self, address: &B160) -> Option<AccountProperties> {
+    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
         use forward_system::run::PreimageSource;
         let key = address_into_special_storage_key(address);
         let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
         match self.state_tree.cold_storage.get(&flat_key) {
-            None => None,
+            None => AccountProperties::default(),
             Some(account_hash) => {
                 if account_hash.is_zero() {
                     // Empty (default) account
-                    Some(AccountProperties::default())
+                    AccountProperties::default()
                 } else {
                     // Get from preimage:
                     let encoded = self
                         .preimage_source
                         .get_preimage(*account_hash)
                         .unwrap_or_default();
-                    Some(AccountProperties::decode(&encoded.try_into().unwrap()))
+                    AccountProperties::decode(&encoded.try_into().unwrap())
                 }
             }
         }
-    }
-
-    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
-        self.get_account_properties_maybe(address)
-            .unwrap_or_default()
     }
 
     ///
@@ -1123,21 +708,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
-    /// Initialize the L2 base token treasury with 2^128 - 1 balance.
-    ///
-    /// This should be called during chain setup to pre-fund the treasury account.
-    /// The treasury is used by the system to distribute tokens instead of minting them.
-    ///
-    pub fn mint_tokens_to_treasury(&mut self) {
-        use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
-
-        // Set treasury balance to 2^128 - 1
-        let treasury_balance = (U256::ONE << 128) - U256::ONE;
-
-        self.set_balance(BASE_TOKEN_HOLDER_ADDRESS, treasury_balance);
-    }
-
-    ///
     /// Set a storage slot
     ///
     pub fn set_storage_slot(&mut self, address: B160, key: U256, value: B256) {
@@ -1167,32 +737,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut account_properties = self.get_account_properties(&address);
 
         account_properties.balance = balance;
-        let encoding = account_properties.encoding();
-        let properties_hash = account_properties.compute_hash();
-
-        let key = address_into_special_storage_key(&address);
-        let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
-
-        // We are updating both cold storage (hash map) and our storage tree.
-        self.state_tree
-            .cold_storage
-            .insert(flat_key, properties_hash);
-        self.state_tree
-            .storage_tree
-            .insert(&flat_key, &properties_hash);
-        self.preimage_source
-            .inner
-            .insert(properties_hash, encoding.to_vec());
-        self
-    }
-
-    ///
-    /// Set nonce for a given account.
-    ///
-    pub fn set_nonce(&mut self, address: B160, nonce: u64) -> &mut Self {
-        let mut account_properties = self.get_account_properties(&address);
-
-        account_properties.nonce = nonce;
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 
@@ -1250,6 +794,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Generates random ethers local wallet(private key) with chain id.
+    ///
+    pub fn random_wallet(&self) -> LocalWallet {
+        use ethers::signers::Signer;
+        let r =
+            LocalWallet::new(&mut ethers::core::rand::thread_rng()).with_chain_id(self.chain_id);
+        info!("Generated wallet: {r:0x?}");
+        r
+    }
+
+    ///
     /// Generates random alloy private key signer with chain id.
     ///
     pub fn random_signer(&self) -> PrivateKeySigner {
@@ -1273,7 +828,7 @@ fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     zksync_os_path.join(filename)
 }
 
-pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
+fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "bin")
 }
 
@@ -1296,7 +851,7 @@ fn run_prover(csr_reads: &[u32]) {
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
     let mut binary = vec![];
-    for el in buffer.as_chunks::<4>().0.iter() {
+    for el in buffer.array_chunks::<4>() {
         binary.push(u32::from_le_bytes(*el));
     }
 
@@ -1329,115 +884,4 @@ fn run_prover(csr_reads: &[u32]) {
     );
 
     info!("block proved successfully");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Chain, RunConfig};
-    use ruint::aliases::U256;
-    use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
-
-    #[test]
-    fn run_config_should_do_riscv_run_matches_env_signals() {
-        assert!(RunConfig::should_do_riscv_run(Some(true), false));
-        assert!(RunConfig::should_do_riscv_run(Some(true), true));
-
-        assert!(!RunConfig::should_do_riscv_run(Some(false), false));
-        assert!(!RunConfig::should_do_riscv_run(Some(false), true));
-
-        assert!(!RunConfig::should_do_riscv_run(None, false));
-        assert!(RunConfig::should_do_riscv_run(None, true));
-    }
-
-    #[test]
-    fn parse_explicit_bool_parses_common_boolean_aliases() {
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("true".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("TRUE".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("false".to_owned())),
-            Some(false)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("FALSE".to_owned())),
-            Some(false)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("1".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("yes".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("on".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("0".to_owned())),
-            Some(false)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("no".to_owned())),
-            Some(false)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("off".to_owned())),
-            Some(false)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("  true  ".to_owned())),
-            Some(true)
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("   ".to_owned())),
-            None
-        );
-        assert_eq!(
-            RunConfig::parse_explicit_bool("TEST_BOOL", Some("maybe".to_owned())),
-            None
-        );
-        assert_eq!(RunConfig::parse_explicit_bool("TEST_BOOL", None), None);
-    }
-
-    #[test]
-    fn run_config_without_riscv_run_disables_hash_checks() {
-        let mut config = RunConfig {
-            do_riscv_run: true,
-            check_storage_diff_hashes: true,
-            ..RunConfig::default()
-        };
-        config.disable_riscv_run();
-        assert!(!config.do_riscv_run);
-        assert!(!config.check_storage_diff_hashes);
-    }
-
-    #[test]
-    fn run_config_should_check_revm_consistency_requires_explicit_true() {
-        assert!(RunConfig::should_check_revm_consistency(Some(true)));
-        assert!(!RunConfig::should_check_revm_consistency(Some(false)));
-        assert!(!RunConfig::should_check_revm_consistency(None));
-    }
-
-    #[test]
-    fn chain_run_block_does_not_auto_mint_treasury() {
-        let mut chain = Chain::empty(None);
-        let initial_treasury_balance = chain
-            .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
-            .balance;
-        assert_eq!(initial_treasury_balance, U256::ZERO);
-
-        let _ = chain.run_block(vec![], None, None, Some(RunConfig::without_riscv_run()));
-
-        let final_treasury_balance = chain
-            .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
-            .balance;
-        assert_eq!(final_treasury_balance, U256::ZERO);
-    }
 }

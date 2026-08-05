@@ -1,5 +1,3 @@
-// Binaries
-*.bin
 *.elf
 *.text
 app_debug.bin

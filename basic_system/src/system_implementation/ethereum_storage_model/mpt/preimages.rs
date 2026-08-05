@@ -18,16 +18,6 @@ pub trait PreimagesOracle {
 
 // we will make a simple one as example and for test purposes
 
-impl PreimagesOracle for () {
-    fn provide_preimage<'a, I: Interner<'a> + 'a>(
-        &mut self,
-        _key: &[u8; 32],
-        _interner: &'_ mut I,
-    ) -> Result<&'a [u8], ()> {
-        Err(())
-    }
-}
-
 impl<A: Allocator + Clone> PreimagesOracle for BTreeMap<Bytes32, Vec<u8, A>, A> {
     fn provide_preimage<'a, I: Interner<'a> + 'a>(
         &mut self,
@@ -42,7 +32,6 @@ impl<A: Allocator + Clone> PreimagesOracle for BTreeMap<Bytes32, Vec<u8, A>, A> 
 
             Ok(buffer.flush())
         } else {
-            // panic!("Failed to get preimage for key {:?}", &key);
             Err(())
         }
     }

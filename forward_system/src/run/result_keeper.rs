@@ -1,5 +1,5 @@
-use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
+use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
 use std::alloc::Global;
@@ -15,8 +15,8 @@ use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 // Use interface type as the direct place-in, can be changed in the future.
 pub use zksync_os_interface::types::TxProcessingOutputOwned;
 
-pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
-    pub block_header: Option<T>,
+pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
+    pub block_header: Option<BlockHeader>,
     pub events: Vec<GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>>,
     pub logs: Vec<GenericLogContent<EthereumIOTypesConfig>>,
     pub storage_writes: Vec<(B160, Bytes32, Bytes32)>,
@@ -29,7 +29,7 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
     pub tx_result_callback: TR,
 }
 
-impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
+impl<TR: TxResultCallback> ForwardRunningResultKeeper<TR> {
     pub fn new(tx_result_callback: TR) -> Self {
         Self {
             block_header: None,
@@ -44,13 +44,13 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
     }
 }
 
-impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesConfig>
-    for ForwardRunningResultKeeper<TR, T>
+impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig>
+    for ForwardRunningResultKeeper<TR>
 {
     fn events<'a>(
         &mut self,
         iter: impl Iterator<
-            Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
+            Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
         >,
     ) {
         self.events = iter
@@ -90,11 +90,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
     }
 }
 
-impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesConfig>
-    for ForwardRunningResultKeeper<TR, T>
-{
-    type BlockHeader = T;
-
+impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
     fn tx_processed(
         &mut self,
         tx_result: Result<
@@ -105,7 +101,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         let owned_result = tx_result.map(|output| TxProcessingOutputOwned {
             status: output.status,
             output: output.output.to_vec(),
-            contract_address: output.contract_address.map(IntoAlloy::into_alloy),
+            contract_address: output.contract_address.map(|a| a.to_be_bytes().into()),
             gas_used: output.gas_used,
             gas_refunded: output.gas_refunded,
             computational_native_used: output.computational_native_used,
@@ -116,7 +112,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         self.tx_results.push(owned_result);
     }
 
-    fn block_sealed(&mut self, block_header: Self::BlockHeader) {
+    fn block_sealed(&mut self, block_header: BlockHeader) {
         self.block_header = Some(block_header);
     }
 

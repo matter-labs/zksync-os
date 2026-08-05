@@ -1,5 +1,4 @@
 use forward_system::run::output::BlockOutput;
-use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::BlockContext;
 use rig::{
     alloy::consensus::TxLegacy,
@@ -7,8 +6,6 @@ use rig::{
     utils::{calldata_for_forwarder, FORWARDER_BYTECODE},
 };
 use ruint::aliases::{B160, U256};
-use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
 // Creates two txs:
 /// 1. Calls the precompile with given input and gas limit.
@@ -23,15 +20,15 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_alloy(wallet.address()),
+        B160::from_be_bytes(wallet.address().into_array()),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.set_evm_bytecode(
-        B160::from_alloy(forwarder),
+        B160::from_be_bytes(forwarder.into_array()),
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 
-    let direct_tx = ZKsyncTxEnvelope::from_eth_tx(
+    let direct_tx = rig::utils::sign_and_encode_alloy_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -41,12 +38,11 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
             value: Default::default(),
             input: input.to_vec().into(),
         },
-        wallet.clone(),
-    )
-    .encode();
+        &wallet,
+    );
 
     let calldata = calldata_for_forwarder(target, input);
-    let forwarded_tx = ZKsyncTxEnvelope::from_eth_tx(
+    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,
@@ -56,9 +52,8 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
             value: Default::default(),
             input: calldata.into(),
         },
-        wallet.clone(),
-    )
-    .encode();
+        &wallet,
+    );
     // We use a very high native per gas ratio
     let block_context = BlockContext {
         native_price: U256::ONE,
@@ -68,7 +63,7 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
 
     let run_config = rig::chain::RunConfig {
         app: Some("for_tests".to_string()),
-        do_riscv_run: true,
+        only_forward: false,
         check_storage_diff_hashes: true,
         ..Default::default()
     };

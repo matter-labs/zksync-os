@@ -21,17 +21,14 @@ zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving" }
 crypto = { package = "crypto_proving", path = "../crypto_proving", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
-
 cycle_marker = { path = "../../../../../cycle_marker" }
 strum_macros = "0.27.1"
 paste = "1.0.15"
 zksync_os_evm_errors = { version = "0.0.8", default-features =  false }
 
 [features]
-point_eval_precompile = []
-mock-unsupported-precompiles = []
-p256_precompile = []
 eip-7645 = []
+evm_refunds = []
 default = []
 testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]

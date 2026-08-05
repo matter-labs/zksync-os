@@ -1,13 +1,12 @@
 use crate::test::case::transaction::encode_transaction;
+use crate::utils::*;
 use alloy::primitives::*;
-use core::panic;
 use std::cmp::min;
 use std::str::FromStr;
 use zk_ee::utils::u256_to_u64_saturated;
 use zk_ee::utils::Bytes32;
 use zksync_os_basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use zksync_os_basic_bootloader::bootloader::errors::BootloaderSubsystemError;
-use zksync_os_forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use zksync_os_rig::chain::RunConfig;
 use zksync_os_rig::zksync_os_api::helpers;
 use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
@@ -17,8 +16,6 @@ use zksync_os_rig::BlockContext;
 use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;
-
-use super::execution_result;
 
 // mod transaction;
 
@@ -33,7 +30,6 @@ pub struct ZKsyncOSEVMContext {
     pub base_fee: U256,
     pub tx_origin: Address,
     pub mix_hash: U256,
-    pub blob_fee: U256,
 }
 
 ///
@@ -96,18 +92,17 @@ impl ZKsyncOS {
             coinbase: ruint::Bits::try_from_be_slice(system_context.coinbase.as_slice())
                 .expect("Invalid coinbase"),
             mix_hash: system_context.mix_hash,
-            blob_fee: system_context.blob_fee,
         };
 
         let run_config = RunConfig {
             app: Some("evm_tester".to_string()),
-            do_riscv_run: proof_run,
+            only_forward: !proof_run,
             check_storage_diff_hashes: proof_run,
             ..Default::default()
         };
-        let result =
-            self.chain
-                .run_block_no_panic(encoded_txs, Some(context), None, Some(run_config));
+        let result = self
+            .chain
+            .run_block_no_panic(encoded_txs, Some(context), None, Some(run_config));
 
         self.get_block_execution_result(result)
     }
@@ -118,10 +113,6 @@ impl ZKsyncOS {
     ) -> anyhow::Result<Vec<ZKsyncOSTxExecutionResult>, String> {
         match result {
             Ok(result) => {
-                if result.tx_results.iter().any(|r| r.as_ref().is_err()) {
-                    // If any tx is invalid, the tests consider the entire block as invalid
-                    return Err("Invalid tx".to_string());
-                }
                 let mut results = vec![];
                 for tx_result in result.tx_results {
                     let r = Self::get_transaction_execution_result(tx_result)?;
@@ -173,9 +164,7 @@ impl ZKsyncOS {
     /// Returns the balance of the specified address.
     ///
     pub fn get_balance(&mut self, address: Address) -> U256 {
-        let properties = self
-            .chain
-            .get_account_properties(&ruint::aliases::B160::from_alloy(address));
+        let properties = self.chain.get_account_properties(&address_to_b160(address));
         helpers::get_balance(&properties)
     }
 
@@ -183,17 +172,14 @@ impl ZKsyncOS {
     /// Changes the balance of the specified address.
     ///
     pub fn set_balance(&mut self, address: Address, value: U256) {
-        self.chain
-            .set_balance(ruint::aliases::B160::from_alloy(address), value);
+        self.chain.set_balance(address_to_b160(address), value);
     }
 
     ///
     /// Returns the nonce of the specified address.
     ///
     pub fn get_nonce(&mut self, address: Address) -> U256 {
-        let properties = self
-            .chain
-            .get_account_properties(&ruint::aliases::B160::from_alloy(address));
+        let properties = self.chain.get_account_properties(&address_to_b160(address));
         U256::from(helpers::get_nonce(&properties))
     }
 
@@ -202,29 +188,25 @@ impl ZKsyncOS {
     ///
     pub fn set_nonce(&mut self, address: Address, nonce: U256) {
         let nonce = u256_to_u64_saturated(&nonce);
-        self.chain.set_account_properties(
-            ruint::aliases::B160::from_alloy(address),
-            None,
-            Some(nonce),
-            None,
-        )
+        self.chain
+            .set_account_properties(address_to_b160(address), None, Some(nonce), None)
     }
 
     pub fn get_storage_slot(&mut self, address: Address, key: U256) -> Option<B256> {
         self.chain
-            .get_storage_slot(ruint::aliases::B160::from_alloy(address), key)
-            .map(IntoAlloy::into_alloy)
+            .get_storage_slot(address_to_b160(address), key)
+            .map(|v| bytes32_to_b256(v.clone()))
     }
 
     pub fn set_storage_slot(&mut self, address: Address, key: U256, value: B256) {
-        let address = ruint::aliases::B160::from_alloy(address);
-        let value = ruint::aliases::B256::from_alloy(&value);
+        let address = address_to_b160(address);
+        let value = ruint::aliases::B256::from_be_bytes(value.0);
         self.chain.set_storage_slot(address, key, value);
     }
 
     pub fn set_predeployed_evm_contract(&mut self, address: Address, bytecode: Bytes, nonce: U256) {
         self.chain.set_account_properties(
-            ruint::aliases::B160::from_alloy(address),
+            address_to_b160(address),
             None,
             Some(u256_to_u64_saturated(&nonce)),
             Some(bytecode.0.to_vec()),
@@ -232,9 +214,7 @@ impl ZKsyncOS {
     }
 
     pub fn get_code(&mut self, address: Address) -> Option<Vec<u8>> {
-        let properties = self
-            .chain
-            .get_account_properties(&ruint::aliases::B160::from_alloy(address));
+        let properties = self.chain.get_account_properties(&address_to_b160(address));
 
         if properties.bytecode_hash == Bytes32::zero() {
             None
@@ -245,4 +225,16 @@ impl ZKsyncOS {
             ))
         }
     }
+}
+
+pub fn b256_to_bytes32(input: B256) -> Bytes32 {
+    Bytes32::from_array(input.0)
+}
+
+pub fn u256_to_bytes32(input: U256) -> Bytes32 {
+    Bytes32::from_array(input.to_be_bytes())
+}
+
+pub fn bytes32_to_b256(input: Bytes32) -> B256 {
+    B256::from_slice(&input.as_u8_array())
 }

@@ -1,8 +1,6 @@
 use crate::{system::SystemTypes, types_config::SystemIOTypesConfig};
 use ruint::aliases::U256;
-
-pub mod errors;
-pub use errors::EvmError;
+use zksync_os_evm_errors::EvmError;
 
 /// Expected interface of and EVM frame state. This trait simplifies versioning and integration of tracers.
 pub trait EvmFrameInterface<S: SystemTypes> {

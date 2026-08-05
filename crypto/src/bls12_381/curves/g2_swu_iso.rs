@@ -154,6 +154,7 @@ pub const ISOGENY_MAP_TO_G2  : IsogenyMap<'_, SwuIsoConfig, g2::Config> = Isogen
 mod test {
     use super::*;
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_gen() {
         let gen: G2Affine = curves::g2_swu_iso::SwuIsoConfig::GENERATOR;

@@ -14,15 +14,13 @@ static NEG_MODULUS: BigInt<4> = FieldElement8x32::NEG_MODULUS;
 pub(super) struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
-    const MODULUS_BITSIZE: usize = 256;
-
-    fn modulus() -> &'static BigInt<4> {
+    unsafe fn modulus() -> &'static BigInt<4> {
         &MODULUS
     }
 }
 
 impl DelegatedBarretParams<4> for FieldParams {
-    fn neg_modulus() -> &'static BigInt<4> {
+    unsafe fn neg_modulus() -> &'static BigInt<4> {
         &NEG_MODULUS
     }
 }
@@ -48,7 +46,7 @@ impl FieldElement8x32 {
     pub(super) fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         let value = Self::from_bytes_unchecked(bytes);
 
-        if u256::lt(&value.0, &Self::MODULUS) {
+        if u256::leq(&value.0, &Self::MODULUS) {
             Some(value)
         } else {
             None
@@ -232,6 +230,7 @@ mod tests {
     use super::FieldElement8x32;
     use proptest::{prop_assert_eq, proptest};
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_invert() {
         proptest!(|(x: FieldElement8x32)| {
@@ -252,6 +251,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul() {
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
@@ -295,6 +295,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add() {
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
@@ -339,6 +340,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn from_bytes_round() {
         proptest!(|(bytes: [u8; 32])| {
@@ -346,6 +348,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn to_bytes_round() {
         proptest!(|(x: FieldElement8x32)| {

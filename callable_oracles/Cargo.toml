@@ -11,18 +11,21 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
-ruint = { workspace = true, default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
-basic_bootloader = { path = "../basic_bootloader", default-features = false }
 
 risc_v_simulator = { workspace = true, optional = true }
+num-bigint = { version = "*", optional = true }
+num-traits = { version = "*", optional = true }
+
+alloy-consensus = "1.0.41"
 c-kzg = "2.1.5"
 
 [dev-dependencies]
-hex = { workspace = true }
+hex = "*"
 
 [features]
 default = ["evaluate"]
-evaluate = ["risc_v_simulator"]
+evaluate = ["risc_v_simulator", "num-bigint", "num-traits"]

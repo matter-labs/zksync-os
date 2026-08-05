@@ -56,7 +56,6 @@ pub struct EventsStorage<
     A: Allocator + Clone = Global,
 > {
     list: HistoryList<EventContent<N, A>, (), SF, M, A>,
-    list_len_at_tx_start: usize,
     _marker: core::marker::PhantomData<A>,
 }
 
@@ -66,14 +65,11 @@ impl<const N: usize, SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             list: HistoryList::new(allocator),
-            list_len_at_tx_start: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn begin_new_tx(&mut self) {
-        self.list_len_at_tx_start = self.list.len();
-    }
+    pub fn begin_new_tx(&mut self) {}
 
     #[track_caller]
     pub fn start_frame(&mut self) -> usize {
@@ -114,27 +110,13 @@ impl<const N: usize, SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
     }
 
     pub fn events_ref_iter(
-        &'_ self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'_, { N }, EthereumIOTypesConfig>>
-           + Clone {
+        &self,
+    ) -> impl Iterator<Item = GenericEventContentWithTxRef<{ N }, EthereumIOTypesConfig>> {
         self.list.iter().map(|event| GenericEventContentWithTxRef {
             tx_number: event.tx_number,
             address: &event.address,
             topics: &event.topics,
             data: event.data.as_slice(),
         })
-    }
-
-    pub fn events_in_transaction_ref_iter(
-        &'_ self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentRef<'_, { N }, EthereumIOTypesConfig>> + Clone
-    {
-        self.list
-            .iter_skip_n(self.list_len_at_tx_start)
-            .map(|event| GenericEventContentRef {
-                address: &event.address,
-                topics: &event.topics,
-                data: event.data.as_slice(),
-            })
     }
 }

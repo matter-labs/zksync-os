@@ -6,7 +6,7 @@ use core::ops::Range;
 
 /// range for `T` with offset at.
 pub fn range_for_at<T>(offset: usize) -> Result<Range<usize>, ()> {
-    if !offset.is_multiple_of(core::mem::align_of::<T>()) {
+    if offset % core::mem::align_of::<T>() != 0 {
         return Err(());
     }
 

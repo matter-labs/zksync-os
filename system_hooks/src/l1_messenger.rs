@@ -1,0 +1,306 @@
+//!
+//! L1 messenger system hook implementation.
+//! It implements a `sendToL1` method, works the same way as in Era.
+//!
+use super::*;
+use arrayvec::ArrayVec;
+use core::fmt::Write;
+use evm_interpreter::{
+    gas_constants::{LOG, LOGDATA},
+    keccak256_ergs_cost,
+};
+use ruint::aliases::{B160, U256};
+use zk_ee::{
+    common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE,
+    execution_environment_type::ExecutionEnvironmentType,
+    internal_error, out_of_return_memory,
+    storage_types::MAX_EVENT_TOPICS,
+    system::{
+        errors::{runtime::RuntimeError, system::SystemError},
+        logger::Logger,
+        CallModifier, CompletedExecution, ExternalCallRequest,
+    },
+    utils::{b160_to_u256, Bytes32},
+};
+
+pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
+    request: ExternalCallRequest<S>,
+    caller_ee: u8,
+    system: &mut System<S>,
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
+where
+{
+    let ExternalCallRequest {
+        available_resources,
+        ergs_to_pass: _,
+        input: calldata,
+        call_scratch_space: _,
+        nominal_token_value,
+        caller,
+        callee,
+        callers_caller: _,
+        modifier,
+    } = request;
+
+    debug_assert_eq!(callee, L1_MESSENGER_ADDRESS);
+
+    let mut error = false;
+    // There are no "payable" methods
+    error |= nominal_token_value != U256::ZERO;
+    let mut is_static = false;
+    match modifier {
+        CallModifier::Constructor => {
+            return Err(
+                internal_error!("L1 messenger hook called with constructor modifier").into(),
+            )
+        }
+        CallModifier::Delegate
+        | CallModifier::DelegateStatic
+        | CallModifier::EVMCallcode
+        | CallModifier::EVMCallcodeStatic => {
+            error = true;
+        }
+        CallModifier::Static | CallModifier::ZKVMSystemStatic => {
+            is_static = true;
+        }
+        _ => {}
+    }
+
+    if error {
+        return Ok((make_error_return_state(available_resources), return_memory));
+    }
+
+    let mut resources = available_resources;
+
+    let result = l1_messenger_hook_inner(
+        &calldata,
+        &mut resources,
+        system,
+        caller,
+        caller_ee,
+        is_static,
+    );
+
+    match result {
+        Ok(Ok(return_data)) => {
+            let mut return_memory = SliceVec::new(return_memory);
+            // TODO: check endianness
+            return_memory
+                .try_extend(return_data.as_u8_ref().iter().copied())
+                .map_err(|_| out_of_return_memory!())?;
+            let (returndata, rest) = return_memory.destruct();
+            Ok((
+                make_return_state_from_returndata_region(resources, returndata),
+                rest,
+            ))
+        }
+        Ok(Err(e)) => {
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Revert: {e:?}\n"));
+            Ok((make_error_return_state(resources), return_memory))
+        }
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Out of gas during system hook\n"));
+            Ok((make_error_return_state(resources), return_memory))
+        }
+        Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
+        Err(SystemError::LeafDefect(e)) => Err(e.into()),
+    }
+}
+// sendToL1(bytes) - 62f84b24
+pub const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
+
+const L1_MESSAGE_SENT_TOPIC: [u8; 32] = [
+    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
+    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
+];
+
+fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
+    calldata: &[u8],
+    resources: &mut S::Resources,
+    system: &mut System<S>,
+    caller: B160,
+    _caller_ee: u8,
+    is_static: bool,
+) -> Result<Result<Bytes32, &'static str>, SystemError>
+where
+{
+    evm_interpreter::charge_native_and_ergs::<S::Resources>(
+        resources,
+        HOOK_BASE_NATIVE_COST,
+        HOOK_BASE_ERGS_COST,
+    )?;
+
+    if calldata.len() < 4 {
+        return Ok(Err(
+            "L1 messenger failure: calldata shorter than selector length",
+        ));
+    }
+    let mut selector = [0u8; 4];
+    selector.copy_from_slice(&calldata[..4]);
+    let _ = system
+        .get_logger()
+        .write_fmt(format_args!("Selector for l1 messenger:"));
+    let _ = system.get_logger().log_data(selector.iter().copied());
+
+    match selector {
+        s if s == SEND_TO_L1_SELECTOR => {
+            if is_static {
+                return Ok(Err(
+                    "L1 messenger failure: sendToL1 called with static context",
+                ));
+            }
+
+            send_to_l1_inner(&calldata[4..], resources, system, caller)
+        }
+        _ => Ok(Err("L1 messenger: unknown selector")),
+    }
+}
+
+/// Sends a message to L1 and emits the needed events.
+/// Note, that the ABI-encoded event should consist of the following:
+/// 32 bytes offset (must be 32)
+/// 32 bytes length of the message
+/// followed by the message itself, padded to be a multiple of 32 bytes.
+pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
+    abi_encoded_message: &[u8],
+    resources: &mut S::Resources,
+    system: &mut System<S>,
+    caller: B160,
+) -> Result<Result<Bytes32, &'static str>, SystemError> {
+    // Note that we do not enforce fully strict ABI encoding here
+
+    // abi_encoded_message length shouldn't be able to overflow u32, due to gas
+    // limitations.
+    let abi_encoded_message_len: u32 = abi_encoded_message
+        .len()
+        .try_into()
+        .map_err(|_| internal_error!("abi_encoded_message is larger than u32"))?;
+
+    // following solidity abi for sendToL1(bytes _message)
+    if abi_encoded_message_len < 32 {
+        return Ok(Err(
+            "L1 messenger failure: sendToL1 called with invalid calldata",
+        ));
+    }
+
+    let message_offset: u32 = match U256::from_be_slice(&abi_encoded_message[..32]).try_into() {
+        Ok(offset) => offset,
+        Err(_) => {
+            return Ok(Err(
+                "L1 messenger failure: sendToL1 called with invalid calldata",
+            ))
+        }
+    };
+    // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
+    // to call a function with offset pointing to a faraway point in calldata. However,
+    // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
+    // only standard encoding here allows for cheaper and easier implementation.
+    if message_offset != 32 {
+        return Ok(Err(
+            "L1 messenger failure: sendToL1 expects strict message offset",
+        ));
+    }
+    // length located at message_offset..message_offset+32
+    // we want to check that message_offset+32 will not overflow u32
+    let length_encoding_end = match message_offset.checked_add(32) {
+        Some(length_encoding_end) => length_encoding_end,
+        None => {
+            return Ok(Err(
+                "L1 messenger failure: sendToL1 called with invalid calldata",
+            ))
+        }
+    };
+    if abi_encoded_message_len < length_encoding_end {
+        return Ok(Err(
+            "L1 messenger failure: sendToL1 called with invalid calldata",
+        ));
+    }
+    let length: u32 = match U256::from_be_slice(
+        &abi_encoded_message[(length_encoding_end as usize) - 32..length_encoding_end as usize],
+    )
+    .try_into()
+    {
+        Ok(length) => length,
+        Err(_) => {
+            return Ok(Err(
+                "L1 messenger failure: sendToL1 called with invalid calldata",
+            ))
+        }
+    };
+    // to check that it will not overflow
+    let message_end = match length_encoding_end.checked_add(length) {
+        Some(message_end) => message_end,
+        None => {
+            return Ok(Err(
+                "L1 messenger failure: sendToL1 called with invalid calldata",
+            ))
+        }
+    };
+    if abi_encoded_message_len < message_end {
+        return Ok(Err(
+            "L1 messenger failure: sendToL1 called with invalid calldata",
+        ));
+    }
+
+    // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
+    // to call a function with offset pointing to a faraway point in calldata. However,
+    // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
+    // only standard encoding here allows for cheaper and easier implementation.
+    if abi_encoded_message_len % 32 != 0 {
+        return Ok(Err("Calldata is not well formed"));
+    }
+
+    let message = &abi_encoded_message[(length_encoding_end as usize)..message_end as usize];
+    // Charge gas for l1 message
+    let l1_message_cost_ergs = l1_message_ergs_cost(message.len());
+    resources.charge(&S::Resources::from_ergs(l1_message_cost_ergs))?;
+    let message_hash = system.io.emit_l1_message(
+        // We already charged gas for it
+        ExecutionEnvironmentType::NoEE,
+        resources,
+        &caller,
+        message,
+    )?;
+
+    let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
+    topics.push(Bytes32::from_array(L1_MESSAGE_SENT_TOPIC));
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
+    topics.push(message_hash);
+
+    system.io.emit_event(
+        // Use EVM to charge gas for this operation
+        ExecutionEnvironmentType::EVM,
+        resources,
+        &L1_MESSENGER_ADDRESS,
+        &topics,
+        // We are lucky that the encoding of the event is exactly same as encoding of the bytes in the calldata
+        &abi_encoded_message,
+    )?;
+
+    Ok(Ok(message_hash))
+}
+
+///
+/// Ergs cost of emitting an L1 message.
+/// Computed as:
+///   keccak256_ergs_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) +
+///   keccak256_ergs_cost(64) * 3 +
+///   keccak256_ergs_cost(message_len) +
+///   375 (same as LOG base) +
+///   8 * message_len (same as LOG for data)
+///
+/// See [io_subsystem::emit_l1_message] for more details
+/// about the 3 first components of this calculation.
+///
+fn l1_message_ergs_cost(message_len: usize) -> Ergs {
+    let hashing_cost = keccak256_ergs_cost(L2_TO_L1_LOG_SERIALIZE_SIZE)
+        + keccak256_ergs_cost(64).times(3)
+        + keccak256_ergs_cost(message_len);
+    let log_cost = Ergs(ERGS_PER_GAS * (LOG + LOGDATA * message_len as u64));
+    hashing_cost + log_cost
+}

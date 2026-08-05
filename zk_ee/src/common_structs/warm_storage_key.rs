@@ -1,7 +1,4 @@
-use crate::{
-    common_traits::key_like_with_bounds::KeyLikeWithBounds, storage_types::StorageAddress,
-    utils::Bytes32,
-};
+use crate::{common_traits::key_like_with_bounds::KeyLikeWithBounds, utils::Bytes32};
 use ruint::aliases::B160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -39,15 +36,6 @@ impl KeyLikeWithBounds for WarmStorageKey {
         Self {
             address: subspace,
             key: Bytes32::MAX,
-        }
-    }
-}
-
-impl From<WarmStorageKey> for StorageAddress<crate::types_config::EthereumIOTypesConfig> {
-    fn from(value: WarmStorageKey) -> Self {
-        Self {
-            address: value.address,
-            key: value.key,
         }
     }
 }

@@ -1,9 +1,5 @@
-use arrayvec::ArrayVec;
-use common_structs::system_hooks::HooksStorage;
-use types_config::TryIntoLowAddress;
 use utils::num_usize_words_for_u8_capacity;
 use utils::usize_rw::AsUsizeWritable;
-use utils::UsizeAlignedByteBox;
 
 use super::*;
 pub mod base_system_functions;
@@ -17,7 +13,6 @@ pub mod metadata;
 pub mod resources;
 mod result_keeper;
 pub mod tracer;
-pub mod validator;
 
 pub use self::base_system_functions::*;
 pub use self::call_modifiers::*;
@@ -50,6 +45,7 @@ use self::{
     metadata::basic_metadata::{
         BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
     },
+    metadata::zk_metadata::ZkMetadata,
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -57,7 +53,6 @@ use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 
@@ -77,7 +72,6 @@ pub trait SystemTypes {
     type Allocator: Allocator + Clone + Default;
     type Metadata: BasicMetadata<Self::IOTypes>;
 }
-
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
 
 pub struct System<S: SystemTypes> {
@@ -153,14 +147,6 @@ impl<S: SystemTypes> System<S> {
         self.metadata.eip1559_basefee()
     }
 
-    pub fn get_blob_base_fee_per_gas(&self) -> ruint::aliases::U256 {
-        self.metadata.blob_base_fee_per_gas()
-    }
-
-    pub fn get_blob_gas_limit(&self) -> u64 {
-        self.metadata.blobs_gas_limit()
-    }
-
     pub fn get_gas_limit(&self) -> u64 {
         self.metadata.block_gas_limit()
     }
@@ -173,10 +159,6 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_timestamp()
     }
 
-    pub fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
-        self.metadata.get_blob_hash(idx)
-    }
-
     pub fn set_tx_context(
         &mut self,
         tx_level_metadata: <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata,
@@ -186,34 +168,6 @@ impl<S: SystemTypes> System<S> {
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         self.io.net_pubdata_used()
-    }
-
-    /// Emit an event, potentially capturing some using an event hook.
-    pub fn emit_event(
-        &mut self,
-        hooks: &mut HooksStorage<S, S::Allocator>,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
-        address: &<S::IOTypes as SystemIOTypesConfig>::Address,
-        topics: &ArrayVec<<S::IOTypes as SystemIOTypesConfig>::EventKey, MAX_EVENT_TOPICS>,
-        data: &[u8],
-    ) -> Result<(), SystemError> {
-        // First, emit the event using io subsystem
-        self.io
-            .emit_event(ee_type, resources, address, topics, data)?;
-
-        // If successful, intercept event hook, if any
-        if let Some(address_low) = address.try_into_low() {
-            let _ = hooks.try_intercept_event(
-                address_low,
-                topics,
-                data,
-                ee_type as u8,
-                self,
-                resources,
-            )?;
-        }
-        Ok(())
     }
 }
 
@@ -297,7 +251,7 @@ where
         &mut self,
         buffer_constructor: impl FnOnce(usize) -> B,
     ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
+        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,
@@ -338,22 +292,6 @@ where
                 crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
             )));
         }
-        // We preallocate uninitialized memory; if oracle returns too few words for the declared
-        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
-        let tx_iterator_num_bytes =
-            match tx_iterator.len().checked_mul(core::mem::size_of::<usize>()) {
-                Some(num_bytes) => num_bytes,
-                None => {
-                    return Some(Err(interface_error!(
-                        crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-                    )))
-                }
-            };
-        if tx_iterator_num_bytes < next_tx_len_bytes {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-            )));
-        }
         for word in tx_iterator {
             unsafe {
                 as_writable.write_usize(word);
@@ -364,17 +302,6 @@ where
         self.io.begin_next_tx();
 
         Some(Ok((next_tx_len_bytes, buffer)))
-    }
-
-    pub fn get_bytes_from_query(
-        &mut self,
-        length_query_id: u32, // must return number of bytes
-        body_query_id: u32,   // must return
-    ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
-        let allocator = self.get_allocator();
-        self.io
-            .oracle()
-            .get_bytes_from_query(length_query_id, body_query_id, &(), allocator)
     }
 
     pub fn deploy_bytecode(
@@ -424,37 +351,36 @@ where
     }
 }
 
+// Note: this will be modified soon with other V2 changes
+// For now, we hard-code metadata and io type config types
+impl<S: SystemTypes<Metadata = ZkMetadata>> System<S>
+where
+    S::IO: IOSubsystemExt,
+{
+    /// Finish system execution.
+    pub fn finish(
+        self,
+        block_hash: Bytes32,
+        l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        result_keeper: &mut impl IOResultKeeper<S::IOTypes>,
+    ) -> <S::IO as IOSubsystemExt>::FinalData {
+        let logger = self.get_logger();
+        self.io.finish(
+            self.metadata.block_level,
+            block_hash,
+            l1_to_l2_txs_hash,
+            upgrade_tx_hash,
+            result_keeper,
+            logger,
+        )
+    }
+}
+
 define_subsystem!(NextTx,
   interface NextTxInterfaceError {
     TxLengthTooLarge,
     DestinationBufferInsufficient,
     TxWriteIteratorTooBig,
-    TxWriteIteratorTooSmall,
   }
 );
-
-/// Logging macros for the system.
-/// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
-#[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
-#[macro_export]
-macro_rules! logger_log {
-    ($logger:expr, $($arg:tt)*) => {{
-        let _ = ($logger).write_fmt(format_args!($($arg)*));
-    }};
-}
-
-// No-op only if riscv32 AND no allocator feature
-#[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
-#[macro_export]
-macro_rules! logger_log {
-    ($logger:expr, $($arg:tt)*) => {{
-        // intentionally empty
-    }};
-}
-
-#[macro_export]
-macro_rules! system_log {
-    ($system:expr, $($arg:tt)*) => {{
-        $crate::logger_log!(($system).get_logger(), $($arg)*);
-    }};
-}

@@ -15,37 +15,28 @@ cycle_marker = { path = "../cycle_marker" }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
-ruint = { workspace = true, default-features = false }
-arrayvec = { workspace = true, default-features = false }
-serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
-hex = { workspace = true, optional = true }
-strum_macros = { workspace = true }
-paste = { workspace = true }
-cfg-if = { workspace = true }
-serde-big-array = "0.5"
-
+hex = {version = "*", optional = true}
+arrayvec = { version = "0.7.4", default-features = false }
+strum_macros = "0.27.1"
+paste = "1.0.15"
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+cfg-if = "*"
 
 [dev-dependencies]
-alloy = { workspace = true, features = ["rlp", "full"] }
-alloy-rlp = { workspace = true }
-alloy-primitives = { workspace = true, features = ["arbitrary"] }
+alloy = { version = "1", features = ["rlp", "full"] }
+alloy-rlp = { version = "*" }
+alloy-primitives = { version = "1", features = ["arbitrary"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
 default = ["testing"]
 eip-7702 = []
-eip_7623 = []
-eip-4844 = ["system_hooks/point_eval_precompile"]
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 resources_for_tester = []
 unlimited_native = []
 disable_system_contracts = []
 error_origins = ["zk_ee/error_origins"]
-# Enables runtime verification that the intrinsic computational native formula
-# (`calculate_l2_tx_intrinsic_computational_native_resources`) is an upper bound
-# on the native resources actually consumed by validation and post-execution
-# bookkeeping that it is meant to cover.
-verify_intrinsic_native = []

@@ -1,12 +1,17 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 #![feature(allocator_api)]
+#![feature(array_chunks)]
 #![feature(get_mut_unchecked)]
+#![feature(const_type_id)]
 #![feature(vec_push_within_capacity)]
 #![feature(ptr_alignment_type)]
 #![feature(btreemap_alloc)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+#![feature(alloc_layout_extra)]
+#![feature(array_windows)]
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::needless_borrows_for_generic_args)]
 #![allow(clippy::result_unit_err)]
@@ -24,32 +29,25 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
-use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
-use crate::call_hooks::l1_messenger::l1_messenger_hook;
-use crate::call_hooks::mint_base_token::mint_base_token_hook;
-use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
-use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
-use crate::event_hooks::system_context::system_context_event_hook;
-use call_hooks::precompiles::{
-    pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,
-};
+use crate::contract_deployer::contract_deployer_hook;
+use crate::l1_messenger::l1_messenger_hook;
+use crate::l2_base_token::l2_base_token_hook;
+use alloc::collections::BTreeMap;
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
-use evm_interpreter::precompile_addresses::*;
 use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
+use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
 use zk_ee::common_traits::TryExtend;
-use zk_ee::internal_error;
-use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::system::SystemError;
 #[cfg(feature = "mock-unsupported-precompiles")]
 use zk_ee::system::MissingSystemFunctionErrors;
 use zk_ee::{
     memory::slice_vec::SliceVec,
     system::{
         base_system_functions::{
-            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors,
-            Secp256k1ECRecoverErrors, Sha256Errors,
+            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors,
+            P256VerifyErrors, RipeMd160Errors, Secp256k1ECRecoverErrors, Sha256Errors,
         },
         errors::subsystem::Subsystem,
         EthereumLikeTypes, System, SystemTypes, *,
@@ -57,8 +55,29 @@ use zk_ee::{
 };
 
 pub mod addresses_constants;
-pub mod call_hooks;
-pub mod event_hooks;
+#[cfg(feature = "mock-unsupported-precompiles")]
+mod mock_precompiles;
+
+pub mod contract_deployer;
+pub mod l1_messenger;
+pub mod l2_base_token;
+mod precompiles;
+
+/// System hooks process the given call request.
+///
+/// The inputs are:
+/// - call request
+/// - caller ee(logic may depend on it some cases)
+/// - system
+/// - output buffer
+pub struct SystemHook<S: SystemTypes>(
+    for<'a> fn(
+        ExternalCallRequest<S>,
+        u8,
+        &mut System<S>,
+        &'a mut [MaybeUninit<u8>],
+    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>,
+);
 
 pub trait SystemFunctionInvocation<S: SystemTypes, E: Subsystem>
 where
@@ -120,193 +139,162 @@ where
 }
 
 ///
-/// Adds EVM precompiles hooks.
+/// System hooks storage.
+/// Stores hooks implementations and processes calls to system addresses.
 ///
-pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
+pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone> {
+    inner: BTreeMap<u16, SystemHook<S>, A>,
+}
+
+impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
+    ///
+    /// Creates empty hooks storage with a given allocator.
+    ///
+    pub fn new_in(allocator: A) -> Self {
+        Self {
+            inner: BTreeMap::new_in(allocator),
+        }
+    }
+
+    ///
+    /// Adds a new hook into a given address.
+    /// Fails if there was another hook registered there before.
+    ///
+    pub fn add_hook(&mut self, for_address_low: u16, hook: SystemHook<S>) {
+        let existing = self.inner.insert(for_address_low, hook);
+        // TODO: internal error?
+        assert!(existing.is_none());
+    }
+
+    ///
+    /// Intercepts calls to low addresses (< 2^16) and executes hooks
+    /// stored under that address. If no hook is stored there, return `Ok(None)`.
+    /// Always return unused return_memory.
+    ///
+    pub fn try_intercept<'a>(
+        &mut self,
+        address_low: u16,
+        request: ExternalCallRequest<S>,
+        caller_ee: u8,
+        system: &mut System<S>,
+        return_memory: &'a mut [MaybeUninit<u8>],
+    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), SystemError> {
+        let Some(hook) = self.inner.get(&address_low) else {
+            return Ok((None, return_memory));
+        };
+        let (res, remaining_memory) = hook.0(request, caller_ee, system, return_memory)?;
+
+        Ok((Some(res), remaining_memory))
+    }
+
+    ///
+    /// Checks if there is a hook stored for a given low address (<16 bits).
+    ///
+    pub fn has_hook_for(&mut self, address_low: u16) -> bool {
+        self.inner.contains_key(&address_low)
+    }
+}
+
+impl<S: EthereumLikeTypes, A: Allocator + Clone> HooksStorage<S, A>
 where
     S::IO: IOSubsystemExt,
 {
-    add_precompile::<
-        _,
-        _,
-        <S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover,
-        Secp256k1ECRecoverErrors,
-    >(hooks, ECRECOVER_HOOK_ADDRESS_LOW)?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(
-        hooks,
-        SHA256_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::RipeMd160, RipeMd160Errors>(
-        hooks,
-        RIPEMD160_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<_, _, IdentityPrecompile, IdentityPrecompileErrors>(
-        hooks,
-        ID_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile_ext::<
-        _,
-        _,
-        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp,
-        ModExpErrors,
-    >(hooks, MODEXP_HOOK_ADDRESS_LOW)?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
-        hooks,
-        ECADD_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Mul, Bn254MulErrors>(
-        hooks,
-        ECMUL_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<
-        _,
-        _,
-        <S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck,
-        Bn254PairingCheckErrors,
-    >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
-    #[cfg(feature = "mock-unsupported-precompiles")]
+    ///
+    /// Adds EVM precompiles hooks.
+    ///
+    pub fn add_precompiles(&mut self) {
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover, Secp256k1ECRecoverErrors>(
+            ECRECOVER_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(
+            SHA256_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::RipeMd160, RipeMd160Errors>(
+            RIPEMD160_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<IdentityPrecompile, IdentityPrecompileErrors>(ID_HOOK_ADDRESS_LOW);
+        self.add_precompile_ext::<<S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp, ModExpErrors>(
+            MODEXP_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
+            ECADD_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Mul, Bn254MulErrors>(
+            ECMUL_HOOK_ADDRESS_LOW,
+        );
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck, Bn254PairingCheckErrors>(
+            ECPAIRING_HOOK_ADDRESS_LOW,
+        );
+        #[cfg(feature = "mock-unsupported-precompiles")]
+        {
+            self.add_precompile::<crate::mock_precompiles::mock_precompiles::Blake2f, MissingSystemFunctionErrors>(
+                BLAKE2F_HOOK_ADDRESS_LOW,
+            );
+
+            #[cfg(not(feature = "point_eval_precompile"))]
+            self.add_precompile::<crate::mock_precompiles::mock_precompiles::PointEvaluation, MissingSystemFunctionErrors>(
+                POINT_EVAL_HOOK_ADDRESS_LOW,
+            );
+        }
+        #[cfg(feature = "point_eval_precompile")]
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::PointEvaluation, PointEvaluationErrors>(
+            POINT_EVAL_HOOK_ADDRESS_LOW,
+        );
+
+        #[cfg(feature = "p256_precompile")]
+        {
+            self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::P256Verify, P256VerifyErrors>(
+                P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW,
+            );
+        }
+    }
+
+    pub fn add_l1_messenger(&mut self) {
+        self.add_hook(L1_MESSENGER_ADDRESS_LOW, SystemHook(l1_messenger_hook))
+    }
+
+    pub fn add_l2_base_token(&mut self) {
+        self.add_hook(L2_BASE_TOKEN_ADDRESS_LOW, SystemHook(l2_base_token_hook))
+    }
+
+    pub fn add_contract_deployer(&mut self) {
+        self.add_hook(
+            CONTRACT_DEPLOYER_ADDRESS_LOW,
+            SystemHook(contract_deployer_hook),
+        )
+    }
+
+    fn add_precompile<P, E>(&mut self, address_low: u16)
+    where
+        P: SystemFunction<S::Resources, E>,
+        E: Subsystem,
     {
-        add_precompile::<
-            _,
-            _,
-            crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
-            MissingSystemFunctionErrors,
-        >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
-
-        #[cfg(not(feature = "point_eval_precompile"))]
-        add_precompile::<
-            _,
-            _,
-            crate::call_hooks::mock_precompiles::mock_precompiles::PointEvaluation,
-            MissingSystemFunctionErrors,
-        >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW)?;
+        self.add_hook(
+            address_low,
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationUser<S, E, P>, E, S>,
+            ),
+        )
     }
-    #[cfg(feature = "point_eval_precompile")]
-    add_precompile::<
-        _,
-        _,
-        <S::SystemFunctions as SystemFunctions<_>>::PointEvaluation,
-        PointEvaluationErrors,
-    >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW)?;
 
-    #[cfg(feature = "p256_precompile")]
-    {
-        add_precompile::<
-            _,
-            _,
-            <S::SystemFunctions as SystemFunctions<_>>::P256Verify,
-            P256VerifyErrors,
-        >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
+    fn add_precompile_ext<P: SystemFunctionExt<S::Resources, E>, E: Subsystem>(
+        &mut self,
+        address_low: u16,
+    ) {
+        self.add_hook(
+            address_low,
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationExt<S, E, P>, E, S>,
+            ),
+        )
     }
-    Ok(())
-}
 
-pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError> {
-    hooks.add_call_hook(
-        L1_MESSENGER_ADDRESS_HOOK_LOW,
-        SystemCallHook::new(l1_messenger_hook),
-    )
-}
-
-pub fn add_set_bytecode_on_address_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    hooks.add_call_hook(
-        SET_BYTECODE_ON_ADDRESS_HOOK_LOW,
-        SystemCallHook::new(set_bytecode_on_address_hook),
-    )
-}
-
-pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    hooks.add_call_hook(
-        CONTRACT_DEPLOYER_ADDRESS_LOW,
-        SystemCallHook::new(contract_deployer_temp_hook),
-    )
-}
-
-pub fn add_base_token_mint<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    hooks.add_call_hook(
-        MINT_HOOK_ADDRESS_LOW,
-        SystemCallHook::new(mint_base_token_hook),
-    )
-}
-
-pub fn add_interop_root_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError> {
-    hooks.add_event_hook(
-        L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW,
-        SystemEventHook::new(interop_root_reporter_event_hook),
-    )
-}
-
-pub fn add_system_context_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError> {
-    hooks.add_event_hook(
-        SYSTEM_CONTEXT_ADDRESS_LOW,
-        SystemEventHook::new(system_context_event_hook),
-    )
-}
-
-pub fn add_precompile<S: EthereumLikeTypes, A: Allocator + Clone, P, E>(
-    hooks: &mut HooksStorage<S, A>,
-    address_low: u16,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-    P: SystemFunction<S::Resources, E>,
-    E: Subsystem,
-{
-    // Sanity check to ensure that the address being added is indeed in the precompile addresses list
-    if !PRECOMPILE_ADDRESSES_LOWS.contains(&address_low) {
-        return Err(internal_error!(
-            "Attempted to add a precompile that is not in the precompile addresses list"
-        ));
-    }
-    hooks.add_call_hook(
-        address_low,
-        SystemCallHook::new(
-            pure_system_function_hook_impl::<SystemFunctionInvocationUser<S, E, P>, E, S>,
-        ),
-    )
-}
-
-fn add_precompile_ext<
-    S: EthereumLikeTypes,
-    A: Allocator + Clone,
-    P: SystemFunctionExt<S::Resources, E>,
-    E: Subsystem,
->(
-    hooks: &mut HooksStorage<S, A>,
-    address_low: u16,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    hooks.add_call_hook(
-        address_low,
-        SystemCallHook::new(
-            pure_system_function_hook_impl::<SystemFunctionInvocationExt<S, E, P>, E, S>,
-        ),
-    )
+    // ///
+    // /// Adds nonce holder system hook.
+    // ///
+    // pub fn add_nonce_holder(&mut self) {
+    //     self.add_hook(NONCE_HOLDER_HOOK_ADDRESS_LOW, nonce_holder_hook)
+    // }
 }
 
 ///
@@ -329,7 +317,7 @@ fn make_error_return_state<'a, S: SystemTypes>(
 fn make_return_state_from_returndata_region<S: SystemTypes>(
     remaining_resources: S::Resources,
     returndata: &[u8],
-) -> CompletedExecution<'_, S> {
+) -> CompletedExecution<S> {
     let return_values = ReturnValues {
         returndata,
         return_scratch_space: None,
@@ -342,6 +330,9 @@ fn make_return_state_from_returndata_region<S: SystemTypes>(
 
 /// Base cost for calling into a system hook
 const HOOK_BASE_NATIVE_COST: u64 = 1000;
+
+/// Base ergs cost for calling a system hook (100 gas)
+const HOOK_BASE_ERGS_COST: Ergs = Ergs(100 * ERGS_PER_GAS);
 
 /// Ergs cost per byte of bytecode for force deployments.
 const SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE: Ergs = Ergs(50 * ERGS_PER_GAS);

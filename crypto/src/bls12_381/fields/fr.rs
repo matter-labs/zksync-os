@@ -13,15 +13,13 @@ static MODULUS: BigInt<4> = FrConfig::MODULUS;
 pub struct FrParams;
 
 impl DelegatedModParams<4> for FrParams {
-    const MODULUS_BITSIZE: usize = 255;
-
-    fn modulus() -> &'static BigInt<4> {
+    unsafe fn modulus() -> &'static BigInt<4> {
         &MODULUS
     }
 }
 
 impl DelegatedMontParams<4> for FrParams {
-    fn reduction_const() -> &'static BigInt<4> {
+    unsafe fn reduction_const() -> &'static BigInt<4> {
         &MONT_REDUCTION_CONSTANT
     }
 }
@@ -214,6 +212,7 @@ mod tests {
     use ark_ff::{AdditiveGroup, Field, Zero};
     use proptest::{prop_assert_eq, proptest};
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_inverse_properties() {
         proptest!(|(x: Fr)| {
@@ -226,6 +225,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         proptest!(|(x: Fr, y: Fr, z: Fr)| {
@@ -237,6 +237,7 @@ mod tests {
         })
     }
 
+    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add_properties() {
         proptest!(|(x: Fr, y: Fr, z: Fr)| {

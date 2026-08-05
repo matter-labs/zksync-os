@@ -1,3 +1,4 @@
+#![feature(slice_as_array)]
 #![recursion_limit = "1024"]
 
 use clap::{Parser, Subcommand};
@@ -41,13 +42,7 @@ enum Command {
         #[arg(long)]
         persist_all: bool,
         #[arg(long)]
-        slack_webhook: Option<String>,
-        #[arg(long)]
-        single_tx: Option<u64>,
-        #[arg(long)]
-        only_forward: bool,
-        #[arg(long)]
-        backup_endpoint: Option<String>,
+        chain_id: Option<u64>,
     },
     // Run a single block from JSON files
     SingleRun {
@@ -67,12 +62,6 @@ enum Command {
         witness_output_dir: Option<String>,
         #[arg(long)]
         chain_id: Option<u64>,
-        #[arg(long)]
-        single_tx: Option<u64>,
-        /// If set, generates a flamegraph SVG at the given path.
-        /// Cannot be used together with --witness-output-dir.
-        #[arg(long, conflicts_with = "witness_output_dir")]
-        flamegraph: Option<String>,
     },
     // Export block ratios from DB
     ExportRatios {
@@ -86,12 +75,6 @@ enum Command {
         #[arg(long)]
         db: String,
     },
-    // Run a single block using eth_run
-    EthRun {
-        /// Path to the block directory
-        #[arg(long)]
-        block_dir: String,
-    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -104,16 +87,12 @@ fn main() -> anyhow::Result<()> {
             randomized,
             witness_output_dir,
             chain_id,
-            single_tx,
-            flamegraph,
         } => crate::single_run::single_run(
             block_dir,
             block_hashes,
             randomized,
             witness_output_dir,
             chain_id,
-            single_tx,
-            flamegraph,
         ),
         Command::LiveRun {
             start_block,
@@ -123,10 +102,7 @@ fn main() -> anyhow::Result<()> {
             witness_output_dir,
             skip_successful,
             persist_all,
-            slack_webhook,
-            single_tx,
-            only_forward,
-            backup_endpoint,
+            chain_id,
         } => live_run::live_run(
             start_block,
             end_block,
@@ -135,13 +111,9 @@ fn main() -> anyhow::Result<()> {
             witness_output_dir,
             skip_successful,
             persist_all,
-            slack_webhook,
-            single_tx,
-            only_forward,
-            backup_endpoint,
+            chain_id,
         ),
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
-        Command::EthRun { block_dir } => crate::single_run::eth_run(block_dir),
     }
 }

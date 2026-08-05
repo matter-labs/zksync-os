@@ -2,10 +2,9 @@ use crate::run::convert::FromInterface;
 use crate::run::errors::ForwardSubsystemError;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
-use crate::run::validator_impl::ValidatorWrapped;
 use crate::run::{run_block, simulate_tx};
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
-use zksync_os_interface::tracing::{AnyTracer, AnyTxValidator};
+use zksync_os_interface::tracing::AnyTracer;
 use zksync_os_interface::traits::{
     EncodedTx, PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
 };
@@ -28,7 +27,6 @@ impl RunBlock for RunBlockForward {
         TrSrc: TxSource,
         TrCallback: TxResultCallback,
         Tracer: AnyTracer,
-        Validator: AnyTxValidator,
     >(
         &self,
         _config: (),
@@ -38,12 +36,8 @@ impl RunBlock for RunBlockForward {
         tx_source: TrSrc,
         tx_result_callback: TrCallback,
         tracer: &mut Tracer,
-        validator: &mut Validator,
     ) -> Result<BlockOutput, Self::Error> {
         let evm_tracer = tracer.as_evm().expect("only EVM tracers are supported");
-        let evm_tx_validator = validator
-            .as_evm()
-            .expect("only EVM validators are supported");
         run_block(
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
@@ -51,7 +45,6 @@ impl RunBlock for RunBlockForward {
             tx_source,
             tx_result_callback,
             &mut TracerWrapped(evm_tracer),
-            &mut ValidatorWrapped(evm_tx_validator),
         )
     }
 }
@@ -60,12 +53,7 @@ impl SimulateTx for RunBlockForward {
     type Config = ();
     type Error = ForwardSubsystemError;
 
-    fn simulate_tx<
-        Storage: ReadStorage,
-        PreimgSrc: PreimageSource,
-        Tracer: AnyTracer,
-        Validator: AnyTxValidator,
-    >(
+    fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyTracer>(
         &self,
         _config: (),
         transaction: EncodedTx,
@@ -73,19 +61,14 @@ impl SimulateTx for RunBlockForward {
         storage: Storage,
         preimage_source: PreimgSrc,
         tracer: &mut Tracer,
-        validator: &mut Validator,
     ) -> Result<TxResult, Self::Error> {
         let evm_tracer = tracer.as_evm().expect("only EVM tracers are supported");
-        let evm_tx_validator = validator
-            .as_evm()
-            .expect("only EVM validators are supported");
         simulate_tx(
             transaction,
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
             preimage_source,
             &mut TracerWrapped(evm_tracer),
-            &mut ValidatorWrapped(evm_tx_validator),
         )
     }
 }

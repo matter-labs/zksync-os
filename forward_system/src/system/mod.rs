@@ -1,6 +1,7 @@
 pub mod bootloader;
 pub mod logger;
-pub mod system_types;
+#[allow(clippy::module_inception)]
+pub mod system;
 pub mod tracers;
 
 mod tests;

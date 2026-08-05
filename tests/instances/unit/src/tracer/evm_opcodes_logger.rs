@@ -7,39 +7,30 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, Address, TxKind, U256};
-use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::forward_system::system::tracers::evm_opcodes_logger::EvmOpcodesLogger;
-use rig::zk_ee::system::validator::{NopTxValidator, TxValidator};
-use rig::TestingFramework;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+use rig::ruint::aliases::B160;
+use rig::Chain;
 
 fn run_chain_with_tracer(
     to: Address,
     contracts: Vec<(Address, Vec<u8>)>,
     tracer: &mut EvmOpcodesLogger<ForwardRunningSystem>,
 ) {
-    let mut nop = NopTxValidator::default();
-    run_chain_with_tracer_and_validator(to, contracts, tracer, &mut nop);
-}
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
 
-fn run_chain_with_tracer_and_validator<V>(
-    to: Address,
-    contracts: Vec<(Address, Vec<u8>)>,
-    tracer: &mut EvmOpcodesLogger<ForwardRunningSystem>,
-    validator: &mut V,
-) where
-    V: TxValidator<ForwardRunningSystem>,
-{
-    let mut tester = TestingFramework::new();
-    let wallet = tester.random_signer();
-
-    tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
 
     for (address, bytecode) in contracts {
-        tester.set_evm_contract(address, &bytecode);
+        chain.set_evm_bytecode(B160::from_be_bytes(address.into_array()), &bytecode);
     }
 
-    let tx = {
+    // Create transaction to call the contract
+    let encoded_tx = {
         let tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -50,10 +41,13 @@ fn run_chain_with_tracer_and_validator<V>(
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    let block_output = tester.execute_block_with_tracing(vec![tx], tracer, validator);
+    let result = chain.run_block_with_extra_stats(vec![encoded_tx], None, None, None, tracer);
+
+    assert!(result.is_ok(), "Block execution should succeed");
+    let (block_output, _, _) = result.unwrap();
     assert!(
         block_output.tx_results[0].is_ok(),
         "Transaction should succeed. Result: {:?}",

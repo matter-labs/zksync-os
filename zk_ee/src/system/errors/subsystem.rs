@@ -84,7 +84,7 @@ macro_rules! define_cascade_error {
         )*
 
         impl $crate::system::errors::root_cause::GetRootCause for $name {
-            fn root_cause(&self) -> $crate::system::errors::root_cause::RootCause<'_> {
+            fn root_cause(&self) -> $crate::system::errors::root_cause::RootCause {
                 match self {
                     $(
                         Self::$variant(e) => e.root_cause(),

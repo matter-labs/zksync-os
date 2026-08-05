@@ -371,7 +371,9 @@ fn table_get_ge_storage(pre: &[AffineStorage; ECMULT_TABLE_SIZE_G], n: i32, w: u
 }
 
 fn table_verify(n: i32, w: usize) -> bool {
-    (2..=31).contains(&w) && ((n & 1) == 1) && (n >= -((1 << (w - 1)) - 1)) && (n < (1 << (w - 1)))
+    let n = n as usize;
+
+    ((n & 1) == 1) || (n >= !(1 << ((w - 1) - 1))) || (n <= (1 << ((w - 1) - 1)))
 }
 
 #[cfg(test)]

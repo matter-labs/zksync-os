@@ -8,22 +8,23 @@ static mut SCRATCH_FOR_REF: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 #[cfg(target_arch = "riscv32")]
 const ROM_BOUND: usize = 1 << 21;
 
-#[inline(always)]
-pub(super) unsafe fn copy_from_operand(source: *const DelegatedU256) -> DelegatedU256 {
-    let mut result = MaybeUninit::<DelegatedU256>::uninit();
-    unsafe {
-        with_ram_operand(source, |src_ptr| {
-            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(result.as_mut_ptr(), src_ptr);
-        });
-
-        result.assume_init()
-    }
-}
-
 impl Clone for DelegatedU256 {
     #[inline(always)]
     fn clone(&self) -> Self {
-        unsafe { copy_from_operand(self as *const Self) }
+        // custom clone by using precompile
+        // NOTE on all uses of such initialization - we do not want to check if compiler will elide stack-to-stack copy
+        // upon the call of `assume_init` in general, but we know that all underlying data will be overwritten and initialized
+        unsafe {
+            // We have to do `uninit().assume_init()` because calling `assume_init()` later may trigger a stack-to-stack copy
+            // And this is safe because there are no references to result, and on risc-v all memory is init by default
+            #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
+            let mut result = MaybeUninit::<Self>::uninit().assume_init();
+            with_ram_operand(self.0.as_ptr().cast(), |src_ptr| {
+                let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(&mut result as *mut Self, src_ptr);
+            });
+            result
+        }
     }
 
     #[inline(always)]

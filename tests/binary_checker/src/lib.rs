@@ -1,3 +1,5 @@
+#![feature(array_chunks)]
+
 #[cfg(test)]
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
@@ -15,9 +17,7 @@ mod tests {
         assert!(binary.len() % 4 == 0);
 
         binary
-            .as_chunks()
-            .0
-            .iter()
+            .array_chunks()
             .map(|el| u32::from_le_bytes(*el))
             .collect()
     }
@@ -39,7 +39,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runs only on CI / explicit opt-in"]
     fn verify_default_binaries() {
         verify_binary("singleblock_batch.text");
         verify_binary("multiblock_batch.text")

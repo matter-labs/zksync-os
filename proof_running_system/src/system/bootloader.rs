@@ -4,12 +4,10 @@ use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
-use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
-use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -152,7 +150,7 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
     heap_start: *mut usize,
     heap_end: *mut usize,
 ) -> [u32; 8] {
-    logger_log!(L::default(), "Enter proving bootloader");
+    let _ = L::default().write_fmt(format_args!("Enter proving bootloader"));
 
     // init allocator
     // allocator is a global singleton object, that can be later accessed by ProxyAllocator
@@ -160,12 +158,12 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
         init_allocator(heap_start, heap_end);
     }
 
-    logger_log!(L::default(), "Allocator init is complete");
+    let _ = L::default().write_fmt(format_args!("Allocator init is complete"));
 
     // oracle is just a thin proxy
     let oracle = CsrBasedIOOracle::<I>::init();
 
-    logger_log!(L::default(), "Oracle init is complete");
+    let _ = L::default().write_fmt(format_args!("Oracle init is complete"));
 
     run_proving_inner::<_, I, L>(oracle)
 }
@@ -178,18 +176,13 @@ pub fn run_proving_inner<
 >(
     oracle: O,
 ) -> [u32; 8] {
-    logger_log!(L::default(), "IO implementer init is complete");
+    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
     // Load all transactions from oracle and apply them.
-    let (mut oracle, public_input) =
-        ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
-            oracle,
-            &mut (),
-            &mut NopResultKeeper::default(),
-            &mut NopTracer::default(),
-            &mut NopTxValidator,
-        )
-        .expect("Tried to prove a failing batch");
+    let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
+        BasicBootloaderProvingExecutionConfig,
+    >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
+    .expect("Tried to prove a failing batch");
 
     // disconnect oracle before returning, if some other post-logic is needed that doesn't use Oracle trait
     // TODO: check this is the intended behaviour (ignoring the result)
@@ -209,22 +202,28 @@ pub fn run_proving_inner<
 >(
     mut oracle: O,
 ) -> [u32; 8] {
-    logger_log!(L::default(), "IO implementer init is complete");
+    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
     // simulating query, just in case
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
-    let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
+    let mut batch_pi_builder =
+        basic_system::system_implementation::system::BatchPublicInputBuilder::new();
     for _ in 0..count {
-        oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
-            oracle,
-            &mut batch_data,
-            &mut NopResultKeeper::default(),
-            &mut NopTracer::default(),
-            &mut NopTxValidator,
-        )
-        .expect("Tried to prove a failing batch");
+        let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
+            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+                oracle,
+                &mut NopResultKeeper,
+                &mut NopTracer::default(),
+            )
+            .expect("Tried to prove a failing batch");
+        oracle = io.apply_to_batch(
+            block_metadata,
+            current_block_hash,
+            upgrade_tx_hash,
+            &mut batch_pi_builder,
+        );
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
@@ -233,11 +232,11 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    let public_input = zk_ee::utils::Bytes32::from_array(
-        batch_data
-            .into_public_input(L::default(), &mut oracle)
-            .hash(),
-    );
-
-    unsafe { core::mem::transmute(public_input) }
+    unsafe {
+        core::mem::transmute(zk_ee::utils::Bytes32::from_array(
+            batch_pi_builder
+                .into_public_input(L::default(), &mut oracle)
+                .hash(),
+        ))
+    }
 }

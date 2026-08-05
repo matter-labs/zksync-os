@@ -6,19 +6,15 @@ use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::BootloaderSubsystemError;
 use core::fmt::Write;
 use crypto::MiniDigest;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::system::SystemError;
-use zk_ee::system::Ergs;
 use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
-use zk_ee::system::Resource;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
-use zk_ee::system_log;
 use zk_ee::{internal_error, wrap_error};
 
 use super::rlp_encoded::AuthorizationList;
@@ -53,7 +49,9 @@ where
             (y_parity, r, s),
             &mut hasher,
         )?;
-        system_log!(system, "Delegation success: {success}\n");
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Delegation success: {success}\n"));
 
         if !success {}
     }
@@ -64,7 +62,6 @@ where
 const EIP7702_MAGIC: u8 = 0x05;
 
 /// Validate and apply an authorization list item, following EIP-7702:
-/// 0. Pre-charge for intrinsic gas cost of delegation (PER_AUTH_BASE_COST).
 /// 1. Verify the chain ID is 0 or the ID of the current chain.
 /// 2. Verify the nonce is less than 2**64 - 1.
 /// 3. Let authority = ecrecover(msg, y_parity, r, s).
@@ -95,15 +92,6 @@ where
     S::IO: IOSubsystemExt,
 {
     let chain_id = system.get_chain_id();
-
-    // 0. Pre-charge intrinsic gas
-    resources.charge(&S::Resources::from_ergs_and_native(
-        Ergs(evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS),
-        <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(
-            crate::bootloader::constants::PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD,
-        ),
-    ))?;
-
     // 1. Check chain id
     if !auth_chain_id.is_zero() && auth_chain_id != &U256::from(chain_id) {
         return Ok(false);
@@ -146,7 +134,8 @@ where
                 .with_nonce()
                 .with_nominal_token_balance()
                 .with_is_delegated()
-                .with_has_bytecode(),
+                .with_artifacts_len()
+                .with_unpadded_code_len(),
         )
     })?;
     // 5. Check authority is not a contract
@@ -159,27 +148,21 @@ where
     }
     // 7. Add refund if authority is not empty.
     let is_empty = account_properties.nonce.0 == 0
-        && account_properties.has_bytecode() == false
+        && account_properties.unpadded_code_len.0 == 0
         && account_properties.nominal_token_balance.0.is_zero();
-
     if !is_empty {
-        let ergs = Ergs(
+        system.io.add_evm_refund(
             (evm_interpreter::gas_constants::NEWACCOUNT
-                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST)
-                * ERGS_PER_GAS,
-        );
-        system
-            .io
-            .add_to_refund_counter(S::Resources::from_ergs(ergs))?
+                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST) as u32,
+        )?
     }
 
     let delegation_address = B160::from_be_bytes(*delegation_address);
-    system_log!(
-        system,
+    let _ = system.get_logger().write_fmt(format_args!(
         "Will delegate address 0x{:040x} -> 0x{:040x}\n",
         authority.as_uint(),
         delegation_address.as_uint()
-    );
+    ));
 
     // 8. Set code for authority, system function
     //    will handle the two cases (unsetting).

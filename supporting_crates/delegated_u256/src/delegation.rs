@@ -60,63 +60,53 @@ pub unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
 
     use ruint::aliases::{U256, U512};
 
-    let read = |ptr: *const DelegatedU256| U256::from_limbs((*ptr).0);
-    let write = |ptr: *mut DelegatedU256, value: U256| {
-        (*ptr).0 = *value.as_limbs();
-    };
-
+    let a = U256::from_limbs((*_a).0);
+    let b = U256::from_limbs((*_b).0);
     let carry_or_borrow = U256::from(carry as u64);
 
-    if OP_SHIFT == ADD_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
+    let result;
+    let of = if OP_SHIFT == ADD_OP_BIT_IDX {
         let (t, of0) = a.overflowing_add(b);
         let (t, of1) = t.overflowing_add(carry_or_borrow);
-        write(_a, t);
+        result = t;
 
-        (of0 || of1) as u32
+        of0 || of1
     } else if OP_SHIFT == SUB_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
         let (t, of0) = a.overflowing_sub(b);
         let (t, of1) = t.overflowing_sub(carry_or_borrow);
-        write(_a, t);
+        result = t;
 
-        (of0 || of1) as u32
+        of0 || of1
     } else if OP_SHIFT == SUB_AND_NEGATE_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
         let (t, of0) = b.overflowing_sub(a);
         let (t, of1) = t.overflowing_sub(carry_or_borrow);
-        write(_a, t);
+        result = t;
 
-        (of0 || of1) as u32
+        of0 || of1
     } else if OP_SHIFT == MUL_LOW_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
         let t: U512 = a.widening_mul(b);
-        write(_a, U256::from_limbs(t.as_limbs()[..4].try_into().unwrap()));
+        result = U256::from_limbs(t.as_limbs()[..4].try_into().unwrap());
 
-        t.as_limbs()[4..].iter().any(|el| *el != 0) as u32
+        t.as_limbs()[4..].iter().any(|el| *el != 0)
     } else if OP_SHIFT == MUL_HIGH_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
         let t: U512 = a.widening_mul(b);
-        write(_a, U256::from_limbs(t.as_limbs()[4..8].try_into().unwrap()));
+        result = U256::from_limbs(t.as_limbs()[4..8].try_into().unwrap());
 
-        0
+        false
     } else if OP_SHIFT == EQ_OP_BIT_IDX {
-        let a = read(_a);
-        let b = read(_b);
+        result = a;
 
-        (a == b) as u32
+        a == b
     } else if OP_SHIFT == MEMCOPY_BIT_IDX {
-        let b = read(_b);
         let (t, of) = b.overflowing_add(carry_or_borrow);
-        write(_a, t);
+        result = t;
 
-        of as u32
+        of
     } else {
         panic!("unknown op")
-    }
+    };
+
+    (*_a).0 = *result.as_limbs();
+
+    of as u32
 }

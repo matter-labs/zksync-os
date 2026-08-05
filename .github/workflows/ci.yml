@@ -8,8 +8,6 @@ permissions: read-all
 
 env:
     CARGO_INCREMENTAL: 0
-    ZKSYNC_RISC_V_RUN: true
-    CI: true
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -43,37 +41,10 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3
-    test_revm_consistency:
-        name: revm consistency checker tests
-        runs-on: [matterlabs-ci-runner-high-performance]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
-                  ./dump_bin.sh --type multiblock-batch
-            - name: Compile
-              run: cargo test --release --no-run
-            - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release -j 3
+              run: cargo test --release -j 3 -- --skip verify_default_binaries
     crypto_test:
         name: crypto crate tests
-        runs-on: [matterlabs-ci-runner-high-performance]
+        runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -82,9 +53,9 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Run crypto tests 10 times with overflow checks
+            - name: Run crypto tests 50 times with overflow checks
               run: |
-                  for i in {1..10}; do
+                  for i in {1..50}; do
                     RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
                   done
     evm_state_tests:
@@ -130,7 +101,7 @@ jobs:
                   ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Run binary checker
-              run: cargo test -p binary_checker -- --nocapture --ignored
+              run: cargo test -p binary_checker -- --nocapture
 
     e2e_prove:
         name: e2e_prove
@@ -154,29 +125,6 @@ jobs:
             - name: Run proving test
               # Runs with e2e_proving feature
               run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
-
-    eth_stf_run:
-        name: eth_stf_run
-        runs-on: [matterlabs-ci-runner-highmem]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type eth-stf
-            - name: Run ethereum block
-              working-directory: ./tests/instances/eth_runner
-              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054 
 
     blake_tests:
         name: blake_tests

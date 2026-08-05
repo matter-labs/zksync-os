@@ -1,5 +1,4 @@
 use super::*;
-use crate::run::convert_alloy::FromAlloy;
 use crate::run::NextTxResponse;
 use crate::run::TxSource;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
@@ -28,7 +27,7 @@ pub struct TxDataResponder<TS: TxSource> {
     /// Note: we use different fields for next_tx and next_tx_format
     /// so that they don't have to be consumed at the same time.
     pub next_tx_format: Option<TxEncodingFormat>,
-    /// Cached next transaction from, populated after size query
+    /// Cached next transaction format, populated after size query
     /// (if present)
     pub next_tx_from: Option<B160>,
 }
@@ -56,7 +55,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
         query_id: u32,
         _query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
@@ -72,7 +71,6 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Abi);
-                                self.next_tx_from = None;
                                 next_tx_len
                             }
                             NextTxResponse::Tx(EncodedTx::Rlp(next_tx, from)) => {
@@ -81,7 +79,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Rlp);
-                                self.next_tx_from = Some(B160::from_alloy(from));
+                                self.next_tx_from = Some(B160::from_be_bytes(from.0 .0));
                                 next_tx_len
                             }
                         }

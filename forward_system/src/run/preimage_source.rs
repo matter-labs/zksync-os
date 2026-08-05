@@ -1,4 +1,3 @@
-use crate::run::convert_alloy::IntoAlloy;
 use zk_ee::utils::Bytes32;
 
 pub trait PreimageSource: 'static {
@@ -7,6 +6,6 @@ pub trait PreimageSource: 'static {
 
 impl<T: zksync_os_interface::traits::PreimageSource> PreimageSource for T {
     fn get_preimage(&mut self, hash: Bytes32) -> Option<Vec<u8>> {
-        self.get_preimage(hash.into_alloy())
+        self.get_preimage(hash.as_u8_array().into())
     }
 }

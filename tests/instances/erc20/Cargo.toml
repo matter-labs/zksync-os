@@ -11,4 +11,3 @@ categories.workspace = true
 
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
-zksync_os_tests_common = { path = "../../common" }

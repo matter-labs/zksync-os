@@ -1,6 +1,7 @@
 //! Implementation of the system interface.
-use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
+use crate::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use crate::system_implementation::flat_storage_model::*;
+use crate::system_implementation::system::public_input::ChainStateCommitment;
 use core::alloc::Allocator;
 use errors::system::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
@@ -13,6 +14,7 @@ use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::NopHasher;
 use zk_ee::{
     memory::stack_trait::StackFactory,
     oracle::IOOracle,
@@ -20,10 +22,15 @@ use zk_ee::{
     system::{errors::internal::InternalError, logger::Logger, Resources, *},
 };
 
-pub mod interop_roots;
+pub mod da_commitment_generator;
 mod io_subsystem;
+pub mod pubdata;
+mod public_input;
 
 pub use self::io_subsystem::*;
+pub use self::public_input::BatchOutput;
+pub use self::public_input::BatchPublicInput;
+pub use self::public_input::BatchPublicInputBuilder;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;
@@ -33,9 +40,18 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                // For access lists, EVM charges the full cost as many
+                // times as a slot is in the list.
+                if is_access_list {
+                    Ergs(1900 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
         };
         let native = R::Native::from_computational(
@@ -111,49 +127,5 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
           crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
-    }
-
-    /// Refund some resources if needed
-    #[allow(unused_variables)]
-    fn refund_for_storage_write(
-        &self,
-        ee_type: ExecutionEnvironmentType,
-        value_at_tx_start: &Bytes32,
-        current_value: &Bytes32,
-        new_value: &Bytes32,
-        resources: &mut R,
-        refund_counter: &mut R,
-    ) -> Result<(), SystemError> {
-        if ee_type == ExecutionEnvironmentType::EVM {
-            // EVM specific refunds calculation
-            {
-                if current_value != new_value {
-                    if current_value == value_at_tx_start {
-                        if !value_at_tx_start.is_zero() && new_value.is_zero() {
-                            refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
-                        }
-                    } else {
-                        if !value_at_tx_start.is_zero() {
-                            if current_value.is_zero() {
-                                refund_counter.charge(&R::from_ergs(Ergs(4800 * ERGS_PER_GAS)))?;
-                            } else if new_value.is_zero() {
-                                refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
-                            }
-                        }
-                        if new_value == value_at_tx_start {
-                            if value_at_tx_start.is_zero() {
-                                refund_counter.add_ergs(Ergs((20000 - 100) * ERGS_PER_GAS));
-                            } else {
-                                refund_counter.add_ergs(Ergs((5000 - 2100 - 100) * ERGS_PER_GAS));
-                            }
-                        }
-                    }
-                }
-
-                Ok(())
-            }
-        } else {
-            Ok(())
-        }
     }
 }

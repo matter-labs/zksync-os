@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "testing"), no_std)]
 #![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 #![feature(btreemap_alloc)]
 #![feature(const_trait_impl)]

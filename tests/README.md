@@ -1,7 +1,5 @@
 This folder contains ZKsync OS integration tests.
 
-- [Integration test philosophy for `instances`](./instances/TESTING.md)
-
 ## Directory structure
 
 This directory contains the following subdirectories:

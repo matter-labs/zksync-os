@@ -4,13 +4,12 @@ use crate::post_check::PostCheckError;
 use crate::prestate::{DiffTrace, PrestateTrace};
 use crate::receipts::BlockReceipts;
 use alloy::primitives::U256;
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use bincode::config::standard;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use csv::Writer;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
-use std::env;
 use std::fs::File;
 
 #[derive(Clone)]
@@ -148,24 +147,17 @@ impl Database {
     pub fn set_block_hash(&self, block_number: u64, hash: U256) -> Result<()> {
         self.block_hashes
             .insert(block_number.to_be_bytes(), hash.to_le_bytes_vec())?;
-        // Don't flush here - batch writes for better performance
+        self.block_hashes.flush()?;
         Ok(())
     }
 
     pub fn get_block_traces(&self, block_number: u64) -> Result<Option<BlockTraces>> {
-        if env::var("REFETCH_TRACES").is_ok() {
-            Ok(None)
+        if let Some(bytes) = self.block_traces.get(block_number.to_be_bytes())? {
+            let (status, _) = decode_from_slice::<BlockTraces, _>(&bytes, standard())
+                .context("Failed to decode block traces")?;
+            Ok(Some(status))
         } else {
-            if let Some(bytes) = self.block_traces.get(block_number.to_be_bytes())? {
-                let core::result::Result::Ok((status, _)) =
-                    decode_from_slice::<BlockTraces, _>(&bytes, standard())
-                else {
-                    return Ok(None);
-                };
-                Ok(Some(status))
-            } else {
-                Ok(None)
-            }
+            Ok(None)
         }
     }
 
@@ -173,7 +165,7 @@ impl Database {
         let bytes = encode_to_vec(traces, standard()).context("Failed to encode block traces")?;
         self.block_traces
             .insert(block_number.to_be_bytes(), bytes)?;
-        // Don't flush here - batch writes for better performance
+        self.block_traces.flush()?;
         Ok(())
     }
 
@@ -191,7 +183,7 @@ impl Database {
         let bytes = encode_to_vec(&status, standard()).context("Failed to encode block status")?;
         self.block_status
             .insert(block_number.to_be_bytes(), bytes)?;
-        // Don't flush here - batch writes for better performance
+        self.block_status.flush()?;
         Ok(())
     }
 
@@ -199,7 +191,7 @@ impl Database {
         let bytes = encode_to_vec(ratio, standard()).context("Failed to encode block ratio")?;
         self.block_ratios
             .insert(block_number.to_be_bytes(), bytes)?;
-        // Don't flush here - batch writes for better performance
+        self.block_ratios.flush()?;
         Ok(())
     }
 
@@ -247,7 +239,7 @@ impl Database {
         };
         let id_bytes = encode_to_vec(&tx_id, standard()).context("Failed to encode tx id")?;
         self.block_resource_info.insert(id_bytes, bytes)?;
-        // Don't flush here - batch writes for better performance
+        self.block_resource_info.flush()?;
         Ok(())
     }
 
@@ -292,16 +284,6 @@ impl Database {
         }
 
         writer.flush()?;
-        Ok(())
-    }
-
-    /// Flush all pending writes to disk. Call this after batching multiple writes.
-    pub fn flush(&self) -> Result<()> {
-        self.block_hashes.flush()?;
-        self.block_traces.flush()?;
-        self.block_status.flush()?;
-        self.block_ratios.flush()?;
-        self.block_resource_info.flush()?;
         Ok(())
     }
 }

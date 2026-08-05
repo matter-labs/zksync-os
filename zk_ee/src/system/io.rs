@@ -5,18 +5,15 @@
 
 use core::marker::PhantomData;
 
-use super::common_structs::interop_root_storage::InteropRoot;
-use super::common_structs::{GenericEventContentWithTxRef, GenericLogContentWithTxRef};
 use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
-use super::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use super::{IOResultKeeper, Resources};
-use crate::common_structs::GenericEventContentRef;
 use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::oracle::IOOracle;
 use crate::storage_types::MAX_EVENT_TOPICS;
+use crate::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use arrayvec::ArrayVec;
@@ -114,22 +111,6 @@ pub trait IOSubsystem: Sized {
         data: &[u8],
     ) -> Result<Bytes32, SystemError>;
 
-    /// Add an interop root.
-    fn add_interop_root(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        interop_root: InteropRoot,
-    ) -> Result<(), SystemError>;
-
-    /// Update settlement layer chain id.
-    fn update_settlement_layer_chain_id(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        new_sl_chain_id: U256,
-    ) -> Result<(), SystemError>;
-
     /// Mark an account to be destructed at the end of the transaction.
     /// Perform token transfer to beneficiary. Returns amount of token transferred.
     fn mark_for_deconstruction(
@@ -138,6 +119,7 @@ pub trait IOSubsystem: Sized {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        in_constructor: bool,
     ) -> Result<
         <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         DeconstructionSubsystemError,
@@ -175,11 +157,10 @@ pub trait IOSubsystem: Sized {
     ) -> Result<u64, NonceSubsystemError>;
 
     /// Get current gas refund counter
-    fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
+    fn get_refund_counter(&self) -> u32;
 }
 
 pub trait Maybe<T> {
-    const IS_MATERIAL: bool;
     fn construct(f: impl FnOnce() -> T) -> Self;
     fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
     where
@@ -188,8 +169,6 @@ pub trait Maybe<T> {
 
 pub struct Just<T>(pub T);
 impl<T> Maybe<T> for Just<T> {
-    const IS_MATERIAL: bool = true;
-
     fn construct(f: impl FnOnce() -> T) -> Self {
         Self(f())
     }
@@ -204,8 +183,6 @@ impl<T> Maybe<T> for Just<T> {
 
 pub struct Nothing;
 impl<T> Maybe<T> for Nothing {
-    const IS_MATERIAL: bool = false;
-
     fn construct(_: impl FnOnce() -> T) -> Self {
         Self
     }
@@ -249,21 +226,15 @@ pub struct AccountData<
     pub is_delegated: IsDelegated,
 }
 
-impl<A, B, D, E, F, G, H, I, J, K> AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K> {
-    pub fn has_bytecode(&self) -> bool {
-        self.observable_bytecode_len.0 > 0
-    }
-}
-
-impl<A, B, D, E, F, G, H, I, J> AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, Just<bool>> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H, Just<bool>> {
     pub fn is_contract(&self) -> bool {
-        self.has_bytecode() && self.is_delegated.0 == false
+        !self.is_delegated.0 && self.unpadded_code_len.0 > 0
     }
 }
 
-impl<A, B, D, E, F, G, H, I, J> AccountData<A, B, Just<u32>, Just<u64>, D, E, F, G, H, I, J> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G, H> {
     pub fn can_deploy_into(&self) -> bool {
-        self.nonce.0 == 0 && self.has_bytecode() == false
+        self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
     }
 }
 
@@ -359,13 +330,6 @@ impl<A, B, C, D, E, F, G, H, I, J, K>
     ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, Just<bool>>> {
         AccountDataRequest(PhantomData)
     }
-
-    // Helper: just queries observable bytecode len
-    pub fn with_has_bytecode(
-        self,
-    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K>> {
-        AccountDataRequest(PhantomData)
-    }
 }
 
 ///
@@ -373,6 +337,7 @@ impl<A, B, C, D, E, F, G, H, I, J, K>
 ///
 pub trait IOSubsystemExt: IOSubsystem {
     type IOOracle: IOOracle;
+    type FinalData;
 
     fn init_from_oracle(oracle: Self::IOOracle) -> Result<Self, InternalError>;
 
@@ -392,6 +357,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Perform a transfer of token balance.
@@ -410,6 +376,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Generic function to read some of an account's properties
@@ -502,6 +469,16 @@ pub trait IOSubsystemExt: IOSubsystem {
         delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<(), SystemError>;
 
+    fn finish(
+        self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+        logger: impl Logger,
+    ) -> Self::FinalData;
+
     /// Emit a log for a l1 -> l2 tx.
     fn emit_l1_l2_tx_log(
         &mut self,
@@ -509,6 +486,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError>;
 
     /// Returns old balance
@@ -525,89 +503,11 @@ pub trait IOSubsystemExt: IOSubsystem {
     // Get number of logs emitted so far.
     fn logs_len(&self) -> u64;
 
-    /// Adds some resources to refund at the end of transaction
-    fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError>;
+    // Add EVM refund to counter
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}
-
-#[allow(type_alias_bounds)]
-pub type BasicAccountDiff<IOTypes: SystemIOTypesConfig> =
-    (u64, IOTypes::NominalTokenValue, IOTypes::BytecodeHashValue);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct StorageDiff<IOTypes: SystemIOTypesConfig> {
-    pub initial_value: IOTypes::StorageValue,
-    pub current_value: IOTypes::StorageValue,
-    pub is_new_storage_slot: bool,
-    pub initial_value_used: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StorageDiffRef<'a, IOTypes: SystemIOTypesConfig> {
-    pub initial_value: &'a IOTypes::StorageValue,
-    pub current_value: &'a IOTypes::StorageValue,
-    pub is_new_storage_slot: bool,
-    pub initial_value_used: bool,
-}
-
-/// Proxy trait that allows one to get dumps of the final IO state. Largely it provides iterator-based accesses
-/// to various elements of the IO:
-/// - account and storages diffs
-/// - logs
-/// - l2 to l1 logs (if any)
-pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOTypes> {
-    type IOStateCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug;
-
-    /// Writes pending cached state changes to the result keeper.
-    fn flush_caches(&mut self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>);
-
-    /// Reports any new preimages (e.g., bytecode hashes) discovered during execution.
-    fn report_new_preimages(
-        &mut self,
-        result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-    );
-
-    type StorageKey<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-
-    type StorageDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-
-    /// Returns the storage diff for a specific key, if the slot was modified.
-    fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>>;
-
-    /// Returns an iterator over all storage slot changes.
-    fn storage_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone;
-
-    /// Returns an iterator over events emitted in the current transaction only.
-    fn events_in_this_tx_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentRef<'a, { MAX_EVENT_TOPICS }, IOTypes>> + Clone;
-
-    /// Returns an iterator over all events emitted in the block, with tx metadata.
-    fn events_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>
-           + Clone;
-
-    /// Returns an iterator over L2-to-L1 signals (system logs).
-    fn signals_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericLogContentWithTxRef<'a, IOTypes>> + Clone;
-
-    /// Finalizes state changes and updates the state commitment (e.g., Merkle root).
-    fn update_commitment(
-        &mut self,
-        state_commitment: Option<&mut Self::IOStateCommitment>,
-        logger: &mut impl Logger,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-    );
-}
 
 define_subsystem!(Nonce,
 interface NonceError {

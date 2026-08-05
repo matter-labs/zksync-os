@@ -117,10 +117,13 @@ impl Cache {
             // }
             if let Some(cache_el) = self.0.get_mut(&address) {
                 if let Some(balance) = pre.balance {
-                    assert_eq!(balance, *cache_el.balance.get_or_insert(balance));
+                    assert_eq!(
+                        balance,
+                        *cache_el.balance.get_or_insert_with(|| { balance })
+                    );
                 }
                 if let Some(nonce) = pre.nonce {
-                    assert_eq!(nonce, *cache_el.nonce.get_or_insert(nonce));
+                    assert_eq!(nonce, *cache_el.nonce.get_or_insert_with(|| { nonce }));
                 }
                 if let Some(code) = pre.code.as_ref() {
                     assert_eq!(code, cache_el.code.get_or_insert_with(|| { code.clone() }));

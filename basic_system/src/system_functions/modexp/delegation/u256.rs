@@ -30,19 +30,17 @@ impl DelegatedU256 {
     pub(crate) const ZERO: Self = Self([0; 4]);
     pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
 
-    #[inline(always)]
-    unsafe fn copy_from_ptr(source: *const Self) -> Self {
-        let mut result = MaybeUninit::<Self>::uninit();
-        let _ =
-            bigint_op_delegation_raw(result.as_mut_ptr().cast(), source.cast(), BigIntOps::MemCpy);
-
-        unsafe { result.assume_init() }
-    }
-
     pub(crate) fn zero() -> Self {
         unsafe {
-            #[allow(static_mut_refs)]
-            Self::copy_from_ptr(ZERO.as_ptr())
+            #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
+            // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
+            // This is safe because there are no references to result and it's initialized immediately
+            // (and on RISC-V all memory is init by default)
+            let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
+            Self::write_zero(&mut result);
+
+            result
         }
     }
 
@@ -79,6 +77,17 @@ impl DelegatedU256 {
         }
     }
 
+    pub(crate) fn write_zero(&mut self) {
+        #[allow(static_mut_refs)]
+        unsafe {
+            let _ = bigint_op_delegation_raw(
+                (self as *mut Self).cast(),
+                ZERO.as_ptr().cast(),
+                BigIntOps::MemCpy,
+            );
+        }
+    }
+
     pub(crate) fn is_zero(&self) -> bool {
         #[allow(static_mut_refs)]
         unsafe {
@@ -112,7 +121,22 @@ impl Clone for DelegatedU256 {
     #[inline(always)]
     fn clone(&self) -> Self {
         // custom clone by using precompile
-        unsafe { Self::copy_from_ptr(self as *const Self) }
+        // NOTE on all uses of such initialization - we do not want to check if compiler will elide stack-to-stack copy
+        // upon the call of `assume_init` in general, but we know that all underlying data will be overwritten and initialized
+        unsafe {
+            // We have to do `uninit().assume_init()` because calling `assume_init()` later may trigger a stack-to-stack copy
+            // And this is safe because there are no references to result, and on risc-v all memory is init by default
+            #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
+            let mut result = MaybeUninit::<Self>::uninit().assume_init();
+            let _ = bigint_op_delegation_raw(
+                (&mut result as *mut Self).cast(),
+                (self as *const Self).cast(),
+                BigIntOps::MemCpy,
+            );
+
+            result
+        }
     }
 
     #[inline(always)]

@@ -16,6 +16,8 @@ use crate::{
 use alloc::alloc::Global;
 use arrayvec::ArrayVec;
 use core::alloc::Allocator;
+use core::ops::AddAssign;
+use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -103,6 +105,7 @@ pub struct UserMsgData<DATA, HASH, ADDRESS> {
 pub struct L1TxLog<HASH> {
     pub tx_hash: HASH,
     pub success: bool,
+    pub is_priority: bool,
 }
 
 /// Log content reference to be returned from the storage
@@ -119,6 +122,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: &l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: &m.address,
@@ -137,6 +141,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: *l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: *m.address,
@@ -215,6 +220,7 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         tx_number: u32,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
@@ -227,7 +233,11 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         self.list.push(
             LogContent {
                 tx_number,
-                data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
+                data: GenericLogContentData::L1TxLog(L1TxLog {
+                    tx_hash,
+                    success,
+                    is_priority,
+                }),
             },
             total_pubdata,
         );
@@ -251,9 +261,8 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
     }
 
     pub fn messages_ref_iter(
-        &'_ self,
-    ) -> impl ExactSizeIterator<Item = GenericLogContentWithTxRef<'_, EthereumIOTypesConfig>> + Clone
-    {
+        &self,
+    ) -> impl Iterator<Item = GenericLogContentWithTxRef<EthereumIOTypesConfig>> {
         self.list.iter().map(|message| message.to_ref())
     }
 
@@ -313,6 +322,25 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
             let log: L2ToL1Log = el.into();
             array_vec.push(log.hash())
         });
+    }
+
+    pub fn apply_l1_txs_to_commitment(
+        &self,
+        mut count: U256,
+        mut rolling_keccak: Bytes32,
+    ) -> (U256, Bytes32) {
+        let mut hasher = Keccak256::new();
+        for log in self.list.iter() {
+            if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                if l1_tx.is_priority {
+                    count.add_assign(U256::ONE);
+                    hasher.update(rolling_keccak.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_keccak = hasher.finalize_reset().into();
+                }
+            }
+        }
+        (count, rolling_keccak)
     }
 
     // we use it for tests to generate single block batches
@@ -440,6 +468,29 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
             EMPTY_HASHES[14].into()
         }
     }
+
+    // we use it for tests to generate single block batches
+    pub fn l1_txs_commitment(&self) -> (u32, Bytes32) {
+        let mut count = 0u32;
+        // keccak256([])
+        let mut rolling_hash = Bytes32::from([
+            0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7,
+            0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04,
+            0x5d, 0x85, 0xa4, 0x70,
+        ]);
+        let mut hasher = Keccak256::new();
+        for log in self.list.iter() {
+            if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                if l1_tx.is_priority {
+                    count += 1;
+                    hasher.update(rolling_hash.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_hash = hasher.finalize_reset().into();
+                }
+            }
+        }
+        (count, rolling_hash)
+    }
 }
 
 impl L2ToL1Log {
@@ -503,7 +554,9 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
+            GenericLogContentData::L1TxLog(L1TxLog {
+                tx_hash, success, ..
+            }) => {
                 let data = if success { U256::from(1) } else { U256::ZERO };
                 (
                     // TODO: move into const

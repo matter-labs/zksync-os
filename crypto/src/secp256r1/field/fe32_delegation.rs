@@ -26,15 +26,13 @@ static R2: BigInt<4> = BigInt::<4>(super::R2);
 pub struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
-    const MODULUS_BITSIZE: usize = 256;
-
-    fn modulus() -> &'static BigInt<4> {
+    unsafe fn modulus() -> &'static BigInt<4> {
         &MODULUS
     }
 }
 
 impl DelegatedMontParams<4> for FieldParams {
-    fn reduction_const() -> &'static BigInt<4> {
+    unsafe fn reduction_const() -> &'static BigInt<4> {
         &REDUCTION_CONST
     }
 }

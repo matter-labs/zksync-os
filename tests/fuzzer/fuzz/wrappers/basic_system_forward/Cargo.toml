@@ -25,7 +25,9 @@ modexp = { path = "../../../../../supporting_crates/modexp" }
 cycle_marker = { path = "../../../../../cycle_marker" }
 num-bigint = { version =  "*", optional = true}
 num-traits = { version =  "*", optional = true}
-cc-traits = { path = "../../../../../basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits" }
+
+cfg-if = "1.0.0"
+const_for = "0.1.5"
 const-hex = { version = "1", default-features = false }
 
 rand = {version = "0.9.0", optional = true}
@@ -54,8 +56,8 @@ num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
-alloy-rpc-types-debug = { version = "2", default-features = false }
-alloy = { version = "2", features = ["rlp", "full"] }
+alloy-rpc-types-debug = { version = "*", default-features = false }
+alloy = { version = "1", features = ["rlp", "full"] }
 alloy-rlp = { version = "*" }
 alloy-primitives = { version = "1", features = ["arbitrary"] }
 reqwest = { version = "*", features = ["blocking", "json"] }

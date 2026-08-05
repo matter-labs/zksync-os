@@ -320,9 +320,7 @@ fn muladd(a: u64, b: u64, c0: u64, c1: u64, c2: u64) -> (u64, u64, u64) {
     let (new_c0, carry0) = c0.overflowing_add(tl);
     let new_th = th.wrapping_add(carry0 as u64); // at most 0xFFFFFFFFFFFFFFFF
     let (new_c1, carry1) = c1.overflowing_add(new_th);
-    let (new_c2, of) = c2.overflowing_add(carry1 as u64);
-
-    debug_assert!(!of);
+    let new_c2 = c2 + (carry1 as u64);
 
     (new_c0, new_c1, new_c2)
 }
@@ -336,8 +334,7 @@ fn muladd_fast(a: u64, b: u64, c0: u64, c1: u64) -> (u64, u64) {
 
     let (new_c0, carry0) = c0.overflowing_add(tl);
     let new_th = th.wrapping_add(carry0 as u64); // at most 0xFFFFFFFFFFFFFFFF
-    let (new_c1, of) = c1.overflowing_add(new_th);
-    debug_assert!(!of);
+    let new_c1 = c1 + new_th;
 
     (new_c0, new_c1)
 }
@@ -345,10 +342,7 @@ fn muladd_fast(a: u64, b: u64, c0: u64, c1: u64) -> (u64, u64) {
 /// Add a to the number defined by (c0,c1). c1 must never overflow.
 fn sumadd_fast(a: u64, c0: u64, c1: u64) -> (u64, u64) {
     let (new_c0, carry0) = c0.overflowing_add(a);
-    let (new_c1, of) = c1.overflowing_add(carry0 as u64);
-
-    debug_assert!(!of);
-
+    let new_c1 = c1 + (carry0 as u64);
     (new_c0, new_c1)
 }
 
@@ -356,10 +350,7 @@ fn sumadd_fast(a: u64, c0: u64, c1: u64) -> (u64, u64) {
 fn sumadd(a: u64, c0: u64, c1: u64, c2: u64) -> (u64, u64, u64) {
     let (new_c0, carry0) = c0.overflowing_add(a);
     let (new_c1, carry1) = c1.overflowing_add(carry0 as u64);
-    let (new_c2, of) = c2.overflowing_add(carry1 as u64);
-
-    debug_assert!(!of);
-
+    let new_c2 = c2 + (carry1 as u64);
     (new_c0, new_c1, new_c2)
 }
 

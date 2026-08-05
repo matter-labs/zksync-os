@@ -18,9 +18,6 @@ entries:
           test_account_storage_warm_cold_state.json:
             hash: '0x9dc22377b814e6872ecafaf7bef6bfae'
             enabled: true
-          test_eip2930_tx_validity.json:
-            hash: '0x74229843a2cdb35269277f0de6e2c07b'
-            enabled: true
           test_repeated_address_acl.json:
             hash: '0xd90322e98276816e8be1e66fb003269c'
             enabled: true
@@ -33,18 +30,6 @@ entries:
   byzantium:
     enabled: true
     entries:
-      eip196_ec_add_mul:
-        enabled: true
-        entries:
-          test_gas_costs.json:
-            hash: '0x5514c8ec4fa1b8cdd1781929332c1439'
-            enabled: true
-      eip197_ec_pairing:
-        enabled: true
-        entries:
-          test_gas_costs.json:
-            hash: '0x080ac90c7030b50927ad52497c625c51'
-            enabled: true
       eip198_modexp_precompile:
         enabled: true
         entries:
@@ -155,7 +140,8 @@ entries:
             hash: '0x299c327903816c2f9424b9b0d14b95d4'
             enabled: true
       eip4844_blobs:
-        enabled: true
+        enabled: false
+        comment: Blobs not supported
         entries:
           test_blob_gas_subtraction_tx.json:
             hash: '0x917b3a5bc4da91e18ff68766e264373a'
@@ -198,8 +184,7 @@ entries:
             enabled: true
           test_correct_decreasing_blob_gas_costs.json:
             hash: '0x883991195729f72e4dd3790a02515765'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_correct_excess_blob_gas_calculation.json:
             hash: '0x641adcd01c5638038524973aecd2dd91'
             enabled: true
@@ -211,12 +196,10 @@ entries:
             enabled: true
           test_fork_transition_excess_blob_gas_at_blob_genesis.json:
             hash: '0xfc6046c23dc85660bb97c5f160b9aee9'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_fork_transition_excess_blob_gas_post_blob_genesis.json:
             hash: '0xb7af67d3f512035de1bbd82a62b2c668'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_insufficient_balance_blob_tx.json:
             hash: '0xcf99e1e772d3b456b850e85a477facf6'
             enabled: true
@@ -225,8 +208,7 @@ entries:
             enabled: true
           test_invalid_blob_gas_used_in_header.json:
             hash: '0xb6dc87d939b9e23bbaee3a609fa4aa17'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_blob_hash_versioning_multiple_txs.json:
             hash: '0xdd66a4acc9c5bd5c563978224533708d'
             enabled: true
@@ -235,34 +217,28 @@ entries:
             enabled: true
           test_invalid_blob_tx_contract_creation.json:
             hash: '0xf93dcadfdd972091d7ee92ecd1b5e82e'
-            comment: rlp encoded block not supported
-            enabled: false
+            enabled: true
           test_invalid_block_blob_count.json:
             hash: '0x83c9a0a8f06fe223f5dd9211d05d9d31'
             enabled: true
           test_invalid_excess_blob_gas_above_target_change.json:
             hash: '0x8c98567ba1965a807d83a19cb26b197f'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_excess_blob_gas_change.json:
             hash: '0x590635bb8796a65df324db98ef5f5641'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_excess_blob_gas_target_blobs_increase_from_zero.json:
             hash: '0xa421414112bc9722955ef7259ed8f655'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_inputs.json:
             hash: '0xcc1ae95061758cac879348ec6e4d0aff'
             enabled: true
           test_invalid_negative_excess_blob_gas.json:
             hash: '0x0100cfc300c42f09eab547e47c46e196'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_non_multiple_excess_blob_gas.json:
             hash: '0xf8f4584012ec44ff72d3243b14f54337'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_normal_gas.json:
             hash: '0xb13fb9189c0069f158227571371ed758'
             enabled: true
@@ -274,12 +250,10 @@ entries:
             enabled: true
           test_invalid_static_excess_blob_gas.json:
             hash: '0x240b222d083da8ff0ca74096f67c0a51'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json:
             hash: '0xe6b15ed86a8dcc73d80603d080380fcc'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_invalid_tx_blob_count.json:
             hash: '0x5dc5ae5d8602d0e0ec6f1c7fbd09dce0'
             enabled: true
@@ -288,8 +262,7 @@ entries:
             enabled: true
           test_invalid_zero_excess_blob_gas_in_header.json:
             hash: '0x7f32dfb37cd9d3dd1907ecee8f2a4680'
-            enabled: false
-            comment: Excess blob gas calculation not supported yet
+            enabled: true
           test_point_evaluation_precompile_gas_usage.json:
             hash: '0xbebf4308432f822da74ded9af67aa6ec'
             enabled: true
@@ -301,8 +274,7 @@ entries:
             enabled: true
           test_reject_valid_full_blob_in_block_rlp.json:
             hash: '0xaa726110c9bc278321d4adfd77e379da'
-            enabled: false
-            comment: rlp encoded block not supported
+            enabled: true
           test_sufficient_balance_blob_tx.json:
             hash: '0x92a9d897edd444f7b6a8f6c608878bd5'
             enabled: true
@@ -388,7 +360,8 @@ entries:
             hash: '0x0947c5e6be9089809ea1e71833447246'
             enabled: true
       eip7516_blobgasfee:
-        enabled: true
+        enabled: false
+        comment: Blobs not supported
         entries:
           test_blobbasefee_before_fork.json:
             hash: '0x99ed818342ebf53335f743d570757cee'
@@ -426,9 +399,6 @@ entries:
       create:
         enabled: true
         entries:
-          test_create_deposit_oog.json:
-            hash: '0xe96ffacb011b1a1e06e06b0bdc13018c'
-            enabled: true
           test_create_one_byte.json:
             hash: '0x1dcf469b790d1afcfa4ad734d725b4f6'
             enabled: true
@@ -480,9 +450,6 @@ entries:
           test_calldatasize.json:
             hash: '0xc27db8098d75977e693098dd46c153d8'
             enabled: true
-          test_constant_gas.json:
-            hash: '0xc7ff3ef62afb0a175decf3ac6dcb4e1c'
-            enabled: true
           test_cover_revert.json:
             hash: '0x096c5544dbc15eca84c0eca10c8f5c19'
             enabled: true
@@ -491,9 +458,6 @@ entries:
             enabled: true
           test_dup.json:
             hash: '0x8b191319c8547e7c660ce5fc2a273495'
-            enabled: true
-          test_gas.json:
-            hash: '0x4c458e1c754a6007800aa1b1709b0f11'
             enabled: true
           test_genesis_hash_available.json:
             hash: '0x36ca17d536f49b03366d082b9451aad4'
@@ -513,12 +477,6 @@ entries:
           test_value_transfer_gas_calculation.json:
             hash: '0x69ef53f5b661a2b880798028f4e291c3'
             enabled: true
-          test_value_transfer_gas_calculation_byzantium.json:
-            hash: '0x453b68bafc32219a879ebae36a6dfb6c'
-            enabled: true
-          test_value_transfer_gas_calculation_homestead.json:
-            hash: '0x5c1d528b4681256797beded4cafe3e0e'
-            enabled: true
       precompiles:
         enabled: true
         entries:
@@ -534,28 +492,6 @@ entries:
         entries:
           test_scenarios.json:
             hash: '0xd1c741261675dbb37affd520f8695f5a'
-            enabled: true
-      touch:
-        enabled: true
-        entries:
-          test_zero_gas_price_and_touching.json:
-            hash: '0xb39ba5001e25f3d66ab9acb49bbbe0cb'
-            enabled: true
-      validation:
-        enabled: true
-        entries:
-          test_gas_limit_below_minimum.json:
-            hash: '0x11d73f6f85046ffe62c71192f6551abe'
-            enabled: false
-            comment: 'TODO: we do not enforce this limitation'
-          test_sender_balance.json:
-            hash: '0xdd28119d81e8477ef1efaa75c7245a64'
-            enabled: true
-          test_tx_gas_limit.json:
-            hash: '0xb6471720464e62fad29452844b629c0b'
-            enabled: true
-          test_tx_nonce.json:
-            hash: '0x5839713245c43a8b600fd80f2e778505'
             enabled: true
   homestead:
     enabled: true
@@ -606,22 +542,6 @@ entries:
           test_blake2b_large_gas_limit.json:
             hash: '0x1287545630bc5b0d411af58d0af49e98'
             enabled: true
-  london:
-    enabled: true
-    entries:
-      eip1559_fee_market_change:
-        enabled: true
-        entries:
-          test_eip1559_tx_validity.json:
-            hash: '0x333a3d91a1ba2ba980f6a2932b9e902a'
-            enabled: true
-      validation:
-        enabled: true
-        entries:
-          test_invalid_header.json:
-            hash: '0x077fe68c11e119778e95cb63ef3aaaba'
-            enabled: false
-            comment: 'TODO: we do not enforce this limitation'
   osaka:
     enabled: true
     entries:
@@ -672,12 +592,12 @@ entries:
         entries:
           test_init_collision_create_opcode.json:
             hash: '0xe8c4801222670b71997ea3ffd1d9ec73'
+            comment: "We do not check the storage"
             enabled: false
-            comment: We do not check the storage
           test_init_collision_create_tx.json:
             hash: '0x07a9903200c668dd3fa8d2fcdadecc19'
+            comment: "We do not check the storage"
             enabled: false
-            comment: We do not check the storage
       security:
         enabled: true
         entries:
@@ -1212,9 +1132,6 @@ entries:
             enabled: true
           test_use_value_in_tx.json:
             hash: '0x64ac61077041f2c51dc29fa9c5ba60ce'
-            enabled: true
-          test_withdrawals_root.json:
-            hash: '0xbd4d7934ce30cc9ed528f96bfee66704'
             enabled: true
           test_withdrawing_to_precompiles.json:
             hash: '0x3a865963822c25586297c70e0eadd9fb'
@@ -3034,6 +2951,9 @@ entries:
               transactionIntinsicBug_Paris.json:
                 hash: '0x3def72fcb3aa24538874ee8682191ead'
                 enabled: true
+              typeTwoBerlin.json:
+                hash: '0xea913e0c1dad3d9acd435b6179c11646'
+                enabled: true
               valCausesOOF.json:
                 hash: '0xc92c71e47fd4e07ff380b8a21bfbb1b6'
                 enabled: true
@@ -3109,6 +3029,9 @@ entries:
           stExample:
             enabled: true
             entries:
+              accessListExample.json:
+                hash: '0x935299ef9992eab22b0d74e18073d0cf'
+                enabled: true
               add11.json:
                 hash: '0xc0098f7d54c65b09aab501b865a6d81a'
                 enabled: true
@@ -4085,6 +4008,9 @@ entries:
                 enabled: true
               CallEcrecover_Overflow.json:
                 hash: '0x1213ded1494f9262ab91a3369e55ccfe'
+                enabled: true
+              CallRipemd160_0.json:
+                hash: '0x5201999f0cd99dcb4c078f1e35efe452'
                 enabled: true
               CallRipemd160_1.json:
                 hash: '0xd4dac14d14c8c6f2c1b550fa9649a684'
@@ -6427,8 +6353,7 @@ entries:
                 enabled: true
               failed_tx_xcf416c53_Paris.json:
                 hash: '0x96077594554f785549c6d28eb84b5736'
-                enabled: false
-                comment: "We currently support a mix set of precompiles"
+                enabled: true
               gasPrice0.json:
                 hash: '0x5e4fdda15b8486a511da5fb474b16672'
                 enabled: true

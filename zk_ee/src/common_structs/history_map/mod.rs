@@ -9,22 +9,12 @@ use crate::{system::errors::internal::InternalError, utils::stack_linked_list::S
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, ops::Bound};
-pub(crate) use element_pool::ElementPool;
+use element_pool::ElementPool;
 use element_with_history::ElementWithHistory;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct NopSnapshotId;
-
-impl NopSnapshotId {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct CacheSnapshotId(pub(crate) usize);
+pub struct CacheSnapshotId(usize);
 
 impl CacheSnapshotId {
     pub fn new() -> Self {
@@ -40,9 +30,9 @@ impl CacheSnapshotId {
 ///
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
-pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
+pub struct HistoryMap<K, V, A: Allocator + Clone> {
     /// Map from key to history of an element
-    btree: BTreeMap<K, ElementWithHistory<V, A, KP>, A>,
+    btree: BTreeMap<K, ElementWithHistory<V, A>, A>,
     state: HistoryMapState<K, A>,
     /// Manages memory allocations for history records, reuses old allocations for optimization
     records_memory_pool: ElementPool<V, A>,
@@ -57,7 +47,7 @@ struct HistoryMapState<K, A: Allocator + Clone> {
     alloc: A,
 }
 
-impl<K, V, A, KP> HistoryMap<K, V, A, KP>
+impl<K, V, A> HistoryMap<K, V, A>
 where
     K: Ord + Clone + Debug,
     A: Allocator + Clone,
@@ -76,27 +66,15 @@ where
         }
     }
 
-    /// Clears the map while reusing history record allocations.
-    pub fn clear(&mut self) {
-        for (_, element) in self.btree.iter_mut() {
-            self.records_memory_pool
-                .reuse_memory(element.head, element.initial);
-        }
-        self.btree.clear();
-        self.state.next_snapshot_id = CacheSnapshotId(1);
-        self.state.frozen_snapshot_id = CacheSnapshotId(0);
-        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
-    }
-
     /// Get history of an element by key
-    pub fn get<'s>(&'s self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A, KP>> {
+    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
         self.btree
             .get(key)
             .map(|ec| HistoryMapItemRef { key, history: ec })
     }
 
     /// Get history of an element by key, mutable
-    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A, KP>> {
+    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
         self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
             key,
             history: ec,
@@ -109,18 +87,18 @@ where
     pub fn get_or_insert<'s, E>(
         &'s mut self,
         key: &'s K,
-        spawn_v: impl FnOnce() -> Result<(V, KP), E>,
-    ) -> Result<HistoryMapItemRefMut<'s, K, V, A, KP>, E> {
+        spawn_v: impl FnOnce() -> Result<V, E>,
+    ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
         let entry = self.btree.entry(key.clone());
 
         let v = match entry {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(vacant_entry) => {
-                let (v, properties) = spawn_v()?;
+                let v = spawn_v()?;
                 vacant_entry.insert(ElementWithHistory::new(
-                    properties,
                     v,
                     &mut self.records_memory_pool,
+                    self.state.alloc.clone(),
                 ))
             }
         };
@@ -224,7 +202,7 @@ where
         mut do_fn: F,
     ) -> Result<(), InternalError>
     where
-        F: FnMut(HistoryMapItemRefMut<K, V, A, KP>) -> Result<(), InternalError>,
+        F: FnMut(HistoryMapItemRefMut<K, V, A>) -> Result<(), InternalError>,
     {
         for (k, v) in self.btree.range_mut(range) {
             do_fn(HistoryMapItemRefMut {
@@ -239,9 +217,7 @@ where
     }
 
     /// Iterate over all elements in map
-    pub fn iter(
-        &'_ self,
-    ) -> impl ExactSizeIterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> + Clone {
+    pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> + Clone {
         self.btree
             .iter()
             .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
@@ -249,8 +225,8 @@ where
 
     /// Iterate over all elements that changed since last commit
     pub fn iter_altered_since_commit(
-        &'_ self,
-    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> {
+        &self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> {
         self.state
             .pending_updated_elements
             .iter()
@@ -269,18 +245,10 @@ where
         mut do_fn: F,
     ) -> Result<(), InternalError>
     where
-        F: FnMut(
-            &K,
-            (&HistoryRecord<V>, &mut HistoryRecord<V>),
-            &mut KP,
-        ) -> Result<(), InternalError>,
+        F: FnMut(&K, &mut HistoryRecord<V>) -> Result<(), InternalError>,
     {
         for (k, _v) in self.state.pending_updated_elements.iter() {
-            let record = self.btree.get_mut(&k).unwrap();
-            let initial = unsafe { record.initial.as_ref() };
-            let current = unsafe { record.head.as_mut() };
-            let cache_appearance = &mut record.element_properties;
-            do_fn(k, (initial, current), cache_appearance)?
+            do_fn(k, unsafe { self.btree.get_mut(&k).unwrap().head.as_mut() })?
         }
 
         Ok(())
@@ -288,29 +256,25 @@ where
 }
 
 /// External reference to element's history
-pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone, KP = ()> {
+pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone> {
     key: &'a K,
-    history: &'a ElementWithHistory<V, A, KP>,
+    history: &'a ElementWithHistory<V, A>,
 }
 
-impl<'a, K, V, A, KP> HistoryMapItemRef<'a, K, V, A, KP>
+impl<'a, K, V, A> HistoryMapItemRef<'a, K, V, A>
 where
     K: Clone,
     A: Allocator + Clone,
 {
     pub fn key(&self) -> &'a K {
-        self.key
+        &self.key
     }
 
-    pub fn key_properties(&self) -> &KP {
-        &self.history.element_properties
-    }
-
-    pub fn current(&self) -> &'a V {
+    pub fn current(&self) -> &V {
         unsafe { &self.history.head.as_ref().value }
     }
 
-    pub fn initial(&self) -> &'a V {
+    pub fn initial(&self) -> &V {
         unsafe { &self.history.initial.as_ref().value }
     }
 
@@ -319,20 +283,20 @@ where
     }
 
     /// Returns (initial_value, current_value) if any
-    pub fn get_initial_and_last_values(&self) -> Option<(&'a V, &'a V)> {
+    pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
         self.history.get_initial_and_last_values()
     }
 }
 
 /// External mutable reference to element's history
-pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone, KP = ()> {
-    history: &'a mut ElementWithHistory<V, A, KP>,
+pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone> {
+    history: &'a mut ElementWithHistory<V, A>,
     cache_state: &'a mut HistoryMapState<K, A>,
     records_memory_pool: &'a mut ElementPool<V, A>,
     key: &'a K,
 }
 
-impl<'a, K, V, A, KP> HistoryMapItemRefMut<'a, K, V, A, KP>
+impl<'a, K, V, A> HistoryMapItemRefMut<'a, K, V, A>
 where
     K: Clone + Debug,
     V: Clone,
@@ -348,14 +312,6 @@ where
 
     pub fn committed(&self) -> &V {
         unsafe { &self.history.committed.as_ref().value }
-    }
-
-    pub fn element_properties(&self) -> &KP {
-        &self.history.element_properties
-    }
-
-    pub fn element_properties_mut(&mut self) -> &mut KP {
-        &mut self.history.element_properties
     }
 
     #[allow(dead_code)]
@@ -409,7 +365,7 @@ mod tests {
     fn miri_retrieve_single_elem() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        let v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         assert_eq!(1, *v.current());
     }
@@ -420,7 +376,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -440,7 +396,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -464,7 +420,7 @@ mod tests {
 
         map.snapshot();
 
-        map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         map.commit();
 
@@ -480,7 +436,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -506,7 +462,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -516,7 +472,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 3;
@@ -542,7 +498,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -552,7 +508,7 @@ mod tests {
 
         let ss = map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 3;
@@ -580,7 +536,7 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -591,7 +547,7 @@ mod tests {
         // We'll rollback to this point.
         let ss = map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
         // This snapshot will be rolled back.
         v.update::<_, ()>(|x| {
@@ -605,7 +561,7 @@ mod tests {
 
         map.rollback(ss).expect("Correct snapshot");
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
+        let mut v = map.get_or_insert::<()>(&1, || Ok(5)).unwrap();
 
         // This will create a new snapshot and will reuse the one that rolled back.
         v.update::<_, ()>(|x| {
@@ -622,75 +578,5 @@ mod tests {
             Ok(())
         })
         .unwrap();
-    }
-
-    #[test]
-    fn clear_removes_elements_and_pending_changes() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
-
-        map.snapshot();
-
-        // Create one modified entry.
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
-        v.update::<_, ()>(|x| {
-            *x = 2;
-            Ok(())
-        })
-        .unwrap();
-
-        assert_eq!(map.iter().len(), 1);
-        assert_eq!(map.iter_altered_since_commit().count(), 1);
-
-        // Drop all state.
-        map.clear();
-
-        assert!(map.get(&1).is_none());
-        assert_eq!(map.iter().len(), 0);
-        assert_eq!(map.iter_altered_since_commit().count(), 0);
-        map.apply_to_all_updated_elements::<_, ()>(|_, _, _| {
-            panic!("Map is expected to be empty after clear")
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn clear_resets_snapshots() {
-        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
-
-        // Keep a pre-clear snapshot handle.
-        let pre_clear_snapshot = map.snapshot();
-
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
-        v.update::<_, ()>(|x| {
-            *x = 2;
-            Ok(())
-        })
-        .unwrap();
-
-        map.clear();
-
-        // Old snapshot ids are no longer valid.
-        assert!(map.rollback(pre_clear_snapshot).is_err());
-
-        // Materialize key after clear with initial value.
-        map.get_or_insert::<()>(&1, || Ok((3, ()))).unwrap();
-
-        // Take snapshot after clear.
-        let post_clear_snapshot = map.snapshot();
-        assert_eq!(post_clear_snapshot, super::CacheSnapshotId(1));
-
-        let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
-        v.update::<_, ()>(|x| {
-            *x = 4;
-            Ok(())
-        })
-        .unwrap();
-
-        // Rollback restores the post-clear initial value for this key.
-        map.rollback(post_clear_snapshot).expect("Valid snapshot");
-        let restored = map.get(&1).expect("Element must remain after rollback");
-
-        assert_eq!(*restored.initial(), 3);
-        assert_eq!(*restored.current(), 3);
     }
 }

@@ -17,13 +17,14 @@ use evm_interpreter::{opcodes::OpCode, ERGS_PER_GAS};
 use ruint::aliases::U256;
 use zk_ee::{
     system::{
-        evm::{EvmError, EvmFrameInterface, EvmStackInterface},
+        evm::{EvmFrameInterface, EvmStackInterface},
         tracer::{evm_tracer::EvmTracer, Tracer},
         CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources, SystemTypes,
     },
     types_config::SystemIOTypesConfig,
     utils::Bytes32,
 };
+use zksync_os_evm_errors::EvmError;
 
 #[derive(Default, Debug)]
 #[allow(dead_code)]
@@ -321,9 +322,11 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
             // Something terrible happened (fatal error)
         }
 
-        // Note: pending_call_opcodes entry may exist here for pseudo-frames
-        // (pre-check failures in before_reading_callee). We intentionally leave it
-        // for the parent frame's next before_evm_interpreter_execution_step to consume.
+        if let Some((_, _)) = self.pending_call_opcodes.remove(&self.current_call_depth) {
+            // Looks like call frame finished immediately after call-like opcode
+            // Should not happen since even out-of-bounds execution is interpreted as STOP opcode
+            unreachable!();
+        }
 
         self.current_call_depth -= 1;
 

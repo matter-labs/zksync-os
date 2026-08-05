@@ -17,14 +17,18 @@ evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
-ruint = { workspace = true, default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
-cfg-if = { workspace = true }
-talc = { version = "4.4.3", default-features = false, features = ["allocator", "nightly_api"]}
+arrayvec = { version = "0.7.4", default-features = false }
+cfg-if = "*"
+cc-traits = { version = "*", default-features = false }
+seq-macro = { version = "*", default-features = false }
+talc = { version = "*", default-features = false, features = ["allocator", "nightly_api"]}
+lock_api = "0.4.11"
 # talc = { path = "../../talc", default-features = false, features = ["allocator", "nightly_api"]}
 
 [dev-dependencies]
-hex = { workspace = true }
+hex = "*"
 fastrand = "2.0.2"
 
 [features]
@@ -34,11 +38,12 @@ proving = ["crypto/proving", "basic_system/proving"]
 scalloc = []
 cycle_marker = ["zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 unlimited_native = ["basic_bootloader/unlimited_native"]
-benchmarking = ["cycle_marker", "unlimited_native"]
-global-alloc = ["zk_ee/global-alloc"]
+benchmarking = ["cycle_marker"]
+global-alloc = []
 error_origins = ["zk_ee/error_origins"]
-multiblock-batch = []
-state-diffs-pi = []
+multiblock-batch = ["basic_system/multiblock-batch"]
+state-diffs-pi = ["basic_system/state-diffs-pi"]
+aggregation = ["basic_system/aggregation"]
 
 # A feature for every specific use case
 
@@ -46,13 +51,11 @@ state-diffs-pi = []
 production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
 
 # Features used for tests.
-for_tests = ["production", "state-diffs-pi", "cycle_marker", "basic_bootloader/eip-4844"]
+for_tests = ["production", "state-diffs-pi", "cycle_marker", "system_hooks/point_eval_precompile"]
 
 # Features used for eth_runner
-eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "unlimited_native", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
-
-# Additional features used for eth_stf in eth_runner
-eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip_7623", "evm_interpreter/eip-2537", "evm_interpreter/eip-152"]
+eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "unlimited_native", "basic_bootloader/burn_base_fee"]
 
 # Features used for evm_tester
-evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
+evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/eip-7702", "system_hooks/p256_precompile","system_hooks/point_eval_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]
+

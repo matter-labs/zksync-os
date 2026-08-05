@@ -108,6 +108,29 @@ pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
 // Used as deployment_status for accounts with code delegation (EIP-7702)
 pub const DEFAULT_DELEGATED_VERSION: u8 = 2;
 
+#[derive(Default, Clone)]
+pub struct AccountPropertiesMetadata {
+    /// None if the account hasn't been deployed in the current block.
+    pub deployed_in_tx: Option<u32>,
+    /// Transaction where this account was last accessed.
+    /// Considered warm if equal to Some(current_tx)
+    pub last_touched_in_tx: Option<u32>,
+    /// Special flag that allows avoiding publishing bytecode for deployed account.
+    /// In practice, it can be set to `true` only during special protocol upgrade txs.
+    /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
+    pub not_publish_bytecode: bool,
+    /// Special flag to not compress balance diff for pubdata size estimation.
+    /// It's used to have a conservative approximation of pubdata in simulation,
+    /// when due to the gas price being set to 0 there might not be a diff.
+    pub not_compress_balance: bool,
+}
+
+impl AccountPropertiesMetadata {
+    pub fn considered_warm(&self, current_tx_number: u32) -> bool {
+        self.last_touched_in_tx == Some(current_tx_number)
+    }
+}
+
 ///
 /// Encoding layout:
 /// versioningData:               u64, BE @ [0..8] (see above)
@@ -250,23 +273,20 @@ impl AccountProperties {
                 1u32 // metadata byte
                     + 8 // versioning data
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
-                    +
-                    ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
                     + 4 // unpadded code len
                     + 4 // artifacts len
                     + r#final.full_bytecode_len() // bytecode
                     + 4 // observable bytecode len
             })
         } else {
-            let has_balance_diff = initial.balance != r#final.balance || not_compress_balance;
-            let has_nonce_diff = initial.nonce != r#final.nonce;
-            if !has_nonce_diff && !has_balance_diff {
+            if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
                 return Err(internal_error!(
                     "Account properties diff compression shouldn't be called for same values",
                 ));
             }
             let mut length = 1u32; // metadata byte
-            if has_nonce_diff {
+            if initial.nonce != r#final.nonce {
                 length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
                     initial
                         .nonce
@@ -278,7 +298,7 @@ impl AccountProperties {
                         .map_err(|_| internal_error!("u64 into U256"))?,
                 ) as u32; // nonce diff
             }
-            if has_balance_diff {
+            if initial.balance != r#final.balance || not_compress_balance {
                 length += ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(
                     initial.balance,
                     r#final.balance,

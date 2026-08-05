@@ -5,21 +5,16 @@ use alloc::boxed::Box;
 /// This struct enables returning `UsizeSerializable` iterators as boxed trait objects
 /// while maintaining ownership of the underlying data. It uses unsafe lifetime extension
 /// to create stable references for iterator construction, then manages cleanup automatically.
-pub struct DynUsizeIterator<
-    I: 'static + Send + Sync,
-    IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync,
-> {
+pub struct DynUsizeIterator<I: 'static, IT: ExactSizeIterator<Item = usize> + 'static> {
     item: I,
     iterator: Option<IT>,
 }
 
-impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync>
-    DynUsizeIterator<I, IT>
-{
+impl<I: 'static, IT: ExactSizeIterator<Item = usize> + 'static> DynUsizeIterator<I, IT> {
     pub fn from_constructor<FN: FnOnce(&'static I) -> IT>(
         item: I,
         closure: FN,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
         // TODO: eventually we will get in-place constructors
         unsafe {
             let mut item = Box::new(Self {
@@ -31,12 +26,12 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
             let iterator = (closure)(static_ref);
             item.as_mut().iterator = Some(iterator);
 
-            item as Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>
+            item as Box<dyn ExactSizeIterator<Item = usize> + 'static>
         }
     }
 }
 
-impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync> Iterator
+impl<I: 'static, IT: ExactSizeIterator<Item = usize> + 'static> Iterator
     for DynUsizeIterator<I, IT>
 {
     type Item = usize;
@@ -62,17 +57,15 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
     }
 }
 
-impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync>
-    ExactSizeIterator for DynUsizeIterator<I, IT>
+impl<I: 'static, IT: ExactSizeIterator<Item = usize> + 'static> ExactSizeIterator
+    for DynUsizeIterator<I, IT>
 {
     fn len(&self) -> usize {
         self.iterator.as_ref().map(|it| it.len()).unwrap_or(0)
     }
 }
 
-impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync> Drop
-    for DynUsizeIterator<I, IT>
-{
+impl<I: 'static, IT: ExactSizeIterator<Item = usize> + 'static> Drop for DynUsizeIterator<I, IT> {
     fn drop(&mut self) {
         // we do not move, so iterating is ok
         drop(self.iterator.take());

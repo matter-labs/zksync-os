@@ -1,55 +1,36 @@
 use ruint::aliases::B160;
 
 // EVM precompiles addresses
+pub const ECRECOVER_HOOK_ADDRESS_LOW: u16 = 0x0001;
+pub const SHA256_HOOK_ADDRESS_LOW: u16 = 0x0002;
+pub const RIPEMD160_HOOK_ADDRESS_LOW: u16 = 0x0003;
+pub const ID_HOOK_ADDRESS_LOW: u16 = 0x0004;
+pub const MODEXP_HOOK_ADDRESS_LOW: u16 = 0x0005;
+pub const ECADD_HOOK_ADDRESS_LOW: u16 = 0x0006;
+pub const ECMUL_HOOK_ADDRESS_LOW: u16 = 0x0007;
+pub const ECPAIRING_HOOK_ADDRESS_LOW: u16 = 0x0008;
+#[cfg(feature = "mock-unsupported-precompiles")]
+pub const BLAKE2F_HOOK_ADDRESS_LOW: u16 = 0x0009;
+#[cfg(any(
+    feature = "point_eval_precompile",
+    feature = "mock-unsupported-precompiles"
+))]
+pub const POINT_EVAL_HOOK_ADDRESS_LOW: u16 = 0x000a;
+#[cfg(feature = "p256_precompile")]
+pub const P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW: u16 = 0x0100;
 
-// Contract Deployer system contract
+// Contract Deployer system hook (contract) needed for all envs (force deploy)
 pub const CONTRACT_DEPLOYER_ADDRESS_LOW: u16 = 0x8006;
 pub const CONTRACT_DEPLOYER_ADDRESS: B160 =
     B160::from_limbs([CONTRACT_DEPLOYER_ADDRESS_LOW as u64, 0, 0]);
 
-// L1 messenger system contract needed for all envs
+// l2 to l1 messenger system hook(contact) needed for all envs
 pub const L1_MESSENGER_ADDRESS_LOW: u16 = 0x8008;
 pub const L1_MESSENGER_ADDRESS: B160 = B160::from_limbs([L1_MESSENGER_ADDRESS_LOW as u64, 0, 0]);
 
-// L1 messenger system hook needed for all envs
-pub const L1_MESSENGER_ADDRESS_HOOK_LOW: u16 = 0x7001;
-pub const L1_MESSENGER_ADDRESS_HOOK: B160 =
-    B160::from_limbs([L1_MESSENGER_ADDRESS_HOOK_LOW as u64, 0, 0]);
-
-// system hook to set bytecode on address, needed for protocol upgrades
-pub const SET_BYTECODE_ON_ADDRESS_HOOK_LOW: u16 = 0x7002;
-pub const SET_BYTECODE_ON_ADDRESS_HOOK: B160 =
-    B160::from_limbs([SET_BYTECODE_ON_ADDRESS_HOOK_LOW as u64, 0, 0]);
-
-// L2 base token system contract
+// l2 base token system hook (contract) needed for all envs (base token withdrawals)
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
-
-// Base token mint system hook - allows L2 base token contract to mint tokens
-// Only callable by L2_BASE_TOKEN_ADDRESS (0x800a) with 32-byte calldata containing mint amount
-pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
-pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
-
-// L2 message root storage contract
-pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
-
-// L2 interop root storage system contract
-pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
-pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =
-    B160::from_limbs([L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW as u64, 0, 0]);
-
-// L2 interop center system contract
-pub const L2_INTEROP_CENTER_ADDRESS_LOW: u32 = 0x1000d;
-pub const L2_INTEROP_CENTER_ADDRESS: B160 =
-    B160::from_limbs([L2_INTEROP_CENTER_ADDRESS_LOW as u64, 0, 0]);
-
-// L2 asset tracker contract
-pub const L2_ASSET_TRACKER_ADDRESS: B160 = B160::from_limbs([0x1000f, 0, 0]);
-
-// Treasury contract used for "minting" base tokens on L2
-pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
-pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
-    B160::from_limbs([BASE_TOKEN_HOLDER_ADDRESS_LOW as u64, 0, 0]);
 
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE
@@ -60,10 +41,7 @@ pub const IMMUTABLE_SIMULATOR_ADDRESS: B160 = B160::from_limbs([0x8005, 0, 0]);
 pub const FORCE_DEPLOYER_ADDRESS: B160 = B160::from_limbs([0x8007, 0, 0]);
 pub const MSG_VALUE_SIMULATOR_ADDRESS: B160 = B160::from_limbs([0x8009, 0, 0]);
 pub const BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([0x800a, 0, 0]);
-
-pub const SYSTEM_CONTEXT_ADDRESS_LOW: u32 = 0x800b;
-pub const SYSTEM_CONTEXT_ADDRESS: B160 =
-    B160::from_limbs([SYSTEM_CONTEXT_ADDRESS_LOW as u64, 0, 0]);
+pub const SYSTEM_CONTEXT_ADDRESS: B160 = B160::from_limbs([0x800b, 0, 0]);
 // TODO: bootloader utilities is no longer needed
 pub const BOOTLOADER_UTILITIES_ADDRESS: B160 = B160::from_limbs([0x800c, 0, 0]);
 pub const EVENT_WRITER_ADDRESS: B160 = B160::from_limbs([0x800d, 0, 0]);

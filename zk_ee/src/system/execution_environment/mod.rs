@@ -19,7 +19,6 @@ use super::system::System;
 use super::system::SystemTypes;
 use super::tracer::Tracer;
 use super::IOSubsystemExt;
-use crate::common_structs::system_hooks::HooksStorage;
 use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
@@ -52,18 +51,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
     ///
-    /// Pre-checks to be performed before reading and warming up the callee.
-    ///
-    fn before_reading_callee<'a, 'i: 'ee, 'h: 'ee>(
-        system: &mut System<S>,
-        call_request: &mut ExternalCallRequest<S>,
-        callstack_depth: usize,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<bool, Self::SubsystemError>
-    where
-        S::IO: IOSubsystemExt;
-
-    ///
     /// Pre-checks and operations that should not be rolled back if actual frame execution fails.
     ///
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
@@ -81,7 +68,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
-        hooks: &mut HooksStorage<S, S::Allocator>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
@@ -106,7 +92,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
-        hooks: &mut HooksStorage<S, S::Allocator>,
         returned_resources: S::Resources,
         call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,

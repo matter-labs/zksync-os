@@ -3,7 +3,6 @@
 This directory contains documentation of ZKsync OS:
 
 - [Overview](./overview.md)
-- [Repository structure](./repository_structure.md)
 - [Running tests](./running_tests.md)
 - [System hooks](./system_hooks.md)
 - [Data Availability Commitment Schemes](./da_commitment_schemes.md)
@@ -12,4 +11,4 @@ This directory contains documentation of ZKsync OS:
 - [Bootloader](./bootloader/)
 - [Execution environments](./execution_environments/)
 - [System](./system/)
-- [Proving Ethereum (legacy / outdated)](./proving_ethereum.md)
+- [Proving Ethereum](./proving_ethereum.md)

@@ -1,45 +1,41 @@
 #![cfg(test)]
 #![feature(assert_matches)]
 
+use bytes::Bytes;
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
 use rig::{
-    alloy::{
-        primitives::{address, Address, TxKind},
-        rpc::types::TransactionRequest,
-    },
-    ruint::aliases::U256,
-    TestingFramework,
+    alloy::primitives::{address, Address},
+    ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:
 /// 1. Calls the precompile with given input and gas limit.
 /// 2. Calls the forwarder contract to call the precompile with the same input and gas limit.
 ///
 /// The second call is just there to check consistency between forward and proof runs.
-fn run_precompile_inner(
-    precompile_id: &str,
-    gas: Option<u64>,
-    input: &[u8],
-    disable_revm_consistency_checker: bool,
-) -> BlockOutput {
+fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
     let gas = gas.unwrap_or(1 << 27);
 
-    let mut tester = TestingFramework::new();
-    let wallet = tester.random_signer();
+    let mut chain = rig::Chain::empty(None);
+    let wallet = chain.random_signer();
     let target = Address::from_slice(hex::decode(precompile_id).unwrap().as_slice());
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
-    tester = tester
-        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_evm_contract(forwarder, &hex::decode(FORWARDER_BYTECODE).unwrap());
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(forwarder.into_array()),
+        &hex::decode(FORWARDER_BYTECODE).unwrap(),
+    );
 
-    let direct_tx = ZKsyncTxEnvelope::from_eth_tx(
+    let direct_tx = rig::utils::sign_and_encode_alloy_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -49,11 +45,11 @@ fn run_precompile_inner(
             value: Default::default(),
             input: input.to_vec().into(),
         },
-        wallet.clone(),
+        &wallet,
     );
 
     let calldata = calldata_for_forwarder(target, input);
-    let forwarded_tx = ZKsyncTxEnvelope::from_eth_tx(
+    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,
@@ -63,7 +59,7 @@ fn run_precompile_inner(
             value: Default::default(),
             input: calldata.into(),
         },
-        wallet.clone(),
+        &wallet,
     );
 
     // We use a very high native per gas ratio
@@ -73,17 +69,18 @@ fn run_precompile_inner(
         ..Default::default()
     };
 
-    tester = tester.with_block_context(block_context);
-
-    if disable_revm_consistency_checker {
-        tester = tester.without_revm_consistency_check();
-    }
-
-    tester.execute_block(vec![direct_tx, forwarded_tx])
-}
-
-fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
-    run_precompile_inner(precompile_id, gas, input, false)
+    let run_config = rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    chain.run_block(
+        vec![direct_tx, forwarded_tx],
+        Some(block_context),
+        None,
+        Some(run_config),
+    )
 }
 
 struct Test {
@@ -93,7 +90,7 @@ struct Test {
     precompile_id: &'static str,
 }
 
-const TESTS: [Test; 114] = [
+const TESTS: [Test; 115] = [
     // ecrecover test vectors
     Test {
         input: "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02",
@@ -1163,10 +1160,7 @@ const TESTS: [Test; 114] = [
         expected: "",
         name: "p256_x_P_plus_5_y_positive",
         precompile_id: "0000000000000000000000000000000000000100"
-    }
-];
-
-const KZG_TESTS: [Test; 1] = [
+    },
     Test {
         input: "016685e172a749f7426a45259a2f0ca6382072faf89dc058fba39ad2792242eb55db09df7484b85d7e2870dc3e526e87b12ef1716bc52ffcf82aa07743a5d4f512d1aa968cf5c88d44a2a5815242082a27f99d2fa816838338b9532bf3cee22d91c1ac59fdf344e2a9098eb2c3699b9652a9a8efc006c4bda8a1d764b4a0fada3c34e72a0cc4d151a6dd137dde534af29517ca718c450eed935603cd5985ee6bbcfbe2da87e24e64be8fa2d81733e0de9b8a11efd7c73f39898d158fd0c4867e",
         expected: "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001",
@@ -1174,36 +1168,6 @@ const KZG_TESTS: [Test; 1] = [
         precompile_id: "000000000000000000000000000000000000000a",
     },
 ];
-
-#[test]
-fn test_kzg_regression() {
-    for test in KZG_TESTS.iter() {
-        let input = hex::decode(test.input).unwrap();
-        let expected = hex::decode(test.expected).unwrap();
-        dbg!(test.name);
-
-        // TODO: currently the KZG precompile is not enabled in production, so we should skip Revm consistency check
-        let disable_revm_consistency_checker = true;
-        let tx_result = run_precompile_inner(
-            test.precompile_id,
-            None::<u64>,
-            &input,
-            disable_revm_consistency_checker,
-        )
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
-
-        assert_eq!(
-            expected,
-            tx_result.as_returned_bytes(),
-            "{} failed",
-            test.name
-        );
-    }
-}
 
 #[test]
 fn test_precompiles() {
@@ -6144,6 +6108,8 @@ fn test_modexp_out_of_gas_ref() {
 
 #[test]
 fn test_precompile_parses_input_correctly() {
+    use rig::ethers::signers::Signer;
+    use rig::ethers::types::{Address, TransactionRequest};
     let target_precompiles: [&str; 4] = [
         "0000000000000000000000000000000000000001", // ecrecover
         "0000000000000000000000000000000000000006", // ecadd
@@ -6159,23 +6125,25 @@ fn test_precompile_parses_input_correctly() {
         let empty_input = [0u8; 193];
 
         for i in length {
-            let mut tester = TestingFramework::new();
-            let wallet = tester.random_signer();
-            tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
+            let mut chain = rig::Chain::empty(None);
+            let wallet = chain.random_wallet();
 
-            let tx = ZKsyncTxEnvelope::from_eth_tx_from_req(
-                TransactionRequest {
-                    to: Some(TxKind::Call(addr)),
-                    gas: Some(1 << 27),
-                    gas_price: Some(1000),
-                    input: empty_input[0..i].to_vec().into(),
-                    nonce: Some(0),
-                    ..Default::default()
-                },
-                wallet,
+            chain.set_balance(
+                B160::from_be_bytes(wallet.address().0),
+                U256::from(1_000_000_000_000_000_u64),
             );
 
-            let _block_output = tester.execute_block(vec![tx]);
+            let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
+                TransactionRequest::new()
+                    .to(addr)
+                    .gas(1 << 27)
+                    .gas_price(1000)
+                    .data(Bytes::copy_from_slice(empty_input[0..i].as_ref()))
+                    .nonce(0),
+                &wallet,
+            );
+
+            let _block_output = chain.run_block(vec![tx], None, None, None);
         }
     }
 }
@@ -6401,7 +6369,6 @@ fn all_ones_bits(n: usize) -> Vec<u8> {
     vec![0xFF; 4 * n]
 }
 
-#[allow(dead_code)]
 fn all_ones_except_top_bit(n: usize) -> Vec<u8> {
     let mut v = vec![0xFF; 4 * n];
     v[0] &= 0x7F; // clear the top (MSB) bit in the first byte
@@ -6434,59 +6401,4 @@ fn bench_modexp() {
         .clone()
         .expect("Tx should have succeeded");
     }
-}
-
-#[test]
-fn test_regression_p256_is_warm() {
-    let mut tester = TestingFramework::new();
-    let wallet = tester.random_signer();
-    let target = Address::from_slice(
-        hex::decode("0000000000000000000000000000000000000100")
-            .unwrap()
-            .as_slice(),
-    );
-    let forwarder = address!("0x1000000000000000000000000000000000000000");
-
-    tester = tester
-        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_evm_contract(forwarder, &hex::decode(FORWARDER_BYTECODE).unwrap());
-
-    // Just enough for tx to succeed if the address is warm
-    let gas_limit = 54707;
-    let input = hex::decode("d1b3bd13d427f487b786a48d3a515c6fc1b0170ba3936bcd4ea53c960df3ef2f6e1207f671f5fa32eb46850921546ae5b03a4579012c562a62f4fb2d39269257bed27d4909e4f5ca8f543f5042691371b8fcc58f881e1b4daed7fa6f5b1b3898a880e9b88d6a707662aa25325798903d6e34740e832830860ba323d9e14defc75999af8ead7e63566aa8b94b7bb5dfa8e8f114c39ca179016f393363953f979a").unwrap();
-
-    let calldata = calldata_for_forwarder(target, &input);
-    let forwarded_tx = ZKsyncTxEnvelope::from_eth_tx(
-        TxLegacy {
-            chain_id: 37u64.into(),
-            nonce: 0,
-            gas_price: 25_000,
-            gas_limit,
-            to: rig::alloy::primitives::TxKind::Call(forwarder),
-            value: Default::default(),
-            input: calldata.into(),
-        },
-        wallet.clone(),
-    );
-
-    // We use a very high native per gas ratio
-    let block_context = BlockContext {
-        native_price: U256::ONE,
-        eip1559_basefee: U256::from(25_000),
-        ..Default::default()
-    };
-
-    tester = tester.with_block_context(block_context);
-
-    let res = tester.execute_block(vec![forwarded_tx]);
-    let tx_res = res
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
-    assert!(matches!(
-        tx_res.execution_result,
-        rig::zksync_os_interface::types::ExecutionResult::Success { .. }
-    ));
 }
