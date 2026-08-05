@@ -142,7 +142,6 @@ pub const ISOGENY_MAP_TO_G1 : IsogenyMap<'_, SwuIsoConfig, g1::Config, > = Isoge
 mod test {
     use super::*;
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_gen() {
         let gen: G1Affine = SwuIsoConfig::GENERATOR;

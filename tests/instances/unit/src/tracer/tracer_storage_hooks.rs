@@ -5,9 +5,10 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -16,7 +17,8 @@ use rig::zk_ee::{
     },
     utils::Bytes32,
 };
-use rig::Chain;
+use rig::TestingFramework;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// A struct to track tracer calls for storage operations
 #[derive(Debug, Clone, Default)]
@@ -118,8 +120,8 @@ impl Tracer<ForwardRunningSystem> for StorageOperationTracer {
 
 #[test]
 fn test_storage_hooks() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");
 
@@ -130,17 +132,12 @@ fn test_storage_hooks() {
     // PUSH1 0, TLOAD, POP        (tload from slot 0 - should call on_storage_read)
     let test_contract_bytecode = hex::decode("602a60005560005450602a60005D60005C50").unwrap();
 
-    chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
-        &test_contract_bytecode,
-    );
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_address, &test_contract_bytecode);
 
     // Create transaction to call the contract
-    let encoded_tx = {
+    let tx = {
         let tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -151,15 +148,13 @@ fn test_storage_hooks() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     let mut tracer = StorageOperationTracer::new();
 
-    let result = chain.run_block_with_extra_stats(vec![encoded_tx], None, None, None, &mut tracer);
-
-    assert!(result.is_ok(), "Block execution should succeed");
-    let (block_output, _, _) = result.unwrap();
+    let block_output =
+        tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut NopTxValidator::default());
     assert!(
         block_output.tx_results[0].is_ok(),
         "Transaction should succeed with correct tracer calls. Result: {:?}",
@@ -167,11 +162,12 @@ fn test_storage_hooks() {
     );
 
     assert_eq!(tracer.calls.storage_reads.len(), 2);
+    let expected_contract = B160::from_be_bytes(contract_address.into_array());
     assert_eq!(
         tracer.calls.storage_reads[0],
         (
             false,
-            B160::from_be_bytes(contract_address.into_array()),
+            expected_contract,
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -180,7 +176,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_reads[1],
         (
             true,
-            B160::from_be_bytes(contract_address.into_array()),
+            expected_contract,
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -191,7 +187,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_writes[0],
         (
             false,
-            B160::from_be_bytes(contract_address.into_array()),
+            expected_contract,
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -200,7 +196,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_writes[1],
         (
             true,
-            B160::from_be_bytes(contract_address.into_array()),
+            expected_contract,
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )

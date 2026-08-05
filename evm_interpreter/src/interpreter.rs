@@ -4,6 +4,7 @@ use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
 use ruint::aliases::B160;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
@@ -13,6 +14,7 @@ use zk_ee::system::{
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
 use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
+use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
@@ -23,13 +25,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn execute_till_yield_point<'a>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
         let mut external_call = None;
-        let exit_code = self.run(system, &mut external_call, tracer)?;
+        let exit_code = self.run(system, hooks, &mut external_call, tracer)?;
 
         if let ExitCode::FatalError(e) = exit_code {
             return Err(e);
@@ -112,6 +115,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExitCode, EvmSubsystemError> {
@@ -122,15 +126,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             match crate::opcodes::OpCode::try_from_u8(opcode) {
                 Some(op) => {
                     if Self::PRINT_OPCODES {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Executing {op}"));
+                        system_log!(system, "Executing {op}");
                     }
                 }
                 None => {
-                    let _ = system
-                        .get_logger()
-                        .write_fmt(format_args!("Unknown opcode = 0x{opcode:02x}\n"));
+                    system_log!(system, "Unknown opcode = 0x{opcode:02x}\n");
                 }
             }
 
@@ -286,11 +286,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::TSTORE => self.tstore(system, tracer),
                     opcodes::MCOPY => self.mcopy(),
                     opcodes::GAS => self.gas(),
-                    opcodes::LOG0 => self.log::<0>(system, tracer),
-                    opcodes::LOG1 => self.log::<1>(system, tracer),
-                    opcodes::LOG2 => self.log::<2>(system, tracer),
-                    opcodes::LOG3 => self.log::<3>(system, tracer),
-                    opcodes::LOG4 => self.log::<4>(system, tracer),
+                    opcodes::LOG0 => self.log::<0>(system, hooks, tracer),
+                    opcodes::LOG1 => self.log::<1>(system, hooks, tracer),
+                    opcodes::LOG2 => self.log::<2>(system, hooks, tracer),
+                    opcodes::LOG3 => self.log::<3>(system, hooks, tracer),
+                    opcodes::LOG4 => self.log::<4>(system, hooks, tracer),
                     opcodes::SELFDESTRUCT => self.selfdestruct(system, tracer),
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),
@@ -314,10 +314,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             }
         };
 
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Instructions executed = {}\nFinal instruction result = {:?}\n",
-            cycles, &result
-        ));
+            cycles,
+            &result
+        );
 
         Ok(result)
     }
@@ -365,7 +367,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             let deployed_code = return_values.returndata;
             let mut error_after_constructor = None;
             if deployed_code.len() > MAX_CODE_SIZE {
-                // EIP-158: reject code of length > 24576.
+                // EIP-170: reject code of length > 24576.
                 error_after_constructor = Some(EvmError::CreateContractSizeLimit)
             } else if !deployed_code.is_empty() && deployed_code[0] == 0xEF {
                 // EIP-3541: reject code starting with 0xEF.
@@ -382,12 +384,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         internal_bytecode_hash,
                         observable_bytecode_len,
                     )) => {
-                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
-                        #[cfg(not(target_arch = "riscv32"))]
-                        let _ = system.get_logger().write_fmt(format_args!(
+                        system_log!(
+                            system,
                             "Successfully deployed contract at {:?} \n",
                             self.address
-                        ));
+                        );
 
                         tracer.on_bytecode_change(
                             THIS_EE_TYPE,

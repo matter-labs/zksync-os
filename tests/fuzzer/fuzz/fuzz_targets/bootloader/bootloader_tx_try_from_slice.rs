@@ -1,11 +1,12 @@
 #![no_main]
 
-use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
+use common::parse_abi_encoded_transaction;
 use libfuzzer_sys::fuzz_target;
 
+mod common;
+
 fn fuzz(data: &[u8]) {
-    let mut data = data.to_owned();
-    let _ = AbiEncodedTransaction::try_from_slice(&mut data);
+    let _ = parse_abi_encoded_transaction(data);
 }
 
 fuzz_target!(|data: &[u8]| {

@@ -6,11 +6,13 @@ mod tx_result_callback;
 mod tx_source;
 
 pub mod convert;
+pub mod convert_alloy;
 mod interface_impl;
 pub mod query_processors;
 pub mod result_keeper;
 pub mod test_impl;
 mod tracing_impl;
+mod validator_impl;
 
 use crate::run::query_processors::GenericPreimageResponder;
 use crate::run::query_processors::ReadStorageResponder;
@@ -21,9 +23,9 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
-use crate::system::system::CallSimulationBootloader;
-use crate::system::system::CallSimulationSystem;
-use crate::system::system::ForwardRunningSystem;
+use crate::system::system_types::CallSimulationBootloader;
+use crate::system::system_types::CallSimulationSystem;
+use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
@@ -33,12 +35,12 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::utils::Bytes32;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
+use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
 pub use preimage_source::PreimageSource;
@@ -69,6 +71,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     tx_source: TS,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -90,13 +93,40 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    run_forward::<BasicBootloaderForwardSimulationConfig>(oracle, &mut result_keeper, tracer);
+    run_forward::<BasicBootloaderForwardSimulationConfig>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+        validator,
+    );
     Ok(result_keeper.into())
 }
 
 // TODO(EVM-1184): we should run it on native arch and it should return pubdata and other outputs via result keeper
 pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
+    block_context: BlockContext,
+    proof_data: ProofData<StorageCommitment>,
+    da_commitment_scheme: DACommitmentScheme,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+) -> Result<Vec<u32>, ForwardSubsystemError> {
+    let img_bytes = std::fs::read(&zk_os_program_path)
+        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {zk_os_program_path:?}"));
+    generate_proof_input_from_bytes(
+        &img_bytes,
+        block_context,
+        proof_data,
+        da_commitment_scheme,
+        tree,
+        preimage_source,
+        tx_source,
+    )
+}
+
+pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
+    zk_os_program_bytes: &[u8],
     block_context: BlockContext,
     proof_data: ProofData<StorageCommitment>,
     da_commitment_scheme: DACommitmentScheme,
@@ -139,7 +169,12 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     let copy_source = ReadWitnessSource::new(oracle);
     let items = copy_source.get_read_items();
 
-    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 36, copy_source);
+    let (_proof_output, _) = zksync_os_runner::run_and_get_effective_cycles_from_bytes(
+        zk_os_program_bytes,
+        None,
+        1 << 36,
+        copy_source,
+    );
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
@@ -297,6 +332,7 @@ pub fn run_block_with_oracle_dump<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     run_block_with_oracle_dump_ext::<T, PS, TS, TR, BasicBootloaderForwardSimulationConfig>(
         block_context,
@@ -307,6 +343,7 @@ pub fn run_block_with_oracle_dump<
         proof_data,
         da_commitment_scheme,
         tracer,
+        validator,
     )
 }
 
@@ -326,6 +363,7 @@ pub fn run_block_with_oracle_dump_ext<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -371,8 +409,13 @@ pub fn run_block_with_oracle_dump_ext<
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    crate::system::bootloader::run_forward_no_panic::<Config>(oracle, &mut result_keeper, tracer)
-        .map_err(wrap_error!())?;
+    crate::system::bootloader::run_forward_no_panic::<Config>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+        validator,
+    )
+    .map_err(wrap_error!())?;
     Ok(result_keeper.into())
 }
 
@@ -384,6 +427,7 @@ pub fn run_block_from_oracle_dump<
 >(
     path: Option<String>,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let path = path.unwrap_or_else(|| std::env::var("ORACLE_DUMP_FILE").unwrap());
     let file = std::fs::File::open(path).expect("should open file");
@@ -413,15 +457,19 @@ pub fn run_block_from_oracle_dump<
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-    run_forward::<BasicBootloaderForwardSimulationConfig>(oracle, &mut result_keeper, tracer);
+    run_forward::<BasicBootloaderForwardSimulationConfig>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+        validator,
+    );
     Ok(result_keeper.into())
 }
 
 ///
 /// Simulate single transaction on top of given state.
-/// The validation step is skipped, fields that needed for validation can be empty(any).
-/// Note that, as the validation step is skipped, an internal error is returned
-/// if the sender does not have enough balance for the top-level call value transfer.
+/// Some validation steps are skipped (signature check,
+/// nonce check and EIP-3607 check)
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
@@ -430,6 +478,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     storage: S,
     preimage_source: PS,
     tracer: &mut impl Tracer<CallSimulationSystem>,
+    validator: &mut impl TxValidator<CallSimulationSystem>,
 ) -> Result<TxResult, ForwardSubsystemError> {
     let tx_source = TxListSource {
         transactions: vec![transaction].into(),
@@ -457,8 +506,10 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
+        &mut (),
         &mut result_keeper,
         tracer,
+        validator,
     )
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();

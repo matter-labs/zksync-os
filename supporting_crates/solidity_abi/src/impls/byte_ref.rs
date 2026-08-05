@@ -58,14 +58,14 @@ impl<'a> SolidityCodableReflectionRef<'a> for BytesRef<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let tail_offset = local_head.array_chunks::<32>().next().unwrap();
+        let tail_offset = local_head.as_chunks::<32>().0.iter().next().unwrap();
         let tail_offset = U256::from_be_bytes(*tail_offset);
         let tail_offset = u256_to_usize_checked(&tail_offset)?;
         let (_, local_tail) = source.split_at_checked(tail_offset).ok_or(())?;
         if local_tail.len() < 32 {
             return Err(());
         }
-        let len = local_tail.array_chunks::<32>().next().unwrap();
+        let len = local_tail.as_chunks::<32>().0.iter().next().unwrap();
         let len = U256::from_be_bytes(*len);
         let len = u256_to_usize_checked(&len)?;
         let (_, bytes_body) = local_tail.split_at_checked(32).ok_or(())?;
@@ -87,14 +87,14 @@ impl<'a> SolidityCodableReflectionRefMut<'a> for BytesRefMut<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let tail_offset = local_head.array_chunks::<32>().next().unwrap();
+        let tail_offset = local_head.as_chunks::<32>().0.iter().next().unwrap();
         let tail_offset = U256::from_be_bytes(*tail_offset);
         let tail_offset = u256_to_usize_checked(&tail_offset)?;
         let (_, local_tail) = source.split_at_mut_checked(tail_offset).ok_or(())?;
         if local_tail.len() < 32 {
             return Err(());
         }
-        let len = local_tail.array_chunks::<32>().next().unwrap();
+        let len = local_tail.as_chunks::<32>().0.iter().next().unwrap();
         let len = U256::from_be_bytes(*len);
         let len = u256_to_usize_checked(&len)?;
         let (_, bytes_body) = local_tail.split_at_mut_checked(32).ok_or(())?;

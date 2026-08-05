@@ -1,4 +1,4 @@
-use alloy::consensus::{TxEip1559, TxEip2930, TxEip7702, TxEnvelope, TxLegacy};
+use alloy::consensus::{TxEip1559, TxEip2930, TxEip4844, TxEip7702, TxEnvelope, TxLegacy};
 use alloy::eips::eip2930::{AccessList as AlloyAccessList, AccessListItem as AlloyALItem};
 use alloy::eips::eip7702::{Authorization as AlloyAuthorization, SignedAuthorization};
 use alloy::primitives::*;
@@ -71,6 +71,8 @@ pub struct TxCommon {
     pub value: U256,
     pub access_list: Option<Vec<AccessListItem>>,
     pub authorization_list: Option<Vec<AuthorizationListItem>>,
+    pub max_fee_per_blob_gas: Option<U256>,
+    pub blob_versioned_hashes: Option<Vec<FixedBytes<32>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +124,8 @@ pub fn transaction_from_tx_section(
         max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
         access_list,
         authorization_list: tx.authorization_list.clone(),
+        max_fee_per_blob_gas: tx.max_fee_per_blob_gas,
+        blob_versioned_hashes: tx.blob_versioned_hashes.clone(),
     };
     match tx.secret_key {
         Some(sk) => Transaction::Request(TransactionReq {
@@ -246,6 +250,11 @@ pub fn encode_transaction(
                 input: tx.common.data.clone().into(),
                 access_list,
                 authorization_list,
+                max_fee_per_blob_gas: tx
+                    .common
+                    .max_fee_per_blob_gas
+                    .map(|v| v.try_into().expect("Max fee per blob gas overflow")),
+                blob_versioned_hashes: tx.common.blob_versioned_hashes.clone(),
                 ..Default::default()
             };
 
@@ -336,6 +345,35 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
                 value,
                 access_list,
                 input,
+            };
+            let parity = stx.v & 1 == 1;
+            let sig = Signature::from_scalars_and_parity(r, s, parity);
+            let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
+            TxEnvelope::from(signed)
+        }
+        3 => {
+            let access_list = to_access_list(&stx.common.access_list);
+            let to_addr = match &stx.common.to.0 {
+                None => panic!("4844 requires destination"),
+                Some(a) => *a,
+            };
+            let tx = TxEip4844 {
+                chain_id,
+                nonce,
+                max_priority_fee_per_gas: stx
+                    .common
+                    .max_priority_fee_per_gas
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+                max_fee_per_gas: stx.common.max_fee_per_gas.unwrap().try_into().unwrap(),
+                gas_limit,
+                to: to_addr,
+                value,
+                input,
+                access_list,
+                max_fee_per_blob_gas: stx.common.max_fee_per_blob_gas.unwrap().try_into().unwrap(),
+                blob_versioned_hashes: stx.common.blob_versioned_hashes.clone().unwrap_or_default(),
             };
             let parity = stx.v & 1 == 1;
             let sig = Signature::from_scalars_and_parity(r, s, parity);

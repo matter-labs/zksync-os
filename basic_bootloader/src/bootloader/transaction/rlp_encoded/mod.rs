@@ -1,5 +1,9 @@
 use crypto::MiniDigest;
+use rlp::minimal_rlp_parser::RlpListDecode;
+use ruint::aliases::B160;
+use transaction_types::service_tx::ServiceTx;
 
+use crate::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::Rlp;
 use crate::bootloader::transaction::rlp_encoded::transaction_types::legacy_tx::{
@@ -10,36 +14,42 @@ use crate::bootloader::transaction::rlp_encoded::{
     eip_2718_tx_envelope::{EIP2718PayloadParser, EIP2718SignatureData},
     transaction_types::eip_1559_tx::EIP1559Tx,
     transaction_types::eip_2930_tx::EIP2930Tx,
+    transaction_types::eip_4844_tx::EIP4844Tx,
     transaction_types::eip_7702_tx::EIP7702Tx,
 };
 use zk_ee::utils::Bytes32;
 
 mod eip_2718_tx_envelope;
-mod rlp;
+pub mod rlp;
 mod transaction;
-mod transaction_types;
+pub mod transaction_types;
 
 pub use self::transaction::RlpEncodedTransaction;
 pub use transaction_types::eip_2930_tx::AccessListForAddress;
-#[cfg(feature = "eip-7702")]
+pub use transaction_types::eip_4844_tx::BlobHashesList;
 pub use transaction_types::eip_7702_tx::{AuthorizationEntry, AuthorizationList};
 
 use super::TxError;
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RlpEncodedTxInner<'a> {
     Legacy(LegacyTXInner<'a>, LegacySignatureData<'a>),
     LegacyWithEIP155(LegacyTXInner<'a>, LegacySignatureData<'a>),
     EIP2930(EIP2930Tx<'a>, EIP2718SignatureData<'a>),
     EIP1559(EIP1559Tx<'a>, EIP2718SignatureData<'a>),
+    EIP4844(EIP4844Tx<'a>, EIP2718SignatureData<'a>),
     EIP7702(EIP7702Tx<'a>, EIP2718SignatureData<'a>),
+    Service(ServiceTx<'a>),
 }
 
 impl<'a> RlpEncodedTxInner<'a> {
     // NOTE: u64 chain ID allows to avoid handling some overflows below
+    // For service txs, the signed hash is Bytes32::ZERO.
     pub(crate) fn parse_and_compute_signed_hash(
         input: &'a [u8],
         expected_chain_id: u64,
+        from: &B160,
     ) -> Result<(Self, Bytes32), TxError> {
         // Try to read a leading single-byte item as the typed marker.
         // For typed txs, this is a bare byte (1/2/4) followed by an RLP list.
@@ -67,6 +77,18 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP1559(tx, sig_data), sig_hash))
                 }
+                #[cfg(feature = "eip-4844")]
+                EIP4844Tx::TX_TYPE => {
+                    let (tx, sig_data, sig_hash) =
+                        EIP2718PayloadParser::<EIP4844Tx<'a>>::try_parse_and_hash_for_signature_verification(
+                            r.remaining()
+                        )?;
+                    if tx.chain_id != expected_chain_id {
+                        return Err(InvalidTransaction::InvalidChainId.into());
+                    }
+                    Ok((Self::EIP4844(tx, sig_data), sig_hash))
+                }
+                #[cfg(feature = "eip-7702")]
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(
@@ -77,6 +99,20 @@ impl<'a> RlpEncodedTxInner<'a> {
                         return Err(InvalidTransaction::InvalidChainId.into());
                     }
                     Ok((Self::EIP7702(tx, sig_data), sig_hash))
+                }
+                ServiceTx::TX_TYPE => {
+                    // Check that from provided by oracle is BOOTLOADER_FORMAL_ADDRESS
+                    if from != &BOOTLOADER_FORMAL_ADDRESS {
+                        return Err(InvalidTransaction::IncorrectFrom {
+                            tx: *from,
+                            recovered: BOOTLOADER_FORMAL_ADDRESS,
+                        }
+                        .into());
+                    }
+
+                    let tx = ServiceTx::decode_list_from(&mut r)?;
+
+                    Ok((Self::Service(tx), Bytes32::ZERO))
                 }
                 _ => Err(InvalidTransaction::InvalidEncoding.into()),
             }
@@ -104,6 +140,7 @@ mod test {
     use std::alloc::Global;
 
     use super::*;
+    use crate::bootloader::errors::InvalidTransaction;
     use alloy::consensus::{SignableTransaction, TxEnvelope};
     use alloy_primitives::hex;
     use alloy_rlp::Decodable;
@@ -117,15 +154,30 @@ mod test {
             TxEnvelope::Legacy(signed) => signed.tx().signature_hash(),
             TxEnvelope::Eip2930(signed) => signed.tx().signature_hash(),
             TxEnvelope::Eip1559(signed) => signed.tx().signature_hash(),
+            TxEnvelope::Eip4844(signed) => signed.tx().signature_hash(),
             TxEnvelope::Eip7702(signed) => signed.tx().signature_hash(),
-            _ => unimplemented!(),
         };
         signing_hash.0
     }
 
+    // Shared raw transaction bytes for reuse across multiple tests.
+    // Each function decodes a known-good mainnet transaction (chain_id = 1).
+
+    fn raw_legacy_chain1() -> Vec<u8> {
+        hex::decode("f901ab820215840cc9aa6c82ca9c94bf7cf0d775d6ac130912a22861773c21661095a280b90144baae8abf0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000008f3ffa11cd5915f0e869192663b905504a2ef4a500000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000064d22c0930000000000000000000000000953ca96b057d5397ce7791c5ae9b5a19b135234100000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000689010fd0000000000000000000000000000000000000000000000000000000026a005b37d188e6af6851c1036a5c42113ada300c03403d340d4c9ba8102146e9a76a0471b7967f289f3248f4250d0dbcb8e7391ea0b9252385377909911420f164db7").unwrap()
+    }
+
+    fn raw_eip2930_chain1() -> Vec<u8> {
+        hex::decode("01f901730132840cec9a4e8303efad94bcb4e4bcc41ab1494a3eb3456ed4edb8da5d46e4870f0d557cb2c2c1b90104088890dc000000000000000000000000000000000000000000000003ef2218b5b343818b00000000000000000000000000000000000000000000000000000000000000a00000000000000000000000003aa876a9554ca3c8ae01505d463a0c5dd0b0cd4d0000000000000000000000000000000000000000000000000000019872c72f610000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000005959e94661e1203e0c8ef84095a7846bacc6a94fc001a00d23db670f786bc70018f243e301b27891f751505fd15a89e1bba35db8da987ba058fdfbb6099b96ad14794b03205461c465c8fb9389b9590f664865e1146f060a").unwrap()
+    }
+
+    fn raw_eip1559_chain1() -> Vec<u8> {
+        hex::decode("02f90491018201a08207d0840f8d04a083055d579489c6340b1a1f4b25d36cd8b063d49045caf3f81880b90424d7a08473000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000004acfda580000000000000000000000000000000000000000000000000000000068900799000000000000000000000000000000000000000000000000000000000000001b5d84e1c46e8ed13b0f65676700d7680054ea48feab766b141358c191ee71f3b330942381ca0b79e4f9ed50219bcdcc634f175e7dd36342c3fd4ab00f5cd48ea300000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000304ae32859000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000200a800b1f5699b7861686ca5a828d35734c5983d24ac2b0b61d427507d6b3a6965000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000097f41f4802a6147143f66a625343b9039c700ecc000000000000000000000000000000000000000000000000000000004acfda58000000000000000000000000000000000000000000000000000000000000a4b100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000572656c6179000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f6a756d7065722e65786368616e67650000000000000000000000000000000000e7d070ff55ae1dff4f9b398df94abb677aa14ae5996f371202ec928e3c06f25400000000000000000000000097f41f4802a6147143f66a625343b9039c700ecc000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000414c20c8c28980012ba9e3e46baad9aca2c0fc539edeb26564f7613ddfb3bb7e57690da91e2650e2088b8d31659cc31ad6063bc6b0c757ac23868e41396858f1a51b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c080a019e4aee5788915a5d72ad38f00384a34be0d197b2557e89b5db6220746fda216a0155f9959cf268f761b218594fb8e4bb1b534df8bbb8d2430b4c7036c59e2f29e").unwrap()
+    }
+
     #[test]
     fn test_on_random_legacy() {
-        let input = hex::decode("f901ab820215840cc9aa6c82ca9c94bf7cf0d775d6ac130912a22861773c21661095a280b90144baae8abf0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000008f3ffa11cd5915f0e869192663b905504a2ef4a500000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000064d22c0930000000000000000000000000953ca96b057d5397ce7791c5ae9b5a19b135234100000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000689010fd0000000000000000000000000000000000000000000000000000000026a005b37d188e6af6851c1036a5c42113ada300c03403d340d4c9ba8102146e9a76a0471b7967f289f3248f4250d0dbcb8e7391ea0b9252385377909911420f164db7").unwrap();
+        let input = raw_legacy_chain1();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
@@ -137,7 +189,7 @@ mod test {
 
     #[test]
     fn test_on_random_2930() {
-        let input = hex::decode("01f901730132840cec9a4e8303efad94bcb4e4bcc41ab1494a3eb3456ed4edb8da5d46e4870f0d557cb2c2c1b90104088890dc000000000000000000000000000000000000000000000003ef2218b5b343818b00000000000000000000000000000000000000000000000000000000000000a00000000000000000000000003aa876a9554ca3c8ae01505d463a0c5dd0b0cd4d0000000000000000000000000000000000000000000000000000019872c72f610000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000005959e94661e1203e0c8ef84095a7846bacc6a94fc001a00d23db670f786bc70018f243e301b27891f751505fd15a89e1bba35db8da987ba058fdfbb6099b96ad14794b03205461c465c8fb9389b9590f664865e1146f060a").unwrap();
+        let input = raw_eip2930_chain1();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
@@ -149,7 +201,20 @@ mod test {
 
     #[test]
     fn test_on_random_1559() {
-        let input = hex::decode("02f90491018201a08207d0840f8d04a083055d579489c6340b1a1f4b25d36cd8b063d49045caf3f81880b90424d7a08473000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000004acfda580000000000000000000000000000000000000000000000000000000068900799000000000000000000000000000000000000000000000000000000000000001b5d84e1c46e8ed13b0f65676700d7680054ea48feab766b141358c191ee71f3b330942381ca0b79e4f9ed50219bcdcc634f175e7dd36342c3fd4ab00f5cd48ea300000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000304ae32859000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000200a800b1f5699b7861686ca5a828d35734c5983d24ac2b0b61d427507d6b3a6965000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000097f41f4802a6147143f66a625343b9039c700ecc000000000000000000000000000000000000000000000000000000004acfda58000000000000000000000000000000000000000000000000000000000000a4b100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000572656c6179000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f6a756d7065722e65786368616e67650000000000000000000000000000000000e7d070ff55ae1dff4f9b398df94abb677aa14ae5996f371202ec928e3c06f25400000000000000000000000097f41f4802a6147143f66a625343b9039c700ecc000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000414c20c8c28980012ba9e3e46baad9aca2c0fc539edeb26564f7613ddfb3bb7e57690da91e2650e2088b8d31659cc31ad6063bc6b0c757ac23868e41396858f1a51b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c080a019e4aee5788915a5d72ad38f00384a34be0d197b2557e89b5db6220746fda216a0155f9959cf268f761b218594fb8e4bb1b534df8bbb8d2430b4c7036c59e2f29e").unwrap();
+        let input = raw_eip1559_chain1();
+        let alloy_signed_hash = compute_signed_hash_alloy(&input);
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
+        assert_eq!(
+            alloy_signed_hash,
+            tx.hash_for_signature_verification().as_u8_array()
+        )
+    }
+
+    #[cfg(feature = "eip-4844")]
+    #[test]
+    fn test_on_random_4844() {
+        let input = hex::decode("03f9049f01830837e4843b9aca0085213f9eed7283036a2b941c479675ad559dc151f6ec7ed3fbf8cee79582b680b8a43e5aa082000000000000000000000000000000000000000000000000000000000008fff2000000000000000000000000000000000000000000000000000000000016a443000000000000000000000000e64a54e2533fd126c2e452c5fab544d80e2e4eb5000000000000000000000000000000000000000000000000000000000aafdc87000000000000000000000000000000000000000000000000000000000aafde27f902c0f8dd941c479675ad559dc151f6ec7ed3fbf8cee79582b6f8c6a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001a0000000000000000000000000000000000000000000000000000000000000000aa0b53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103a0360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbca0a10aa54071443520884ed767b0684edf43acec528b7da83ab38ce60126562660f90141948315177ab297ba92a06054ce80a67ed4dbd7ed3af90129a00000000000000000000000000000000000000000000000000000000000000006a00000000000000000000000000000000000000000000000000000000000000007a00000000000000000000000000000000000000000000000000000000000000009a0000000000000000000000000000000000000000000000000000000000000000aa0b53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103a0360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbca0a66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a873fc679a0a66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a873fc67aa0f652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f3792b181f89b94e64a54e2533fd126c2e452c5fab544d80e2e4eb5f884a00000000000000000000000000000000000000000000000000000000000000004a00000000000000000000000000000000000000000000000000000000000000005a0e85fd79f89ff278fc57d40aecb7947873df9f0beac531c8f71a98f630e1eab62a07686888b19bb7b75e46bb1aa328b65150743f4899443d722f0adf8e252ccda410af8c6a0014527d555d949b3afcfa246e16eb0e0aef9e9da60b7a0266f1da43b3fd8e8cfa0016d80efa350ab1fc156b505ab619bee3f6245b8f7d4d60bf11c9d8b0105b02fa00176b14180ebfaa132142ff163eb2aaf2985af7da011d195e39fe8b0faf1e960a00134da09304a6a66b691bc48d351b976203cd419778d142f19e68e904f07a5aea00181b4581a9fc316eadc58e4d6d362e316e259643913339a3e46b7c9d742ac30a00112fa6c9dfaceaff1868ef19d01c4a1da99e6e02162fe7dacf94ec441da697701a04dfd139f20fdefc834fbdce2e120ca8ed1a4688d8843df8fc2de1df8c6d0a0f3a06ec282ea1c2c55e467425c380c17f0f8ef664d8e2de8a39b18d6c83b8d6a9afa").unwrap();
         let alloy_signed_hash = compute_signed_hash_alloy(&input);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let tx = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO).unwrap();
@@ -169,5 +234,338 @@ mod test {
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
         )
+    }
+
+    #[test]
+    fn test_on_random_service() {
+        let input = hex::decode("7df90324940000000000000000000000000000000000010008b9030bcca2f7bc000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f30f04f005f6f700f80f09fa0fb00fcf0d0fef0f000000100203000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f380").unwrap();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let _tx =
+            RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS).unwrap();
+    }
+
+    #[test]
+    fn test_on_random_service_fails_on_bad_from() {
+        let input = hex::decode("7df9020d940000000000000000000000000000000000010008b901f4000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f330").unwrap();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let _ = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO)
+            .expect_err("Only bootloader address is allowed");
+    }
+
+    /// An EIP-1559 transaction encoded for chain_id=1 must be rejected when the
+    /// caller supplies a different expected chain_id.
+    #[test]
+    fn test_eip1559_wrong_chain_id_rejected() {
+        let input = raw_eip1559_chain1();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        // expected chain_id=99 != actual chain_id=1 — must fail with InvalidChainId
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 99, B160::ZERO);
+        assert!(
+            matches!(
+                result,
+                Err(TxError::Validation(InvalidTransaction::InvalidChainId))
+            ),
+            "chain_id mismatch must produce InvalidChainId, got: {result:?}"
+        );
+    }
+
+    /// An EIP-2930 transaction encoded for chain_id=1 must be rejected when the
+    /// caller supplies a different expected chain_id.
+    #[test]
+    fn test_eip2930_wrong_chain_id_rejected() {
+        let input = raw_eip2930_chain1();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        // expected chain_id=2 != actual chain_id=1 — must fail with InvalidChainId
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO);
+        assert!(
+            matches!(
+                result,
+                Err(TxError::Validation(InvalidTransaction::InvalidChainId))
+            ),
+            "chain_id mismatch must produce InvalidChainId, got: {result:?}"
+        );
+    }
+
+    /// Completely empty input must not panic and must return an error.
+    #[test]
+    fn test_empty_input_fails() {
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&[], Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        assert!(result.is_err(), "empty input must be rejected");
+    }
+
+    /// An input consisting of a single unknown type byte (0x05) must fail gracefully.
+    #[test]
+    fn test_unknown_type_byte_fails() {
+        // 0x05 is not a known transaction type
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&[0x05], Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        assert!(
+            result.is_err(),
+            "unknown transaction type byte must be rejected"
+        );
+    }
+
+    /// A valid EIP-1559 transaction truncated by one byte at the end must fail.
+    #[test]
+    fn test_truncated_eip1559_fails() {
+        let mut input = raw_eip1559_chain1();
+        // drop the last byte to truncate the signature
+        input.truncate(input.len() - 1);
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        assert!(result.is_err(), "truncated EIP-1559 tx must be rejected");
+    }
+
+    /// A valid EIP-2930 transaction truncated by one byte at the end must fail.
+    #[test]
+    fn test_truncated_eip2930_fails() {
+        let mut input = raw_eip2930_chain1();
+        input.truncate(input.len() - 1);
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        assert!(result.is_err(), "truncated EIP-2930 tx must be rejected");
+    }
+
+    /// A valid legacy transaction truncated by one byte at the end must fail.
+    #[test]
+    fn test_truncated_legacy_fails() {
+        let mut input = raw_legacy_chain1();
+        input.truncate(input.len() - 1);
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
+        assert!(result.is_err(), "truncated legacy tx must be rejected");
+    }
+
+    /// Helper: check two security-critical properties for a mutated transaction:
+    ///
+    /// 1. **Soundness**: If Alloy rejects the mutation, our parser must also
+    ///    reject it. We must never accept structurally invalid data.
+    /// 2. **Hash consistency**: If both parsers accept, the signed hashes must
+    ///    match. A hash divergence on valid input would be a critical bug.
+    ///
+    /// Note: our parser performing *extra* rejections (chain_id validation,
+    /// encoding rules) beyond what Alloy checks is expected and not flagged.
+    fn assert_mutation_sound(mutated: &[u8], chain_id: u64, label: &str) {
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(mutated, Global);
+        let our_result = RlpEncodedTransaction::parse_from_buffer(buffer, chain_id, B160::ZERO);
+
+        // Alloy must both succeed and consume all bytes to count as "accept".
+        let mut alloy_input: &[u8] = mutated;
+        let alloy_result: Result<TxEnvelope, _> = alloy_rlp::Decodable::decode(&mut alloy_input);
+        let alloy_ok = alloy_result.is_ok() && alloy_input.is_empty();
+
+        if alloy_ok && our_result.is_ok() {
+            // Both accept: verify signed hashes match.
+            let our_tx = our_result.unwrap();
+            let our_hash = our_tx.hash_for_signature_verification();
+            let alloy_hash = compute_signed_hash_alloy(mutated);
+            assert_eq!(
+                our_hash.as_u8_array(),
+                alloy_hash,
+                "Hash divergence ({label}): both parsers accepted but hashes differ"
+            );
+        } else if !alloy_ok && our_result.is_ok() {
+            // Alloy rejects but we accept — we are too lenient.
+            panic!("Leniency ({label}): Alloy rejects but our parser accepts");
+        }
+        // If our parser rejects (regardless of Alloy), that's fine — extra
+        // validation (chain_id, encoding rules) is expected.
+    }
+
+    /// Flip every byte in the transaction to 0x00, 0xff, and the XOR inverse,
+    /// checking agreement with Alloy at each position. This is the most
+    /// thorough single-byte mutation test: it covers all RLP length fields,
+    /// type bytes, field boundaries, and non-canonical encodings.
+    fn exhaustive_byte_scan(base: &[u8], chain_id: u64, tx_label: &str) {
+        let replacements: &[u8] = &[0x00, 0xff, 0x80, 0xc0, 0x01];
+        for offset in 0..base.len() {
+            for &replacement in replacements {
+                if replacement == base[offset] {
+                    continue; // skip no-op mutations
+                }
+                let mut mutated = base.to_vec();
+                mutated[offset] = replacement;
+                let label = format!("{tx_label} offset={offset} byte=0x{replacement:02x}");
+                assert_mutation_sound(&mutated, chain_id, &label);
+            }
+        }
+    }
+
+    /// Exhaustive single-byte scan for EIP-1559: every byte position is mutated
+    /// with multiple replacement values and checked against Alloy.
+    #[test]
+    fn test_eip1559_exhaustive_byte_scan() {
+        let base = raw_eip1559_chain1();
+        exhaustive_byte_scan(&base, 1, "eip1559");
+    }
+
+    /// Exhaustive single-byte scan for legacy transactions.
+    #[test]
+    fn test_legacy_exhaustive_byte_scan() {
+        let base = raw_legacy_chain1();
+        exhaustive_byte_scan(&base, 1, "legacy");
+    }
+
+    /// Exhaustive single-byte scan for EIP-2930 transactions.
+    #[test]
+    fn test_eip2930_exhaustive_byte_scan() {
+        let base = raw_eip2930_chain1();
+        exhaustive_byte_scan(&base, 1, "eip2930");
+    }
+
+    /// Structural mutations that go beyond single-byte flips:
+    /// truncation at every position, appending trailing bytes, and
+    /// inserting extra bytes at key locations.
+    #[test]
+    fn test_eip1559_structural_mutations() {
+        let base = raw_eip1559_chain1();
+
+        // Truncation at various points throughout the transaction.
+        // Tests that both parsers correctly reject incomplete data
+        // at every length from 0 to full.
+        let truncation_points = [
+            0,  // empty
+            1,  // type byte only
+            2,  // type byte + first length byte
+            3,  // type byte + length field
+            4,  // into the payload
+            10, // early field area
+            50, // mid-fields
+            base.len() / 2,
+            base.len() - 66, // just before signature
+            base.len() - 33, // mid-signature (between r and s)
+            base.len() - 1,  // last byte missing
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("eip1559 truncation len={len}"));
+        }
+
+        // Trailing bytes appended after a valid transaction.
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(
+                &extended,
+                1,
+                &format!("eip1559 trailing byte=0x{extra:02x}"),
+            );
+        }
+
+        // Multiple trailing bytes.
+        let mut extended = base.clone();
+        extended.extend_from_slice(&[0x00; 32]);
+        assert_mutation_sound(&extended, 1, "eip1559 trailing 32 zero bytes");
+    }
+
+    /// Structural mutations for legacy transactions: truncation and trailing bytes.
+    #[test]
+    fn test_legacy_structural_mutations() {
+        let base = raw_legacy_chain1();
+
+        let truncation_points = [
+            0,
+            1,
+            2,
+            3,
+            10,
+            base.len() / 2,
+            base.len() - 66,
+            base.len() - 33,
+            base.len() - 1,
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("legacy truncation len={len}"));
+        }
+
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(&extended, 1, &format!("legacy trailing byte=0x{extra:02x}"));
+        }
+    }
+
+    /// Structural mutations for EIP-2930 transactions.
+    #[test]
+    fn test_eip2930_structural_mutations() {
+        let base = raw_eip2930_chain1();
+
+        let truncation_points = [
+            0,
+            1,
+            2,
+            3,
+            10,
+            base.len() / 2,
+            base.len() - 66,
+            base.len() - 33,
+            base.len() - 1,
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("eip2930 truncation len={len}"));
+        }
+
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(
+                &extended,
+                1,
+                &format!("eip2930 trailing byte=0x{extra:02x}"),
+            );
+        }
+    }
+
+    /// Test that replacing the type byte with every other value produces
+    /// agreement between our parser and Alloy.
+    #[test]
+    fn test_type_byte_mutations() {
+        // EIP-1559 type byte is 0x02
+        let base_1559 = raw_eip1559_chain1();
+        // EIP-2930 type byte is 0x01
+        let base_2930 = raw_eip2930_chain1();
+
+        for type_byte in 0x00..=0xff_u8 {
+            // EIP-1559 with wrong type byte
+            if type_byte != base_1559[0] {
+                let mut mutated = base_1559.clone();
+                mutated[0] = type_byte;
+                assert_mutation_sound(&mutated, 1, &format!("eip1559 type_byte=0x{type_byte:02x}"));
+            }
+
+            // EIP-2930 with wrong type byte
+            if type_byte != base_2930[0] {
+                let mut mutated = base_2930.clone();
+                mutated[0] = type_byte;
+                assert_mutation_sound(&mutated, 1, &format!("eip2930 type_byte=0x{type_byte:02x}"));
+            }
+        }
+    }
+
+    /// Legacy transactions encode chain_id in the v field of the signature
+    /// (EIP-155). Verify that our parser rejects when a different chain_id is
+    /// expected. The specific error variant may differ from typed transactions
+    /// because v-field chain_id extraction can surface as InvalidEncoding.
+    #[test]
+    fn test_legacy_wrong_chain_id_rejected() {
+        let input = raw_legacy_chain1();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO);
+        assert!(
+            result.is_err(),
+            "legacy chain_id mismatch must be rejected, got: {result:?}"
+        );
     }
 }

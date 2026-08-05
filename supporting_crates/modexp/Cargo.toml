@@ -10,10 +10,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dev-dependencies]
-hex = {version = "*"}
-num-bigint = "0.4"
-num-integer = "*"
+hex = { workspace = true }
+num-bigint = { workspace = true, default-features = true }
+num-integer = { workspace = true, default-features = true }
 
 [features]
-
-

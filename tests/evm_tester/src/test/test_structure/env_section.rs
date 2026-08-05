@@ -12,4 +12,5 @@ pub struct EnvSection {
     pub current_number: U256,
     pub current_timestamp: U256,
     pub previous_hash: Option<B256>,
+    pub current_excess_blob_gas: Option<U256>,
 }

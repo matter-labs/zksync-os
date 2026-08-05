@@ -4,8 +4,8 @@
 //! including the "native" (proving) resource, which reflects the actual cost of proving.
 //! As a result, there is an element of double accounting.
 
+use zk_ee::system::evm::EvmError;
 use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources, SystemTypes};
-use zksync_os_evm_errors::EvmError;
 
 use crate::{
     native_resource_constants::{
@@ -116,8 +116,8 @@ impl<S: EthereumLikeTypes> Gas<S> {
 }
 
 pub mod gas_utils {
+    use zk_ee::system::evm::EvmError;
     use zk_ee::system::Ergs;
-    use zksync_os_evm_errors::EvmError;
 
     use crate::{ExitCode, ERGS_PER_GAS};
 

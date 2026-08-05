@@ -38,7 +38,6 @@ pub trait StorageCacheModel: Sized + SnapshottableIo {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     // returns old value

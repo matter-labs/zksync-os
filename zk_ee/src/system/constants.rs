@@ -26,3 +26,7 @@ macro_rules! native_with_delegations {
 pub const MAX_NATIVE_COMPUTATIONAL: u64 = 1 << 35;
 
 pub const EIP7702_DELEGATION_MARKER: [u8; 3] = [0xef, 0x01, 0x00];
+
+pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
+pub const MAX_BLOBS_PER_BLOCK: usize = 6;
+pub const GAS_PER_BLOB: u64 = 1 << 17;

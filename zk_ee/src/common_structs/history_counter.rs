@@ -51,3 +51,40 @@ impl<V, SF: StackFactory<M>, const M: usize, A: Allocator + Clone> HistoryCounte
         self.last_snapshot_id = snapshot;
     }
 }
+
+///
+/// Non-empty history counter.
+///
+pub struct NonEmptyHistoryCounter<
+    V,
+    SF: StackFactory<M>,
+    const M: usize,
+    A: Allocator + Clone = Global,
+>(HistoryCounter<V, SF, M, A>);
+
+impl<V, SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
+    NonEmptyHistoryCounter<V, SF, M, A>
+{
+    pub fn new_with_initial(alloc: A, value: V) -> Self {
+        let mut hc = HistoryCounter::new(alloc);
+        hc.update(value);
+        Self(hc)
+    }
+
+    pub fn value(&self) -> &V {
+        // Safe to unwrap by construction
+        self.0.value().unwrap()
+    }
+
+    pub fn update(&mut self, value: V) {
+        self.0.update(value);
+    }
+
+    pub fn snapshot(&mut self) -> HistoryCounterSnapshotId {
+        self.0.snapshot()
+    }
+
+    pub fn rollback(&mut self, snapshot: HistoryCounterSnapshotId) {
+        self.0.rollback(snapshot)
+    }
+}

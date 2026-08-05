@@ -10,7 +10,7 @@ fn miri_rollback_reuse() {
 
     map.snapshot();
 
-    let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
+    let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
 
     v.update::<_, ()>(|x| {
         *x = 2;
@@ -21,7 +21,7 @@ fn miri_rollback_reuse() {
     // We'll rollback to this point.
     let ss = map.snapshot();
 
-    let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
+    let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
 
     // This snapshot will be rolled back.
     v.update::<_, ()>(|x| {
@@ -35,7 +35,7 @@ fn miri_rollback_reuse() {
 
     map.rollback(ss).expect("Correct snapshot");
 
-    let mut v = map.get_or_insert::<()>(&1, || Ok(5)).unwrap();
+    let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
 
     // This will create a new snapshot and will reuse the one that rolled back.
     v.update::<_, ()>(|x| {

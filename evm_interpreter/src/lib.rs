@@ -2,7 +2,6 @@
 #![feature(allocator_api)]
 #![feature(iter_advance_by)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(vec_push_within_capacity)]
 #![feature(slice_swap_unchecked)]
 #![feature(ptr_as_ref_unchecked)]
@@ -46,7 +45,8 @@ use zk_ee::system::{Ergs, EthereumLikeTypes, Resource, Resources, System, System
 use alloc::vec::Vec;
 use zk_ee::utils::*;
 use zk_ee::{internal_error, types_config::*};
-use zksync_os_evm_errors::EvmError;
+
+use zk_ee::system::evm::EvmError;
 
 mod ee_trait_impl;
 pub mod errors;
@@ -58,6 +58,7 @@ pub mod instructions;
 pub mod interpreter;
 pub mod native_resource_constants;
 pub mod opcodes;
+pub mod precompile_addresses;
 pub mod u256;
 pub mod utils;
 
@@ -178,7 +179,8 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
 
     fn refund_counter(&self) -> u32 {
         use zk_ee::system::IOSubsystem;
-        self.system.io.get_refund_counter()
+        let refund = self.system.io.get_refund_counter();
+        refund.ergs().0.div_ceil(ERGS_PER_GAS) as u32
     }
 }
 
@@ -317,7 +319,7 @@ pub struct BitMapOwned<A: Allocator> {
 impl<A: Allocator> BitMapOwned<A> {
     /// Allocates a bitmap for a bytecode of length [capacity].
     pub(crate) fn allocate_for_bit_capacity(capacity: usize, allocator: A) -> Self {
-        let u64_capacity = capacity.next_multiple_of(u64::BITS as usize) / (u64::BITS as usize);
+        let u64_capacity = capacity.div_ceil(u64::BITS as usize);
         let word_capacity = u64_capacity * (u64::BITS as usize / usize::BITS as usize);
         let mut storage = Vec::with_capacity_in(word_capacity, allocator);
         storage.resize(word_capacity, 0);

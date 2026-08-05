@@ -1,7 +1,6 @@
 #![cfg_attr(all(not(feature = "testing"), not(test)), no_std)]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(pointer_is_aligned_to)]
 #![feature(slice_ptr_get)]
 #![feature(const_trait_impl)]

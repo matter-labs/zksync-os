@@ -37,15 +37,14 @@ The extended interface, [`IOSubsystemExt`](../../../zk_ee/src/system/io.rs) exte
 
 ## Basic IO implementation
 
-The basic [IO subsystem implementation](../../../basic_system/src/system_implementation/system/io_subsystem.rs) is composed by 4 different storages:
+The basic [IO subsystem implementation](../../../basic_system/src/system_implementation/system/io_subsystem.rs) is now generic over storage models and is composed by 4 different storages:
 
 - The main persistent storage slot-based storage, described later in this section.
 - The [transient storage](../../../storage_models/src/common_structs/generic_transient_storage.rs), a key-value map that is discarded after processing each transaction.
 - [Logs](../../../zk_ee/src/common_structs/logs_storage.rs) and [events](../../../zk_ee/src/common_structs/events_storage.rs) storages: two simple rollbackable storages. They are initialized empty for each block and dumped in full at block finalization into the block result.
+- Additional specialized storages for interop roots and new settlement layer chain IDs.
 
-The basic implementation consist mostly on handling those four storages. We'll focus on the main storage, as the rest are quite straightforward.
-
-The main storage, implemented by [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/flat_storage_model/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
+The basic implementation consist mostly on handling those storages and is now abstracted to work with any storage model that implements the required traits. The default main storage implementation, [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/flat_storage_model/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
 
 ### Storage model for accounts
 
@@ -68,12 +67,13 @@ During the execution of a block, accounts that are decommitted (i.e. read from t
 
 The underlying implementation of the caches is described in the [Caches section](caches.md).
 
-### Finish method
+### Frame and Transaction Finalization
 
-The [finish method](../../../basic_system/src/system_implementation/system/io_subsystem.rs) is the main method executed during block finalization.
-It has different implementations depending on whether it's a forward or proof run.
+The IO subsystem provides [frame and transaction finalization methods](../../../basic_system/src/system_implementation/system/io_subsystem.rs) that handle:
 
-For the forward run, we are just returning IO outputs(state diffs, events, messages) and pubdata to the caller(using result keeper).
+- **Frame finalization**: Commits or rolls back changes made during an execution frame
+- **Transaction finalization**: Commits transaction-level changes to storage and increments transaction counter
 
-For the proof run we should validate reads, apply writes to the state commitment, and calculate pubdata commitment.
-Calculate and return public input using these and some other values.
+### Integration with Block Processing
+
+The IO subsystem integrates with higher-level block processing through the bootloader's post-transaction operations. While the IO subsystem focuses on frame and transaction-level operations, block-level finalization and pubdata generation are handled by specialized bootloader components. See the [Bootloader documentation](../../bootloader/bootloader.md#block-and-batch-finalization) for details on how different execution modes (sequencing vs. proving) utilize the IO subsystem during block finalization.

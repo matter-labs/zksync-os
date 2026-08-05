@@ -7,4 +7,3 @@ edition = "2021"
 members = ["fuzz"]
 
 [dependencies]
-ruint = { version = "1.16", default-features = false }

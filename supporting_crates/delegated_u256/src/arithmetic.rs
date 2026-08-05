@@ -65,25 +65,17 @@ impl DelegatedU256 {
     pub const ONE: Self = Self([1, 0, 0, 0]);
 
     pub fn zero() -> Self {
-        #[allow(invalid_value)]
-        #[allow(clippy::uninit_assumed_init)]
-        // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
-        // This is safe because there are no references to result and it's initialized immediately
-        // (and on RISC-V all memory is init by default)
-        let mut result: Self = unsafe { MaybeUninit::uninit().assume_init() };
-        result.write_zero();
-        result
+        #[allow(static_mut_refs)]
+        unsafe {
+            copy_from_operand(ZERO.as_ptr())
+        }
     }
 
     pub fn one() -> Self {
-        #[allow(invalid_value)]
-        #[allow(clippy::uninit_assumed_init)]
-        // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
-        // This is safe because there are no references to result and it's initialized immediately
-        // (and on RISC-V all memory is init by default)
-        let mut result: Self = unsafe { MaybeUninit::uninit().assume_init() };
-        result.write_one();
-        result
+        #[allow(static_mut_refs)]
+        unsafe {
+            copy_from_operand(ONE.as_ptr())
+        }
     }
 
     pub fn write_zero(&mut self) {
@@ -215,21 +207,16 @@ impl DelegatedU256 {
 
     pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
         unsafe {
-            #[allow(invalid_value)]
-            #[allow(clippy::uninit_assumed_init)]
-            // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
-            // This is safe because there are no references to result and it's initialized immediately
-            // (and on RISC-V all memory is init by default)
-            let mut result = MaybeUninit::uninit().assume_init();
+            let mut result = MaybeUninit::<Self>::uninit();
             // no need to copy to scratch since self cannot be in ROM
-            bigint_op_delegation::<MEMCOPY_BIT_IDX>(&mut result as *mut Self, self as *const Self);
+            bigint_op_delegation::<MEMCOPY_BIT_IDX>(result.as_mut_ptr(), self as *const Self);
 
             with_ram_operand(rhs as *const Self, |rhs_ptr| {
                 bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(&mut result as *mut Self, rhs_ptr);
+                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(result.as_mut_ptr(), rhs_ptr);
             });
 
-            result
+            result.assume_init()
         }
     }
 

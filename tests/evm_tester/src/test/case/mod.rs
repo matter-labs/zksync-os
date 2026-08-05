@@ -470,6 +470,7 @@ impl Case {
                 current_random: block.block_header.mix_hash,
                 current_timestamp: block.block_header.timestamp,
                 previous_hash: block.block_header.parent_hash,
+                current_excess_blob_gas: block.block_header.excess_blob_gas,
             };
             let expect_exception = block.expect_exception.is_some();
             pre_blocks.push(PreBlock {
@@ -680,6 +681,8 @@ impl Case {
         // * successful state changes
         // * expect_exception <=> exception for every block in the test
 
+        let has_invalid_block = expect_exceptions.iter().any(|b| *b);
+
         let exception_check = run_result
             .iter()
             .zip(expect_exceptions)
@@ -692,7 +695,10 @@ impl Case {
 
         match exception_check {
             ExceptionCheckResult::Passed => {
-                if check_successful {
+                // In cases where block is invalid we allow state check to fail.
+                // This is because ZKsync os allows transactions in a block to
+                // be invalid without invalidating the whole block.
+                if has_invalid_block || check_successful {
                     Summary::passed_runtime(summary, format!("{test_name}: {name}"));
                 } else {
                     Summary::failed(summary, format!("{test_name}: {name}"), expected, actual);
@@ -734,6 +740,18 @@ impl Case {
         system_context.block_timestamp = pre_block.env.current_timestamp.try_into().unwrap();
         system_context.coinbase = pre_block.env.current_coinbase;
         system_context.block_gas_limit = pre_block.env.current_gas_limit;
+        let blob_fee = pre_block
+            .env
+            .current_excess_blob_gas
+            .map(|excess_blob_gas| {
+                U256::from(alloy::eips::eip4844::calc_blob_gasprice(
+                    excess_blob_gas
+                        .try_into()
+                        .expect("excess_blob_gas overflows u64"),
+                ))
+            })
+            .unwrap_or(U256::MAX);
+        system_context.blob_fee = blob_fee;
         let parent_hash = pre_block
             .env
             .previous_hash

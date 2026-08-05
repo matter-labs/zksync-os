@@ -44,8 +44,12 @@ impl<V, M: Clone, SF: StackFactory<N>, const N: usize, A: Allocator + Clone>
         self.list.top_mut().map(|(v, m)| (v, m))
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &V> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &V> + Clone {
         self.list.iter().map(|(v, _)| v)
+    }
+
+    pub fn iter_skip_n(&self, n: usize) -> impl ExactSizeIterator<Item = &V> + Clone {
+        self.list.iter_skip_n(n).map(|(v, _)| v)
     }
 
     pub fn len(&self) -> usize {

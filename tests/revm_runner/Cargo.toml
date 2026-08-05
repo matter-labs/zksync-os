@@ -1,0 +1,36 @@
+[package]
+name = "zksync_os_revm_runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+anyhow = "1"
+alloy = { workspace = true, default-features = false, features = [
+    "eips",
+    "rpc",
+    "rpc-types",
+    "rpc-types-trace",
+    "serde",
+    "serde-bincode-compat",
+] }
+ruint = { workspace = true, default-features = false, features = ["alloc"] }
+revm = "=38.0.0"
+revm-inspectors = "0.39.0"
+log = { workspace = true }
+
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "6777d01e63aa7bbe4b0478e496f0be04488ffc52" }
+zksync_os_interface = { workspace = true, default-features = false }
+
+zk_ee = { path = "../../zk_ee" }
+basic_system = { path = "../../basic_system" }
+basic_bootloader = { path = "../../basic_bootloader" }
+forward_system = { path = "../../forward_system" }
+zksync_os_api = { path = "../../api" }
+
+zksync_os_tests_common = { path = "../common" }

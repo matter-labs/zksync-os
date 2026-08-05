@@ -18,5 +18,8 @@ tests/contracts_sol/*/node_modules
 tests/instances/*/*.svg
 tests/instances/**/*.bench
 
+bench_results/
+bench_scripts/__pycache__/
+
 .DS_Store
 .idea

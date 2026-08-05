@@ -1,7 +1,7 @@
 #![no_std]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
-#![feature(generic_const_exprs)]
+
 #![no_main]
 
 extern "C" {
@@ -28,9 +28,6 @@ extern "C" {
 core::arch::global_asm!(include_str!("asm/asm_reduced.S"));
 
 pub mod helper_reg_utils;
-
-#[cfg(not(feature = "no_exception_handling"))]
-pub mod machine_trap;
 
 #[cfg(feature = "print_debug_info")]
 pub mod quasi_uart;
@@ -205,9 +202,11 @@ unsafe fn workload() -> ! {
     type LoggerTy = crate::quasi_uart::QuasiUART;
 
     use core::fmt::Write;
-    let _ =
-        LoggerTy::default().write_fmt(format_args!("Entry routine is done, moving into payload\n"));
-
+    use proof_running_system::zk_ee::logger_log;
+    logger_log!(
+        LoggerTy::default(),
+        "Entry routine is done, moving into payload\n"
+    );
 
     // and crunch
     let output = proof_running_system::system::bootloader::run_proving::<
@@ -237,31 +236,10 @@ pub unsafe fn custom_setup_interrupts() {
 }
 
 /// Exception (trap) handler in rust.
-/// Called from the asm/asm.S
+/// Currently not supported.
+// TODO(EVM-1189): remove machine_default_start_trap entry point to binary.
 #[link_section = ".trap.rust"]
 #[export_name = "_machine_start_trap_rust"]
 pub extern "C" fn machine_start_trap_rust(trap_frame: *mut MachineTrapFrame) -> usize {
-    #[cfg(feature = "no_exception_handling")]
-    {
-        unsafe { core::hint::unreachable_unchecked() }
-    }
-
-    #[cfg(not(feature = "no_exception_handling"))]
-    {
-        extern "C" {
-            fn MachineExceptionHandler(trap_frame: &mut MachineTrapFrame) -> usize;
-            // fn DefaultHandler();
-        }
-
-        unsafe {
-            let cause = riscv::register::mcause::read();
-
-            if cause.is_exception() {
-                MachineExceptionHandler(&mut *trap_frame)
-            } else {
-                // DefaultHandler();
-                riscv::register::mepc::read()
-            }
-        }
-    }
+    unreachable!()
 }

@@ -24,7 +24,7 @@ For proving it’s a bit harder, as we are running it as a separate program on t
 
 The way it's done is that we have a special behavior for system register (CSR) reading/writing in our risc-v implementation. It can execute some special logic on write and return any data for read.
 
-The methods to use it from the rust program are located [here](../../../zksync_os/src/csr_io.rs), which are then used to implement the [`CsrBasedIOOracle`](../../../proof_running_system/src/io_oracle/mod.rs).
+The methods to use it from the Rust program are implemented in [`zksync_os/src/main.rs`](../../../zksync_os/src/main.rs) (the `csr` module), which are then used to implement the [`CsrBasedIOOracle`](../../../proof_running_system/src/io_oracle/mod.rs).
 
 ## Oracle Query System
 

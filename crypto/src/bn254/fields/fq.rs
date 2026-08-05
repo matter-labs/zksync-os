@@ -28,13 +28,15 @@ static MONT_REDUCTION_CONSTANT: B =
 struct FqParams;
 
 impl DelegatedModParams<4> for FqParams {
-    unsafe fn modulus() -> &'static BigInt<4> {
+    const MODULUS_BITSIZE: usize = 254;
+
+    fn modulus() -> &'static BigInt<4> {
         &MODULUS_CONSTANT
     }
 }
 
 impl DelegatedMontParams<4> for FqParams {
-    unsafe fn reduction_const() -> &'static BigInt<4> {
+    fn reduction_const() -> &'static BigInt<4> {
         &MONT_REDUCTION_CONSTANT
     }
 }
@@ -213,7 +215,6 @@ mod test {
     use super::Fq;
     use ark_ff::{Field, One, UniformRand, Zero};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         const ITERATIONS: usize = 1000;
@@ -285,7 +286,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_correctness() {
         use std::str::FromStr;
@@ -308,7 +308,6 @@ mod test {
     use ark_ff::{CyclotomicMultSubgroup, PrimeField};
     use ark_std::test_rng;
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_bilinearity() {
         for _ in 0..ITERATIONS {
@@ -338,7 +337,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_multi_pairing() {
         for _ in 0..ITERATIONS {
@@ -354,7 +352,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_final_exp() {
         for _ in 0..ITERATIONS {

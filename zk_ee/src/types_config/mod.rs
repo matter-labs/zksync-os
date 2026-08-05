@@ -3,6 +3,13 @@ use crate::{
     utils::Bytes32,
 };
 
+/// Trait to get the low u32 component
+/// of an address, if this address fits into u32.
+///
+pub trait TryIntoLowAddress {
+    fn try_into_low(&self) -> Option<u32>;
+}
+
 pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
     // We want to define some associated types for addresses, storage keys, etc.
     // mainly for sizes. We also want to have those interpretable as byte sequences in general.
@@ -11,7 +18,8 @@ pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
         + Clone
         + Copy
         + core::fmt::Debug
-        + core::default::Default;
+        + core::default::Default
+        + TryIntoLowAddress;
     type StorageKey: UsizeSerializable
         + UsizeDeserializable
         + Clone
@@ -53,6 +61,20 @@ pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
 pub struct EthereumIOTypesConfig;
 
 use ruint::aliases::*;
+
+impl TryIntoLowAddress for B160 {
+    fn try_into_low(&self) -> Option<u32> {
+        let limbs = self.as_limbs();
+        let lo = limbs[0];
+
+        // low limb must fit in u32, and all higher limbs must be zero
+        if lo <= u32::MAX as _ && limbs[1..].iter().all(|&w| w == 0) {
+            Some(lo as u32)
+        } else {
+            None
+        }
+    }
+}
 
 impl SystemIOTypesConfig for EthereumIOTypesConfig {
     type Address = B160;

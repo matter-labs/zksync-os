@@ -1,32 +1,36 @@
 #![cfg(test)]
 use rig::{
-    ethers::{abi::Address, signers::Signer, types::TransactionRequest},
-    ruint::aliases::{B160, U256},
+    alloy::{
+        primitives::{address, TxKind},
+        rpc::types::TransactionRequest,
+    },
+    ruint::aliases::U256,
+    TestingFramework,
 };
 use std::path::PathBuf;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn get_name_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
-    let erc20_addr = Address::from_low_u64_ne(1);
+    let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_be_bytes(erc20_addr.0), &erc20_bytecode)
-        .set_balance(
-            B160::from_be_bytes(wallet.address().0),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
-    let tx_get_name = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(erc20_addr)
-            .gas(1 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata("0x06fdde03", &[]))
-            .nonce(0),
-        &wallet,
+    let tx_get_name = ZKsyncTxEnvelope::from_eth_tx_from_req(
+        TransactionRequest {
+            to: Some(TxKind::Call(erc20_addr)),
+            gas: Some(1 << 27),
+            gas_price: Some(1000),
+            input: rig::utils::construct_calldata("0x06fdde03", &[]).into(),
+            nonce: Some(0),
+            ..Default::default()
+        },
+        wallet,
     );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
@@ -38,7 +42,8 @@ fn get_name_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_get_name], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_get_name]);
 }
 
 // WASM disabled for now
@@ -56,7 +61,7 @@ fn get_name_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_get_name = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_get_name = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1 << 27)
@@ -76,45 +81,48 @@ fn get_name_sol() {
 
 #[test]
 fn balance_of_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
-    let erc20_addr = Address::from_low_u64_ne(1);
+    let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_be_bytes(erc20_addr.0), &erc20_bytecode)
-        .set_balance(
-            B160::from_be_bytes(wallet.address().0),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
-    let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(erc20_addr)
-            .gas(1u64 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata(
+    let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
+        TransactionRequest {
+            to: Some(TxKind::Call(erc20_addr)),
+            gas: Some(1u64 << 27),
+            gas_price: Some(1000),
+            input: rig::utils::construct_calldata(
                 "0x40c10f19",
                 &[
                     &format!("{:x}", wallet.address()),
                     "0000000000000000000000000000000000000000000000000000000000001000",
                 ],
-            ))
-            .nonce(0),
-        &wallet,
+            )
+            .into(),
+            nonce: Some(0),
+            ..Default::default()
+        },
+        wallet.clone(),
     );
 
-    let tx_balance = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(erc20_addr)
-            .gas(1u64 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata(
+    let tx_balance = ZKsyncTxEnvelope::from_eth_tx_from_req(
+        TransactionRequest {
+            to: Some(TxKind::Call(erc20_addr)),
+            gas: Some(1u64 << 27),
+            gas_price: Some(1000),
+            input: rig::utils::construct_calldata(
                 "0x70a08231",
                 &[&format!("{:x}", wallet.address())],
-            ))
-            .nonce(1),
-        &wallet,
+            )
+            .into(),
+            nonce: Some(1),
+            ..Default::default()
+        },
+        wallet,
     );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
@@ -126,7 +134,8 @@ fn balance_of_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_mint, tx_balance], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_mint, tx_balance]);
 }
 
 // WASM disabled for now
@@ -145,7 +154,7 @@ fn balance_of_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -161,7 +170,7 @@ fn balance_of_sol() {
 //         &wallet,
 //     );
 //
-//     let tx_balance = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_balance = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -184,49 +193,52 @@ fn balance_of_sol() {
 
 #[test]
 fn transfer_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet_a = chain.random_wallet();
-    let wallet_b = chain.random_wallet();
+    let mut tester = TestingFramework::new();
+    let wallet_a = tester.random_signer();
+    let wallet_b = tester.random_signer();
 
-    let erc20_addr = Address::from_low_u64_ne(1);
+    let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_be_bytes(erc20_addr.0), &erc20_bytecode)
-        .set_balance(
-            B160::from_be_bytes(wallet_a.address().0),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet_a.address(), U256::from(1_000_000_000_000_000_u64));
 
-    let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(erc20_addr)
-            .gas(1u64 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata(
+    let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
+        TransactionRequest {
+            to: Some(TxKind::Call(erc20_addr)),
+            gas: Some(1u64 << 27),
+            gas_price: Some(1000),
+            input: rig::utils::construct_calldata(
                 "0x40c10f19",
                 &[
                     &format!("{:x}", wallet_a.address()),
                     "0000000000000000000000000000000000000000000000000000000000001000",
                 ],
-            ))
-            .nonce(0),
-        &wallet_a,
+            )
+            .into(),
+            nonce: Some(0),
+            ..Default::default()
+        },
+        wallet_a.clone(),
     );
 
-    let tx_transfer = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(erc20_addr)
-            .gas(1u64 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata(
+    let tx_transfer = ZKsyncTxEnvelope::from_eth_tx_from_req(
+        TransactionRequest {
+            to: Some(TxKind::Call(erc20_addr)),
+            gas: Some(1u64 << 27),
+            gas_price: Some(1000),
+            input: rig::utils::construct_calldata(
                 "0xa9059cbb",
                 &[
                     &format!("{:x}", wallet_b.address()),
                     "0000000000000000000000000000000000000000000000000000000000000100",
                 ],
-            ))
-            .nonce(1),
-        &wallet_a,
+            )
+            .into(),
+            nonce: Some(1),
+            ..Default::default()
+        },
+        wallet_a,
     );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
@@ -238,7 +250,8 @@ fn transfer_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_mint, tx_transfer], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_mint, tx_transfer]);
 }
 
 // WASM disabled for now
@@ -258,7 +271,7 @@ fn transfer_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -274,7 +287,7 @@ fn transfer_sol() {
 //         &wallet_a,
 //     );
 //
-//     let tx_transfer = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_transfer = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)

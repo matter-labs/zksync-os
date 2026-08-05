@@ -1,5 +1,9 @@
 use super::*;
 use crate::run::PreimageSource;
+use basic_system::system_implementation::ethereum_storage_model::{
+    ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID, ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+    ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
+};
 use basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
@@ -15,7 +19,13 @@ pub struct GenericPreimageResponder<PS: PreimageSource> {
 }
 
 impl<PS: PreimageSource> GenericPreimageResponder<PS> {
-    const SUPPORTED_QUERY_IDS: &[u32] = &[FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID];
+    const SUPPORTED_QUERY_IDS: &[u32] = &[
+        FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID,
+        ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
+        ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+        ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
+        ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
+    ];
 }
 
 impl<PS: PreimageSource, M: MemorySource> OracleQueryProcessor<M> for GenericPreimageResponder<PS> {
@@ -32,7 +42,7 @@ impl<PS: PreimageSource, M: MemorySource> OracleQueryProcessor<M> for GenericPre
         query_id: u32,
         query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let hash = Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
@@ -48,9 +58,15 @@ impl<PS: PreimageSource, M: MemorySource> OracleQueryProcessor<M> for GenericPre
                 )
             })
         };
-
-        DynUsizeIterator::from_constructor(preimage, |inner_ref| {
-            ReadIterWrapper::from(inner_ref.iter().copied())
-        })
+        if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
+            || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
+        {
+            let len = preimage.len() as u32;
+            DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+        } else {
+            DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+                ReadIterWrapper::from(inner_ref.iter().copied())
+            })
+        }
     }
 }

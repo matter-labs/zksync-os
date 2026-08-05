@@ -8,12 +8,6 @@ use zk_ee::system::Ergs;
 pub const PREIMAGE_CACHE_GET_NATIVE_COST: u64 = 500;
 pub const PREIMAGE_CACHE_SET_NATIVE_COST: u64 = 500;
 
-/// Native costs for blake2s hashing
-/// NOTE: To recompute if the blake coefficient changes
-pub const BLAKE2S_BASE_NATIVE_COST: u64 = 800;
-pub const BLAKE2S_ROUND_NATIVE_COST: u64 = 340;
-pub const BLAKE2S_CHUNK_SIZE: u64 = 64;
-
 // Storage costs
 // Avg is ~10x smaller, maybe we can reduce it, but it depends on cache state.
 pub const WARM_STORAGE_READ_NATIVE_COST: u64 = 4000;
@@ -49,10 +43,12 @@ pub const EVENT_STORAGE_BASE_NATIVE_COST: u64 = 6000;
 pub const EVENT_TOPIC_NATIVE_COST: u64 = 200;
 pub const EVENT_DATA_PER_BYTE_COST: u64 = 2;
 
-// Helper to compute hashing native cost
-pub fn blake2s_native_cost(len: usize) -> u64 {
-    let num_rounds = (len as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
-    num_rounds
-        .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
-        .saturating_add(BLAKE2S_BASE_NATIVE_COST)
-}
+const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 3;
+// Same costs as for events, as the same structure is used.
+pub const INTEROP_ROOT_STORAGE_NATIVE_COST: u64 =
+    EVENT_STORAGE_BASE_NATIVE_COST + INTEROP_ROOT_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;
+
+// Same costs as for events, as the same structure is used.
+pub const SL_CHAIN_ID_BYTE_LENGTH: u64 = 32;
+pub const NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST: u64 =
+    EVENT_STORAGE_BASE_NATIVE_COST + SL_CHAIN_ID_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;

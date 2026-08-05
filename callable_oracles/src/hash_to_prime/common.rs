@@ -203,7 +203,7 @@ pub fn create_entropy(source: &[u8]) -> [u8; 64] {
     use crypto::blake2s::Blake2s256;
     assert!(MAX_ENTROPY_BYTES <= 64);
     let mut entropy = [0u8; 64];
-    for (idx, dst) in entropy.array_chunks_mut::<32>().enumerate() {
+    for (idx, dst) in entropy.as_chunks_mut::<32>().0.iter_mut().enumerate() {
         let mut hasher = Blake2s256::new();
         hasher.update(&(idx as u32).to_le_bytes());
         hasher.update(&source);
@@ -214,7 +214,7 @@ pub fn create_entropy(source: &[u8]) -> [u8; 64] {
 }
 
 pub fn write_entropy_le(dst: &mut [u8], src: &mut impl Iterator<Item = u8>, entropy_bits: u32) {
-    let take_bytes = entropy_bits.next_multiple_of(8) / 8;
+    let take_bytes = entropy_bits.div_ceil(8);
     debug_assert_eq!(dst.len(), take_bytes as usize);
     let mut entropy_bits = entropy_bits;
     for (dst, src) in dst.iter_mut().zip(src) {

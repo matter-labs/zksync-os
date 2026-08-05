@@ -52,7 +52,7 @@ impl<T: ReadStorageTree, M: MemorySource> OracleQueryProcessor<M> for ReadTreeRe
         query_id: u32,
         query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
@@ -66,7 +66,7 @@ impl<T: ReadStorageTree, M: MemorySource> OracleQueryProcessor<M> for ReadTreeRe
                 DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
             }
             ExactIndexQuery::QUERY_ID => {
-                let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
                     &mut query.into_iter(),
                 )
                 .expect("must deserialize key");

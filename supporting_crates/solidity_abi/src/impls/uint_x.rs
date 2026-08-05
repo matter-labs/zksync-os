@@ -28,7 +28,7 @@ macro_rules! uint_impl {
                 if local_head.len() < 32 {
                     return Err(());
                 }
-                let source = local_head.array_chunks::<32>().next().unwrap();
+                let source = local_head.as_chunks::<32>().0.iter().next().unwrap();
                 let new = Self { source };
                 *head_offset += 32;
 
@@ -42,7 +42,12 @@ macro_rules! uint_impl {
                 if local_head.len() < 32 {
                     return Err(());
                 }
-                let source = local_head.array_chunks_mut::<32>().next().unwrap();
+                let source = local_head
+                    .as_chunks_mut::<32>()
+                    .0
+                    .iter_mut()
+                    .next()
+                    .unwrap();
                 let new = Self { source };
                 *head_offset += 32;
 
@@ -137,7 +142,7 @@ impl<'a> SolidityCodableReflectionRef<'a> for AddressRef<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let source = local_head.array_chunks::<32>().next().unwrap();
+        let source = local_head.as_chunks::<32>().0.iter().next().unwrap();
         let new = Self { source };
         *head_offset += 32;
 
@@ -151,7 +156,12 @@ impl<'a> SolidityCodableReflectionRefMut<'a> for AddressRefMut<'a> {
         if local_head.len() < 32 {
             return Err(());
         }
-        let source = local_head.array_chunks_mut::<32>().next().unwrap();
+        let source = local_head
+            .as_chunks_mut::<32>()
+            .0
+            .iter_mut()
+            .next()
+            .unwrap();
         let new = Self { source };
         *head_offset += 32;
 
@@ -241,7 +251,7 @@ impl<'a> SolidityCodableReflectionRefWritable<'a> for AddressRefMut<'a> {
 //         if local_head.len() < 32 {
 //             return Err(());
 //         }
-//         let source = local_head.array_chunks::<32>().next().unwrap();
+//         let source = local_head.as_chunks::<32>().0.next().unwrap();
 //         let new = Self { source };
 //         *head_offset += 32;
 

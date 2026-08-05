@@ -17,10 +17,9 @@ pub struct GenericTransientStorage<
     const M: usize,
     A: Allocator + Clone = Global,
 > {
-    cache: HistoryMap<K, V, A>,
+    cache: HistoryMap<K, V, A, ()>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<SF>,
-    alloc: A,
 }
 
 impl<
@@ -36,7 +35,6 @@ impl<
             cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
             phantom: PhantomData,
-            alloc: allocator.clone(),
         }
     }
 
@@ -44,7 +42,7 @@ impl<
         // Just discard old history
         // Note: it will reset snapshots counter, old snapshots handlers can't be used anymore
         // Note: We will reset it redundantly for first tx
-        self.cache = HistoryMap::new(self.alloc.clone());
+        self.cache.clear();
         self.current_tx_number += 1;
     }
 
@@ -61,7 +59,7 @@ impl<
     where
         V: Default,
     {
-        cache.get_or_insert(key, || Ok(V::default()))
+        cache.get_or_insert(key, || Ok((V::default(), ())))
     }
 
     pub fn apply_read(&mut self, key: &K, dst: &mut V) -> Result<(), SystemError>

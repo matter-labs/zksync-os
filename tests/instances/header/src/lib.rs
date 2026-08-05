@@ -7,14 +7,13 @@ use basic_bootloader::bootloader::block_header::EMPTY_OMMER_ROOT_HASH;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use rig::alloy::primitives::{Address, B256};
 use rig::ruint::aliases::{B160, U256};
-use rig::utils::run_block_of_erc20;
-use rig::{zk_ee::utils::Bytes32, Chain};
+use rig::TestingFramework;
 
 // Run a block of ERC20 transactions and check invariants on the block header.
 #[test]
 fn test_block_header_invariants() {
-    let mut chain = Chain::empty(None);
-    let output = run_block_of_erc20::<false>(&mut chain, 10, None);
+    let mut tester = TestingFramework::new();
+    let output = tester.run_block_of_erc20(10, None);
     let header = output.header;
 
     // Check invariants on header for genesis block.
@@ -54,7 +53,7 @@ fn test_block_header_invariants() {
         gas_limit,
         ..Default::default()
     };
-    let output = run_block_of_erc20::<false>(&mut chain, 10, Some(block_context));
+    let output = tester.run_block_of_erc20(10, Some(block_context));
     let header = output.header;
     assert_eq!(header.parent_hash, genesis_hash);
     assert_eq!(header.ommers_hash, EMPTY_OMMER_ROOT_HASH);

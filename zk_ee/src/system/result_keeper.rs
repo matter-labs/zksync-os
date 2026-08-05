@@ -15,7 +15,7 @@ use crate::types_config::SystemIOTypesConfig;
 pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
     fn events<'a>(
         &mut self,
-        _iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>,
+        _iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, IOTypes>>,
     ) {
     }
 
@@ -24,6 +24,17 @@ pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
     fn storage_diffs(
         &mut self,
         _iter: impl Iterator<Item = (IOTypes::Address, IOTypes::StorageKey, IOTypes::StorageValue)>,
+    ) {
+    }
+
+    fn basic_account_diffs(
+        &mut self,
+        _iter: impl Iterator<
+            Item = (
+                IOTypes::Address,
+                (u64, IOTypes::NominalTokenValue, IOTypes::BytecodeHashValue),
+            ),
+        >,
     ) {
     }
 
@@ -37,8 +48,24 @@ pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
     /// This method can be called several times with consecutive parts of pubdata.
     ///
     fn pubdata<'a>(&mut self, _value: &'a [u8]) {}
+
+    /// Convenience if we will want to also dump account's properties encoding separately in raw form
+    fn account_state_opaque_encoding(&mut self, _address: &IOTypes::Address, _encoding: &[u8]) {}
 }
 
-pub struct NopResultKeeper;
+pub struct NopResultKeeper<T: 'static + Sized = ()> {
+    _marker: core::marker::PhantomData<T>,
+}
 
-impl<IOTypes: SystemIOTypesConfig> IOResultKeeper<IOTypes> for NopResultKeeper {}
+impl<T: 'static + Sized> Default for NopResultKeeper<T> {
+    fn default() -> Self {
+        Self {
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: 'static + Sized, IOTypes: SystemIOTypesConfig> IOResultKeeper<IOTypes>
+    for NopResultKeeper<T>
+{
+}

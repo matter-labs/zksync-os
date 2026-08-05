@@ -42,9 +42,7 @@ impl AffineConst {
         #[cfg(all(debug_assertions, not(feature = "bigint_ops")))]
         {
             debug_assert!(self.x.0.magnitude <= Self::X_MAGNITUDE_MAX);
-            debug_assert!(self.x.0.magnitude <= 32);
             debug_assert!(self.y.0.magnitude <= Self::Y_MAGNITUDE_MAX);
-            debug_assert!(self.y.0.magnitude <= 32);
         }
     }
 
@@ -126,9 +124,7 @@ impl Affine {
         #[cfg(all(debug_assertions, not(feature = "bigint_ops")))]
         {
             debug_assert!(self.x.0.magnitude <= Self::X_MAGNITUDE_MAX);
-            debug_assert!(self.x.0.magnitude <= 32);
             debug_assert!(self.y.0.magnitude <= Self::Y_MAGNITUDE_MAX);
-            debug_assert!(self.y.0.magnitude <= 32);
         }
     }
 

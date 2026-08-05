@@ -6,8 +6,13 @@
 //! This is a minimalistic sanity checking. Does not properly cover all cases and functionality
 
 use rig::alloy::primitives::address;
-use rig::forward_system::system::tracers::call_tracer::{CallTracer, CallType};
-use rig::ruint::aliases::B160;
+use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::system::tracers::call_tracer::{CallError, CallTracer, CallType};
+use rig::ruint::aliases::{B160, U256};
+use rig::zk_ee::system::evm::EvmError;
+use rig::zk_ee::system::tracer::Tracer;
+use rig::BlockContext;
 
 use crate::tracer::run_chain_with_tracer;
 
@@ -29,6 +34,7 @@ fn test_call_tracer_basic_call() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
     // Verify transaction was captured
@@ -38,11 +44,13 @@ fn test_call_tracer_basic_call() {
         "Should have one transaction recorded"
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify basic call properties
     assert!(matches!(call.call_type, CallType::Call));
-    assert_eq!(call.to, B160::from_be_bytes(contract_address.into_array()));
+    assert_eq!(call.to, B160::from_alloy(contract_address));
     assert!(!call.reverted, "Call should not be reverted");
     assert!(call.error.is_none(), "Call should not have error");
     assert_eq!(call.gas, 100_000 - 21_000, "Call should have gas assigned");
@@ -74,6 +82,7 @@ fn test_call_tracer_nested_calls() {
             (contract_b_address, contract_b_bytecode),
         ],
         &mut tracer,
+        None,
     );
 
     // Verify transaction was captured
@@ -83,17 +92,16 @@ fn test_call_tracer_nested_calls() {
         "Should have one transaction recorded"
     );
 
-    let main_call = &tracer.transactions[0];
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify main call has subcalls
     assert_eq!(main_call.calls.len(), 1, "Should have one subcall");
 
     let subcall = &main_call.calls[0];
     assert!(matches!(subcall.call_type, CallType::Call));
-    assert_eq!(
-        subcall.to,
-        B160::from_be_bytes(contract_b_address.into_array())
-    );
+    assert_eq!(subcall.to, B160::from_alloy(contract_b_address));
     assert!(!subcall.reverted, "Subcall should not be reverted");
     assert!(subcall.error.is_none(), "Subcall should not have error");
     assert!(subcall.gas > 0, "Subcall should have gas assigned");
@@ -120,9 +128,12 @@ fn test_call_tracer_with_logs() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     assert_eq!(call.logs.len(), 1);
 }
@@ -147,9 +158,12 @@ fn test_call_tracer_only_top_call() {
             (contract_b_address, contract_b_bytecode),
         ],
         &mut tracer,
+        None,
     );
 
-    let main_call = &tracer.transactions[0];
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     assert_eq!(main_call.calls.len(), 0)
 }
@@ -169,13 +183,202 @@ fn test_call_tracer_return_data() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify output data is captured
     assert_eq!(
         call.output,
         hex::decode("4200000000000000000000000000000000000000000000000000000000000000").unwrap()
+    );
+}
+
+#[test]
+fn test_call_tracer_out_of_native_during_validation() {
+    let contract_address = address!("1000000000000000000000000000000000000001");
+
+    // Simple contract bytecode that returns a value:
+    // PUSH1 0x42    -> 6042
+    // PUSH1 0x00    -> 6000
+    // MSTORE        -> 52     (store 0x42 at memory position 0)
+    // PUSH1 0x20    -> 6020
+    // PUSH1 0x00    -> 6000
+    // RETURN        -> f3     (return 32 bytes from memory position 0)
+    let test_contract_bytecode = hex::decode("604260005260206000f3").unwrap();
+
+    let mut tracer = CallTracer::default();
+
+    let mut block_context = BlockContext::default();
+    block_context.native_price = U256::from(100000); // Set high native price to trigger out-of-native during validation
+
+    run_chain_with_tracer(
+        contract_address,
+        vec![(contract_address, test_contract_bytecode)],
+        &mut tracer,
+        Some(block_context),
+    );
+
+    let call = &tracer.transactions[0];
+
+    assert!(call.is_none());
+}
+
+#[test]
+fn test_call_tracer_create_vs_create2_regression() {
+    let create_contract_address = address!("1000000000000000000000000000000000000001");
+    let create2_contract_address = address!("1000000000000000000000000000000000000002");
+
+    // CREATE bytecode - just returns empty data
+    let create_bytecode = hex::decode("6000600060006000f0").unwrap(); // CREATE opcode
+
+    // CREATE2 bytecode - just returns empty data
+    let create2_bytecode = hex::decode("600060006000600060006000f5").unwrap(); // CREATE2 opcode
+
+    // Test CREATE operation
+    let mut tracer = CallTracer::default();
+    run_chain_with_tracer(
+        create_contract_address,
+        vec![(create_contract_address, create_bytecode)],
+        &mut tracer,
+        None,
+    );
+
+    // Test CREATE2 operation
+    let mut tracer2 = CallTracer::default();
+    run_chain_with_tracer(
+        create2_contract_address,
+        vec![(create2_contract_address, create2_bytecode)],
+        &mut tracer2,
+        None,
+    );
+
+    // Verify that both operations complete without crashing
+    // This is a regression test for the fix that swapped CREATE and CREATE2 logic
+    assert!(
+        matches!(
+            tracer.transactions[0].as_ref().unwrap().calls[0].call_type,
+            CallType::Create
+        ),
+        "First subcall should be CREATE"
+    );
+    assert!(
+        matches!(
+            tracer2.transactions[0].as_ref().unwrap().calls[0].call_type,
+            CallType::Create2
+        ),
+        "First subcall should be CREATE2"
+    );
+}
+
+#[test]
+fn test_call_tracer_preserves_multiple_top_level_frames() {
+    let mut tracer = CallTracer::default();
+    <CallTracer as Tracer<ForwardRunningSystem>>::begin_tx(&mut tracer, &[]);
+    tracer.finished_calls = vec![
+        rig::forward_system::system::tracers::call_tracer::Call {
+            to: B160::from_limbs([0x7002, 0, 0]),
+            gas_used: 2850,
+            ..Default::default()
+        },
+        rig::forward_system::system::tracers::call_tracer::Call {
+            to: B160::from_limbs([0x1000f, 0, 0]),
+            gas_used: 100,
+            ..Default::default()
+        },
+    ];
+
+    <CallTracer as Tracer<ForwardRunningSystem>>::finish_tx(&mut tracer);
+
+    let root = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
+    assert_eq!(root.to, B160::from_limbs([0x7002, 0, 0]));
+    assert_eq!(root.gas_used, 2850);
+    assert_eq!(
+        root.calls.len(),
+        1,
+        "extra top-level frames must be preserved"
+    );
+    assert_eq!(root.calls[0].to, B160::from_limbs([0x1000f, 0, 0]));
+}
+
+#[test]
+fn test_call_tracer_insufficient_balance_error_on_child_frame() {
+    let contract_a_address = address!("1000000000000000000000000000000000000001");
+    let contract_b_address = address!("1000000000000000000000000000000000000002");
+
+    // Contract A: performs CALL to contract B with value = 1 ether.
+    // Contract A has no balance, so the CALL will fail with InsufficientBalance
+    // in before_reading_callee. The parent frame should NOT be marked as reverted;
+    // only the child (subcall) should carry the error.
+    //
+    // Bytecode layout:
+    //   PUSH1 0x00     (retLength)     -> 6000
+    //   PUSH1 0x00     (retOffset)     -> 6000
+    //   PUSH1 0x00     (argsLength)    -> 6000
+    //   PUSH1 0x00     (argsOffset)    -> 6000
+    //   PUSH32 <1eth>  (value)         -> 7f + 0000...0de0b6b3a7640000
+    //   PUSH20 <addr>  (to)            -> 73 + contract_b_address
+    //   PUSH2 0xFFFF   (gas)           -> 61ffff
+    //   CALL                           -> f1
+    //   STOP                           -> 00
+    let contract_a_bytecode = hex::decode(
+        "6000600060006000\
+         7f0000000000000000000000000000000000000000000000000de0b6b3a7640000\
+         731000000000000000000000000000000000000002\
+         61ffff\
+         f1\
+         00",
+    )
+    .unwrap();
+
+    // Contract B: simple STOP (never reached in this test)
+    let contract_b_bytecode = hex::decode("00").unwrap();
+
+    let mut tracer = CallTracer::default();
+    run_chain_with_tracer(
+        contract_a_address,
+        vec![
+            (contract_a_address, contract_a_bytecode),
+            (contract_b_address, contract_b_bytecode),
+        ],
+        &mut tracer,
+        None,
+    );
+
+    assert_eq!(
+        tracer.transactions.len(),
+        1,
+        "Should have one transaction recorded"
+    );
+
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
+
+    // Top-level call should succeed (the CALL failure inside is not a tx revert,
+    // it just pushes 0 on the stack)
+    assert!(!main_call.reverted, "Parent call should not be reverted");
+    assert!(
+        main_call.error.is_none(),
+        "Parent call should not have error"
+    );
+
+    // Should have exactly one subcall (the failed CALL with value)
+    assert_eq!(main_call.calls.len(), 1, "Should have one subcall");
+
+    let subcall = &main_call.calls[0];
+    assert!(subcall.reverted, "Subcall should be reverted");
+    assert!(
+        matches!(
+            subcall.error,
+            Some(CallError::EvmError(EvmError::InsufficientBalance))
+        ),
+        "Subcall should have InsufficientBalance error, got: {:?}",
+        subcall.error
     );
 }

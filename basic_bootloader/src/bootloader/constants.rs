@@ -1,14 +1,27 @@
+use basic_system::cost_constants::{
+    blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
+};
+use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
+use basic_system::system_implementation::flat_storage_model::cost_constants::{
+    COLD_NEW_STORAGE_READ_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+    WARM_STORAGE_READ_NATIVE_COST,
+};
+use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
 
+/// Bootloader's formal address for system-level operations
+pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
+
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
 
 const _: () = const {
-    assert!(MAX_TX_LEN_BYTES % core::mem::size_of::<usize>() == 0);
+    assert!(MAX_TX_LEN_BYTES.is_multiple_of(core::mem::size_of::<usize>()));
 };
 
 // 1024 for EVM equivalence
@@ -22,48 +35,26 @@ pub const MAX_CALLSTACK_DEPTH: usize = 1025;
 /// 32 for the suggested_signed_hash and 32 for the offset itself.
 pub const TX_CALLDATA_OFFSET: usize = 0x60;
 
-/// Maximum value of gas that can be represented as ergs in a u64.
+/// Maximum value of gas that can be represented as ergs in an u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
 
-// Just for EVM compatibility.
-pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
-
-// Includes:
-//  - Storing and hashing the l1 tx log.
-//  - Transferring fee to coinbase.
-//  - Hashing of tx hash into rolling hash.
-//  - Adding tx hash into l1 tx linear hasher
-pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 130_000;
-
-// Pubdata needed for the diff in balance as a result of
-// the fee payment to the coinbase.
-// We take a worst-case value of 32 byte for the key and 33 for
-// the uncompressed update.
-const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 33;
-
-// Needed to publish the l1 tx log and coinbase balance.
-pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88 + COINBASE_BALANCE_INTRINSIC_PUBDATA;
-
-/// Does not include signature verification.
-pub const L2_TX_INTRINSIC_GAS: u64 = 18_000;
+/// Transaction intrinsic gas cost.
+pub const TX_INTRINSIC_GAS: u64 = 21_000;
 
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
-/// Value taken from system-contracts, to adjust.
-pub const L2_TX_INTRINSIC_PUBDATA: u64 = COINBASE_BALANCE_INTRINSIC_PUBDATA;
+/// Cost to convert zero byte of calldata into "token"
+pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 
-// Includes:
-//  - Transferring fee to coinbase.
-//  - Transferring the gas refund.
-//  - Hashing of tx hash into rolling hash.
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
+/// Cost to convert non-zero byte of calldata into "token"
+pub const CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR: u64 = 4;
 
-/// Cost in gas to store one zero byte of calldata
-pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
+/// Cost in gas per "token" of calldata
+pub const CALLDATA_TOKEN_GAS_COST: u64 = 4;
 
-/// Cost in gas to store one non-zero byte of calldata
-pub const CALLDATA_NON_ZERO_BYTE_GAS_COST: u64 = 16;
+/// EIP-7623 minimal "token" cost
+pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
 
 /// EVM tester requires a high native_per_gas, but it hard-codes
 /// low gas prices. We need to bypass the usual way to compute this
@@ -74,6 +65,190 @@ pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 // TODO (EVM-1157): find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 
-// Upgrade transactions are expected to have ~72 million gas. We will use enough
+// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
 // gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const UPGRADE_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);
+pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
+
+// computational native consts
+/// Constant part of l2 tx intrinsic computational native cost.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    ACCOUNT_UPDATE_COST + // nonce update
+    keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
+    ACCOUNT_UPDATE_COST + // balance change for fee prepayment
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+
+/// Service tx intrinsic computational native cost.
+/// Service txs are not signed, so there is no ecrecover and only a single
+/// (full-tx) keccak is performed.
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    keccak256_native_cost_for_rounds_u64(2) + // keccak for full hash, 1 round worst case tx size + 1 round precharge for dynamic parts
+    ACCOUNT_UPDATE_COST + // balance change for fee prepayment
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+
+/// Service tx calldata byte intrinsic computational native cost.
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
+    COPY_BYTE_NATIVE_COST + DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + full hash
+
+/// Native computational cost to cover keccak256 hashing overhead for dynamic fields of the transaction per byte.
+/// NOTE: this is approximate cost for hashing of 1 byte, but it shouldn't be used to estimate cost of one keccak call,
+/// it doesn't include static keccak256 cost part and keccak256 cost depends on the number of rounds, not byte length.
+/// So these things should be accounted separately: constant part of tx intrinsic cost includes keccak static part, and
+/// we are precharging 1 keccak round in the constant part to cover worst case number of rounds.
+/// Without extra round charge, fields can consume 136*n + 1 bytes in encoding, so cost will cover ~n rounds, but it should cover (n + 1) rounds of keccak.
+const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
+    KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
+
+/// L2 tx calldata byte intrinsic computational native cost.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
+    COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
+
+/// L2 tx access list account computational native cost.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
+    PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    31 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 31 - worst case contribution to rlp encoding (5 length of payload,  21 address, 5 keys list length encoding)
+
+/// L2 tx access list storage slot computational native cost.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
+    PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
+    WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
+    33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
+
+/// L2 tx authorization computational native cost.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
+    PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
+    keccak256_native_cost_for_rounds_u64(1) + // auth message keccak cost (1 round)
+    ECRECOVER_NATIVE_COST + // signature verification
+    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+    ACCOUNT_UPDATE_COST + // nonce update
+    ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
+    132 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for tx signing + full hash, 132 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 2 list overhead)
+
+/// Native computational overhead of 7702 auth.
+pub const PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Native computational overhead of 2930 access list per address.
+pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Native computational overhead 2930 access list per slot.
+pub const PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
+
+/// Account read native computational cost in the worst case - cold, new(not present in the tree).
+pub const NEW_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_NEW_STORAGE_READ_NATIVE_COST;
+
+/// Account update native computational cost.
+pub const ACCOUNT_UPDATE_COST: u64 =
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
+
+/// Constant part of l1 tx intrinsic computational native cost.
+// Covers intrinsic L1 tx work not charged as tx-body computation.
+//
+//  - storing and hashing the L1 tx log:
+//      EVENT_STORAGE_BASE_NATIVE_COST
+//    + keccak256_native_cost(88)
+//    + 2 * keccak256_native_cost(64)
+//    = 6_000 + 20_000 + 40_000
+//    = 66_000
+//  - hashing tx hash into the rolling hash and linear hashers:
+//      3 * keccak256_native_cost(64)
+//    = 3 * 20_000
+//    = 60_000
+//  - coinbase transfer:
+//      warm existing balance write
+//    = WARM_STORAGE_READ_NATIVE_COST + WARM_STORAGE_WRITE_EXTRA_NATIVE_COST x 2 (to account for treasury)
+//    = (4_000 + 1_000) x 2
+//    = 10_000
+//  - coinbase L2AssetTracker notification:
+//      cold call into L2AssetTracker
+//    + BASE_TOKEN_ASSET_ID read
+//    + isAssetRegistered read
+//    + assetMigrationNumber read
+//    + L2BaseTokenZKOS.totalSupply() path
+//    + L2_CHAIN_ASSET_HANDLER.migrationNumber() call
+//    + assetMigrationNumber write
+//    + SystemContext.currentSettlementLayerChainId() call
+//    + interopInfo.totalSuccessfulDepositsFromL1 += amount
+//    = 132_600
+//    + 125_120
+//    + 145_120
+//    + 286_240
+//    + 392_340
+//    + 277_720
+//    + 164_800
+//    + 257_720
+//    + 391_040
+//    ~= 2_172_700
+//  - refund transfer:
+//      treasury cold existing write
+//    + refund recipient cold new write
+//    = 171_680 + 363_040
+//    = 534_720
+//  - refund L2AssetTracker notification:
+//      warm-path estimate
+//    = 32_000
+//
+// We use the cold-path cost for asset tracker first notification because
+// first mint / call to L2AssetTracker can fail due to out-of-native
+pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
+
+/// L1 tx calldata byte intrinsic computational native cost.
+pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = COPY_BYTE_NATIVE_COST;
+
+/// Worst-case pubdata for tx sender account change
+// Please note, we are charging for the balance change twice, because there are 3 potential changes on different stages:
+// fee prepayment during validation, potential increase during execution, and post execution refund. And due to our pubdata
+// charging approach, if execution balance change reverts validation balance change, pubdata can be "refunded" with execution pubdata payment.
+const SENDER_ACCOUNT_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 2 * 33/*worst case balance*/;
+
+/// Constant part of l2 tx intrinsic pubdata.
+pub const L2_TX_INTRINSIC_PUBDATA: u64 =
+    SENDER_ACCOUNT_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
+
+/// L2 tx authorization intrinsic pubdata.
+pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compression:
+    32 + // key
+    1 + // account metadata
+    8 + // versioning data
+    2 + // nonce
+    1 + // balance
+    4 + // unpadded code length
+    4 + // artifacts length
+    24 + // padded bytecode
+    4; // observable length
+
+// Pubdata needed for the diff in balance as a result of
+// the fee payment to the coinbase.
+// We take a worst-case value of 32 byte for the key and 34 for
+// the uncompressed update.
+const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
+
+// Pubdata needed for the treasury balance diff caused by transfers
+// from treasury. Use the same worst-case balance-diff estimate as
+// for coinbase balance updates.
+const TREASURY_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
+
+// Pubdata needed for the refund recipient balance diff in the worst case.
+// As with the coinbase/treasury balance updates, price a 32-byte key and
+// 34-byte uncompressed value update.
+const REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
+
+// Pubdata produced by the L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2
+// call that the bootloader makes inside the L1 tx execution frame (value-mint
+// notification). In the steady-state case (base token already registered,
+// settled on L1), the contract performs a single SSTORE:
+//   interopInfo[assetId].totalSuccessfulDepositsFromL1 += _amount
+// Each storage diff is encoded as 32 bytes (derived key) + compressed value
+// diff. The worst-case compressed value using the Add strategy with a
+// 256-bit amount falls back to Nothing encoding = 33 bytes.
+pub const ASSET_TRACKER_INTRINSIC_PUBDATA: u64 = 32 + 33;
+
+// Needed to publish the L1 tx log, coinbase balance, treasury balance, refund
+// recipient balance, and asset tracker state diff.
+pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
+    + COINBASE_BALANCE_INTRINSIC_PUBDATA
+    + TREASURY_BALANCE_INTRINSIC_PUBDATA
+    + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
+    + ASSET_TRACKER_INTRINSIC_PUBDATA;

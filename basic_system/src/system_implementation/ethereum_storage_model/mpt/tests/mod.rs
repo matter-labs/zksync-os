@@ -3,6 +3,7 @@ mod prestate;
 mod reth_trie;
 mod serialization;
 
+use crate::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
 use alloy::primitives::U256;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
@@ -161,10 +162,8 @@ fn read_execution_witness() -> ParsedWitness {
 }
 
 fn rlp_encode_short_slice(slice: &[u8]) -> Vec<u8> {
-    if slice.len() == 1 {
-        if slice[0] < 0x80 {
-            return slice.to_vec();
-        }
+    if slice.len() == 1 && slice[0] < 0x80 {
+        return slice.to_vec();
     }
 
     if slice.len() <= 55 {
@@ -201,7 +200,7 @@ fn test_from_execution_witness() {
     } = data;
     let _ = all_storage_trie_pos;
 
-    let mut trie =
+    let mut trie: EthereumMPT<'_, Global, VecCtor> =
         EthereumMPT::new_in(initial_root.try_into().unwrap(), &mut interner, Global).unwrap();
 
     let mut initial_state_roots = BTreeMap::new();
@@ -232,7 +231,7 @@ fn test_from_execution_witness() {
             } else {
                 encoded_accounts.insert(*address_key, account_data.to_vec());
                 let data = decode_address_data(account_data);
-                initial_state_roots.insert(address_key.clone(), data[2].data().to_vec());
+                initial_state_roots.insert(*address_key, data[2].data().to_vec());
 
                 if let Some(nonce) = account_state.nonce.as_ref() {
                     let encoding = nonce.to_be_bytes();
@@ -243,9 +242,9 @@ fn test_from_execution_witness() {
                 }
                 // There are fee-related divergences
                 if let Some(balance) = account_state.balance.as_ref() {
-                    if &address != &coinbase {
+                    if address != coinbase {
                         // unclear why
-                        if &balance.to_be_bytes_trimmed_vec() != data[1].data() {
+                        if balance.to_be_bytes_trimmed_vec() != data[1].data() {
                             println!(
                                 "Account 0x{}: prestate balance is dirty",
                                 hex::encode(&address)
@@ -277,7 +276,7 @@ fn test_from_execution_witness() {
 
     for (address, root) in initial_state_roots.into_iter() {
         let initial_storage = initial_state.0.get(&address).unwrap();
-        let mut storage_trie =
+        let mut storage_trie: EthereumMPT<'_, Global, VecCtor> =
             EthereumMPT::new_in(root.try_into().unwrap(), &mut interner, Global).unwrap();
 
         if let Some(storage) = initial_storage.storage.as_ref() {
@@ -338,10 +337,8 @@ fn test_from_execution_witness() {
                 if initial_value.into_inner().is_zero() == false {
                     if final_value.into_inner().is_zero() {
                         deletes.insert(key, k);
-                    } else {
-                        if initial_value.into_inner() != final_value.into_inner() {
-                            updates.insert(key, (k, (*initial_value, final_value)));
-                        }
+                    } else if initial_value.into_inner() != final_value.into_inner() {
+                        updates.insert(key, (k, (*initial_value, final_value)));
                     }
                 } else {
                     // potentially insert
@@ -349,10 +346,8 @@ fn test_from_execution_witness() {
                         inserts.insert(key, (k, final_value));
                     }
                 }
-            } else {
-                if final_value.into_inner().is_zero() == false {
-                    inserts.insert(key, (k, final_value));
-                }
+            } else if final_value.into_inner().is_zero() == false {
+                inserts.insert(key, (k, final_value));
             }
         }
         let reads_only = updates.is_empty() && deletes.is_empty() && inserts.is_empty();
@@ -372,7 +367,7 @@ fn test_from_execution_witness() {
                 let value_be = new_v.into_inner().to_be_bytes_trimmed_vec();
                 let new_value = rlp_encode_short_slice(&rlp_encode_short_slice(&value_be));
                 storage_trie
-                    .update(path, &new_value, &mut interner, &mut hasher)
+                    .update(path, &new_value, &mut interner)
                     .unwrap();
             }
         }
@@ -384,9 +379,7 @@ fn test_from_execution_witness() {
             for (k, _plain_k) in deletes.iter() {
                 let trie_pos_digits = byte_path_to_path_digits(k);
                 let path = Path::new(&trie_pos_digits);
-                storage_trie
-                    .delete(path, &mut oracle, &mut interner, &mut hasher)
-                    .unwrap();
+                storage_trie.delete(path).unwrap();
             }
         }
         if inserts.is_empty() == false {
@@ -411,7 +404,9 @@ fn test_from_execution_witness() {
             let storage_trie = account_storage_tries.get_mut(address).unwrap();
             storage_trie.ensure_linked();
             let old_root = storage_trie.root(&mut hasher);
-            storage_trie.recompute(&mut interner, &mut hasher).unwrap();
+            storage_trie
+                .recompute(&mut oracle, &mut interner, &mut hasher)
+                .unwrap();
             let new_root = storage_trie.root(&mut hasher);
             if reads_only {
                 assert_eq!(old_root, new_root);

@@ -25,7 +25,7 @@ pub const MAX_ENTROPY_BYTES: u32 = const {
     let mut max_bytes = 0;
     let mut i = 0;
     while i < GENERATION_STEPS.len() {
-        max_bytes += GENERATION_STEPS[i].0.next_multiple_of(8) / 8;
+        max_bytes += GENERATION_STEPS[i].0.div_ceil(8);
         i += 1;
     }
 

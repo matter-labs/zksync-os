@@ -281,7 +281,6 @@ mod tests {
     use proptest::{prop_assert_eq, proptest};
     type ScalarField = <Config as CurveConfig>::ScalarField;
 
-    #[ignore = "requires single thread runner"]
     #[test]
     fn compare_scalar_decomposition() {
         proptest!(|(bytes: [u8; 32])| {

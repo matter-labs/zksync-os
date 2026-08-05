@@ -1,10 +1,10 @@
 # Tests
 
-We have three types of integration testing for ZKsyncOS:
+We have three main testing tracks for ZKsyncOS:
 
 - [Instances](../tests/instances/): hand-written transaction tests, benchmarks and test vectors for precompiles. Are written using our [testing rig](../tests/rig/).
 - [Fuzzing](../tests/fuzzer/): fuzzing for several parts of the system, including transaction processing.
-- [EVM tester](https://github.com/matter-labs/era-evm-tester/): tool to run the EF EVM tests on ZKsyncOS.
+- [EVM tester](../tests/evm_tester/): in-repo setup to run Ethereum Foundation EVM tests against ZKsyncOS.
 
 Detailed instructions for building ZKsyncOS can be found in the [README](../README.md).
 
@@ -37,7 +37,7 @@ This includes both:
  - Randomized mutations guided by code coverage.
 
 At present, we use `libFuzzer` to apply both random and metamorphic mutations.
-The resulting test cases are then executed using [EVM tester](https://github.com/matter-labs/era-evm-tester/)
+The resulting test cases are then executed using the [EVM tester](../tests/evm_tester/)
 to validate correctness and detect panics or discrepancies.
 
 Both fuzzing strategies are executed on a daily basis as part of our testing pipeline:
@@ -46,18 +46,16 @@ Both fuzzing strategies are executed on a daily basis as part of our testing pip
 
 ## EVM tester
 
-The [EVM tester](https://github.com/matter-labs/era-evm-tester/) is a tool for parsing and running the [EVM test suite](https://github.com/ethereum/tests/tree/) compiled by the Ethereum Foundation.
+The in-repo [`tests/evm_tester`](../tests/evm_tester/) crate is used to parse and run the [EVM execution spec tests](https://github.com/ethereum/execution-spec-tests) compiled by the Ethereum Foundation.
 
-To run it on ZKsyncOS, you first need to clone the tester and switch to the `zk-ee` branch. Next, you can modify the Cargo.toml file from the `evm_tester` crate to make it use a local version of ZKsyncOS, otherwise it will fetch it from github.
+Prepare fixtures once:
 
-Once prepared, the command to run all the tests is:
-
-```raw
-cargo run --bin evm-tester --features zksync_os_forward_system/no_print --release -- --environment=ZKOS --path ethereum-tests/GeneralStateTests/
+```bash
+cd tests/evm_tester && ./download_ethereum_fixtures.sh
 ```
 
-To debug, one can run a single test by specifying a file and a label, for instance:
+Run:
 
-```raw
-cargo run --bin evm-tester  --release -- --environment=ZKOS --path ethereum-tests/GeneralStateTests/stCreateTest/CreateAddressWarmAfterFail.json --label create2-oog-post-constr
+```bash
+cd tests/evm_tester && cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
 ```

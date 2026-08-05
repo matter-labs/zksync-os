@@ -11,17 +11,20 @@
 //! missing edge cases, and other limitations that make it unsuitable
 //! for production environments.
 
+use alloy::primitives::{Address, Bytes, B256};
+use alloy::rpc::types::trace::geth::{
+    CallFrame as AlloyCallFrame, CallLogFrame as AlloyCallLogFrame,
+};
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    evm::EvmFrameInterface,
+    evm::{EvmError, EvmFrameInterface},
     tracer::{evm_tracer::EvmTracer, Tracer},
     CallModifier, CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
     SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::Bytes32;
-use zksync_os_evm_errors::EvmError;
 
 #[derive(Default, Debug)]
 pub enum CallType {
@@ -40,6 +43,22 @@ pub enum CallType {
 }
 
 impl CallType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CallType::Call => "CALL",
+            CallType::Create => "CREATE",
+            CallType::Create2 => "CREATE2",
+            CallType::Delegate => "DELEGATECALL",
+            CallType::Static => "STATICCALL",
+            CallType::DelegateStatic => "DELEGATECALL",
+            CallType::EVMCallcode => "CALLCODE",
+            CallType::EVMCallcodeStatic => "CALLCODE",
+            CallType::ZKVMSystem => "ZKVM_SYSTEM",
+            CallType::ZKVMSystemStatic => "ZKVM_SYSTEM_STATIC",
+            CallType::Selfdestruct => "SELFDESTRUCT",
+        }
+    }
+
     fn from(value: CallModifier, is_create: &Option<CreateType>) -> Self {
         // Note: in our implementation Selfdestruct isn't actually implemented as a "call". But in traces it should be treated like one
         match value {
@@ -96,7 +115,7 @@ pub enum CreateType {
 
 #[derive(Default)]
 pub struct CallTracer {
-    pub transactions: Vec<Call>,
+    pub transactions: Vec<Option<Call>>,
     pub unfinished_calls: Vec<Call>,
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
@@ -104,6 +123,144 @@ pub struct CallTracer {
     pub only_top_call: bool,
 
     create_operation_requested: Option<CreateType>,
+}
+
+impl std::fmt::Display for CallTracer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, tx) in self.transactions.iter().enumerate() {
+            writeln!(f, "Transaction {}:", i)?;
+            if let Some(call) = tx {
+                call.fmt_with_indent(f, 2)?;
+            } else {
+                writeln!(f, "  <no call frame>")?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl Call {
+    fn fmt_with_indent(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
+        let pad = " ".repeat(indent);
+        let pad2 = " ".repeat(indent + 2);
+
+        let from_formatted = hex::encode(self.from.to_be_bytes_vec());
+        let to_formatted = hex::encode(self.to.to_be_bytes_vec());
+
+        writeln!(
+            f,
+            "{}Call from 0x{} to 0x{}",
+            pad, from_formatted, to_formatted
+        )?;
+        writeln!(f, "{}Type: {:?}", pad2, self.call_type)?;
+        writeln!(f, "{}Value: {}", pad2, self.value)?;
+        writeln!(f, "{}Gas: {} used {}", pad2, self.gas, self.gas_used)?;
+        writeln!(f, "{}Reverted: {}", pad2, self.reverted)?;
+
+        if let Some(error) = &self.error {
+            writeln!(f, "{}Error: {:?}", pad2, error)?;
+        }
+
+        writeln!(f, "{}Input: 0x{}", pad2, hex::encode(&self.input))?;
+        writeln!(f, "{}Output: 0x{}", pad2, hex::encode(&self.output))?;
+
+        if !self.logs.is_empty() {
+            writeln!(f, "{}Logs:", pad2)?;
+            for log in &self.logs {
+                writeln!(
+                    f,
+                    "{}- {:?} topics {:?} data 0x{}",
+                    pad2,
+                    log.address,
+                    log.topics,
+                    hex::encode(&log.data)
+                )?;
+            }
+        }
+
+        if !self.calls.is_empty() {
+            writeln!(f, "{}Subcalls:", pad2)?;
+            for call in &self.calls {
+                call.fmt_with_indent(f, indent + 4)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn to_alloy_call_frame(&self) -> AlloyCallFrame {
+        let is_create = matches!(self.call_type, CallType::Create | CallType::Create2);
+
+        AlloyCallFrame {
+            from: Address::from(self.from.to_be_bytes()),
+            gas: U256::from(self.gas),
+            gas_used: U256::from(self.gas_used),
+            to: if is_create {
+                None
+            } else {
+                Some(Address::from(self.to.to_be_bytes()))
+            },
+            input: Bytes::from(self.input.clone()),
+            output: Some(Bytes::from(self.output.clone())),
+            error: self.error.as_ref().map(|error| match error {
+                CallError::EvmError(err) => format!("{:?}", err),
+                CallError::FatalError(err) => err.clone(),
+            }),
+            revert_reason: None,
+            calls: self.calls.iter().map(Into::into).collect(),
+            logs: self.logs.iter().map(Into::into).collect(),
+            value: Some(self.value),
+            typ: self.call_type.as_str().to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for Call {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_with_indent(f, 0)
+    }
+}
+
+impl CallLogFrame {
+    fn to_alloy_call_log_frame(&self) -> AlloyCallLogFrame {
+        AlloyCallLogFrame {
+            address: Some(Address::from(self.address.to_be_bytes())),
+            topics: Some(
+                self.topics
+                    .iter()
+                    .map(|topic| B256::from(topic.as_u8_array()))
+                    .collect(),
+            ),
+            data: Some(Bytes::from(self.data.clone())),
+            position: None,
+            index: None,
+        }
+    }
+}
+
+impl From<&Call> for AlloyCallFrame {
+    fn from(value: &Call) -> Self {
+        value.to_alloy_call_frame()
+    }
+}
+
+impl From<Call> for AlloyCallFrame {
+    fn from(value: Call) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<&CallLogFrame> for AlloyCallLogFrame {
+    fn from(value: &CallLogFrame) -> Self {
+        value.to_alloy_call_log_frame()
+    }
+}
+
+impl From<CallLogFrame> for AlloyCallLogFrame {
+    fn from(value: CallLogFrame) -> Self {
+        (&value).into()
+    }
 }
 
 impl CallTracer {
@@ -226,13 +383,27 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     fn finish_tx(&mut self) {
         assert_eq!(self.current_call_depth, 0);
         assert!(self.unfinished_calls.is_empty());
-        assert_eq!(self.finished_calls.len(), 1);
 
         // Sanity check
         assert!(self.create_operation_requested.is_none());
 
-        self.transactions
-            .push(self.finished_calls.pop().expect("Should exist"));
+        // We can have some edge cases when tx fails before any call frame is created.
+        // In this case currently we just push `None` here.
+        let top_level_call = match self.finished_calls.len() {
+            0 => None,
+            1 => self.finished_calls.pop(),
+            _ => {
+                // Some transaction flows (notably L1 tx processing) can perform
+                // several independent top-level calls inside one transaction.
+                // Preserve all of them in the recorded tx trace instead of only
+                // keeping the last one.
+                let mut finished_calls = core::mem::take(&mut self.finished_calls);
+                let mut root_call = finished_calls.remove(0);
+                root_call.calls.extend(finished_calls);
+                Some(root_call)
+            }
+        };
+        self.transactions.push(top_level_call);
     }
 
     #[inline(always)]
@@ -397,9 +568,9 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
         assert!(self.create_operation_requested.is_none());
 
         self.create_operation_requested = if is_create2 {
-            Some(CreateType::Create)
-        } else {
             Some(CreateType::Create2)
+        } else {
+            Some(CreateType::Create)
         };
     }
 }

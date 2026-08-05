@@ -2,28 +2,24 @@
 use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
-use rig::ruint::aliases::B160;
-use rig::zksync_os_interface::traits::EncodedTx;
+use rig::alloy;
+use rig::ruint;
 use rig::zksync_os_interface::types::BlockOutput;
-use rig::{alloy, ruint};
+use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use std::collections::HashSet;
 use std::str::FromStr;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::utils::Bytes32;
 
 ///
-/// Mints base tokens to `eoa_address` and runs `encoded_txs`
+/// Mints base tokens to `eoa_address` and runs `txs`
 ///
 fn run_transactions_as_eoa(
     eoa_address: alloy::primitives::Address,
-    encoded_txs: Vec<EncodedTx>,
+    txs: Vec<ZKsyncTxEnvelope>,
 ) -> BlockOutput {
-    let mut chain = rig::Chain::empty(None);
-    chain.set_balance(
-        B160::from_be_bytes(eoa_address.0 .0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.run_block(encoded_txs, None, None, None)
+    let mut tester = rig::TestingFramework::new().with_prefunded_account(eoa_address);
+    tester.execute_block(txs)
 }
 
 fn address_to_bytecodehash_key(address: &alloy::primitives::Address) -> Bytes32 {
@@ -58,7 +54,7 @@ fn run_forge_test_create_many_contracts() {
             .unwrap()
             .into(),
     };
-    let encoded_deployment_tx = rig::utils::sign_and_encode_alloy_tx(deployment_tx, &eoa_wallet);
+    let encoded_deployment_tx = ZKsyncTxEnvelope::from_eth_tx(deployment_tx, eoa_wallet.clone());
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -72,7 +68,7 @@ fn run_forge_test_create_many_contracts() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = rig::utils::sign_and_encode_alloy_tx(run_tx, &eoa_wallet);
+    let encoded_run_tx = ZKsyncTxEnvelope::from_eth_tx(run_tx, eoa_wallet.clone());
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),
@@ -125,7 +121,7 @@ fn run_forge_test_create_in_constructor() {
             .unwrap()
             .into(),
     };
-    let encoded_deployment_tx = rig::utils::sign_and_encode_alloy_tx(deployment_tx, &eoa_wallet);
+    let encoded_deployment_tx = ZKsyncTxEnvelope::from_eth_tx(deployment_tx, eoa_wallet.clone());
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -139,7 +135,7 @@ fn run_forge_test_create_in_constructor() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = rig::utils::sign_and_encode_alloy_tx(run_tx, &eoa_wallet);
+    let encoded_run_tx = ZKsyncTxEnvelope::from_eth_tx(run_tx, eoa_wallet.clone());
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),
@@ -197,7 +193,7 @@ fn run_forge_test_delegate_calls() {
             .unwrap()
             .into(),
     };
-    let encoded_deployment_tx = rig::utils::sign_and_encode_alloy_tx(deployment_tx, &eoa_wallet);
+    let encoded_deployment_tx = ZKsyncTxEnvelope::from_eth_tx(deployment_tx, eoa_wallet.clone());
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -211,7 +207,7 @@ fn run_forge_test_delegate_calls() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = rig::utils::sign_and_encode_alloy_tx(run_tx, &eoa_wallet);
+    let encoded_run_tx = ZKsyncTxEnvelope::from_eth_tx(run_tx, eoa_wallet.clone());
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),

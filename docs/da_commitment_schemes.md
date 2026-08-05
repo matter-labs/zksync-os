@@ -23,7 +23,7 @@ ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commit
 ### 2. EmptyNoDA (ID: 1)
 **Purpose**: Validium mode - no data availability guarantees
 
-**Implementation**: [`NopCommitmentGenerator`](../basic_system/src/system_implementation/system/da_commitment_generator/mod.rs#L32)
+**Implementation**: [`NopCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/mod.rs)
 
 **Commitment**: Always returns zero hash (`0x000...000`)
 
@@ -42,7 +42,7 @@ ZKsync OS implements five distinct DA commitment schemes, defined in [`da_commit
 ### 4. BlobsAndPubdataKeccak256 (ID: 3)
 **Purpose**: Traditional rollup mode using Ethereum calldata
 
-**Implementation**: [`Keccak256CommitmentGenerator`](../basic_system/src/system_implementation/system/da_commitment_generator/keccak256_commitment_generator.rs)
+**Implementation**: [`Keccak256CommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/keccak256_commitment_generator.rs)
 
 **Commitment Calculation**:
 ```
@@ -67,7 +67,7 @@ da_commitment = keccak256(
 ### 5. BlobsZKsyncOS (ID: 4)
 **Purpose**: EIP-4844 blob-based DA with optimal cost efficiency
 
-**Implementation**: [`BlobCommitmentGenerator`](../basic_system/src/system_implementation/system/da_commitment_generator/blob_commitment_generator/mod.rs)
+**Implementation**: [`BlobCommitmentGenerator`](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/blob_commitment_generator/mod.rs)
 
 **Key Parameters**:
 - **Blob chunk size**: 31 bytes per field element
@@ -137,6 +137,6 @@ impl DACommitmentGenerator for Generator {
 
 ## Implementation Files
 - **Core Types**: `zk_ee/src/common_structs/da_commitment_scheme.rs`
-- **Generators**: `basic_system/src/system_implementation/system/da_commitment_generator/`
-- **Blob Implementation**: `basic_system/src/system_implementation/system/da_commitment_generator/blob_commitment_generator/`
+- **Generators**: `basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/`
+- **Blob Implementation**: `basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/da_commitment_generator/blob_commitment_generator/`
 - **Testing**: `tests/instances/unit/src/kzg_blobs.rs`

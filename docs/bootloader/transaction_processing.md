@@ -10,7 +10,7 @@ This section describes how transactions are processed. There are 2 flows of tran
 6. **Execution**: The transaction is executed, either as a call or a deployment.
 7. **Refunding**: Unused resources are refunded, with additional steps for paymasters if applicable.
 
-The module responsible for implementing transaction processing is [`process_transaction`](../../basic_bootloader/src/bootloader/process_transaction.rs).
+The module responsible for implementing transaction processing is [`process_transaction`](../../basic_bootloader/src/bootloader/transaction_flow/process_transaction.rs).
 
 Transaction processing starts with the parsing of the transaction, as described in [Transaction format](transaction_format.md).
 
@@ -53,4 +53,4 @@ To summarize, the lifecycle of an L2 transaction can be visualized as follows:
 
 ## L1 -> L2 transactions
 
-The main difference in the processing of L1 transactions is that there is no validation step. The value for this transaction is minted, as those funds are now locked in the L1 bridge. For now, deployment transactions from L1 transactions are not supported.
+The main difference in the processing of L1 transactions is that there is no validation step. The value for this transaction is transferred from the treasury ("minted"), as those funds are now locked in the L1 bridge. For now, deployment transactions from L1 transactions are not supported.

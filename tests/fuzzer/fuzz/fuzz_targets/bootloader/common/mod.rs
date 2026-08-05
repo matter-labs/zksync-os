@@ -1,4 +1,4 @@
-use basic_bootloader::bootloader::transaction::Transaction;
+use basic_bootloader::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 use basic_system::system_implementation::flat_storage_model::{
@@ -10,161 +10,107 @@ use oracle_provider::ZkEENonDeterminismSource;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rig::ruint::aliases::{B160, U256};
 use rig::zksync_os_interface::traits::TxListSource;
-use secp256k1::{Message, Secp256k1, SecretKey};
+use std::alloc::Allocator;
 use std::alloc::Global;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
-use web3::ethabi::{encode, Address, Token, Uint};
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::ProofData;
-use zk_ee::reference_implementations::BaseResources;
-use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::metadata::system_metadata::SystemMetadata;
 use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata};
-use zk_ee::system::Resource;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::UsizeAlignedByteBox;
 
-// a test private key from anvil
-#[allow(unused)]
-const PRIVATE_KEY: [u8; 32] = [
-    0xac, 0x09, 0x74, 0xbe, 0xc3, 0x9a, 0x17, 0xe3, 0x6b, 0xa4, 0xa6, 0xb4, 0xd2, 0x38, 0xff, 0x94,
-    0x4b, 0xac, 0xb4, 0x78, 0xcb, 0xed, 0x5e, 0xfc, 0xae, 0x78, 0x4d, 0x7b, 0xf4, 0xf2, 0xff, 0x80,
-];
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TransactionData {
+    pub(crate) tx_type: u8,
+    pub(crate) from: [u8; 20],
+    pub(crate) to: [u8; 20],
+    pub(crate) gas_limit: U256,
+    pub(crate) gas_per_pubdata_limit: U256,
+    pub(crate) max_fee_per_gas: U256,
+    pub(crate) max_priority_fee_per_gas: U256,
+    pub(crate) paymaster: [u8; 20],
+    pub(crate) nonce: U256,
+    pub(crate) value: U256,
+    pub(crate) reserved: [U256; 4],
+    pub(crate) data: Vec<u8>,
+    pub(crate) signature: Vec<u8>,
+    pub(crate) factory_deps: Vec<[u8; 32]>,
+    pub(crate) paymaster_input: Vec<u8>,
+    pub(crate) reserved_dynamic: Vec<u8>,
+}
 
-#[allow(unused)]
-const ACCOUNT: [u8; 32] = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf3, 0x9f, 0xd6, 0xe5,
-    0x1a, 0xad, 0x88, 0xf6, 0xf4, 0xce, 0x6a, 0xb8, 0x82, 0x72, 0x79, 0xcf, 0xff, 0xb9, 0x22, 0x66,
-];
+impl TransactionData {
+    fn to_zk_bytes(&self) -> Option<Vec<u8>> {
+        // ABI tx head has 19 words:
+        // 14 static fields + 5 dynamic offsets.
+        let mut head = Vec::<[u8; 32]>::with_capacity(19);
+        let mut tail = Vec::<u8>::new();
 
-#[allow(unused)]
-const CHAIN_ID: u64 = 37;
+        head.push(enc_u256(U256::from(self.tx_type)));
+        head.push(enc_addr(self.from));
+        head.push(enc_addr(self.to));
+        head.push(enc_u256(self.gas_limit));
+        head.push(enc_u256(self.gas_per_pubdata_limit));
+        head.push(enc_u256(self.max_fee_per_gas));
+        head.push(enc_u256(self.max_priority_fee_per_gas));
+        head.push(enc_addr(self.paymaster));
+        head.push(enc_u256(self.nonce));
+        head.push(enc_u256(self.value));
+        for value in self.reserved {
+            head.push(enc_u256(value));
+        }
 
-// TODO(EVM-1173): adapt to new transaction format
-// This is a copy of the data structure from era-evm-tester.
-// By using this data structure, we can change the fields directly.
-// #[derive(Debug, Default, Clone)]
-// pub(crate) struct TransactionData {
-//     pub(crate) tx_type: u8,
-//     pub(crate) from: Address,
-//     pub(crate) to: Option<Address>,
-//     pub(crate) gas_limit: U256,
-//     pub(crate) pubdata_price_limit: U256,
-//     pub(crate) max_fee_per_gas: U256,
-//     pub(crate) max_priority_fee_per_gas: U256,
-//     pub(crate) paymaster: Address,
-//     pub(crate) nonce: U256,
-//     pub(crate) value: U256,
-//     // The reserved fields that are unique for different types of transactions.
-//     // E.g. nonce is currently used in all transaction, but it should not be mandatory
-//     // in the long run.
-//     pub(crate) reserved: [U256; 4],
-//     pub(crate) data: Vec<u8>,
-//     pub(crate) signature: Vec<u8>,
-//     // The factory deps provided with the transaction.
-//     // Note that *only hashes* of these bytecodes are signed by the user
-//     // and they are used in the ABI encoding of the struct.
-//     // TODO: include this into the tx signature as part of SMA-1010
-//     pub(crate) factory_deps: Vec<Vec<u8>>,
-//     pub(crate) paymaster_input: Vec<u8>,
-//     pub(crate) reserved_dynamic: Vec<u8>,
-//     // pub(crate) raw_bytes: Option<Vec<u8>>,
-// }
+        let head_size = 19 * 32;
+        abi_push_bytes(&mut head, &mut tail, &self.data, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.signature, head_size)?;
+        abi_push_bytes32_array(&mut head, &mut tail, &self.factory_deps, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.paymaster_input, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.reserved_dynamic, head_size)?;
 
-// // Copy from era-evm-tester.
-// // Additionally, we have to convert between different kinds of U256.
-// impl TransactionData {
-//     #[allow(dead_code)]
-//     pub fn abi_encode(self) -> Vec<u8> {
-//         // do U256 -> Uint conversions
-//         fn u256_to_uint(u: &U256) -> Uint {
-//             Uint::from_big_endian(u.to_be_bytes::<32>().as_slice())
-//         }
-//         // align vectors to 32 bytes
-//         fn pad32(data: &[u8]) -> Vec<u8> {
-//             let mut padded = data.to_vec();
-//             let len = padded.len();
-//             if (len % 32) != 0 {
-//                 let pad = 32 - (len % 32);
-//                 padded.extend(vec![0u8; pad]);
-//             }
-//             padded
-//         }
-//         // reserved dynamic can be either a list of bytestrings or an empty bytestring
-//         // For the empty list, we convert to empty bytestring
-//         let reserved_dynamic = if self.reserved_dynamic == vec![0u8; 32] {
-//             vec![]
-//         } else {
-//             self.reserved_dynamic
-//         };
-//         // produce the actual encoding, as a mix of abi_encode
-//         // and custom serialization
-//         let mut res = encode(&[Token::Tuple(vec![
-//             Token::Uint(Uint::from_big_endian(&self.tx_type.to_be_bytes())),
-//             Token::Address(self.from),
-//             Token::Address(self.to.unwrap_or_default()),
-//             Token::Uint(u256_to_uint(&self.gas_limit)),
-//             Token::Uint(u256_to_uint(&self.pubdata_price_limit)),
-//             Token::Uint(u256_to_uint(&self.max_fee_per_gas)),
-//             Token::Uint(u256_to_uint(&self.max_priority_fee_per_gas)),
-//             Token::Address(self.paymaster),
-//             Token::Uint(u256_to_uint(&self.nonce)),
-//             Token::Uint(u256_to_uint(&self.value)),
-//             Token::FixedArray(
-//                 self.reserved
-//                     .iter()
-//                     .map(|u| Token::Uint(u256_to_uint(u)))
-//                     .collect(),
-//             ),
-//             Token::Bytes(self.data),
-//             Token::Bytes(self.signature),
-//             // todo: factory deps must be empty
-//             Token::Array(Vec::new()),
-//             Token::Bytes(self.paymaster_input),
-//             Token::Bytes(reserved_dynamic),
-//         ])]);
+        let mut out = Vec::with_capacity(head_size + tail.len());
+        for w in head {
+            out.extend_from_slice(&w);
+        }
+        out.extend_from_slice(&tail);
+        Some(out)
+    }
+}
 
-//         res.drain(0..32);
-//         res
-//     }
+impl<A: Allocator> From<&AbiEncodedTransaction<A>> for TransactionData {
+    fn from(tx: &AbiEncodedTransaction<A>) -> Self {
+        let mut factory_deps = Vec::new();
+        for chunk in tx.encoding(tx.factory_deps.clone()).chunks_exact(32) {
+            factory_deps.push(chunk.try_into().expect("32-byte chunk"));
+        }
 
-//     pub fn to_zk_bytes(&self) -> Vec<u8> {
-//         let mut output = vec![];
-//         output.extend(self.clone().abi_encode());
-//         output
-//     }
-// }
-
-// /// Convert a &AbiEncodedTransaction to TransactionData
-// impl From<&AbiEncodedTransaction<'_>> for TransactionData {
-//     fn from(tx: &AbiEncodedTransaction<'_>) -> Self {
-//         TransactionData {
-//             tx_type: tx.tx_type.read(),
-//             from: Address::from_slice(&tx.encoding(tx.from.clone())[12..32]),
-//             to: Some(Address::from_slice(&tx.encoding(tx.to.clone())[12..32])),
-//             gas_limit: U256::from(tx.gas_limit.read()),
-//             pubdata_price_limit: U256::from(tx.gas_per_pubdata_limit.read()),
-//             max_fee_per_gas: U256::from(tx.max_fee_per_gas.read()),
-//             max_priority_fee_per_gas: U256::from(tx.max_priority_fee_per_gas.read()),
-//             paymaster: Address::from_slice(&tx.encoding(tx.paymaster.clone())[12..32]),
-//             nonce: U256::from(tx.nonce.read()),
-//             value: U256::from(tx.value.read()),
-//             reserved: tx
-//                 .reserved
-//                 .iter()
-//                 .map(|u| U256::from(u.read()))
-//                 .collect::<Vec<U256>>()
-//                 .try_into()
-//                 .unwrap(),
-//             data: tx.encoding(tx.data.clone()).to_vec(),
-//             signature: tx.encoding(tx.signature.clone()).to_vec(),
-//             factory_deps: vec![tx.encoding(tx.factory_deps.clone().to_owned()).to_vec()],
-//             paymaster_input: tx.encoding(tx.paymaster_input.clone()).to_vec(),
-//             // TODO: actually parse access list
-//             reserved_dynamic: vec![0; 32],
-//         }
-//     }
-// }
+        TransactionData {
+            tx_type: tx.tx_type.read(),
+            from: tx.from.read().to_be_bytes::<20>(),
+            to: tx.to.read().to_be_bytes::<20>(),
+            gas_limit: U256::from(tx.gas_limit.read()),
+            gas_per_pubdata_limit: U256::from(tx.gas_per_pubdata_limit.read()),
+            max_fee_per_gas: tx.max_fee_per_gas.read(),
+            max_priority_fee_per_gas: tx.max_priority_fee_per_gas.read(),
+            paymaster: tx.paymaster.read().to_be_bytes::<20>(),
+            nonce: tx.nonce.read(),
+            value: tx.value.read(),
+            reserved: tx
+                .reserved
+                .iter()
+                .map(|u| u.read())
+                .collect::<Vec<U256>>()
+                .try_into()
+                .expect("4 reserved fields"),
+            data: tx.encoding(tx.data.clone()).to_vec(),
+            signature: tx.encoding(tx.signature.clone()).to_vec(),
+            factory_deps,
+            paymaster_input: tx.encoding(tx.paymaster_input.clone()).to_vec(),
+            reserved_dynamic: tx.encoding(tx.reserved_dynamic.clone()).to_vec(),
+        }
+    }
+}
 
 #[allow(unused)]
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
@@ -279,126 +225,113 @@ pub fn mock_oracle_balance(
     )
 }
 
-// TODO: currently internal rust error if uncommented
-// pub fn mock_system() -> ForwardRunningSystem {
-//     ForwardRunningSystem::init_from_oracle(mock_oracle()).expect("Failed to initialize the mock system")
-// }
+pub(crate) fn serialize_zksync_transaction<A: Allocator>(
+    tx: &AbiEncodedTransaction<A>,
+) -> Option<Vec<u8>> {
+    let tx_data = TransactionData::from(tx);
+    tx_data.to_zk_bytes()
+}
 
-// #[allow(dead_code)]
-// pub(crate) fn serialize_zksync_transaction<'a>(tx: &AbiEncodedTransaction<'a>) -> Vec<u8> {
-//     let tx_data = TransactionData::from(tx);
-//     let mut output = vec![0u8; TX_OFFSET];
-//     output.extend(tx_data.clone().abi_encode());
-//     output
-// }
+pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
+    if size == 0 || size > data.len() {
+        return size.min(data.len());
+    }
 
-// pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
-//     // Initialize random number generator with a deterministic seed
-//     let mut rng = StdRng::seed_from_u64(seed as u64);
+    let Ok(tx) = parse_abi_encoded_transaction(&data[..size]) else {
+        return size;
+    };
 
-//     // Attempt to decode the input transaction
-//     let decoded_tx = AbiEncodedTransaction::try_from_slice(&mut data[..size]);
-//     if decoded_tx.is_err() {
-//         // If decoding fails, return the original size and data
-//         return size;
-//     }
-//     let mut tx = decoded_tx.unwrap();
-//     // convert tx to TransactionData, so we can freely mutate the fields
-//     let mut tx_data = TransactionData::from(&tx);
+    let mut tx_data = TransactionData::from(&tx);
+    let mut rng = StdRng::seed_from_u64(seed as u64);
+    mutate_zksync_transaction(&mut tx_data, &mut rng);
 
-//     // Apply random mutations to the transaction.
-//     mutate_zksync_transaction(&mut tx_data, &mut rng);
+    // Keep invariants enforced by AbiEncodedTransaction::validate_structure.
+    tx_data.paymaster = [0u8; 20];
+    tx_data.signature.clear();
+    tx_data.paymaster_input.clear();
+    tx_data.reserved_dynamic.clear();
+    tx_data.reserved[2] = U256::ZERO;
+    tx_data.reserved[3] = U256::ZERO;
 
-//     // change the from field to match the private key
-//     tx_data.from = Address::from_slice(&ACCOUNT[12..32]);
+    let Some(serialized_tx) = tx_data.to_zk_bytes() else {
+        return size;
+    };
+    if serialized_tx.len() > max_size || serialized_tx.len() > data.len() {
+        return size;
+    }
+    if parse_abi_encoded_transaction(&serialized_tx).is_err() {
+        return size;
+    }
 
-//     // convert tx_data back to AbiEncodedTransaction, so we can use its functions
-//     let mut tx_data_bytes = tx_data.to_zk_bytes();
-//     if let Ok(new_tx) = AbiEncodedTransaction::try_from_slice(tx_data_bytes.as_mut_slice()) {
-//         tx = new_tx;
-//     } else {
-//         return size;
-//     }
+    data[..serialized_tx.len()].copy_from_slice(&serialized_tx);
+    serialized_tx.len()
+}
 
-//     let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
+pub(crate) fn parse_abi_encoded_transaction(
+    data: &[u8],
+) -> Result<AbiEncodedTransaction<Global>, ()> {
+    let buffer = UsizeAlignedByteBox::from_slice_in(data, Global);
+    AbiEncodedTransaction::try_from_buffer(buffer)
+}
 
-//     // generate a new signature from the signed hash and the private key
-//     let signed_hash = if let Ok(h) = tx.calculate_signed_hash(CHAIN_ID, &mut inf_resources) {
-//         h
-//     } else {
-//         return size;
-//     };
-//     let msg = Message::from_digest(signed_hash.try_into().unwrap());
-//     let secp = Secp256k1::new();
-//     let secret_key = SecretKey::from_slice(&PRIVATE_KEY).expect("expected a valid private key");
-//     let signature = secp.sign_ecdsa_recoverable(&msg, &secret_key);
-//     let (rec_id, sig_data) = signature.serialize_compact();
-//     tx_data.signature = Vec::<u8>::with_capacity(65);
-//     tx_data.signature.extend(&sig_data[..]);
-//     tx_data.signature.push(rec_id as u8 + 27);
-//     assert!(
-//         tx_data.signature.len() == 65,
-//         "signature length is {}",
-//         tx_data.signature.len()
-//     );
+fn mutate_zksync_transaction(tx: &mut TransactionData, rng: &mut StdRng) {
+    // Keep tx_type in the supported ABI-only set to maximize valid mutations.
+    match rng.gen_range(0..=10) {
+        0 => {
+            tx.tx_type = match tx.tx_type {
+                AbiEncodedTransaction::<Global>::L1_L2_TX_TYPE => {
+                    AbiEncodedTransaction::<Global>::UPGRADE_TX_TYPE
+                }
+                AbiEncodedTransaction::<Global>::UPGRADE_TX_TYPE => {
+                    AbiEncodedTransaction::<Global>::L1_L2_TX_TYPE
+                }
+                _ => AbiEncodedTransaction::<Global>::L1_L2_TX_TYPE,
+            };
+        }
+        1 => mutate_address_inplace(&mut tx.from, rng),
+        2 => mutate_address_inplace(&mut tx.to, rng),
+        3 => tx.gas_limit = mutate_u64_field(tx.gas_limit, rng),
+        4 => tx.gas_per_pubdata_limit = mutate_u32_field(tx.gas_per_pubdata_limit, rng),
+        5 => tx.max_fee_per_gas = mutate_u256_vec(tx.max_fee_per_gas, rng),
+        6 => tx.max_priority_fee_per_gas = mutate_u256_vec(tx.max_priority_fee_per_gas, rng),
+        7 => tx.nonce = mutate_u256_vec(tx.nonce, rng),
+        8 => tx.value = mutate_u256_vec(tx.value, rng),
+        9 => mutate_bytes_inplace(&mut tx.data, rng),
+        10 => mutate_factory_deps_inplace(&mut tx.factory_deps, rng),
+        _ => {}
+    }
+}
 
-//     // Serialize the mutated transaction back into a byte array
-//     let serialized_tx = tx_data.to_zk_bytes();
+fn mutate_bytes_inplace(bytes: &mut Vec<u8>, rng: &mut StdRng) {
+    if bytes.is_empty() || rng.gen_bool(0.25) {
+        bytes.push(rng.gen::<u8>());
+        return;
+    }
 
-//     // try to deserialize the transaction again, to see whether it works
-//     let mut serialized_tx_copy = serialized_tx.clone();
-//     if let Err(_) = AbiEncodedTransaction::try_from_slice(serialized_tx_copy.as_mut_slice()) {
-//         println!("data          = {}", hex::encode(data));
-//         println!("serialized_tx = {}", hex::encode(serialized_tx.as_slice()));
-//         panic!("broken serialization");
-//     } else {
-//         (); // OK
-//     }
+    let idx = rng.gen_range(0..bytes.len());
+    bytes[idx] ^= rng.gen::<u8>();
 
-//     // If the serialized transaction exceeds the max size, return the original data
-//     if serialized_tx.len() > max_size {
-//         size
-//     } else {
-//         // Update the input data and return the new size
-//         data[..serialized_tx.len()].copy_from_slice(&serialized_tx);
-//         serialized_tx.len()
-//     }
-// }
+    if bytes.len() > 1 && rng.gen_bool(0.1) {
+        bytes.remove(idx);
+    }
+}
 
-// // Mutates various parts of the ZkSync transaction
-// #[allow(dead_code)]
-// fn mutate_zksync_transaction(tx: &mut TransactionData, rng: &mut StdRng) {
-//     match rng.gen_range(0..=8) {
-//         0 => {
-//             tx.tx_type = mutate_u8(tx.tx_type, rng);
-//         }
-//         1 => {
-//             mutate_address_inplace(&mut tx.from, rng);
-//         }
-//         2 => {
-//             if let Some(addr) = tx.to.as_mut() {
-//                 mutate_address_inplace(addr, rng)
-//             }
-//         }
-//         3 => {
-//             tx.gas_limit = mutate_u256_vec(tx.gas_limit, rng);
-//         }
-//         4 => {
-//             tx.max_fee_per_gas = mutate_u256_vec(tx.max_fee_per_gas, rng);
-//         }
-//         5 => {
-//             tx.max_priority_fee_per_gas = mutate_u256_vec(tx.max_priority_fee_per_gas, rng);
-//         }
-//         6 => {
-//             tx.nonce = mutate_u256_vec(tx.nonce, rng);
-//         }
-//         7 => {
-//             tx.value = mutate_u256_vec(tx.value, rng);
-//         }
-//         8 => { /* No operation */ }
-//         _ => {}
-//     }
-// }
+fn mutate_factory_deps_inplace(factory_deps: &mut Vec<[u8; 32]>, rng: &mut StdRng) {
+    if factory_deps.is_empty() || rng.gen_bool(0.2) {
+        let mut new_dep = [0u8; 32];
+        rng.fill(new_dep.as_mut_slice());
+        factory_deps.push(new_dep);
+        return;
+    }
+
+    let idx = rng.gen_range(0..factory_deps.len());
+    let byte_idx = rng.gen_range(0..32);
+    factory_deps[idx][byte_idx] ^= rng.gen::<u8>();
+
+    if factory_deps.len() > 1 && rng.gen_bool(0.1) {
+        factory_deps.remove(idx);
+    }
+}
 
 #[allow(dead_code)]
 fn mutate_u256_vec(num: U256, rng: &mut StdRng) -> U256 {
@@ -415,16 +348,35 @@ fn mutate_u256_vec(num: U256, rng: &mut StdRng) -> U256 {
     U256::from_be_bytes(mutated_bytes)
 }
 
+fn mutate_u64_field(num: U256, rng: &mut StdRng) -> U256 {
+    mutate_low_bytes(num, 8, rng)
+}
+
+fn mutate_u32_field(num: U256, rng: &mut StdRng) -> U256 {
+    mutate_low_bytes(num, 4, rng)
+}
+
+fn mutate_low_bytes(num: U256, bytes_to_mutate: usize, rng: &mut StdRng) -> U256 {
+    let mut mutated_bytes: [u8; 32] = num.to_be_bytes();
+    let bytes_to_mutate = bytes_to_mutate.min(mutated_bytes.len());
+    if bytes_to_mutate == 0 {
+        return num;
+    }
+    let start = mutated_bytes.len() - bytes_to_mutate;
+    let idx = rng.gen_range(start..mutated_bytes.len());
+    mutated_bytes[idx] ^= rng.gen::<u8>();
+    U256::from_be_bytes(mutated_bytes)
+}
+
 #[allow(dead_code)]
 fn mutate_u8(num: u8, rng: &mut StdRng) -> u8 {
     num ^ rng.gen::<u8>()
 }
 
 #[allow(dead_code)]
-fn mutate_address_inplace(addr: &mut Address, rng: &mut StdRng) {
-    let addr_bytes: &mut [u8] = addr.as_bytes_mut();
-    let idx = rng.gen_range(0..addr_bytes.len());
-    addr_bytes[idx] ^= rng.gen::<u8>();
+fn mutate_address_inplace(addr: &mut [u8; 20], rng: &mut StdRng) {
+    let idx = rng.gen_range(0..addr.len());
+    addr[idx] ^= rng.gen::<u8>();
 }
 
 // helpers
@@ -458,18 +410,23 @@ fn pad32(v: &mut Vec<u8>) {
     }
 }
 
+fn checked_u32(value: usize) -> Option<u32> {
+    u32::try_from(value).ok()
+}
+
 // Push a dynamic `bytes` arg: put its offset in head, then tail = len + data + pad
 pub(crate) fn abi_push_bytes(
     head: &mut Vec<[u8; 32]>,
     tail: &mut Vec<u8>,
     data: &[u8],
     head_size_bytes: usize,
-) {
-    let offset = U256::from(head_size_bytes + tail.len());
-    head.push(enc_u256(offset));
-    tail.extend_from_slice(&enc_u256(U256::from(data.len() as u64)));
+) -> Option<()> {
+    let offset = checked_u32(head_size_bytes + tail.len())?;
+    head.push(enc_u32(offset));
+    tail.extend_from_slice(&enc_u32(checked_u32(data.len())?));
     tail.extend_from_slice(data);
     pad32(tail);
+    Some(())
 }
 
 // Push a dynamic `bytes32[]` arg
@@ -478,11 +435,12 @@ pub(crate) fn abi_push_bytes32_array(
     tail: &mut Vec<u8>,
     items: &[[u8; 32]],
     head_size_bytes: usize,
-) {
-    let offset = U256::from(head_size_bytes + tail.len());
-    head.push(enc_u256(offset));
-    tail.extend_from_slice(&enc_u256(U256::from(items.len() as u64)));
+) -> Option<()> {
+    let offset = checked_u32(head_size_bytes + tail.len())?;
+    head.push(enc_u32(offset));
+    tail.extend_from_slice(&enc_u32(checked_u32(items.len())?));
     for it in items {
         tail.extend_from_slice(it);
     }
+    Some(())
 }

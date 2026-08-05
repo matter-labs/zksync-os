@@ -15,7 +15,6 @@ path = "../../../../../storage_models/src/lib.rs"
 
 [dependencies]
 zk_ee = { package = "zk_ee_forward", path = "../zk_ee_forward" }
-crypto = { package = "crypto_forward", path = "../crypto_forward", default-features = false }
 
 [features]
 testing = ["zk_ee/testing"]
