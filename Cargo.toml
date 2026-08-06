@@ -57,11 +57,11 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { version = "0.1.3", default-features =  false }
 zksync_os_interface = { version = "0.1.3"}
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "compat-nightly-2026-02-10-v0.4.3"}
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "compat-nightly-2026-02-10-v0.4.3"}
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", branch = "compat-nightly-2026-02-10-v0.4.3"}
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "compat-nightly-2026-02-10-v0.4.3"}
-prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "compat-nightly-2026-02-10-v0.4.3" }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3-2026-02-10"}
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3-2026-02-10"}
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3-2026-02-10"}
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3-2026-02-10"}
+prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3-2026-02-10" }
 
 # [profile.dev]
 # opt-level = 0
