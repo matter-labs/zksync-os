@@ -26,7 +26,7 @@ alloy = { version = "2", features = ["full", "eip712"]}
 alloy-rlp = "0.3.13"
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false }
 fuzz_precompiles_forward = { path = "./wrappers/fuzz_precompiles_forward" }
 fuzz_precompiles_proving = { path = "./wrappers/fuzz_precompiles_proving" }
 basic_system_proving = { path = "./wrappers/basic_system_proving" }
