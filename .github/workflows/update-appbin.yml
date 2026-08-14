@@ -25,8 +25,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Build fresh app bin
         run: zksync_os/reproduce/reproduce.sh
