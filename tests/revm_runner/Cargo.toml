@@ -20,14 +20,14 @@ alloy = { workspace = true, default-features = false, features = [
     "serde-bincode-compat",
 ] }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
-revm = "=38.0.0"
-revm-inspectors = "0.39.0"
+revm = "=42.0.1"
+revm-inspectors = "0.42.2"
 log = { workspace = true }
 
 # Pinned to the vv-new-version tip, which is AtlasV4 plus the
 # apply_pre_block_system_calls helper (matter-labs/zksync-os-revm#19).
 # TODO: switch back to a tagged release once vv-new-version is released.
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "2156a430bdd0c0dbb5361d97dcd9993f854bc87e" }
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "9539aa5df8d19c2e85d98ca5997d14dfb3f14184" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }
