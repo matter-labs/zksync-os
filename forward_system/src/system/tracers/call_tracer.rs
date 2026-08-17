@@ -212,6 +212,7 @@ impl Call {
             logs: self.logs.iter().map(Into::into).collect(),
             value: Some(self.value),
             typ: self.call_type.as_str().to_owned(),
+            ..Default::default()
         }
     }
 }
