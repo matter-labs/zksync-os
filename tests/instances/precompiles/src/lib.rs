@@ -3,7 +3,7 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
-use rig::zksync_os_interface::types::BlockOutput;
+use rig::forward_system::run::output::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
 use rig::{

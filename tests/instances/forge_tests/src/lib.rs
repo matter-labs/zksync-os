@@ -4,7 +4,7 @@ use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
 use rig::alloy;
 use rig::ruint;
-use rig::zksync_os_interface::types::BlockOutput;
+use rig::forward_system::run::output::BlockOutput;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use std::collections::HashSet;
 use std::str::FromStr;

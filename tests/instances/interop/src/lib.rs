@@ -18,7 +18,8 @@ use rig::utils::{
 };
 use rig::zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use rig::zk_ee::utils::Bytes32;
-use rig::zksync_os_interface::types::{BlockOutput, ExecutionOutput, ExecutionResult};
+use rig::forward_system::run::output::BlockOutput;
+use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{testing_signer, BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
