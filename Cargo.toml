@@ -140,7 +140,7 @@ num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-integer = { version = "0.1", default-features = false }
 proptest = "1.7.0"
-alloy = { version = "2", default-features = false }
+alloy = { version = "2.4.1", default-features = false }
 alloy-rlp = "0.3.13"
 alloy-sol-types = "1"
 alloy-primitives = "1"
