@@ -40,6 +40,8 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
+// Per-transaction memory budget of the block-scoped raw preimage cache.
+mod preimage_cache_budget;
 mod storage_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;
