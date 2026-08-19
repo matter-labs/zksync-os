@@ -15,7 +15,7 @@ path = "../../../../../system_hooks/src/lib.rs"
 
 [dependencies]
 zk_ee = { package = "zk_ee_proving", path = "../zk_ee_proving", default-features = false }
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.20", default-features = false, features = ["alloc"] }
 evm_interpreter = { package = "evm_interpreter_proving", path = "../evm_interpreter_proving"  }
 cycle_marker = { path = "../../../../../cycle_marker" }
 

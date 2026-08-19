@@ -52,6 +52,11 @@ pub const WARM_TSTORAGE_WRITE_NATIVE_COST: u64 = 4000;
 pub const EVENT_STORAGE_BASE_NATIVE_COST: u64 = 6000;
 pub const EVENT_TOPIC_NATIVE_COST: u64 = 200;
 pub const EVENT_DATA_PER_BYTE_COST: u64 = 2;
+/// Upper bound on the RLP framing of one receipt log, excluding its topic
+/// entries (33 bytes each) and data payload: 21 bytes for the encoded address,
+/// 2 for the topics-list header (at most four topics), and up to 9 each for the
+/// data and outer log-list headers.
+pub const RECEIPT_LOG_RLP_OVERHEAD_BYTES: u64 = 21 + 2 + 9 + 9;
 
 const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 3;
 // Same costs as for events, as the same structure is used.

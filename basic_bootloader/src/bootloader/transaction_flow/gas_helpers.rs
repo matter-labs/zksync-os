@@ -121,58 +121,6 @@ pub fn calculate_l2_tx_intrinsic_computational_native_resources(
     intrinsic_computational_native_resources
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{
-        calculate_l2_tx_intrinsic_computational_native_resources,
-        calculate_l2_tx_intrinsic_pubdata, L2TxIntrinsicNativeInput,
-    };
-    use crate::bootloader::constants::L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH;
-    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
-
-    #[test]
-    fn l2_intrinsic_pubdata_is_zero_in_validium() {
-        // The L2 tx intrinsic pubdata is entirely state diffs, which `LogsOnly` does not commit.
-        assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::LogsOnly),
-            0
-        );
-        assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::LogsOnly),
-            0
-        );
-        // `FullPubdata` charges the state-diff intrinsic (non-zero for a non-service tx).
-        assert!(calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata) > 0);
-        // Per-authorization diffs add pubdata only in `FullPubdata`.
-        assert!(
-            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::FullPubdata)
-                > calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata)
-        );
-        // Service txs never have intrinsic pubdata, in either mode.
-        assert_eq!(
-            calculate_l2_tx_intrinsic_pubdata(0, true, PubdataContent::FullPubdata),
-            0
-        );
-    }
-
-    #[test]
-    fn l2_intrinsic_native_accounts_for_blob_versioned_hashes() {
-        let without_blobs = calculate_l2_tx_intrinsic_computational_native_resources(
-            &L2TxIntrinsicNativeInput::default(),
-        );
-        let with_blobs =
-            calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
-                blob_versioned_hashes_num: 6,
-                ..Default::default()
-            });
-
-        assert_eq!(
-            with_blobs - without_blobs,
-            6 * L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH
-        );
-    }
-}
-
 pub fn calculate_l1_tx_intrinsic_computational_native_resources(calldata_byte_length: u64) -> u64 {
     let mut intrinsic_computational_native_resources = L1_TX_INTRINSIC_NATIVE_COST;
 
@@ -423,5 +371,96 @@ pub(crate) fn get_gas_price<S: EthereumLikeTypes, Config: BasicBootloaderExecuti
         // enforce max_fee_per_gas > base_fee.
         let gas_price = (base_fee.saturating_add(priority_fee_per_gas)).min(*max_fee_per_gas);
         Ok(gas_price)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        calculate_l1_tx_intrinsic_computational_native_resources,
+        calculate_l2_tx_intrinsic_computational_native_resources,
+        calculate_l2_tx_intrinsic_pubdata, L2TxIntrinsicNativeInput,
+    };
+    use crate::bootloader::constants::{
+        L1_TX_INTRINSIC_NATIVE_COST, L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+        L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE,
+        L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH,
+        SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+    };
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
+
+    #[test]
+    fn l2_intrinsic_pubdata_is_zero_in_validium() {
+        // The L2 tx intrinsic pubdata is entirely state diffs, which `LogsOnly` does not commit.
+        assert_eq!(
+            calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::LogsOnly),
+            0
+        );
+        assert_eq!(
+            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::LogsOnly),
+            0
+        );
+        // `FullPubdata` charges the state-diff intrinsic (non-zero for a non-service tx).
+        assert!(calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata) > 0);
+        // Per-authorization diffs add pubdata only in `FullPubdata`.
+        assert!(
+            calculate_l2_tx_intrinsic_pubdata(3, false, PubdataContent::FullPubdata)
+                > calculate_l2_tx_intrinsic_pubdata(0, false, PubdataContent::FullPubdata)
+        );
+        // Service txs never have intrinsic pubdata, in either mode.
+        assert_eq!(
+            calculate_l2_tx_intrinsic_pubdata(0, true, PubdataContent::FullPubdata),
+            0
+        );
+    }
+
+    #[test]
+    fn fixed_receipt_hash_is_charged_intrinsically_for_every_tx_class() {
+        for (input, expected) in [
+            (
+                L2TxIntrinsicNativeInput::default(),
+                L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+            ),
+            (
+                L2TxIntrinsicNativeInput {
+                    free_native: true,
+                    ..Default::default()
+                },
+                L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE,
+            ),
+            (
+                L2TxIntrinsicNativeInput {
+                    is_service: true,
+                    ..Default::default()
+                },
+                SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
+            ),
+        ] {
+            assert_eq!(
+                calculate_l2_tx_intrinsic_computational_native_resources(&input),
+                expected
+            );
+        }
+        assert_eq!(
+            calculate_l1_tx_intrinsic_computational_native_resources(0),
+            L1_TX_INTRINSIC_NATIVE_COST
+        );
+    }
+
+    #[test]
+    fn l2_intrinsic_native_accounts_for_blob_versioned_hashes() {
+        let without_blobs = calculate_l2_tx_intrinsic_computational_native_resources(
+            &L2TxIntrinsicNativeInput::default(),
+        );
+        let with_blobs =
+            calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
+                blob_versioned_hashes_num: 6,
+                ..Default::default()
+            });
+
+        assert_eq!(
+            with_blobs - without_blobs,
+            6 * L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH
+        );
     }
 }

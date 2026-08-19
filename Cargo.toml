@@ -120,15 +120,15 @@ full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbend
 cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "80c0541f6", package = "airbender-crypto", default-features = false }
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false }
 
 seq-macro = { version = "0.3.6", default-features = false }
 
 anyhow = "1"
-ruint = { version = "1.16", default-features = false }
+ruint = { version = "1.20", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
 hex = "0.4.3"
@@ -140,7 +140,7 @@ num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-integer = { version = "0.1", default-features = false }
 proptest = "1.7.0"
-alloy = { version = "2", default-features = false }
+alloy = { version = "2.4.1", default-features = false }
 alloy-rlp = "0.3.13"
 alloy-sol-types = "1"
 alloy-primitives = "1"

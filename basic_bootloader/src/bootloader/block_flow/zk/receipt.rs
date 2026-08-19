@@ -16,7 +16,7 @@ pub(crate) fn compute_receipt_hash<'events, I>(
     status: &bool,
     cumulative_gas_used: &u64,
     events: I,
-) -> (Bytes32, usize)
+) -> Bytes32
 where
     I: Iterator<
             Item = GenericEventContentRef<'events, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
@@ -37,10 +37,9 @@ where
         bloom.as_bytes(),
         events,
     );
-    let encoded_len = receipt_encoder.required_buffer_len();
     let mut receipt_hasher = Blake2s256::new();
     receipt_encoder.encode_into(&mut receipt_hasher);
-    (Bytes32::from_array(receipt_hasher.finalize()), encoded_len)
+    Bytes32::from_array(receipt_hasher.finalize())
 }
 
 #[cfg(test)]
@@ -98,27 +97,8 @@ mod tests {
         let status = true;
         let gas: u64 = 0x5208;
 
-        let (got, encoded_len) =
-            compute_receipt_hash(tx_type, &status, &gas, core::iter::once(event));
-        let mut reference_rlp = Vec::new();
+        let got = compute_receipt_hash(tx_type, &status, &gas, core::iter::once(event));
         let zero_bloom = Bloom::from_slice(&[0u8; 256]);
-        let zero_bloom_reference = ReceiptWithBloom {
-            receipt: Receipt {
-                status: Eip658Value::Eip658(status),
-                cumulative_gas_used: gas,
-                logs: alloc::vec![Log::new_unchecked(
-                    Address::from([0xaau8; 20]),
-                    alloc::vec![B256::from([0x11u8; 32]), B256::from([0x22u8; 32])],
-                    Bytes::copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]),
-                )],
-            },
-            logs_bloom: zero_bloom,
-        };
-        if tx_type != 0 {
-            reference_rlp.push(tx_type);
-        }
-        zero_bloom_reference.encode(&mut reference_rlp);
-        assert_eq!(encoded_len, reference_rlp.len());
 
         // The ZK path must commit to a zero bloom...
         assert_eq!(

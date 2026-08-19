@@ -32,6 +32,16 @@ macro_rules! impl_conversions {
             }
 
             #[inline(always)]
+            pub fn try_to_u64(&self) -> Option<u64> {
+                let limbs = self.as_limbs();
+                if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
+                    None
+                } else {
+                    Some(limbs[0])
+                }
+            }
+
+            #[inline(always)]
             pub fn try_to_usize(&self) -> Option<usize> {
                 let limbs = self.as_limbs();
                 if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
