@@ -370,10 +370,8 @@ impl<
                                     "Materialized account is missing its initial storage hash"
                                 )
                             })?;
-                        preimages_cache.admit_cached_preimage_for_current_tx(
-                            &initial_preimage_hash,
-                            AccountProperties::ENCODED_SIZE,
-                        )?;
+                        preimages_cache
+                            .admit_cached_preimage_for_current_tx(&initial_preimage_hash)?;
                     }
                     Self::charge_ergs_for_cold_access(
                         ee_type,

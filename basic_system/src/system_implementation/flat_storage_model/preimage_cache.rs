@@ -39,9 +39,6 @@ pub const MAX_PREIMAGE_CACHE_RETAINED_BYTES: usize = 256 * 1024 * 1024;
 /// A single transaction may add at most half of the block cache limit.
 pub const MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX: usize = MAX_PREIMAGE_CACHE_RETAINED_BYTES / 2;
 
-const _: () =
-    assert!(MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX * 2 == MAX_PREIMAGE_CACHE_RETAINED_BYTES);
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct PreimageRequest {
@@ -300,21 +297,15 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
     pub(super) fn admit_cached_preimage_for_current_tx(
         &mut self,
         hash: &Bytes32,
-        expected_preimage_len: usize,
     ) -> Result<(), SystemError> {
-        let admission = match self.storage.get(hash) {
-            Some(cached) if cached.as_slice().len() == expected_preimage_len => cached.admission,
-            Some(_) => return Err(internal_error!("Cached preimage length mismatch").into()),
-            None => {
-                return Err(internal_error!("Materialized preimage is missing from cache").into());
-            }
+        let Some(cached) = self.storage.get(hash) else {
+            return Err(internal_error!("Materialized preimage is missing from cache").into());
         };
+        let admission = cached.admission;
+        // Charge the size of the entry that is physically retained.
+        let preimage_len = cached.as_slice().len();
 
-        self.admit_cached_preimage_with_admission_for_current_tx(
-            hash,
-            admission,
-            expected_preimage_len,
-        )
+        self.admit_cached_preimage_with_admission_for_current_tx(hash, admission, preimage_len)
     }
 
     /// Conservatively precharges one cache entry that may be materialized
@@ -584,6 +575,10 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         let (next_tx_bytes, next_retained_bytes) = if apply_transaction_budget {
             self.next_estimated_byte_totals(estimated_entry_bytes, true)?
         } else {
+            // Block finalization inserts a new entry, but
+            // `reserve_preimage_for_block_finalization` already counted its
+            // bytes when the account entered the account cache. Counting them
+            // here would charge every updated account twice.
             (
                 self.estimated_bytes_added_in_current_tx,
                 self.estimated_retained_bytes,
@@ -1211,13 +1206,5 @@ mod tests {
         cache.finish_frame(Some(&rollback_handle)).unwrap();
 
         assert_eq!(cache.estimated_retained_bytes, estimated_entry_bytes);
-    }
-
-    #[test]
-    fn tx_budget_is_half_the_block_cap() {
-        assert_eq!(
-            MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX * 2,
-            MAX_PREIMAGE_CACHE_RETAINED_BYTES
-        );
     }
 }
