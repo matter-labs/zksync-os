@@ -4,7 +4,6 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
-use basic_system::cost_constants::blake2s_native_cost;
 use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{IOTeardown, Resource};
 
@@ -149,15 +148,14 @@ where
                                 &tx_processing_result.result,
                                 ExecutionResult::Success { .. }
                             );
-                            let (receipt_hash, receipt_rlp_len) = compute_receipt_hash(
+                            let receipt_hash = compute_receipt_hash(
                                 tx_processing_result.tx_type,
                                 &tx_status,
                                 &next_block_gas_used,
                                 system.io.events_in_this_tx_iterator(),
                             );
-                            let computational_native_used = tx_processing_result
-                                .computational_native_used
-                                + blake2s_native_cost(receipt_rlp_len);
+                            let computational_native_used =
+                                tx_processing_result.computational_native_used;
                             let next_block_computational_native_used = block_data
                                 .block_computational_native_used
                                 + computational_native_used;

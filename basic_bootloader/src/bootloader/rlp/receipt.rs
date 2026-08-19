@@ -348,6 +348,26 @@ mod tests {
         enc.encode_into(&mut sink);
         let estimate = enc.required_buffer_len();
 
+        let charged_receipt_hash_native =
+            crate::bootloader::constants::RECEIPT_HASH_BASE_NATIVE_COST
+                + logs
+                    .iter()
+                    .map(|(_, topics, data)| {
+                        let encoded_log_len_upper_bound = basic_system::system_implementation::flat_storage_model::cost_constants::RECEIPT_LOG_RLP_OVERHEAD_BYTES
+                            + 33 * topics.len() as u64
+                            + data.len() as u64;
+                        encoded_log_len_upper_bound
+                            .div_ceil(basic_system::cost_constants::BLAKE2S_CHUNK_SIZE as u64)
+                            * basic_system::cost_constants::BLAKE2S_ROUND_NATIVE_COST
+                    })
+                    .sum::<u64>();
+        let actual_receipt_hash_native =
+            basic_system::cost_constants::blake2s_native_cost(sink.0.len());
+        assert!(
+            charged_receipt_hash_native >= actual_receipt_hash_native,
+            "decomposed receipt-hash charge must cover the actual encoding"
+        );
+
         let expected = alloy_receipt_rlp(tx_type, status, gas, bloom, logs);
         (sink.0, estimate, expected)
     }

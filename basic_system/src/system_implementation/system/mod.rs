@@ -103,26 +103,25 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 Ergs(total_cost * ERGS_PER_GAS)
             }
         };
-        // Native uses write-specific warmness: only discount if cold write extra
-        // was already charged this tx. A prior SLOAD warms the access but doesn't
-        // pay for write merkle paths. Even no-op writes still update the
-        // in-memory cache state, so they pay the warm cache-write cost.
-        let native = if new_value == current_value || is_cold_write_charged {
-            // No-op writes still update the in-memory cache state, and a warm
-            // write after a cold write was already charged this tx, so both pay
-            // only the warm cache-write cost.
-            R::Native::from_computational(
-                crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST,
-            )
+        // A write has two independent native components:
+        // 1. Updating the in-memory slot data (`addr_data`). This happens on
+        //    every write — no-op, warm, and cold alike — so
+        //    `WARM_STORAGE_WRITE_EXTRA_NATIVE_COST` is always charged. (Mirrors
+        //    the account path, which always charges `WARM_ACCOUNT_CACHE_WRITE_EXTRA`.)
+        // 2. The merkle-path work of a cold write, charged on top of (1) only for
+        //    the first (cold) write to the slot this tx. A warm write (cold extra
+        //    already charged this tx) or a no-op write pays only (1).
+        use crate::system_implementation::flat_storage_model::cost_constants;
+        let merkle_extra = if new_value == current_value || is_cold_write_charged {
+            0
         } else if is_new_slot {
-            R::Native::from_computational(
-                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
-            )
+            cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST
         } else {
-            R::Native::from_computational(
-                crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,
-            )
+            cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST
         };
+        let native = R::Native::from_computational(
+            cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST + merkle_extra,
+        );
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
 
