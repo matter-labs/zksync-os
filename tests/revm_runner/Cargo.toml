@@ -24,10 +24,10 @@ revm = "=42.0.1"
 revm-inspectors = "0.42.2"
 log = { workspace = true }
 
-# Pinned to the vv-new-version tip: AtlasV4, the apply_pre_block_system_calls
-# helper (matter-labs/zksync-os-revm#19), and the revm v42.0.1 bump (#21).
-# TODO: switch back to a tagged release once vv-new-version is released.
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "40e07fd2ad1230c407e581fac5ab38f386a1ee46" }
+# Pinned to the v0.2.0 release: AtlasV4, the apply_pre_block_system_calls
+# helper (matter-labs/zksync-os-revm#19), the revm v42.0.1 bump (#21), and the
+# merge that brings the two lines back together (#24).
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = "v0.2.0" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }
