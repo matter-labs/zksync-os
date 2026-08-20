@@ -68,6 +68,22 @@ The preimage cache is used for account properties preimages and bytecodes. It's 
 
 This latter keeps a map of hashes to be published (whose preimage is saved in `storage`) to some publication metadata (number of uses and size). The `publication_storage` also keeps a stack of hashes with a pointer to the start of the current frame (and a stack of pointers for previous frames). For rolling back the current frame, the cache goes through all the hashes pushed to the stack in this frame and decreases the use counter. Only preimages with non-zero use counter are published.
 
+Raw preimages are retained for the block even when the candidate transaction
+that introduced them is dropped. Each entry therefore records whether it was
+introduced by an accepted transaction or is still pending under a candidate
+transaction ID. A hit on an entry owned by a dropped candidate re-admits its
+estimated bytes to the current transaction before reuse.
+
+Account properties need one additional bridge between cache layers. The account
+cache retains its decoded initial record too, so a later transaction may reuse
+it without calling `get_preimage()` again. On every cold hit for an existing
+account, the account cache retrieves the block-start preimage hash from the
+storage cache's surviving initial record and asks the preimage cache to resolve
+its admission. Entries introduced by accepted transactions are free; entries
+owned by earlier unaccepted candidates are charged to the current candidate.
+This remains correct even when an account (such as the coinbase) was warmed
+before the transaction rollback frame was created.
+
 ## Account cache
 
 The [account cache](../../../basic_system/src/system_implementation/flat_storage_model/account_cache.rs) is used to temporarily store the account properties that will later be hashed and stored into the corresponding account properties hash slot.

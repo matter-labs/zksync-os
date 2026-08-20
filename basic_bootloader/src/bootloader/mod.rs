@@ -111,7 +111,7 @@ where
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
 
-        let memories = RunnerMemoryBuffers {
+        let mut memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
         };
@@ -119,8 +119,12 @@ where
         cycle_marker::end!("system_init");
 
         // Pre-op
-        let mut block_data_keeper =
-            <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(&mut system, result_keeper)?;
+        let mut block_data_keeper = <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(
+            &mut system,
+            &mut system_functions,
+            memories.reborrow(),
+            result_keeper,
+        )?;
 
         // TX loop
         <S::TxLoopOp as TxLoopOp<S>>::loop_op::<Config>(

@@ -27,11 +27,11 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
-use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::TxValidator;
+use zk_ee::system::tracer::{NopTracer, Tracer};
+use zk_ee::system::validator::{NopTxValidator, TxValidator};
 use zk_ee::system::Resource;
 use zk_ee::system::System;
-use zk_ee::system::{CompletedExecution, Computational};
+use zk_ee::system::{AccountDataRequest, CompletedExecution, Computational};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{IOSubsystem, IOSubsystemExt, MAX_NATIVE_COMPUTATIONAL};
@@ -39,7 +39,10 @@ use zk_ee::system_log;
 use zk_ee::utils::{u256_to_b160_checked, Bytes32};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
-use system_hooks::addresses_constants::{L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
+use system_hooks::addresses_constants::{
+    BASE_TOKEN_HOLDER_ADDRESS, L2_ASSET_TRACKER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
+    L2_CHAIN_ASSET_HANDLER_ADDRESS,
+};
 
 use super::validation_impl::compute_calldata_tokens;
 use super::{ZkTransactionFlowOnlyEOA, ZkTxResult};
@@ -591,6 +594,141 @@ struct L1ExecutionOutcome<S: EthereumLikeTypes> {
     resources_before_refund: S::Resources,
 }
 
+/// Executes the mandatory non-zero L1 finalization path once before the first
+/// transaction and then rolls all of its state changes back.
+///
+/// This runs before `begin_new_tx`, so every proxy, implementation, and
+/// transitive callee preimage loaded by the real execution path is admitted as
+/// block-level `Accepted`. Raw preimages intentionally survive frame rollback;
+/// storage, events, logs, and messages do not.
+pub(crate) fn prewarm_l1_postprocessing<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    system_functions: &mut HooksStorage<S, S::Allocator>,
+    mut memories: RunnerMemoryBuffers<'_>,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    let mut resources = S::Resources::FORMAL_INFINITE;
+    let rollback_handle = system.start_global_frame()?;
+    let l1_chain_id = read_l1_chain_id(system);
+    let chain_id = U256::from(system.get_chain_id());
+    let mut tracer = NopTracer::default();
+    let mut validator = NopTxValidator;
+
+    // AssetTracker only reads the chain migration number when the saved asset
+    // migration number is zero and the base-token total supply is zero. The
+    // total supply may change during an L1 transaction, so execute this
+    // conditional dependency unconditionally before transaction-local cache
+    // metering starts.
+    // Keep both synthetic calls in one fallible operation so a subsystem
+    // failure short-circuits further execution, but defer propagating it until
+    // after the outer frame has been rolled back.
+    let prewarm_result = (|| {
+        prewarm_l2_chain_asset_handler::<S>(
+            system,
+            system_functions,
+            memories.reborrow(),
+            chain_id,
+            &mut resources,
+            &mut tracer,
+            &mut validator,
+        )?;
+
+        notify_l2_asset_tracker::<S>(
+            system,
+            system_functions,
+            memories,
+            U256::from(1),
+            l1_chain_id,
+            &mut resources,
+            &mut tracer,
+            &mut validator,
+        )
+    })();
+
+    // The synthetic call must never change block state.
+    system.finish_global_frame(Some(&rollback_handle))?;
+    prewarm_result
+}
+
+/// Unconditionally admits the preimages behind
+/// `L2ChainAssetHandler.migrationNumber(block.chainid)`.
+///
+/// The real AssetTracker call reaches this getter only when both the saved
+/// asset migration number and base-token supply are zero. Calling it directly
+/// removes that state-dependent branch from transaction-local cache
+/// accounting. An EVM-level revert is harmless: the proxy and implementation
+/// preimages loaded before the revert have already been admitted, while
+/// subsystem failures still propagate.
+fn prewarm_l2_chain_asset_handler<'a, S: EthereumLikeTypes + 'a>(
+    system: &mut System<S>,
+    system_functions: &mut HooksStorage<S, S::Allocator>,
+    memories: RunnerMemoryBuffers<'a>,
+    chain_id: U256,
+    resources: &mut S::Resources,
+    tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    // migrationNumber(uint256): selector 0xb2157716 + ABI-encoded chain ID.
+    let mut calldata = [0u8; 36];
+    calldata[0..4].copy_from_slice(&[0xb2, 0x15, 0x77, 0x16]);
+    calldata[4..36].copy_from_slice(&chain_id.to_be_bytes::<32>());
+
+    resources.with_infinite_ergs(|inf_ergs| {
+        let CompletedExecution {
+            resources_returned,
+            result: _,
+        } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+            system,
+            system_functions,
+            memories,
+            &calldata,
+            &L2_ASSET_TRACKER_ADDRESS,
+            &L2_CHAIN_ASSET_HANDLER_ADDRESS,
+            inf_ergs.clone(),
+            &U256::ZERO,
+            true, // should_make_frame - isolate an EVM-level revert
+            tracer,
+            validator,
+        )?;
+        *inf_ergs = resources_returned;
+        Ok::<(), BootloaderSubsystemError>(())
+    })
+}
+
+/// Materializes the account preimages used by mandatory balance updates before
+/// attacker-controlled execution can exhaust the transaction-local cache
+/// budget. Contract preimages are admitted at block level by
+/// `prewarm_l1_postprocessing`.
+fn prewarm_l1_postprocessing_balance_accounts<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    refund_recipient: B160,
+) -> Result<(), BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    let mut resources = S::Resources::FORMAL_INFINITE;
+
+    for address in [BASE_TOKEN_HOLDER_ADDRESS, refund_recipient] {
+        system.io.read_account_properties(
+            ExecutionEnvironmentType::EVM,
+            &mut resources,
+            &address,
+            AccountDataRequest::empty().with_nominal_token_balance(),
+        )?;
+    }
+
+    Ok(())
+}
+
 fn execute_l1_transaction_and_notify_result<
     'a,
     S: EthereumLikeTypes + 'a,
@@ -644,15 +782,15 @@ where
         .checked_sub(max_fee_commitment)
         .ok_or(internal_error!("td-mfc"))?;
 
+    let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
+    prewarm_l1_postprocessing_balance_accounts(system, refund_recipient)?;
+
     // Transfer value from treasury to sender (the deposit minus max fee).
-    // We want to ensure that the simulation of a transaction
-    // never underestimates gas/pubdata compared to the actual execution
-    // of said transaction.
-    // During simulation the gas price is typically set to 0. So we need
-    // to be conservative about operations that incur in gas/pubdata depending
-    // on the value of the fee. For that reason, we always perform the
-    // following transfer on simulation, and avoid compressing the pubdata
-    // for the balance changes resulting from it.
+    // Run this even for a zero amount so that every preimage needed by the
+    // mandatory post-execution mint is admitted before user execution can
+    // exhaust the transaction-local preimage-cache budget. In simulation we
+    // additionally avoid compressing the pubdata for the resulting balance
+    // changes.
     //
     // Mint the value portion of the deposit (total deposited minus max fee)
     // to the sender inside the execution frame, it does not
@@ -660,34 +798,32 @@ where
     //
     // Use with_infinite_ergs so the call cannot fail due to out-of-gas,
     // but native consumption is still tracked against the user's resources.
-    if to_transfer > U256::ZERO || Config::SIMULATION {
-        resources
-            .with_infinite_ergs(|inf_resources| {
-                mint_base_token::<S, Config>(
+    resources
+        .with_infinite_ergs(|inf_resources| {
+            mint_base_token::<S, Config>(
+                system,
+                system_functions,
+                memories.reborrow(),
+                &to_transfer,
+                &from,
+                l1_chain_id,
+                inf_resources,
+                tracer,
+                validator,
+            )
+        })
+        .map_err(|e| match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                system_log!(
                     system,
-                    system_functions,
-                    memories.reborrow(),
-                    &to_transfer,
-                    &from,
-                    l1_chain_id,
-                    inf_resources,
-                    tracer,
-                    validator,
-                )
-            })
-            .map_err(|e| match e.root_cause() {
-                RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                    system_log!(
-                        system,
-                        "Out of ergs on infinite ergs: inner error was {e:?}"
-                    );
-                    BootloaderSubsystemError::LeafDefect(internal_error!(
-                        "Out of ergs on infinite ergs"
-                    ))
-                }
-                _ => e,
-            })?;
-    }
+                    "Out of ergs on infinite ergs: inner error was {e:?}"
+                );
+                BootloaderSubsystemError::LeafDefect(internal_error!(
+                    "Out of ergs on infinite ergs"
+                ))
+            }
+            _ => e,
+        })?;
 
     let resources_for_tx = resources.clone();
 
@@ -786,7 +922,7 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    notify_l2_asset_tracker::<S, Config>(
+    notify_l2_asset_tracker::<S>(
         system,
         system_functions,
         memories,
@@ -820,7 +956,7 @@ where
         "Transferring {nominal_token_value:?} tokens from treasury to {to:?}\n"
     );
 
-    let treasury_address = &system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
+    let treasury_address = &BASE_TOKEN_HOLDER_ADDRESS;
 
     let _ = system
         .io
@@ -884,7 +1020,7 @@ where
 /// If no contract is deployed at L2AssetTracker, the call succeeds silently
 /// (a call to an empty address returns success with no returndata in EVM).
 /// However, we are certain that L2AssetTracker is available after the upgrade.
-fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecutionConfig>(
+fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
@@ -899,56 +1035,56 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
-    if amount > U256::ZERO || Config::SIMULATION {
-        let notify_native_before = resources.native().as_u64();
-        // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
-        // selector 0x03117c8c + abi-encoded (fromChainId, amount)
-        let mut calldata = [0u8; 68];
-        calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
-        calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
-        calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
+    // Run the notification even for a zero amount. Besides keeping the call
+    // path uniform, this admits the base-token caller and asset-tracker
+    // account/bytecode preimages before user execution.
+    let notify_native_before = resources.native().as_u64();
+    // Encode calldata for handleFinalizeBaseTokenBridgingOnL2(uint256,uint256):
+    // selector 0x03117c8c + abi-encoded (fromChainId, amount)
+    let mut calldata = [0u8; 68];
+    calldata[0..4].copy_from_slice(&[0x03, 0x11, 0x7c, 0x8c]);
+    calldata[4..36].copy_from_slice(&l1_chain_id.to_be_bytes::<32>());
+    calldata[36..68].copy_from_slice(&amount.to_be_bytes::<32>());
 
-        let failed = resources.with_infinite_ergs(|inf_ergs| {
-            let CompletedExecution {
-                resources_returned,
-                result: asset_tracker_result,
-            } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
-                system,
-                system_functions,
-                memories,
-                &calldata,
-                &L2_BASE_TOKEN_ADDRESS,
-                &L2_ASSET_TRACKER_ADDRESS,
-                inf_ergs.clone(),
-                &U256::ZERO,
-                true, // should_make_frame - isolate state changes
-                tracer,
-                validator,
-            )?;
-            // Overwrite resources inside the closure so that
-            // with_infinite_ergs correctly restores ergs afterwards.
-            *inf_ergs = resources_returned;
-            Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
-        })?;
+    let failed = resources.with_infinite_ergs(|inf_ergs| {
+        let CompletedExecution {
+            resources_returned,
+            result: asset_tracker_result,
+        } = BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+            system,
+            system_functions,
+            memories,
+            &calldata,
+            &L2_BASE_TOKEN_ADDRESS,
+            &L2_ASSET_TRACKER_ADDRESS,
+            inf_ergs.clone(),
+            &U256::ZERO,
+            true, // should_make_frame - isolate state changes
+            tracer,
+            validator,
+        )?;
+        // Overwrite resources inside the closure so that
+        // with_infinite_ergs correctly restores ergs afterwards.
+        *inf_ergs = resources_returned;
+        Ok::<bool, BootloaderSubsystemError>(asset_tracker_result.failed())
+    })?;
 
-        let notify_native_used = notify_native_before - resources.native().as_u64();
+    let notify_native_used = notify_native_before - resources.native().as_u64();
+    system_log!(
+        system,
+        "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+    );
+
+    if failed {
         system_log!(
             system,
-            "L1 notify_l2_asset_tracker native: {notify_native_used}\n"
+            "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 failed for amount {amount:?}\n"
         );
-
-        if failed {
-            system_log!(
-                system,
-                "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 failed for amount {amount:?}\n"
-            );
-            // A revert here means the chain's token accounting would be inconsistent.
-            // Treated as a fatal system error — block processing cannot continue.
-            return Err(internal_error!(
-                "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted"
-            )
-            .into());
-        }
+        // A revert here means the chain's token accounting would be inconsistent.
+        // Treated as a fatal system error — block processing cannot continue.
+        return Err(
+            internal_error!("L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted").into(),
+        );
     }
     Ok(())
 }

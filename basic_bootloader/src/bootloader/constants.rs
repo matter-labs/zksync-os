@@ -359,9 +359,13 @@ pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
     1 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
 
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
-/// from block start. Covers fixed pre-tx-loop system work — currently just
-/// the EIP-2935 historical block hash write when the feature is enabled.
-pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE;
+/// from block start. Covers fixed pre-tx-loop system work: the EIP-2935
+/// historical block hash write, the direct L2ChainAssetHandler prewarm, and
+/// the rolled-back, non-zero L2AssetTracker notification that admits mandatory
+/// L1-finalization preimages. Conservatively charge each synthetic call as one
+/// cold AssetTracker notification.
+pub const BLOCK_INTRINSIC_NATIVE: u64 =
+    EIP_2935_INTRINSIC_NATIVE + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST;
 
 #[cfg(test)]
 mod tests {

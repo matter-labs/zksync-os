@@ -222,7 +222,7 @@ impl<
         resources: &mut R,
         address: &B160,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         observe: bool,
@@ -255,13 +255,16 @@ impl<
         // rollback-aware, so the gate is identical across sequencer and proving and
         // never depends on cache-entry presence.
         let current_tx_id = self.current_tx_id;
-        let is_cold = match self.cache.get(address.into()) {
-            Some(item) => !item
-                .current()
-                .metadata()
-                .basic
-                .considered_warm(current_tx_id),
-            None => true,
+        let (is_cold, is_missing) = match self.cache.get(address.into()) {
+            Some(item) => (
+                !item
+                    .current()
+                    .metadata()
+                    .basic
+                    .considered_warm(current_tx_id),
+                false,
+            ),
+            None => (true, true),
         };
         if is_cold {
             let mut probe = resources.clone();
@@ -276,6 +279,14 @@ impl<
                 &mut probe,
                 AccountProperties::ENCODED_SIZE,
             )?;
+        }
+
+        // Every cached account can produce at most one final account snapshot.
+        // Precharge it before materialization so raw entries retained by this or
+        // later invalid candidates can never consume finalization headroom.
+        if is_missing {
+            preimages_cache
+                .reserve_preimage_for_block_finalization(AccountProperties::ENCODED_SIZE)?;
         }
 
         self.cache
@@ -342,6 +353,26 @@ impl<
                     x.element_properties_mut().mark_value_as_observed();
                 }
                 if is_warm == false {
+                    // The initial account-cache record survives a dropped
+                    // candidate, including accesses made before the
+                    // transaction rollback frame was opened. If it represents
+                    // an existing account and was already cached, the decoded
+                    // value bypasses `get_preimage`, so explicitly resolve its
+                    // backing preimage's admission on every cold cache hit.
+                    // The preimage cache's accepted-candidate bitmap, rather
+                    // than rollback placement, decides whether this tx pays.
+                    let existing_account = !x.element_properties().is_new_element();
+                    if !is_missing && existing_account {
+                        let initial_preimage_hash = storage
+                            .initial_account_properties_hash(address)
+                            .ok_or_else(|| {
+                                internal_error!(
+                                    "Materialized account is missing its initial storage hash"
+                                )
+                            })?;
+                        preimages_cache
+                            .admit_cached_preimage_for_current_tx(&initial_preimage_hash)?;
+                    }
                     Self::charge_ergs_for_cold_access(
                         ee_type,
                         resources,
@@ -383,7 +414,7 @@ impl<
         address: &B160,
         update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         fee_payment_in_simulation: bool,
@@ -431,7 +462,7 @@ impl<
         to: &B160,
         amount: &U256,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
-        preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
     ) -> Result<(), BalanceSubsystemError> {
@@ -492,8 +523,7 @@ impl<
             // Not part of a transaction, should be included in other costs.
             let mut inf_resources = R::FORMAL_INFINITE;
 
-            let _ = preimages_cache.record_preimage::<false>(
-                ExecutionEnvironmentType::NoEE,
+            let _ = preimages_cache.record_preimage_for_block_finalization(
                 &(PreimageRequest {
                     hash: properties_hash,
                     expected_preimage_len_in_bytes: AccountProperties::ENCODED_SIZE as u32,
@@ -1370,6 +1400,7 @@ mod tests {
     use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
     use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
     use std::alloc::Global;
+    use std::mem::size_of;
     use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use zk_ee::internal_error;
     use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
@@ -1422,6 +1453,57 @@ mod tests {
         }
     }
 
+    struct ExistingAccountOracle {
+        account_hash: Bytes32,
+        preimage_words: Vec<usize>,
+        preimage_queries: usize,
+    }
+
+    impl ExistingAccountOracle {
+        fn new(account: &AccountProperties) -> Self {
+            let encoded = account.encoding();
+            let mut padded = encoded.to_vec();
+            let word_size = size_of::<usize>();
+            padded.resize(encoded.len().div_ceil(word_size) * word_size, 0);
+            let preimage_words = padded
+                .chunks_exact(word_size)
+                .map(|chunk| usize::from_ne_bytes(chunk.try_into().unwrap()))
+                .collect();
+
+            Self {
+                account_hash: account.compute_hash(),
+                preimage_words,
+                preimage_queries: 0,
+            }
+        }
+    }
+
+    impl IOOracle for ExistingAccountOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            match query_type {
+                INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
+                    let response = InitialStorageSlotData::<EthereumIOTypesConfig> {
+                        is_new_storage_slot: false,
+                        initial_value: self.account_hash,
+                    };
+                    let values: Vec<_> = response.iter().collect();
+                    Ok(Box::new(values.into_iter()))
+                }
+                crate::system_implementation::flat_storage_model::preimage_cache::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
+                    self.preimage_queries += 1;
+                    Ok(Box::new(self.preimage_words.clone().into_iter()))
+                }
+                _ => Err(internal_error!("unexpected oracle query in test")),
+            }
+        }
+    }
+
     #[test]
     fn noop_balance_update_charges_warm_account_cache_write() {
         let mut storage: TestStorage = NewStorageWithAccountPropertiesUnderHash(
@@ -1441,6 +1523,7 @@ mod tests {
 
         let mut resources = TestResources::FORMAL_INFINITE;
         let initial_native = resources.native().as_u64();
+        let initial_retained_bytes = preimages_cache.estimated_retained_bytes();
 
         let previous_balance = account_cache
             .update_nominal_token_value::<false>(
@@ -1467,5 +1550,177 @@ mod tests {
             charged_native, expected_native,
             "no-op balance updates must still pay the warm account-cache write cost"
         );
+
+        let reserved_entry_bytes =
+            BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::estimated_entry_bytes(
+                AccountProperties::ENCODED_SIZE,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_retained_bytes(),
+            initial_retained_bytes + reserved_entry_bytes,
+            "first materialization must precharge one final account snapshot"
+        );
+
+        account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_retained_bytes(),
+            initial_retained_bytes + reserved_entry_bytes,
+            "an already cached account must not reserve twice"
+        );
+    }
+
+    #[test]
+    fn cached_account_from_invalidated_tx_readmits_its_preimage() {
+        let mut storage: TestStorage = NewStorageWithAccountPropertiesUnderHash(
+            GenericPubdataAwarePlainStorage::new_from_parts(
+                Global,
+                EthereumLikeStorageAccessCostModel,
+            ),
+        );
+        let mut preimages_cache =
+            BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::new_from_parts(Global);
+        let mut account_cache = TestAccountCache::new_from_parts(Global);
+        let account = AccountProperties {
+            balance: U256::from(1u64),
+            ..AccountProperties::default()
+        };
+        let mut oracle = ExistingAccountOracle::new(&account);
+        let address = B160::from_limbs([0x5678, 0, 0]);
+        let estimated_entry_bytes =
+            BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::estimated_entry_bytes(
+                AccountProperties::ENCODED_SIZE,
+            )
+            .unwrap();
+
+        storage.begin_new_tx();
+        preimages_cache.begin_new_tx();
+        account_cache.begin_new_tx();
+
+        // Match tx_loop's coinbase warm-up: materialize the account before the
+        // transaction rollback handle exists.
+        let mut first_resources = TestResources::FORMAL_INFINITE;
+        account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut first_resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_bytes_added_in_current_tx(),
+            estimated_entry_bytes
+        );
+
+        let storage_rollback = storage.start_frame();
+        let preimage_rollback = preimages_cache.start_frame();
+        let account_rollback = account_cache.start_frame();
+        storage.finish_frame(Some(&storage_rollback)).unwrap();
+        preimages_cache
+            .finish_frame(Some(&preimage_rollback))
+            .unwrap();
+        account_cache.finish_frame(Some(&account_rollback)).unwrap();
+        let retained_bytes = preimages_cache.estimated_retained_bytes();
+
+        // Do not finish the first candidate: it was dropped. Its initial
+        // account-cache record and raw preimage survive, but neither is part of
+        // the proving run for the next candidate.
+        storage.begin_new_tx();
+        preimages_cache.begin_new_tx();
+        account_cache.begin_new_tx();
+        assert_eq!(preimages_cache.estimated_bytes_added_in_current_tx(), 0);
+        let tx_limit = crate::system_implementation::flat_storage_model::preimage_cache::MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX;
+        let over_limit_bytes = tx_limit - estimated_entry_bytes + 1;
+        preimages_cache.set_estimated_bytes_added_in_current_tx(over_limit_bytes);
+
+        let mut second_resources = TestResources::FORMAL_INFINITE;
+        assert!(account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut second_resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .is_err());
+
+        assert_eq!(
+            oracle.preimage_queries, 1,
+            "decoded account should be reused"
+        );
+        assert!(preimages_cache.tx_limit_hit_for_current_tx());
+        assert!(!preimages_cache.block_limit_hit_for_current_tx());
+        assert_eq!(
+            preimages_cache.estimated_bytes_added_in_current_tx(),
+            over_limit_bytes,
+            "failed re-admission must not partially update the counter"
+        );
+        assert_eq!(preimages_cache.estimated_retained_bytes(), retained_bytes);
+
+        // At the exact boundary, the same account-cache hit must succeed and
+        // consume all remaining transaction-local budget without querying the
+        // oracle or retaining another physical entry.
+        storage.begin_new_tx();
+        preimages_cache.begin_new_tx();
+        account_cache.begin_new_tx();
+        preimages_cache.set_estimated_bytes_added_in_current_tx(tx_limit - estimated_entry_bytes);
+
+        let mut third_resources = TestResources::FORMAL_INFINITE;
+        account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut third_resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .unwrap();
+
+        assert_eq!(
+            preimages_cache.estimated_bytes_added_in_current_tx(),
+            tx_limit,
+            "the surviving account cache must not bypass preimage admission"
+        );
+        assert_eq!(oracle.preimage_queries, 1);
+        assert_eq!(preimages_cache.estimated_retained_bytes(), retained_bytes);
+
+        account_cache.finish_tx(&mut storage).unwrap();
+        storage.finish_tx().unwrap();
+        preimages_cache.finish_tx().unwrap();
+        storage.begin_new_tx();
+        preimages_cache.begin_new_tx();
+        account_cache.begin_new_tx();
+
+        let mut fourth_resources = TestResources::FORMAL_INFINITE;
+        account_cache
+            .touch_account::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut fourth_resources,
+                &address,
+                &mut storage,
+                &mut preimages_cache,
+                &mut oracle,
+            )
+            .unwrap();
+        assert_eq!(
+            preimages_cache.estimated_bytes_added_in_current_tx(),
+            0,
+            "an accepted account preimage must not be charged again"
+        );
+        assert_eq!(oracle.preimage_queries, 1);
     }
 }

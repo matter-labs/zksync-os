@@ -12,6 +12,8 @@ where
 
     fn pre_op(
         system: &mut System<S>,
+        _system_functions: &mut HooksStorage<S, S::Allocator>,
+        _memories: RunnerMemoryBuffers<'_>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError> {
         // EIP-4788

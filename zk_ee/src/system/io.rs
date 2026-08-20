@@ -382,6 +382,14 @@ pub trait IOSubsystemExt: IOSubsystem {
     /// Indicate the a new transaction is being processed.
     fn begin_next_tx(&mut self);
 
+    /// Returns whether the current transaction attempted to grow a
+    /// block-scoped IO cache past its safe retained-memory limit.
+    fn block_scoped_cache_limit_hit_for_current_tx(&self) -> bool;
+
+    /// Returns whether the current transaction exhausted a transaction-local
+    /// IO cache memory budget.
+    fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool;
+
     /// Finish current transaction, destructing accounts marked during
     /// selfdestruct.
     fn finish_tx(&mut self) -> Result<(), InternalError>;

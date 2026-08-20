@@ -40,6 +40,16 @@ pub const FRI_PRECOMPILE_ADDRESS: B160 =
 // L2 message root storage contract
 pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
 
+// L2 native token vault contract
+pub const L2_NATIVE_TOKEN_VAULT_ADDRESS_LOW: u32 = 0x10004;
+pub const L2_NATIVE_TOKEN_VAULT_ADDRESS: B160 =
+    B160::from_limbs([L2_NATIVE_TOKEN_VAULT_ADDRESS_LOW as u64, 0, 0]);
+
+// L2 chain asset handler contract
+pub const L2_CHAIN_ASSET_HANDLER_ADDRESS_LOW: u32 = 0x1000a;
+pub const L2_CHAIN_ASSET_HANDLER_ADDRESS: B160 =
+    B160::from_limbs([L2_CHAIN_ASSET_HANDLER_ADDRESS_LOW as u64, 0, 0]);
+
 // L2 interop root storage system contract
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =
