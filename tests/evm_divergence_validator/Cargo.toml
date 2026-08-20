@@ -36,4 +36,5 @@ rig = { path = "../rig", features = ["no_print"] }
 zksync_os_tests_common = { path = "../common" }
 zksync_os_revm_runner = { path = "../revm_runner" }
 zk_ee = { path = "../../zk_ee" }
-forward_system = { path = "../../forward_system" }
+# The validator compares against the production EVM surface, including the P-256 precompile.
+forward_system = { path = "../../forward_system", features = ["production"] }

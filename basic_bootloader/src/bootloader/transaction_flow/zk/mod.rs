@@ -6,7 +6,7 @@ use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::transaction::Transaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
-    get_resources_to_charge_for_pubdata, ResourcesForTx,
+    calculate_l2_tx_intrinsic_pubdata, get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::compute_gas_refund;
 use crate::bootloader::transaction_flow::BasicTransactionFlow;
@@ -417,7 +417,10 @@ where
             &pubdata_info
         );
 
-        let validation_pubdata = context.validation_pubdata;
+        let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
+            context.authorization_list_num,
+            transaction.is_service(),
+        );
 
         // Pubdata for validation has been charged already,
         // we charge for the rest now.
@@ -425,16 +428,16 @@ where
             Some(CachedPubdataInfo {
                 pubdata_used,
                 to_charge_for_pubdata,
-            }) => (pubdata_used + validation_pubdata, to_charge_for_pubdata),
+            }) => (pubdata_used + intrinsic_pubdata, to_charge_for_pubdata),
             None => {
                 let (execution_pubdata_spent, to_charge_for_pubdata) =
                     get_resources_to_charge_for_pubdata(
                         system,
                         context.native_per_pubdata,
-                        Some(validation_pubdata),
+                        Some(context.validation_pubdata),
                     )?;
                 (
-                    execution_pubdata_spent + validation_pubdata,
+                    execution_pubdata_spent + intrinsic_pubdata,
                     to_charge_for_pubdata,
                 )
             }
@@ -592,18 +595,11 @@ where
             format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
         );
 
-        use crate::bootloader::transaction_flow::gas_helpers::calculate_l2_tx_intrinsic_pubdata;
-
         let num_blobs = system.metadata.num_blobs();
         let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
 
         #[cfg(feature = "verify_intrinsic_native")]
         Self::verify_intrinsic_native(system, &context);
-
-        let intrinsic_pubdata = calculate_l2_tx_intrinsic_pubdata(
-            context.authorization_list_num,
-            transaction.is_service(),
-        );
 
         ZkTxResult {
             result,
@@ -616,7 +612,7 @@ where
             gas_refunded: context.gas_refunded,
             native_used: context.native_used,
             computational_native_used,
-            pubdata_used: context.total_pubdata + intrinsic_pubdata,
+            pubdata_used: context.total_pubdata,
             blob_gas_used,
         }
     }

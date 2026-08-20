@@ -52,6 +52,18 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
     ///
+    /// Pre-checks to be performed before reading and warming up the callee.
+    ///
+    fn before_reading_callee<'a, 'i: 'ee, 'h: 'ee>(
+        system: &mut System<S>,
+        call_request: &mut ExternalCallRequest<S>,
+        callstack_depth: usize,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
+
+    ///
     /// Pre-checks and operations that should not be rolled back if actual frame execution fails.
     ///
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(

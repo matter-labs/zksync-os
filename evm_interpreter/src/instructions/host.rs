@@ -291,7 +291,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 self.gas.resources_mut(),
                 &self.address,
                 &beneficiary,
-                self.is_constructor,
             )
             .map_err(wrap_error!())?;
 

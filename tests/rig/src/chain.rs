@@ -1920,6 +1920,32 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Set nonce for a given account.
+    ///
+    pub fn set_nonce(&mut self, address: B160, nonce: u64) -> &mut Self {
+        let mut account_properties = self.get_account_properties(&address);
+
+        account_properties.nonce = nonce;
+        let encoding = account_properties.encoding();
+        let properties_hash = account_properties.compute_hash();
+
+        let key = address_into_special_storage_key(&address);
+        let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
+
+        // We are updating both cold storage (hash map) and our storage tree.
+        self.state_tree
+            .cold_storage
+            .insert(flat_key, properties_hash);
+        self.state_tree
+            .storage_tree
+            .insert(&flat_key, &properties_hash);
+        self.preimage_source
+            .inner
+            .insert(properties_hash, encoding.to_vec());
+        self
+    }
+
+    ///
     /// Set given EVM bytecode on the given address.
     ///
     pub fn set_evm_bytecode(&mut self, address: B160, bytecode: &[u8]) -> &mut Self {

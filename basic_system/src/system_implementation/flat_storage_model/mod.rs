@@ -330,7 +330,6 @@ impl<
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
-        in_constructor: bool,
     ) -> Result<
         <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         DeconstructionSubsystemError,
@@ -344,7 +343,6 @@ impl<
                 &mut self.storage_cache,
                 &mut self.preimages_cache,
                 oracle,
-                in_constructor,
             )
     }
 

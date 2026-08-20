@@ -144,6 +144,11 @@ impl BytecodeBuilder {
         self
     }
 
+    pub fn mload(mut self) -> Self {
+        self.bytes.push(0x51);
+        self
+    }
+
     pub fn mstore8(mut self) -> Self {
         self.bytes.push(0x53);
         self
@@ -156,6 +161,16 @@ impl BytecodeBuilder {
 
     pub fn call(mut self) -> Self {
         self.bytes.push(0xf1);
+        self
+    }
+
+    pub fn create(mut self) -> Self {
+        self.bytes.push(0xf0);
+        self
+    }
+
+    pub fn delegatecall(mut self) -> Self {
+        self.bytes.push(0xf4);
         self
     }
 
@@ -176,6 +191,11 @@ impl BytecodeBuilder {
 
     pub fn invalid(mut self) -> Self {
         self.bytes.push(0xfe);
+        self
+    }
+
+    pub fn stop(mut self) -> Self {
+        self.bytes.push(0x00);
         self
     }
 
@@ -365,6 +385,31 @@ mod tests {
                 0x60, 0x20, 0x5f, 0x60, 0x01, 0x5f, 0x5f, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x11,
                 0x5a, 0xf1
+            ]
+        );
+    }
+
+    #[test]
+    fn builder_supports_constructor_and_create_opcodes() {
+        let callee = address!("0000000000000000000000000000000000000bad");
+        let bytecode = BytecodeBuilder::new()
+            .push0_n(4)
+            .push_address(callee)
+            .gas()
+            .delegatecall()
+            .pop()
+            .push0_n(3)
+            .create()
+            .pop()
+            .stop()
+            .finish();
+
+        assert_eq!(
+            bytecode,
+            vec![
+                0x5f, 0x5f, 0x5f, 0x5f, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0xad, 0x5a, 0xf4, 0x50,
+                0x5f, 0x5f, 0x5f, 0xf0, 0x50, 0x00
             ]
         );
     }

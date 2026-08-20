@@ -349,6 +349,33 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         Ok(resources_to_pass)
     }
 
+    fn before_reading_callee<'a, 'i: 'ee, 'h: 'ee>(
+        system: &mut System<S>,
+        call_request: &mut ExternalCallRequest<S>,
+        callstack_depth: usize,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        // On EVM, CREATE(2) should fail before warming up the callee if:
+        // 1. Callstack depth limit is reached
+        // 2. Caller has insufficient balance
+        // 3. Caller's nonce would overflow
+        // However, if conditions 1 or 2 happens during a CALL, the callee
+        // is warmed up.
+        // TODO(EVM-1365): some checks are duplicated here and in [before_executing_frame],
+        // we should refactor to avoid such duplication.
+        if call_request.modifier == CallModifier::Constructor {
+            if let Some(error) = constructor_pre_checks(system, call_request, callstack_depth)? {
+                emit_pre_frame_call_error(call_request, callstack_depth, tracer, &error);
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
@@ -357,38 +384,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     where
         S::IO: IOSubsystemExt,
     {
-        if frame_state.environment_parameters.callstack_depth > 1024 {
-            system_log!(system, "Callstack is too deep\n",);
-
-            tracer.evm_tracer().on_call_error(&EvmError::CallTooDeep);
+        if let Some(error) = check_depth_and_balance(
+            system,
+            &mut frame_state.external_call,
+            frame_state.environment_parameters.callstack_depth,
+        )? {
+            tracer.evm_tracer().on_call_error(&error);
             return Ok(false);
-        }
-
-        // Check caller has enough balance for token transfer
-        if !frame_state.external_call.nominal_token_value.is_zero()
-            && !frame_state.external_call.is_delegate()
-        {
-            let caller_balance = frame_state
-                .external_call
-                .available_resources
-                .with_infinite_ergs(|inf_resources| {
-                    system.io.read_account_properties(
-                        THIS_EE_TYPE,
-                        inf_resources,
-                        &frame_state.external_call.caller,
-                        AccountDataRequest::empty().with_nominal_token_balance(),
-                    )
-                })?
-                .nominal_token_balance
-                .0;
-
-            if caller_balance < frame_state.external_call.nominal_token_value {
-                system_log!(system, "Not enough balance for transfer\n",);
-                tracer
-                    .evm_tracer()
-                    .on_call_error(&EvmError::InsufficientBalance);
-                return Ok(false);
-            }
         }
 
         if frame_state.external_call.modifier == CallModifier::Constructor {
@@ -450,4 +452,128 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         Ok(true)
     }
+}
+
+/// Checks call depth limit and caller balance.
+/// Used by both `before_reading_callee` and `before_executing_frame`.
+fn check_depth_and_balance<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    call_request: &mut ExternalCallRequest<S>,
+    callstack_depth: usize,
+) -> Result<Option<EvmError>, SubsystemError<EvmErrors>>
+where
+    S::IO: IOSubsystemExt,
+{
+    if callstack_depth > 1024 {
+        system_log!(system, "Callstack is too deep\n",);
+        return Ok(Some(EvmError::CallTooDeep));
+    }
+
+    // Check caller has enough balance for token transfer
+    if !call_request.nominal_token_value.is_zero() && !call_request.is_delegate() {
+        let caller_balance = call_request
+            .available_resources
+            .with_infinite_ergs(|inf_resources| {
+                system.io.read_account_properties(
+                    THIS_EE_TYPE,
+                    inf_resources,
+                    &call_request.caller,
+                    AccountDataRequest::empty().with_nominal_token_balance(),
+                )
+            })?
+            .nominal_token_balance
+            .0;
+
+        if caller_balance < call_request.nominal_token_value {
+            system_log!(system, "Not enough balance for transfer\n",);
+            return Ok(Some(EvmError::InsufficientBalance));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Checks that must pass before a CREATE/CREATE2 callee is read:
+/// depth, balance, and nonce overflow (read-only check).
+fn constructor_pre_checks<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    call_request: &mut ExternalCallRequest<S>,
+    callstack_depth: usize,
+) -> Result<Option<EvmError>, SubsystemError<EvmErrors>>
+where
+    S::IO: IOSubsystemExt,
+{
+    if let Some(error) = check_depth_and_balance(system, call_request, callstack_depth)? {
+        return Ok(Some(error));
+    }
+
+    // Read-only nonce overflow check (actual increment happens in before_executing_frame)
+    if callstack_depth > 0 {
+        let caller_nonce = call_request
+            .available_resources
+            .with_infinite_ergs(|inf_resources| {
+                system.io.read_account_properties(
+                    THIS_EE_TYPE,
+                    inf_resources,
+                    &call_request.caller,
+                    AccountDataRequest::empty().with_nonce(),
+                )
+            })?
+            .nonce
+            .0;
+        if caller_nonce == u64::MAX {
+            return Ok(Some(EvmError::NonceOverflow));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Wraps a pre-frame call error in a synthetic pseudo-frame open/close sequence.
+///
+/// Errors detected in `before_reading_callee` occur before `on_new_execution_frame` has been
+/// called for the child frame. Without wrapping, the tracer attributes these errors to the
+/// parent frame. This helper emits `on_new_execution_frame` / `on_call_error` /
+/// `after_execution_frame_completed` so the tracer sees a complete child frame, matching
+/// Geth's `captureBegin`/`captureEnd` bracketing for pre-check failures.
+fn emit_pre_frame_call_error<S: EthereumLikeTypes>(
+    call_request: &ExternalCallRequest<S>,
+    callstack_depth: usize,
+    tracer: &mut impl Tracer<S>,
+    error: &EvmError,
+) {
+    let launch_params = ExecutionEnvironmentLaunchParams {
+        external_call: ExternalCallRequest {
+            available_resources: S::Resources::empty(),
+            ergs_to_pass: call_request.ergs_to_pass,
+            caller: call_request.caller,
+            callee: call_request.callee,
+            callers_caller: call_request.callers_caller,
+            modifier: call_request.modifier,
+            input: call_request.input,
+            nominal_token_value: call_request.nominal_token_value,
+            call_scratch_space: None,
+        },
+        environment_parameters: EnvironmentParameters {
+            scratch_space_len: 0,
+            callstack_depth,
+            callee_account_properties: CalleeAccountProperties {
+                ee_type: 0,
+                nonce: 0,
+                nominal_token_balance: U256::ZERO.into(),
+                bytecode: &[],
+                code_version: 0,
+                unpadded_code_len: 0,
+                artifacts_len: 0,
+            },
+        },
+    };
+
+    tracer.on_new_execution_frame(&launch_params);
+    tracer.evm_tracer().on_call_error(error);
+    let resources = S::Resources::empty();
+    let result = CallResult::Failed {
+        return_values: ReturnValues::empty(),
+    };
+    tracer.after_execution_frame_completed(Some((&resources, &result)));
 }

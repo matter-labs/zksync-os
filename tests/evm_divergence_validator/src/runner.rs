@@ -48,7 +48,9 @@ pub fn run_scenario(
     let mut run_config = RunConfig::without_riscv_run();
     run_config.disable_revm_consistency_check();
 
-    let mut tester = TestingFramework::new().with_run_config(run_config);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, true)
+        .with_run_config(run_config);
 
     // Fund accounts.
     for (name, def) in &scenario.accounts {

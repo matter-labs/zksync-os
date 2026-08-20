@@ -134,7 +134,7 @@ pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = RECEIPT_HASH_BAS
 
 /// Service tx calldata byte intrinsic computational native cost.
 pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
-    DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover full hash
+    COPY_BYTE_NATIVE_COST + DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + full hash
 
 /// Native computational cost to cover keccak256 hashing overhead for dynamic fields of the transaction per byte.
 /// NOTE: this is approximate cost for hashing of 1 byte, but it shouldn't be used to estimate cost of one keccak call,
@@ -145,6 +145,11 @@ pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
     KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
 
+/// Maximum RLP length of one EIP-7702 authorization: 33-byte chain ID,
+/// 21-byte address, 9-byte nonce, 1-byte parity, two 33-byte signature
+/// scalars, and a 2-byte list prefix.
+const L2_TX_AUTHORIZATION_MAX_RLP_BYTES: u64 = 132;
+
 /// L2 tx calldata byte intrinsic computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
     COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
@@ -153,7 +158,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
     PER_ADDRESS_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
-    30 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 30 - worst case contribution to rlp encoding (21 address, 9 keys list length encoding)
+    31 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 31 - worst case contribution to rlp encoding (5 length of payload,  21 address, 5 keys list length encoding)
 
 /// L2 tx access list storage slot computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
@@ -170,7 +175,7 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     ACCOUNT_UPDATE_COST + // nonce update
     ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
-    133 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash, 133 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 3 list overhead)
+    L2_TX_AUTHORIZATION_MAX_RLP_BYTES * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash
     ACCOUNT_PERSIST_NEW_NATIVE_COST; // delegatee persist (worst case: new account)
 
 /// L2 tx blob versioned-hash computational native cost per hash.
@@ -258,12 +263,15 @@ pub const L1_TX_INTRINSIC_NATIVE_COST: u64 =
 /// L1 tx calldata byte intrinsic computational native cost.
 pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = COPY_BYTE_NATIVE_COST;
 
-/// Worst-case pubdata for tx sender balance change
-const SENDER_BALANCE_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 33/*worst case balance*/;
+/// Worst-case pubdata for tx sender account change
+// Please note, we are charging for the balance change twice, because there are 3 potential changes on different stages:
+// fee prepayment during validation, potential increase during execution, and post execution refund. And due to our pubdata
+// charging approach, if execution balance change reverts validation balance change, pubdata can be "refunded" with execution pubdata payment.
+const SENDER_ACCOUNT_INTRINSIC_PUBDATA: u64 = 32 /*key*/ + 1 /*account metadata*/ + 2 /*nonce increase*/ + 2 * 33/*worst case balance*/;
 
 /// Constant part of l2 tx intrinsic pubdata.
 pub const L2_TX_INTRINSIC_PUBDATA: u64 =
-    SENDER_BALANCE_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
+    SENDER_ACCOUNT_INTRINSIC_PUBDATA + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 /// L2 tx authorization intrinsic pubdata.
 pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compression:
@@ -369,7 +377,21 @@ pub const BLOCK_INTRINSIC_NATIVE: u64 =
 
 #[cfg(test)]
 mod tests {
-    use super::L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION;
+    use super::{L2_TX_AUTHORIZATION_MAX_RLP_BYTES, L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION};
+
+    #[test]
+    fn l2_authorization_max_rlp_length_matches_field_encoding() {
+        assert_eq!(
+            L2_TX_AUTHORIZATION_MAX_RLP_BYTES,
+            33 /* chain_id */
+                + 21 /* address */
+                + 9 /* nonce */
+                + 1 /* y_parity */
+                + 33 /* r */
+                + 33 /* s */
+                + 2 /* list prefix */
+        );
+    }
 
     #[test]
     fn l2_authorization_intrinsic_pubdata_matches_published_diff() {
