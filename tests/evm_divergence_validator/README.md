@@ -10,6 +10,7 @@ CLI tool that checks whether a given scenario produces different results on ZKsy
 ## Prerequisites
 
 - [Foundry](https://getfoundry.sh/) (`forge`) must be on PATH for Solidity compilation (not needed for `send_raw` steps with pre-compiled bytecode).
+- The validator must run with the P-256 precompile enabled. This crate enables `forward_system/production` in `Cargo.toml`, so the standard commands below include it. Do not disable this feature when preparing a bug bounty PoC.
 
 ## Usage
 
@@ -193,5 +194,6 @@ The tool uses the existing REVM consistency checker from `tests/revm_runner/`, w
 ## Design notes
 
 - All steps run in a single block. Multi-block scenarios are not yet supported.
-- The tool enables unlimited native(`native_price` == 0) and `independent_gas`, so ZKsync OS gas accounting follows standard EVM rules and is not overridden from ZKsync OS to REVM. The validator reports `gas_used` per step, but does not treat per-transaction gas differences as a separate divergence check — gas differences surface through balance diffs in the state comparison.
+- The validator preinstalls the L1 Messenger and L2 Base Token bytecode at their canonical ZKsync OS system addresses before applying scenario-specific state.
+- The tool enables unlimited native (`native_price == 0`) and `independent_gas`, so ZKsync OS gas accounting follows standard EVM rules and is not overridden from ZKsync OS to REVM. The validator reports `gas_used` per step, but does not treat per-transaction gas differences as a separate divergence check — gas differences surface through balance diffs in the state comparison.
 - The REVM side uses `zksync-os-revm` (adapted REVM), which accounts for ZKsync-specific behaviors (precompile differences, fee distribution, etc.). This is intentional — divergences caught here are real bugs, not known differences.

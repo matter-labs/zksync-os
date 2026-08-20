@@ -425,7 +425,6 @@ impl<
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        in_constructor: bool,
     ) -> Result<
         <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         DeconstructionSubsystemError,
@@ -436,7 +435,6 @@ impl<
             at_address,
             nominal_token_beneficiary,
             &mut self.oracle,
-            in_constructor,
         )
     }
 

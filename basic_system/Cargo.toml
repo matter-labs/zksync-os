@@ -55,8 +55,8 @@ alloy = { workspace = true, features = ["rlp", "full"] }
 alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["arbitrary"] }
 reqwest = { workspace = true, features = ["blocking", "json"] }
-reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
-reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.2.0" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.2.0" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

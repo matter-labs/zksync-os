@@ -35,6 +35,7 @@ Reference docs:
 - `docs/system/system.md`
 - `docs/da_commitment_schemes.md`
 - `docs/benchmarking.md`
+- If you are looking for bugs or triaging reports, check `docs/not-a-bug.md` for expected behavior that is commonly misreported.
 
 ## Build and Test
 Prerequisites (one-time):

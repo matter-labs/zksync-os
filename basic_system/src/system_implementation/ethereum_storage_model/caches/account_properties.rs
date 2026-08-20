@@ -204,12 +204,15 @@ impl EthereumAccountProperties {
         self == &Self::EMPTY_ACCOUNT
     }
 
+    pub fn has_empty_bytecode(&self) -> bool {
+        self.bytecode_hash == Self::EMPTY_ACCOUNT.bytecode_hash
+    }
+
     pub fn is_empty_modulo_balance(&self) -> bool {
         // NOTE: storage hash is not needed here:
         // - eithere it was code with 0 length, but then nonce is 1
         // - or storage slots of it can not be set
-        self.nonce == Self::EMPTY_ACCOUNT.nonce
-            && self.bytecode_hash == Self::EMPTY_ACCOUNT.bytecode_hash
+        self.nonce == Self::EMPTY_ACCOUNT.nonce && self.has_empty_bytecode()
     }
 
     pub fn parse_from_rlp_bytes(raw_encoding: &[u8]) -> Result<Self, ()> {
