@@ -225,11 +225,9 @@ function corpus() {
 
 function install() {
     rustup set profile minimal
-    rustup target add riscv32i-unknown-none-elf
     rustup target add wasm32-unknown-unknown
-    cargo install cargo-binutils
-    rustup component add llvm-tools-preview
-    rustup component add rust-src
+    cargo install cargo-binutils --locked
+    cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
     cargo install cargo-fuzz
     cargo install rustfilt
     # this is required for merging coverage (lcov) files
@@ -314,7 +312,11 @@ function regression() {
 
     prepare
 
-    cargo fuzz build
+    # -s none disables AddressSanitizer and the implicit -Zbuild-std, cutting build time.
+    # This is fine for regression replay: the corpus inputs are fixed, so we're checking
+    # for logic regressions (panics, wrong outputs), not discovering memory-safety bugs.
+    # AddressSanitizer is still used in the daily fuzz.yml smoke run.
+    RUST_MIN_STACK=33554432 cargo fuzz build -s none
     echo "Running regression tests on all fuzz targets..."
 
     # Get the list of fuzz targets

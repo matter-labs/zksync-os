@@ -8,6 +8,7 @@ permissions: read-all
 env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -15,29 +16,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  vm-benchmarks:
-    name: Run benchmarks
-    runs-on: [matterlabs-ci-runner-highmem]
+  # Compute the merge-base SHA so both bench jobs use the same reference point.
+  merge-base:
+    name: Compute merge-base
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+    outputs:
+      sha: ${{ steps.merge_base.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-      - name: Setup and fetch PR branch
+      - name: Fetch branches
         run: |
-          rustup set profile minimal
           git remote add pr_repo ${{ github.event.pull_request.head.repo.clone_url }}
           git fetch pr_repo ${{ github.event.pull_request.head.ref }}
-
-      - name: Fetch base and head
-        run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
-
       - name: Compute merge-base
         id: merge_base
         run: |
@@ -47,8 +42,162 @@ jobs:
           echo "sha=$sha"
           echo "sha=$sha" >> $GITHUB_OUTPUT
 
-      - name: checkout divergence point
-        run: git checkout ${{ steps.merge_base.outputs.sha }} --recurse-submodules
+  # Run benchmarks on the merge-base (base branch at divergence point).
+  bench-base:
+    name: Bench base
+    needs: merge-base
+    runs-on: [matterlabs-ci-runner-high-performance]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge-base.outputs.sha }}
+          fetch-depth: 1
+          submodules: recursive
+      # The bench orchestration scripts (`bench_scripts/run_bench_side.sh`,
+      # `bench_scripts/render_pr_comment.sh`) were introduced on the PR;
+      # the merge-base tree doesn't have them yet. Overlay the PR head's
+      # `bench_scripts/` so both sides run with identical orchestration —
+      # same forward-compat pattern this workflow already uses for
+      # `for-tests-benchmarking-pectra` / `bench-fast` / `BENCH_DA_SCHEME`.
+      - name: Overlay bench_scripts/ from PR head
+        shell: bash
+        run: |
+          git fetch --depth=1 \
+            "${{ github.event.pull_request.head.repo.clone_url }}" \
+            "${{ github.event.pull_request.head.sha }}"
+          git checkout FETCH_HEAD -- bench_scripts/
+          chmod +x bench_scripts/*.sh 2>/dev/null || true
+      - uses: ./.github/actions/setup-toolchain
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        # `for-tests-benchmarking-pectra` was introduced on the PR side of
+        # this workflow; the merge-base may predate it. Fall back to the
+        # non-pectra type so bench-base can still produce baseline numbers
+        # for `test_precompiles` even if the merge-base lacks pectra
+        # support (test_pectra_precompiles / test_kzg_regression are then
+        # exercised only on the head side — best-effort coverage).
+        run: |
+          if grep -q "for-tests-benchmarking-pectra" dump_bin.sh; then
+            ./dump_bin.sh --type for-tests-benchmarking-pectra
+          else
+            ./dump_bin.sh --type for-tests-benchmarking
+          fi
+          # Osaka bench fixtures are post-BPO; use the fusaka replay binary
+          # (zksync_os's `fusaka` already pulls in the BPO blob schedule),
+          # falling back to non-fusaka for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
+      - name: Run benchmarks
+        shell: bash
+        # Orchestration lives in `bench_scripts/run_bench_side.sh` — see
+        # there for the per-block / per-DA-scheme passes and the
+        # merge-base-fallback rationale on profile, feature, and tracer
+        # env vars.
+        run: bench_scripts/run_bench_side.sh base
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-base-results
+          path: |
+            base_block_*.bench
+            base_block_*_blobs.bench
+            base_block_*.out
+            base_block_*_blobs.out
+            base_block_*_precompile_stats.csv
+            base_precompiles.bench
+            base_precompile_stats.csv
+            base_fri_precompile.bench
+            base_fri_precompile_stats.csv
+            opcode_samples/
+            opcode_cycles/
+
+  # Run benchmarks on the PR head.
+  bench-head:
+    name: Bench head
+    needs: merge-base
+    runs-on: [matterlabs-ci-runner-high-performance]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 1
+          submodules: recursive
+      - uses: ./.github/actions/setup-toolchain
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        # `for-tests-benchmarking-pectra` was introduced on the PR side of
+        # this workflow; the merge-base may predate it. Fall back to the
+        # non-pectra type so bench-base can still produce baseline numbers
+        # for `test_precompiles` even if the merge-base lacks pectra
+        # support (test_pectra_precompiles / test_kzg_regression are then
+        # exercised only on the head side — best-effort coverage).
+        run: |
+          if grep -q "for-tests-benchmarking-pectra" dump_bin.sh; then
+            ./dump_bin.sh --type for-tests-benchmarking-pectra
+          else
+            ./dump_bin.sh --type for-tests-benchmarking
+          fi
+          # Osaka bench fixtures are post-BPO; use the fusaka replay binary
+          # (zksync_os's `fusaka` already pulls in the BPO blob schedule),
+          # falling back to non-fusaka for a pre-fusaka merge-base.
+          if grep -q "evm-replay-benchmarking-fusaka" dump_bin.sh; then
+            ./dump_bin.sh --type evm-replay-benchmarking-fusaka
+          else
+            ./dump_bin.sh --type evm-replay-benchmarking
+          fi
+      - name: Run benchmarks
+        shell: bash
+        # Same orchestration as bench-base, only the `head` side selector
+        # differs (artifact prefixes, opcode-stats CSV emission).
+        run: bench_scripts/run_bench_side.sh head
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-head-results
+          path: |
+            head_block_*.bench
+            head_block_*_blobs.bench
+            head_block_*.out
+            head_block_*_blobs.out
+            head_block_*_opcode_stats.csv
+            head_block_*_precompile_stats.csv
+            head_precompiles.bench
+            head_precompile_stats.csv
+            head_fri_precompile.bench
+            head_fri_precompile_stats.csv
+            head_fri_precompile_samples/
+            head_fri_precompile_cycles/
+            head_precompile_samples/
+            head_precompile_cycles/
+            opcode_samples/
+            opcode_cycles/
+            precompile_samples/
+            precompile_cycles/
+
+  # Compare base and head results, post comment.
+  compare:
+    name: Compare results
+    needs: [bench-base, bench-head]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-base-results
+          path: base-results/
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-head-results
+          path: head-results/
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -58,66 +207,83 @@ jobs:
       - name: Install Python dependencies
         run: pip3 install matplotlib
 
-      - name: Compile for RISC-V
-        working-directory: ./zksync_os
-        run: |
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
-          ./dump_bin.sh --type for-tests
-          ./dump_bin.sh --type evm-replay-benchmarking
-
-
-      - name: run benchmarks on base branch
+      - name: Flatten artifacts
         shell: bash
         run: |
-          for dir in tests/instances/eth_runner/blocks/*; do
-            blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}.out
-          done
-          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          # Move all files to the workspace root so scripts find them by name.
+          cp base-results/base_block_*.bench base-results/base_block_*.out base-results/base_precompiles.bench . 2>/dev/null || true
+          cp head-results/head_block_*.bench head-results/head_block_*.out head-results/head_precompiles.bench . 2>/dev/null || true
+          cp base-results/base_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_precompile_stats.csv . 2>/dev/null || true
+          cp base-results/base_fri_precompile.bench base-results/base_fri_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_fri_precompile.bench head-results/head_fri_precompile_stats.csv . 2>/dev/null || true
+          cp base-results/base_block_*_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_block_*_precompile_stats.csv . 2>/dev/null || true
+          cp head-results/head_block_*_opcode_stats.csv . 2>/dev/null || true
+          # Precompile per-execution samples + cycles are head-only (base
+          # currently has no per-block tracer wiring); the comparison join
+          # consumes only the head-side data.
+          cp -r head-results/head_precompile_samples . 2>/dev/null || true
+          cp -r head-results/head_precompile_cycles . 2>/dev/null || true
+          cp -r head-results/head_fri_precompile_samples . 2>/dev/null || true
+          cp -r head-results/head_fri_precompile_cycles . 2>/dev/null || true
+          # Merge opcode_samples and opcode_cycles directories
+          mkdir -p opcode_samples opcode_cycles
+          cp -r base-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
+          cp -r head-results/opcode_samples/* opcode_samples/ 2>/dev/null || true
+          cp -r base-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
+          cp -r head-results/opcode_cycles/* opcode_cycles/ 2>/dev/null || true
+          # Per-block precompile samples and cycles (head only).
+          mkdir -p precompile_samples precompile_cycles
+          cp -r head-results/precompile_samples/* precompile_samples/ 2>/dev/null || true
+          cp -r head-results/precompile_cycles/* precompile_cycles/ 2>/dev/null || true
 
-      - name: checkout PR
-        run: |
-          git checkout --force pr_repo/${{ github.event.pull_request.head.ref }}
-
-      - name: Recompile for RISC-V
-        working-directory: ./zksync_os
-        run: |
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
-          ./dump_bin.sh --type for-tests
-          ./dump_bin.sh --type evm-replay-benchmarking
-
-      - name: run benchmarks on PR
+      - name: Generate comparison
         shell: bash
         id: comparison
+        # Comment rendering lives in `bench_scripts/render_pr_comment.sh`
+        # — see there for the section layout and the merge-base-fallback
+        # rationale (e.g. when only the head has a blobs `.bench` file).
         run: |
           mkdir -p bench_results
-          pairs=""
-          for dir in tests/instances/eth_runner/blocks/*; do
-            blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/head_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > head_block_${blk}.out
-            python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
-            python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
-            if [ -z "$pairs" ]; then
-              pairs="(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
-            else
-              pairs="${pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
-            fi
-          done
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
-          pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
-          # Save comparison to file (for artifact + comment workflow fallback)
-          python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
-          # Also write to step output for direct comment
+          bench_scripts/render_pr_comment.sh bench_results/comparison.md
+          # Also write to step output for direct comment.
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
           cat bench_results/comparison.md >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Collect per-opcode artifacts
+        shell: bash
+        run: |
+          # These produce supplementary CSV artifacts (not PR-comment
+          # content). On failure we let the job continue (`|| true`) but
+          # send stderr to the log so failures are visible during debug.
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            # Combined gas+native+cycles stats CSV with per-execution ratios
+            if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
+              python3 bench_scripts/join_opcode_stats.py \
+                head_block_${blk}.out head_block_${blk}.bench \
+                opcode_samples/head_${blk} opcode_cycles/head_${blk} \
+                --csv bench_results/head_block_${blk}_joined_stats.csv || true
+            fi
+            # Per-execution joined CSVs
+            if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
+              python3 bench_scripts/join_samples.py \
+                opcode_samples/head_${blk} opcode_cycles/head_${blk} \
+                --out-dir bench_results/per_opcode/block_${blk} || true
+            fi
+          done
+          # Generate visualization charts
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            if [ -d "bench_results/per_opcode/block_${blk}" ]; then
+              python3 bench_scripts/visualize_opcode_stats.py \
+                bench_results/per_opcode/block_${blk} \
+                --out-dir bench_results/per_opcode/block_${blk}/charts 2>/dev/null || true
+            fi
+          done
 
       - name: Save PR number
         run: echo "${{ github.event.pull_request.number }}" > bench_results/pr_number.txt

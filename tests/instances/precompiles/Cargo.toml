@@ -14,6 +14,7 @@ rig = { path = "../../rig", features = ["for_tests"] }
 zksync_os_tests_common = { path = "../../common" }
 hex = { workspace = true }
 cycle_marker = { path = "../../../cycle_marker" }
+forward_system = { path = "../../../forward_system" }
 
 [features]
 cycle_marker = ["rig/cycle_marker"]

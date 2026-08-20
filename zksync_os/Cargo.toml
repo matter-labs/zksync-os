@@ -12,10 +12,9 @@ categories = ["cryptography"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-heapless = { version = "*", default-features = false }
-proof_running_system = { path = "../proof_running_system", default-features = false}
-crypto = { path = "../crypto", optional = true }
-riscv_common = {git = "https://github.com/matter-labs/zksync-airbender.git", tag = "v0.5.2", features = ["custom_panic", "custom_allocator"]}
+airbender = { package = "airbender-sdk", git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", default-features = false, features = ["allocator-custom"] }
+proof_running_system = { path = "../proof_running_system", default-features = false }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false, optional = true }
 
 [profile.dev]
 opt-level = 0
@@ -36,14 +35,14 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [profile.release.overrides."*"]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-debug = true
+debug = false
 
 [features]
 scalloc = ["proof_running_system/scalloc"]
@@ -52,11 +51,14 @@ proving = ["crypto/proving", "proof_running_system/proving"]
 benchmarking = ["proof_running_system/benchmarking"]
 production = ["proof_running_system/production"]
 for_tests = ["proof_running_system/for_tests"]
+fri_precompile = ["proof_running_system/fri_precompile"]
 eth_runner = ["proof_running_system/eth_runner"]
 eth_stf = ["proof_running_system/eth_stf"]
 evm_tester = ["proof_running_system/evm_tester"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["proof_running_system/fusaka-bpo-2"]
 
 
 # [patch."https://github.com/matter-labs/zksync-airbender"]

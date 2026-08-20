@@ -27,6 +27,7 @@ lazy_static! {
     static ref MUTATION_TESTS_RE: Regex = Regex::new(r"^(.+)_m_[0-9a-fA-F]+\.json").unwrap();
 }
 
+#[allow(dead_code)]
 fn wrap_numbers_in_quotes(input: &str) -> String {
     // Match numbers not already inside quotes
     //let re = Regex::new(r#": "?\b(\d+)\b"?"#).unwrap();
@@ -55,6 +56,7 @@ pub struct Test {
     // evm_version: Option<EVMVersion>,
     skipped_calldatas: Option<Vec<Bytes>>,
     skipped_cases: Option<Vec<String>>,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub mutants: Vec<Test>,
 }
@@ -63,6 +65,7 @@ impl Test {
     ///
     /// A shortcut constructor.
     ///
+    #[allow(dead_code)]
     pub fn new(
         name: String,
         cases: Vec<Case>,
@@ -82,6 +85,7 @@ impl Test {
     }
 
     // TODO: reimplement using ethereum spec tests (prefill expected state)
+    #[allow(dead_code)]
     pub fn from_ethereum_test(
         str: &str,
         filler_str: &str,
@@ -112,7 +116,7 @@ impl Test {
         let test_definition = test_structure.get(keys[0]).expect("Always exists");
         let test_filler = test_filler_structure.get(keys[0]).expect("Always exists");
 
-        let cases = if filters.check_test_name(&test_name) {
+        let cases = if filters.check_test_name(test_name) {
             Case::from_ethereum_test(test_definition, test_filler, filters)
         } else {
             vec![]
@@ -129,7 +133,7 @@ impl Test {
         let mut mutation_tests_directory = directory;
 
         if let Some(mutation_path) = mutation_path.as_ref() {
-            let base_directory_path = PathBuf::from_str(&mutation_path).unwrap();
+            let base_directory_path = PathBuf::from_str(mutation_path).unwrap();
 
             mutation_tests_directory = base_directory_path.join(relative_path.clone());
             mutation_tests_directory.pop();
@@ -142,9 +146,9 @@ impl Test {
             .filter(|x| {
                 let filename = x.file_name();
                 let filename = filename.to_str().unwrap();
-                if MUTATION_TESTS_RE.is_match(&filename) {
+                if MUTATION_TESTS_RE.is_match(filename) {
                     let base_name = MUTATION_TESTS_RE
-                        .captures(&filename)
+                        .captures(filename)
                         .unwrap()
                         .get(1)
                         .unwrap()
@@ -210,6 +214,7 @@ impl Test {
         _mutation_path: Option<String>,
         name_override: Option<String>,
         hardfork_override: Option<String>,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let cleaned_str = str.replace("0x:bigint ", "");
         let test_structure: HashMap<String, TestStructure> =
@@ -217,7 +222,10 @@ impl Test {
 
         let mut tests = vec![];
 
-        let hardfork = hardfork_override.unwrap_or("Cancun".to_string());
+        // The STF always targets the Fusaka hardfork (Osaka EL), so fixtures are
+        // validated against the matching post-state by default.
+        let default_hardfork = "Osaka";
+        let hardfork = hardfork_override.unwrap_or(default_hardfork.to_string());
 
         for (test_name, test_definition) in test_structure {
             if !filters.check_test_name(&test_name) {
@@ -230,7 +238,12 @@ impl Test {
                 }
             }
 
-            let cases = Case::from_ethereum_spec_test(&test_definition, filters, &hardfork);
+            let cases = Case::from_ethereum_spec_test(
+                &test_definition,
+                filters,
+                &hardfork,
+                hardfork_was_overridden,
+            );
 
             // read mutants
             // filter all files in directory by regexp and run
@@ -265,21 +278,21 @@ impl Test {
     pub fn run_zksync_os(self, summary: Arc<Mutex<Summary>>, proof_run: bool) {
         for case in self.cases {
             if let Some(filter_calldata) = self.skipped_calldatas.as_ref() {
-                if &case.pre_blocks.get(0).unwrap().transactions.len() != &0 {
-                    if filter_calldata.contains(
+                if !case.pre_blocks.first().unwrap().transactions.is_empty()
+                    && filter_calldata.contains(
                         &case
                             .pre_blocks
-                            .get(0)
+                            .first()
                             .unwrap()
                             .transactions
-                            .get(0)
+                            .first()
                             .unwrap()
                             .common()
                             .data,
-                    ) {
-                        Summary::ignored(summary.clone(), case.label);
-                        continue;
-                    }
+                    )
+                {
+                    Summary::ignored(summary.clone(), case.label);
+                    continue;
                 }
             }
 

@@ -8,17 +8,14 @@ pub mod post_state_for_case;
 pub mod pre_block;
 pub mod transaction;
 
-use alloy::{primitives::*, serde::quantity::vec};
+use alloy::primitives::*;
 use itertools::Itertools;
 use map::hash_set::HashSet;
 use pre_block::PreBlock;
-use transaction::{transaction_from_tx_section, Transaction};
+use transaction::transaction_from_tx_section;
 
 use crate::{
-    test::{
-        filler_structure::{AccountFillerStruct, Labels},
-        test_structure::pre_state::AccountState,
-    },
+    test::filler_structure::{AccountFillerStruct, Labels},
     vm::zk_ee::{ZKsyncOS, ZKsyncOSEVMContext, ZKsyncOSTxExecutionResult},
     Filters, Summary,
 };
@@ -26,13 +23,50 @@ use crate::{
 use super::{
     filler_structure::{ExpectStructure, FillerStructure, LabelValue, U256Parsed},
     test_structure::{
-        env_section::EnvSection,
-        pre_state::{self, PreState},
-        BlockchainTestStructure, StateTestStructure, TestStructure,
+        env_section::EnvSection, pre_state::PreState, BlockchainTestStructure, StateTestStructure,
+        TestStructure,
     },
 };
 
 const BEACON_ROOTS: Address = address!("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02");
+/// Deposit contract
+const DEPOSIT_CONTRACT: Address = address!("0x00000000219ab540356cBB839Cbe05303d7705Fa");
+/// EIP-7002 withdrawal request system contract
+const WITHDRAWAL_REQUEST_CONTRACT: Address = address!("0x00000961Ef480Eb55e80D19Ad83579a64c007002");
+/// EIP-7251 consolidation request system contract
+const CONSOLIDATION_REQUEST_CONTRACT: Address =
+    address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
+
+/// Blob base fee update fraction. Must match the STF's active blob schedule:
+/// base-Osaka 5007716, or BPO2 (`fusaka-bpo-2`) 11684671.
+#[cfg(not(feature = "fusaka-bpo-2"))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5_007_716;
+#[cfg(feature = "fusaka-bpo-2")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11_684_671;
+
+const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
+
+/// Compute blob gas price from excess blob gas using the correct update fraction for the hardfork.
+fn calc_blob_gasprice(excess_blob_gas: u64) -> u128 {
+    fake_exponential(
+        MIN_BASE_FEE_PER_BLOB_GAS,
+        excess_blob_gas as u128,
+        BLOB_BASE_FEE_UPDATE_FRACTION as u128,
+    )
+}
+
+/// Approximation of `factor * e ** (numerator / denominator)` using Taylor expansion.
+fn fake_exponential(factor: u128, numerator: u128, denominator: u128) -> u128 {
+    let mut i = 1u128;
+    let mut output = 0u128;
+    let mut numerator_accum = factor * denominator;
+    while numerator_accum > 0 {
+        output += numerator_accum;
+        numerator_accum = (numerator_accum * numerator) / (denominator * i);
+        i += 1;
+    }
+    output / denominator
+}
 
 #[derive(Debug)]
 pub struct Case {
@@ -46,6 +80,7 @@ pub struct Case {
     pub skip_balance_check_for_sender_and_coinbase: bool,
 }
 
+#[allow(dead_code)]
 fn parse_label(val: &LabelValue) -> Vec<String> {
     match val {
         LabelValue::Number(index) => {
@@ -73,11 +108,13 @@ fn parse_label(val: &LabelValue) -> Vec<String> {
     }
 }
 
+#[allow(dead_code)]
 fn fill_from_label_value(label_value: &LabelValue, indexes: &mut Vec<String>) {
     let labels = parse_label(label_value);
     indexes.extend(labels);
 }
 
+#[allow(dead_code)]
 fn fill_indexes_for_expected_states(labels: &Labels, indexes: &mut Vec<String>) {
     match labels {
         Labels::Single(label_value) => {
@@ -92,6 +129,7 @@ fn fill_indexes_for_expected_states(labels: &Labels, indexes: &mut Vec<String>) 
 }
 
 impl Case {
+    #[allow(dead_code)]
     pub fn from_ethereum_test(
         test_definition: &TestStructure,
         test_filler: &FillerStructure,
@@ -141,7 +179,7 @@ impl Case {
             indexes_for_expected_results.push(indexes_for_struct);
         }
 
-        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &Vec<String>) -> bool {
+        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &[String]) -> bool {
             ruleset.contains(&"-1".to_string())
                 || ruleset.contains(&index.to_string())
                 || (label.is_some() && ruleset.contains(label.as_ref().unwrap()))
@@ -174,14 +212,8 @@ impl Case {
                 for (value_index, value) in test_definition.transaction.value.iter().enumerate() {
                     let case_idx = case_counter;
 
-                    let label = if test_definition._info.labels.is_some() {
-                        test_definition
-                            ._info
-                            .labels
-                            .as_ref()
-                            .unwrap()
-                            .get(&data_index)
-                            .cloned()
+                    let label = if let Some(labels) = test_definition._info.labels.as_ref() {
+                        labels.get(&data_index).cloned()
                     } else {
                         None
                     };
@@ -252,10 +284,11 @@ impl Case {
         test_definition: &StateTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let mut cases = vec![];
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         let mut indexes_for_expected_results = vec![];
         // The boolean represents if the expectException flag is set.
@@ -298,7 +331,7 @@ impl Case {
             indexes_for_expected_results.push(indexes_for_struct);
         }
 
-        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &Vec<String>) -> bool {
+        fn is_case_allowed(label: &Option<String>, index: usize, ruleset: &[String]) -> bool {
             ruleset.contains(&"-1".to_string())
                 || ruleset.contains(&index.to_string())
                 || (label.is_some() && ruleset.contains(label.as_ref().unwrap()))
@@ -329,14 +362,8 @@ impl Case {
                 for (value_index, value) in test_definition.transaction.value.iter().enumerate() {
                     let case_idx = case_counter;
 
-                    let label = if test_definition._info.labels.is_some() {
-                        test_definition
-                            ._info
-                            .labels
-                            .as_ref()
-                            .unwrap()
-                            .get(&data_index)
-                            .cloned()
+                    let label = if let Some(labels) = test_definition._info.labels.as_ref() {
+                        labels.get(&data_index).cloned()
                     } else {
                         None
                     };
@@ -422,6 +449,7 @@ impl Case {
         test_definition: &BlockchainTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let prestate = test_definition.pre.clone();
         let expected_state = ExpectStructure::get_expected_result(&test_definition.post_state);
@@ -430,7 +458,7 @@ impl Case {
             return vec![];
         }
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         // Apply hash-based filter
         if test_definition
@@ -496,14 +524,21 @@ impl Case {
         test_definition: &TestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         match test_definition {
-            TestStructure::State(test) => {
-                Self::from_ethereum_spec_state_test(test, filters, hardfork_version)
-            }
-            TestStructure::Blockchain(test) => {
-                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version)
-            }
+            TestStructure::State(test) => Self::from_ethereum_spec_state_test(
+                test,
+                filters,
+                hardfork_version,
+                hardfork_was_overridden,
+            ),
+            TestStructure::Blockchain(test) => Self::from_ethereum_spec_blockchain_test(
+                test,
+                filters,
+                hardfork_version,
+                hardfork_was_overridden,
+            ),
         }
     }
 
@@ -541,7 +576,7 @@ impl Case {
 
             vm.set_nonce(address, state.nonce);
 
-            if state.code.0.len() > 0 {
+            if !state.code.0.is_empty() {
                 vm.set_predeployed_evm_contract(address, state.code, state.nonce);
             }
 
@@ -578,18 +613,20 @@ impl Case {
         let mut expected: Option<String> = None;
         let mut actual: Option<String> = None;
 
-        // Ignore beacon roots address
+        // Ignore system contracts not handled by EVM tester
         self.expected_state.remove(&BEACON_ROOTS);
+        self.expected_state.remove(&DEPOSIT_CONTRACT);
+        self.expected_state.remove(&WITHDRAWAL_REQUEST_CONTRACT);
+        self.expected_state.remove(&CONSOLIDATION_REQUEST_CONTRACT);
 
         // TODO merge with prestate!
         for (address, filler_struct) in self.expected_state {
-            if filler_struct.balance.is_some() {
+            if let Some(expected_balance) = filler_struct.balance.as_ref() {
                 // We skip balance check when [skip_balance_check_for_sender_and_coinbase] is set
                 // and the address is a coinbase or sender.
                 let skip_bal_check = self.skip_balance_check_for_sender_and_coinbase
                     && coinbase_and_sender_addresses.contains(&address);
                 if !skip_bal_check {
-                    let expected_balance = filler_struct.balance.as_ref().unwrap();
                     if let Some(expected_balance_value) = expected_balance.as_value() {
                         if vm.get_balance(address) != expected_balance_value {
                             expected = Some(format!(
@@ -603,8 +640,7 @@ impl Case {
                     }
                 }
             }
-            if filler_struct.nonce.is_some() {
-                let expected_nonce = filler_struct.nonce.as_ref().unwrap();
+            if let Some(expected_nonce) = filler_struct.nonce.as_ref() {
                 if let Some(expected_nonce_value) = expected_nonce.as_value() {
                     if vm.get_nonce(address) != expected_nonce_value {
                         expected =
@@ -616,10 +652,10 @@ impl Case {
                 }
             }
 
-            if filler_struct.code.is_some() {
+            if let Some(code) = filler_struct.code.as_ref() {
                 let actual_code = vm.get_code(address).unwrap_or_default();
 
-                if actual_code != filler_struct.code.as_ref().unwrap().0 .0 {
+                if actual_code != code.0 .0 {
                     expected = Some(format!("Code of {address:?} is invalid"));
                     actual = None;
 
@@ -628,11 +664,10 @@ impl Case {
                 }
             }
 
-            if filler_struct.storage.is_some() {
+            if let Some(storage_map) = filler_struct.storage.as_ref() {
                 let mut has_storage_divergence = false;
-                let storage =
-                    AccountFillerStruct::parse_storage(filler_struct.storage.as_ref().unwrap());
-                for (key, _) in &storage {
+                let storage = AccountFillerStruct::parse_storage(storage_map);
+                for key in storage.keys() {
                     let key_u256 =
                         U256::from_str_radix(&key.as_value().unwrap().to_string(), 10).unwrap();
 
@@ -733,22 +768,22 @@ impl Case {
         proof_run: bool,
         block_hashes: &mut [ruint::aliases::U256; 256],
     ) -> Result<Vec<ZKsyncOSTxExecutionResult>, String> {
-        let mut system_context = ZKsyncOSEVMContext::default();
-
-        system_context.chain_id = 1;
-        system_context.block_number = pre_block.env.current_number.try_into().unwrap();
-        system_context.block_timestamp = pre_block.env.current_timestamp.try_into().unwrap();
-        system_context.coinbase = pre_block.env.current_coinbase;
-        system_context.block_gas_limit = pre_block.env.current_gas_limit;
+        let mut system_context = ZKsyncOSEVMContext {
+            chain_id: 1,
+            block_number: pre_block.env.current_number.try_into().unwrap(),
+            block_timestamp: pre_block.env.current_timestamp.try_into().unwrap(),
+            coinbase: pre_block.env.current_coinbase,
+            block_gas_limit: pre_block.env.current_gas_limit,
+            ..Default::default()
+        };
         let blob_fee = pre_block
             .env
             .current_excess_blob_gas
             .map(|excess_blob_gas| {
-                U256::from(alloy::eips::eip4844::calc_blob_gasprice(
-                    excess_blob_gas
-                        .try_into()
-                        .expect("excess_blob_gas overflows u64"),
-                ))
+                let excess: u64 = excess_blob_gas
+                    .try_into()
+                    .expect("excess_blob_gas overflows u64");
+                U256::from(calc_blob_gasprice(excess))
             })
             .unwrap_or(U256::MAX);
         system_context.blob_fee = blob_fee;
@@ -763,7 +798,7 @@ impl Case {
             block_hashes[i] = block_hashes[i + 1];
         }
         block_hashes[255] = parent_hash;
-        vm.chain.set_block_hashes(block_hashes.clone());
+        vm.chain.set_block_hashes(*block_hashes);
 
         if let Some(base_fee) = pre_block.env.current_base_fee {
             system_context.base_fee = base_fee;

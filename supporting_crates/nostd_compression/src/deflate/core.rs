@@ -1194,8 +1194,8 @@ struct DictOxide<'a> {
 
 const fn probes_from_flags(flags: u32) -> [u32; 2] {
     [
-        1 + ((flags & 0xFFF) + 2) / 3,
-        1 + (((flags & 0xFFF) >> 2) + 2) / 3,
+        1 + (flags & 0xFFF).div_ceil(3),
+        1 + ((flags & 0xFFF) >> 2).div_ceil(3),
     ]
 }
 
@@ -1645,7 +1645,7 @@ fn flush_block(
         let comp_success = if !use_raw_block {
             let use_static =
                 (d.params.flags & TDEFL_FORCE_ALL_STATIC_BLOCKS != 0) || (d.lz.total_bytes < 48);
-            compress_block(&mut d.huff, &mut output, &d.lz, use_static)?
+            compress_block(d.huff, &mut output, &d.lz, use_static)?
         } else {
             false
         };
@@ -1683,7 +1683,7 @@ fn flush_block(
             }
         } else if !comp_success {
             output.load(saved_buffer);
-            compress_block(&mut d.huff, &mut output, &d.lz, true)?;
+            compress_block(d.huff, &mut output, &d.lz, true)?;
         }
 
         if flush != TDEFLFlush::None {
@@ -1884,9 +1884,9 @@ fn compress_normal(d: &mut CompressorOxideInner<'_>, callback: &mut CallbackOxid
 
         if saved_match_len != 0 {
             if cur_match_len > saved_match_len {
-                record_literal(&mut d.huff, &mut d.lz, saved_lit);
+                record_literal(d.huff, &mut d.lz, saved_lit);
                 if cur_match_len >= 128 {
-                    record_match(&mut d.huff, &mut d.lz, cur_match_len, cur_match_dist);
+                    record_match(d.huff, &mut d.lz, cur_match_len, cur_match_dist);
                     saved_match_len = 0;
                     len_to_move = cur_match_len as usize;
                 } else {
@@ -1895,13 +1895,13 @@ fn compress_normal(d: &mut CompressorOxideInner<'_>, callback: &mut CallbackOxid
                     saved_match_len = cur_match_len;
                 }
             } else {
-                record_match(&mut d.huff, &mut d.lz, saved_match_len, saved_match_dist);
+                record_match(d.huff, &mut d.lz, saved_match_len, saved_match_dist);
                 len_to_move = (saved_match_len - 1) as usize;
                 saved_match_len = 0;
             }
         } else if cur_match_dist == 0 {
             record_literal(
-                &mut d.huff,
+                d.huff,
                 &mut d.lz,
                 d.dict.b.dict[cmp::min(cur_pos, d.dict.b.dict.len() - 1)],
             );
@@ -1911,7 +1911,7 @@ fn compress_normal(d: &mut CompressorOxideInner<'_>, callback: &mut CallbackOxid
         {
             // If we are using lazy matching, check for matches at the next byte if the current
             // match was shorter than 128 bytes.
-            record_match(&mut d.huff, &mut d.lz, cur_match_len, cur_match_dist);
+            record_match(d.huff, &mut d.lz, cur_match_len, cur_match_dist);
             len_to_move = cur_match_len as usize;
         } else {
             saved_lit = d.dict.b.dict[cmp::min(cur_pos, d.dict.b.dict.len() - 1)];

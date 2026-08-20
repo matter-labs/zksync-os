@@ -19,6 +19,7 @@ use super::transaction::Transaction;
 
 pub mod ethereum;
 pub mod gas_helpers;
+pub mod logs_bloom;
 pub mod process_transaction;
 pub(crate) mod refund_calculation;
 pub mod zk;

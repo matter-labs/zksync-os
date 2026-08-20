@@ -22,6 +22,10 @@ pub mod block_header;
 pub mod config;
 pub mod constants;
 pub mod errors;
+#[cfg(feature = "fri_precompile")]
+pub mod fri_host_verifier;
+#[cfg(feature = "fri_precompile")]
+mod fri_verifier;
 pub mod result_keeper;
 mod rlp;
 pub mod stf;
@@ -38,6 +42,7 @@ use crate::bootloader::stf::EthereumLikeBasicSTF;
 use crate::bootloader::transaction_flow::{BasicTransactionFlow, ExecutionOutput, ExecutionResult};
 use alloc::boxed::Box;
 use core::fmt::Write;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 
 pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
 pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
@@ -62,14 +67,21 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     /// Runs the transactions that it loads from the oracle.
-    /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
-    /// and in prover (where oracle uses CRS registers to communicate).
+    ///
+    /// This code runs both in sequencer (then it uses ForwardOracle, which
+    /// stores data in local variables) and in prover (where oracle uses CSR
+    /// registers to communicate). `chain_config` must be sourced once per run
+    /// and reused by execution and public-input construction. Legacy and
+    /// Ethereum-like paths that do not commit ZKsync chain config to public
+    /// input pass `ChainConfig::default()`.
+    ///
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
         batch_data_keeper: &mut S::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
+        chain_config: ChainConfig,
     ) -> Result<
         <<S as BasicSTF>::PostTxLoopOp as PostTxLoopOp<S>>::PostTxLoopOpResult,
         BootloaderSubsystemError,
@@ -84,9 +96,9 @@ where
         let metadata = <S::MetadataOp as MetadataInitOp<S>>::metadata_op::<Config>(
             &mut oracle,
             S::Allocator::default(),
+            chain_config,
         )?;
 
-        // we will model initial calldata buffer as just another "heap"
         let mut system: System<S> = System::init_from_metadata_and_oracle(metadata, oracle)?;
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
@@ -99,7 +111,7 @@ where
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
 
-        let memories = RunnerMemoryBuffers {
+        let mut memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
         };
@@ -107,8 +119,12 @@ where
         cycle_marker::end!("system_init");
 
         // Pre-op
-        let mut block_data_keeper =
-            <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(&mut system, result_keeper);
+        let mut block_data_keeper = <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(
+            &mut system,
+            &mut system_functions,
+            memories.reborrow(),
+            result_keeper,
+        )?;
 
         // TX loop
         <S::TxLoopOp as TxLoopOp<S>>::loop_op::<Config>(

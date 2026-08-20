@@ -1,6 +1,5 @@
 use super::db::{BlockStatus, BlockTraces, Database, ResourceInfo};
 use super::utils;
-use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::populate_prestate;
@@ -29,15 +28,6 @@ fn filter_skipped<T>(items: Vec<T>, skipped: &HashSet<usize>) -> Vec<T> {
         .collect()
 }
 
-#[cfg(feature = "gpu")]
-pub type GpuSharedState = rig::cli_lib::prover_utils::GpuSharedState;
-
-#[cfg(all(feature = "proving", not(feature = "gpu")))]
-pub type GpuSharedState<'a> = rig::cli_lib::prover_utils::GpuSharedState<'a>;
-
-#[cfg(not(feature = "proving"))]
-pub type GpuSharedState = ();
-
 /// Runs a block using prefetched traces.
 #[allow(clippy::too_many_arguments, unused_variables)]
 pub fn run_block(
@@ -48,7 +38,7 @@ pub fn run_block(
     persist_all: bool,
     chain_id: u64,
     single_tx: Option<u64>,
-    gpu_shared_state: &mut Option<&mut GpuSharedState>,
+    prover: &dyn airbender_host::Prover,
     only_forward: bool,
     block_traces: BlockTraces,
 ) -> Result<BlockStatus> {
@@ -101,20 +91,23 @@ pub fn run_block(
         result: filter_skipped(diff.result, &skipped),
     };
 
-    let calltrace = CallTrace {
-        result: filter_skipped(call.result, &skipped),
-    };
-
     let setup_start = Instant::now();
     let mut chain = Chain::empty_randomized(Some(chain_id));
     chain.set_last_block_number(block_number - 1);
 
     let db_hash_start = Instant::now();
-    chain.set_block_hashes(utils::get_block_hashes_array(block_number, db)?);
+    let block_hashes_array = utils::get_block_hashes_array(block_number, db)?;
+    // Parent block hash (block N-1) is the last entry; used by the post-check to
+    // validate the EIP-2935 pre-block history-storage write.
+    let parent_block_hash: [u8; 32] = block_hashes_array
+        .last()
+        .expect("block hashes array is non-empty")
+        .to_be_bytes::<32>();
+    chain.set_block_hashes(block_hashes_array);
     let db_hash_time = db_hash_start.elapsed();
 
     let prestate_start = Instant::now();
-    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &diff_trace);
     let prestate_time = prestate_start.elapsed();
     let setup_time = setup_start.elapsed();
 
@@ -135,6 +128,7 @@ pub fn run_block(
     let execution_start = Instant::now();
 
     // Wrap execution in panic handler to catch panics
+    #[allow(clippy::result_large_err)]
     let execution_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
         chain.run_block_with_extra_stats(
             transactions,
@@ -142,11 +136,11 @@ pub fn run_block(
             None,
             Some(run_config),
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
     }));
 
-    let (output, stats, _prover_input) = match execution_result {
+    let (output, stats, _prover_input, _pubdata) = match execution_result {
         std::result::Result::Ok(std::result::Result::Ok(result)) => result,
         std::result::Result::Ok(std::result::Result::Err(e)) => {
             return Err(anyhow!("Block execution failed: {e:?}"));
@@ -175,32 +169,10 @@ pub fn run_block(
 
     info!("Actual gas used: {}", output.header.gas_used);
 
-    #[cfg(feature = "proving")]
-    {
-        let bin_path = rig::chain::get_zksync_os_img_path(&Some("evm_replay".to_string()))
-            .as_path()
-            .to_str()
-            .unwrap()
-            .to_string();
-        let witness: Vec<u8> = _prover_input.iter().flat_map(|x| x.to_be_bytes()).collect();
-        let input_hex = hex::encode(witness);
-        let non_determinism_data = rig::cli_lib::prover_utils::u32_from_hex_string(&input_hex);
-        let binary = rig::cli_lib::prover_utils::load_binary_from_path(&bin_path);
-        #[cfg(not(feature = "gpu"))]
-        let gpu_shared_state = &mut None;
-        let mut total_proof_time = Some(0f64);
-
+    if !only_forward {
         info!("Starting base layer proofs...");
-        rig::cli_lib::prover_utils::create_proofs_internal(
-            &binary,
-            non_determinism_data,
-            &rig::cli_lib::Machine::Standard,
-            1024,
-            None,
-            gpu_shared_state,
-            &mut total_proof_time,
-        );
-        info!("Done with base layer proofs");
+        let result = prover.prove(&_prover_input).expect("proving failed");
+        info!("Done with base layer proofs in {} cycles", result.cycles);
     }
 
     let db_write_start = Instant::now();
@@ -231,7 +203,15 @@ pub fn run_block(
     let db_write_time = db_write_start.elapsed();
 
     let post_check_start = Instant::now();
-    let post_check_result = post_check(output, receipts, diff_trace, prestate_cache);
+    let post_check_result = post_check(
+        output,
+        receipts,
+        diff_trace,
+        prestate_cache,
+        Some(endpoint),
+        block_number,
+        Some(parent_block_hash),
+    );
     let post_check_time = post_check_start.elapsed();
 
     let total_time = block_start.elapsed();

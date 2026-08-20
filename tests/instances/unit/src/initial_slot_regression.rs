@@ -15,12 +15,12 @@ use rig::basic_system::system_implementation::flat_storage_model::{
 use rig::chain::TestingOracleFactory;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::run::query_processors::{
-    BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder, TxDataResponder,
-    ZKProofDataResponder,
+    BlockMetadataResponder, ChainConfigResponder, DACommitmentSchemeResponder,
+    GenericPreimageResponder, TxDataResponder, ZKProofDataResponder,
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
-use rig::oracle_provider::{MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource};
+use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
@@ -30,6 +30,7 @@ use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
 use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::system::metadata::chain_config::ChainConfig;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
@@ -53,7 +54,7 @@ impl<S: ReadStorage> MaliciousStorageResponder<S> {
         &[InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID];
 }
 
-impl<S: ReadStorage, M: MemorySource> OracleQueryProcessor<M> for MaliciousStorageResponder<S> {
+impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -66,7 +67,7 @@ impl<S: ReadStorage, M: MemorySource> OracleQueryProcessor<M> for MaliciousStora
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
@@ -124,15 +125,16 @@ impl InvalidInitialValueOracleFactory {
         Self { targets }
     }
 
-    fn build_oracle<M: MemorySource + 'static>(
+    fn build_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource {
         // Create a malicious oracle manually instead of using the default factory
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
         let tx_data_responder = TxDataResponder {
@@ -150,11 +152,12 @@ impl InvalidInitialValueOracleFactory {
         let zk_proof_data_responder = ZKProofDataResponder { data: proof_data };
 
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
-            da_commitment_scheme: da_commitment_scheme,
+            da_commitment_scheme,
         };
 
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(block_metadata_responder);
+        oracle.add_external_processor(ChainConfigResponder { chain_config });
         oracle.add_external_processor(tx_data_responder);
         oracle.add_external_processor(preimage_responder);
         oracle.add_external_processor(malicious_storage_responder);
@@ -169,15 +172,20 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        _fri_sidecar: rig::fri::InMemoryFriProofSidecarSource,
+        _fri_artifacts: Option<std::sync::Arc<rig::forward_system::run::FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+        _use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
+            chain_config,
             state_tree,
             preimage_source,
             tx_source,
@@ -189,16 +197,20 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<false>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        _fri_sidecar: rig::fri::InMemoryFriProofSidecarSource,
+        _fri_artifacts: Option<std::sync::Arc<rig::forward_system::run::FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-    {
+        _use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
         self.build_oracle(
             block_metadata,
+            chain_config,
             state_tree,
             preimage_source,
             tx_source,

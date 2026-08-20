@@ -16,9 +16,9 @@ ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true  }
 
+u256 = { path = "../supporting_crates/u256", default-features = false }
 cfg-if = { workspace = true }
-crypto = { path = "../crypto", default-features = false }
-bitflags = { version = "2.6.0", default-features = false }
+crypto = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = { workspace = true }
 paste = { workspace = true }
@@ -34,5 +34,8 @@ global-alloc = []
 error_origins = []
 detailed_errors = []
 prevrandao = []
+delegation = ["u256/delegation"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = []
 
 [dev-dependencies]

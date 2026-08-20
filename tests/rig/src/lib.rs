@@ -8,58 +8,64 @@
 //! while `Chain` is intended to remain a neutral in-memory state abstraction.
 //!
 use std::str::FromStr;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 pub mod assertions;
 pub mod chain;
 pub mod constants;
 pub mod evm_bytecode;
+pub mod fri;
 pub mod predeployed_contracts;
 pub mod revm_consistency_checker;
 pub mod run_config;
+pub(crate) mod state_dump;
 pub mod testing_utils;
 pub mod utils;
 
+use crate::zksync_os_interface::traits::TxListSource;
 pub use alloy;
 use alloy::primitives::address;
 use alloy::signers::local::PrivateKeySigner;
 pub use alloy_rlp;
 pub use alloy_sol_types;
 pub use basic_bootloader;
+use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 pub use basic_system;
+use basic_system::system_implementation::flat_storage_model::{FlatStorageCommitment, TREE_HEIGHT};
 pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
-#[cfg(feature = "airbender_cli")]
-pub use cli_lib;
 pub use crypto;
+pub use evm_interpreter;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
+use forward_system::run::test_impl::InMemoryBatchState;
+use forward_system::run::BatchBlockInput;
 use forward_system::system::system_types::ForwardRunningSystem;
-#[cfg(feature = "gpu")]
-pub use gpu_prover;
+pub use fri::InMemoryFriProofSidecarSource;
 pub use log;
 pub use oracle_provider;
-pub use risc_v_simulator;
-pub use risc_v_simulator::sim::ProfilerConfig;
 pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
+use zk_ee::common_structs::ProofData;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
-use zksync_os_interface::types::BlockOutput;
 use zksync_os_revm_runner::revm_runner::RevmRunner;
+pub use zksync_os_runner::FlamegraphOptions;
 pub use zksync_os_tests_common;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
+use crate::chain::{DefaultOracleFactory, TestingOracleFactory};
+pub use crate::forward_system::run::output::BlockOutput;
 use crate::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
@@ -91,9 +97,15 @@ mod colors {
 }
 
 pub struct LastExecutedBlockInfo {
+    /// Forward-run block output returned by the sequencer-style execution.
     pub block_output: BlockOutput,
+    /// Block output reconstructed from the prover-input replay of the same block, when available.
+    pub prover_input_block_output: Option<BlockOutput>,
+    /// Public batch-level fields returned by the single-block prover-input post-op, when available.
+    pub prover_input_batch_output: Option<BatchOutput>,
     pub block_extra_stats: BlockExtraStats,
     pub proof_input: Vec<u32>,
+    pub pubdata: Vec<u8>,
 }
 
 pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
@@ -106,6 +118,8 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
     oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
+    fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+    fri_artifacts: Option<Arc<forward_system::run::FriVerifierArtifacts>>,
 }
 
 impl TestingFramework<true> {
@@ -124,6 +138,8 @@ impl TestingFramework<true> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -150,6 +166,8 @@ impl TestingFramework<false> {
             skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
+            fri_sidecar: Default::default(),
+            fri_artifacts: None,
         }
     }
 }
@@ -174,10 +192,15 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .run_config
             .as_ref()
             .is_some_and(|c| c.revm_independent_gas);
+        // Mirror ZKsync OS's per-tx gas cap so the consistency checker enforces
+        // the same EIP-7825 limit and never diverges on tx admission. Tests
+        // raise it via `with_max_tx_gas_limit` on both sides at once.
+        let tx_gas_limit_cap = Some(self.chain_config().max_tx_gas_limit());
         let mut revm_runner = RevmRunner::new(ChainStateView {
             chain: pre_block_chain,
         })
-        .with_independent_gas(independent_gas);
+        .with_independent_gas(independent_gas)
+        .with_tx_gas_limit_cap(tx_gas_limit_cap);
 
         revm_runner
             .run(
@@ -211,9 +234,9 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
 
-        let (block_output, block_extra_stats, proof_input) =
-            if let Some(oracle_factory) = &self.oracle_factory {
-                self.chain.run_block_with_extra_stats_with_oracle_factory(
+        let executed_block = if let Some(oracle_factory) = &self.oracle_factory {
+            self.chain
+                .run_block_with_execution_artifacts_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
@@ -221,22 +244,48 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     tracer,
                     validator,
                     oracle_factory.as_ref(),
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
-            } else {
-                self.chain.run_block_with_extra_stats(
+        } else {
+            let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+            self.chain
+                .run_block_with_execution_artifacts_with_oracle_factory(
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
                     Some(run_config),
                     tracer,
                     validator,
+                    &factory,
+                    self.fri_sidecar.clone(),
+                    self.fri_artifacts.clone(),
                 )?
+        };
+
+        let crate::chain::ExecutedBlockArtifacts {
+            block_output,
+            block_extra_stats,
+            prover_input,
+        } = executed_block;
+        let (prover_input_block_output, prover_input_batch_output, proof_input, pubdata) =
+            match prover_input {
+                Some(prover_input) => (
+                    Some(prover_input.block_output),
+                    Some(prover_input.batch_output),
+                    prover_input.proof_input,
+                    prover_input.pubdata,
+                ),
+                None => (None, None, vec![], vec![]),
             };
 
         self.last_executed_block_info = Some(LastExecutedBlockInfo {
             block_output: block_output.clone(),
+            prover_input_block_output,
+            prover_input_batch_output,
             block_extra_stats,
             proof_input,
+            pubdata,
         });
 
         if let (Some(pre_block_chain), Some(transactions), Some(block_context)) = (
@@ -266,6 +315,32 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: sets static chain-level execution config for subsequent execution.
+    pub fn with_chain_config(mut self, chain_config: ChainConfig) -> Self {
+        self.chain.set_chain_config(chain_config);
+        self
+    }
+
+    /// Builder: overrides the per-tx gas cap (`max_tx_gas_limit`) in the chain
+    /// config, keeping the other chain-config fields. Panics if the value is
+    /// below the EIP-7825 floor (use a crafted oracle response to test that).
+    pub fn with_max_tx_gas_limit(self, max_tx_gas_limit: u64) -> Self {
+        let current = self.chain_config();
+        self.with_chain_config(
+            ChainConfig::new(
+                current.chain_id(),
+                current.fri_proof_verification_enabled(),
+                max_tx_gas_limit,
+            )
+            .expect("max_tx_gas_limit below the EIP-7825 floor"),
+        )
+    }
+
+    /// Returns the chain-level execution config used for block execution.
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain.chain_config()
+    }
+
     /// Builder: sets the 256 previous block hashes exposed to execution.
     pub fn with_block_hashes(mut self, block_hashes: [ruint::aliases::U256; 256]) -> Self {
         self.chain.set_block_hashes(block_hashes);
@@ -288,9 +363,25 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: enables Gateway mode for subsequent execution.
+    pub fn with_gateway_mode(mut self) -> Self {
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        self
+    }
+
     /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
         self.block_context = block_context;
+        self
+    }
+
+    /// Setter: enables Gateway mode for subsequent execution.
+    pub fn enable_gateway_mode(&mut self) -> &mut Self {
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
         self
     }
 
@@ -331,6 +422,41 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> Self {
         self.oracle_factory = Some(Box::new(oracle_factory));
         self
+    }
+
+    /// Builder: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`. Each entry is a pair of the statement
+    /// hash and the raw (bincode-serialized) `UnrolledProgramProof`
+    /// bytes, exactly as the sequencer would receive them from the
+    /// Builder: installs a mock FRI sidecar source on the framework
+    /// and (optionally) the verifier artifacts needed for the
+    /// oracle-side `FriProofResponder` to decode and flatten raw
+    /// proof bytes.
+    ///
+    /// When `artifacts` is `None` the responder sees the bytes but
+    /// skips decoding, returning an empty response — useful for
+    /// negative-path tests that don't need a real verifier.
+    ///
+    /// Returns the framework alongside a shared counter that reports
+    /// how many times the bootloader queried the sidecar source
+    /// during this block's execution.
+    pub fn with_mock_fri_sidecars<I>(
+        mut self,
+        sidecars: I,
+        artifacts: Option<forward_system::run::FriVerifierArtifacts>,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicUsize>)
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        let sidecar_source: crate::fri::InMemoryFriProofSidecarSource =
+            sidecars.into_iter().collect();
+        let counter = sidecar_source.lookup_counter();
+        self.fri_sidecar = sidecar_source;
+        self.fri_artifacts = artifacts.map(Arc::new);
+        (self, counter)
     }
 
     /// Builder: installs selected system contracts into the in-memory chain state.
@@ -438,6 +564,27 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: sets static chain-level execution config for subsequent execution.
+    pub fn set_chain_config(&mut self, chain_config: ChainConfig) -> &mut Self {
+        self.chain.set_chain_config(chain_config);
+        self
+    }
+
+    /// Setter: installs a mock Gateway-side FRI sidecar source keyed by
+    /// `statement_versioned_hash`. Each entry carries the raw
+    /// (bincode-serialized) `UnrolledProgramProof` bytes.
+    pub fn set_mock_fri_sidecars<I>(&mut self, sidecars: I) -> &mut Self
+    where
+        I: IntoIterator<Item = (zk_ee::utils::Bytes32, Vec<u8>)>,
+    {
+        self.block_context.get_or_insert_with(Default::default);
+        self.chain.set_fri_proof_verification_enabled(true);
+        crate::predeployed_contracts::install_gateway_predeployed_contracts(&mut self.chain);
+        self.fri_sidecar = sidecars.into_iter().collect();
+        self.fri_artifacts = None;
+        self
+    }
+
     /// Setter: sets account balance in chain state.
     pub fn set_balance(
         &mut self,
@@ -446,6 +593,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> &mut Self {
         self.chain
             .set_balance(ruint::aliases::B160::from_alloy(address), balance);
+        self
+    }
+
+    /// Setter: ensures the account exists in chain state by creating an empty account if needed.
+    pub fn ensure_account_exists(&mut self, address: ruint::aliases::B160) -> &mut Self {
+        self.chain.ensure_account_exists(address);
         self
     }
 
@@ -545,6 +698,32 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Returns the block context that will be used for the next block execution.
     pub fn block_context(&self) -> Option<&BlockContext> {
         self.block_context.as_ref()
+    }
+
+    /// Returns the batch pre-state passed to the batch prover-input runner.
+    pub fn prepare_batch_initial_proof_data(
+        &self,
+    ) -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        self.chain.prepare_batch_initial_proof_data()
+    }
+
+    /// Returns the mutable batch-start state used by batch prover-input tests.
+    pub fn prepare_batch_state(&self) -> InMemoryBatchState<RANDOMIZED_TREE> {
+        self.chain.prepare_batch_state()
+    }
+
+    /// Builds one batch input from framework-level transactions and block context.
+    pub fn prepare_batch_block_input(
+        &self,
+        transactions: Vec<ZKsyncTxEnvelope>,
+        block_context: Option<BlockContext>,
+    ) -> BatchBlockInput<TxListSource> {
+        let encoded_txs = transactions
+            .into_iter()
+            .map(ZKsyncTxEnvelope::encode)
+            .collect::<Vec<_>>();
+        self.chain
+            .prepare_batch_block_input(encoded_txs, block_context)
     }
 
     /// Builds and executes an ERC20 transfer block using default fee settings.

@@ -61,6 +61,11 @@ impl BytecodeBuilder {
         self
     }
 
+    pub fn extcodecopy(mut self) -> Self {
+        self.bytes.push(0x3c);
+        self
+    }
+
     pub fn sload(mut self) -> Self {
         self.bytes.push(0x54);
         self

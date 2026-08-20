@@ -406,12 +406,11 @@ macro_rules! assert_nonce {
 
 #[cfg(test)]
 mod tests {
+    use crate::alloy::consensus::Header;
     use crate::alloy::primitives::{Address, Sealable, U256};
     use crate::zksync_os_interface::error::InvalidTransaction;
-    use crate::zksync_os_interface::types::{
-        BlockOutput, ExecutionOutput, ExecutionResult, TxOutput,
-    };
-    use alloy_consensus_v1::Header;
+    use crate::zksync_os_interface::types::{ExecutionOutput, ExecutionResult, TxOutput};
+    use forward_system::run::output::BlockOutput;
 
     fn tx_output(
         execution_result: ExecutionResult,
@@ -433,14 +432,19 @@ mod tests {
     }
 
     fn block_with_result(result: Result<TxOutput, InvalidTransaction>) -> BlockOutput {
+        let pubdata_used = result.as_ref().map(|o| o.pubdata_used).unwrap_or_default();
+        let computational_native_used = result
+            .as_ref()
+            .map(|o| o.computational_native_used)
+            .unwrap_or_default();
         BlockOutput {
             header: Header::default().seal_slow(),
             tx_results: vec![result],
             storage_writes: vec![],
             account_diffs: vec![],
             published_preimages: vec![],
-            pubdata: vec![],
-            computational_native_used: 0,
+            computational_native_used,
+            pubdata_used,
         }
     }
 

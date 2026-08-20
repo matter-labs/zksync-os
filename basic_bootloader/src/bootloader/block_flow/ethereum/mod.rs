@@ -5,12 +5,18 @@ use crate::bootloader::block_flow::post_tx_loop_op::PostTxLoopOp;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
 use zk_ee::common_structs::WarmStorageKey;
 
-// TODO: move to fork params
+// Blob count schedule. Default is base-Osaka (Prague counts); `fusaka-bpo-2`
+// selects the BPO2 schedule. TODO: move to fork params
+#[cfg(not(feature = "fusaka-bpo-2"))]
 pub const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "fusaka-bpo-2")]
+pub const MAX_BLOBS_PER_BLOCK: usize = 21;
+#[cfg(not(feature = "fusaka-bpo-2"))]
 pub const TARGET_BLOBS_PER_BLOCK: usize = 6;
-pub const TARGET_BLOBS_GAS_PER_BLOCK: u64 = (TARGET_BLOBS_PER_BLOCK as u64) * GAS_PER_BLOB;
-pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
+#[cfg(feature = "fusaka-bpo-2")]
+pub const TARGET_BLOBS_PER_BLOCK: usize = 14;
 pub const GAS_PER_BLOB: u64 = 1 << 17;
+pub const TARGET_BLOBS_GAS_PER_BLOCK: u64 = (TARGET_BLOBS_PER_BLOCK as u64) * GAS_PER_BLOB;
 
 #[allow(dead_code)]
 pub(crate) const SSZ_BYTES_PER_LENGTH_OFFSET: u32 = 4;
@@ -29,20 +35,18 @@ pub struct EthereumLoopOp;
 mod block_data;
 mod block_hashes_cache;
 mod block_header;
-pub mod eip_2935_historical_block_hash;
 pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;
 pub mod eip_7002_withdrawal_contract;
 pub mod eip_7251_consolidation_contract;
-mod hooks;
 mod loop_op;
 pub mod metadata_op;
+mod mpt_leaf;
 pub mod oracle_queries;
 mod post_init_op;
 mod post_tx_op_proving;
 mod post_tx_op_sequencing;
 mod pre_tx_loop;
-mod rlp_encodings;
 mod utils;
 pub(crate) mod withdrawals;
 
@@ -50,7 +54,7 @@ pub use self::block_data::*;
 pub use self::block_header::PectraForkHeader;
 pub use self::metadata_op::EthereumBlockMetadata;
 
-pub use eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
+pub use super::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
 pub use eip_4788_historical_beacon_root::BEACON_ROOTS_ADDRESS;
 pub use eip_6110_deposit_events_parser::DEPOSIT_CONTRACT_ADDRESS;
 pub use eip_7002_withdrawal_contract::WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS;

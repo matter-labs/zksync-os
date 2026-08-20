@@ -55,30 +55,30 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
     #[allow(unused_mut)]
     let mut gas_used = core::cmp::max(gas_used, minimal_gas_used);
 
-    // Note: for zero gas price, we use "unlimited native"
-    let full_native_limit = if cfg!(feature = "unlimited_native") || native_per_gas == 0 {
+    // When the chain doesn't price native (`native_per_gas == 0`), the user's
+    // budget is treated as unlimited and the gas-from-native correction below
+    // is a no-op (`checked_div` returns None).
+    let full_native_limit = if native_per_gas == 0 {
         u64::MAX - 1
     } else {
         gas_limit.saturating_mul(native_per_gas)
     };
     let native_used = full_native_limit.saturating_sub(resources.native().remaining().as_u64());
 
-    #[cfg(not(feature = "unlimited_native"))]
-    {
-        // Adjust gas_used with difference with used native
-        let delta_gas = if native_per_gas == 0 {
-            0
-        } else {
-            (native_used / native_per_gas) as i64 - (gas_used as i64)
-        };
+    // Adjust gas_used with difference with used native. With `native_per_gas == 0`
+    // the division returns None and `delta_gas` falls back to 0 — i.e. no
+    // correction when native is unpriced.
+    let delta_gas = native_used
+        .checked_div(native_per_gas)
+        .map(|q| q as i64 - gas_used as i64)
+        .unwrap_or(0);
 
-        if delta_gas > 0 {
-            // In this case, the native resource consumption is more than the
-            // gas consumption accounted for. Consume extra gas.
-            gas_used += delta_gas as u64;
-        }
-        // TODO: return delta_gas to gas_used?
+    if delta_gas > 0 {
+        // In this case, the native resource consumption is more than the
+        // gas consumption accounted for. Consume extra gas.
+        gas_used += delta_gas as u64;
     }
+    // TODO: return delta_gas to gas_used?
 
     let total_gas_refund = gas_limit - gas_used;
     system_log!(system, "Refund after accounting for unused gas, refund counters and native cost: {total_gas_refund}\n");

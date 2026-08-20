@@ -4,6 +4,7 @@ use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
+use basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
@@ -18,6 +19,8 @@ use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
+use forward_system::run::output::BlockOutput;
+use forward_system::run::query_processors::ChainConfigResponder;
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
@@ -27,34 +30,43 @@ use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotVal
 use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
-use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
+use forward_system::run::result_keeper::ProverInputResultKeeper;
+use forward_system::run::test_impl::{
+    InMemoryBatchState, InMemoryPreimageSource, InMemoryTree, NoopTxCallback,
+};
+use forward_system::run::BatchBlockInput;
+use forward_system::run::FriVerifierArtifacts;
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
+use forward_system::system::bootloader::run_prover_input_with_batch_output_no_panic;
+use forward_system::system::system_types::ethereum::{
+    EthereumStorageSystemTypes, EthereumStorageSystemTypesWithPostOps,
+};
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::MemorySource;
-use oracle_provider::{DummyMemorySource, ReadWitnessSource, ZkEENonDeterminismSource};
-use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
-use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
+use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
+use zk_ee::system::metadata::chain_config::{ChainConfig, DEFAULT_MAX_TX_GAS_LIMIT};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
-use zksync_os_interface::types::BlockOutput;
-use zksync_os_interface::types::StorageWrite;
+use zksync_os_interface::types::{
+    AccountDiff, ExecutionOutput, ExecutionResult, StorageWrite, TxOutput,
+};
 
 /// Trait for creating oracles with custom configuration
 pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
@@ -62,28 +74,37 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource>;
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource;
 
     #[allow(clippy::too_many_arguments)]
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource;
 }
 
-/// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
+/// Default oracle factory used by normal rig runs.
+#[derive(Clone, Default)]
 pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
 
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
@@ -92,42 +113,58 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
             tx_source,
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
+            use_native_callable_oracles,
         )
     }
 
     fn create_proof_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
-        forward_system::run::make_oracle_for_proofs_and_dumps(
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
+        forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
             block_metadata,
             state_tree,
             preimage_source,
             tx_source,
+            fri_sidecar,
+            fri_artifacts,
             proof_data,
             da_commitment_scheme,
             add_uart,
+            use_native_callable_oracles,
         )
     }
 }
@@ -140,9 +177,10 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     pub(crate) state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
-    previous_block_number: Option<u64>,
+    previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
+    chain_config: ChainConfig,
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
@@ -175,18 +213,96 @@ impl Default for BlockContext {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Neutral state dump for external test rigs (equivalence checkers, second
+// provers). All 32-byte values are lowercase hex WITHOUT a 0x prefix.
+// ---------------------------------------------------------------------------
+
+/// A single flat-storage tree leaf, dumped in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct LeafDump {
+    /// Enumeration index of the leaf in the dense tree.
+    pub index: u64,
+    /// Flat-storage key, lowercase hex without 0x.
+    pub key: String,
+    /// Stored 32-byte value, lowercase hex without 0x.
+    pub value: String,
+    /// Enumeration index of the next leaf in key order (linked-list pointer).
+    pub next: u64,
+}
+
+/// A single preimage (hash -> bytes), dumped in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PreimageDump {
+    /// Preimage hash, lowercase hex without 0x.
+    pub hash: String,
+    /// Preimage bytes, lowercase hex without 0x.
+    pub bytes: String,
+}
+
+/// Full flat-storage state snapshot in a prover-neutral form.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct StateDump {
+    /// Flat-storage tree root, lowercase hex without 0x.
+    pub root: String,
+    /// Next free enumeration slot (== dense leaf count, includes the 2 guards).
+    pub next_free_slot: u64,
+    /// Number of leaves in `leaves`.
+    pub leaf_count: u64,
+    /// All tree leaves.
+    pub leaves: Vec<LeafDump>,
+    /// All known preimages (bytecodes and account data are reachable here).
+    pub preimages: Vec<PreimageDump>,
+}
+
+/// Dump a flat-storage state (all leaves + all preimages + root) in a
+/// prover-neutral, JSON-serializable form.
+pub(crate) fn dump_state_from<const RANDOMIZED_TREE: bool>(
+    state_tree: &InMemoryTree<RANDOMIZED_TREE>,
+    preimage_source: &InMemoryPreimageSource,
+) -> StateDump {
+    let leaves: Vec<LeafDump> = state_tree
+        .storage_tree
+        .leaves
+        .iter()
+        .map(|(idx, leaf)| LeafDump {
+            index: *idx,
+            key: hex::encode(leaf.key.as_u8_ref()),
+            value: hex::encode(leaf.value.as_u8_ref()),
+            next: leaf.next,
+        })
+        .collect();
+    let preimages: Vec<PreimageDump> = preimage_source
+        .inner
+        .iter()
+        .map(|(hash, bytes)| PreimageDump {
+            hash: hex::encode(hash.as_u8_ref()),
+            bytes: hex::encode(bytes),
+        })
+        .collect();
+    StateDump {
+        root: hex::encode(state_tree.storage_tree.root().as_u8_ref()),
+        next_free_slot: state_tree.storage_tree.next_free_slot,
+        leaf_count: leaves.len() as u64,
+        leaves,
+        preimages,
+    }
+}
+
 #[derive(Clone)]
 pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
     // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
-    // Config for the profiler
-    pub profiler_config: Option<ProfilerConfig>,
+    // If set, run with flamegraph profiling using the given options.
+    pub flamegraph: Option<crate::FlamegraphOptions>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
     pub app: Option<String>,
     // Run RISC-V simulation
     pub do_riscv_run: bool,
+    // Run the prover input generation stop. Must be enabled if [do_riscv_run] is enabled.
+    pub do_prover_input_run: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
     // do_riscv_run is true
@@ -195,9 +311,23 @@ pub struct RunConfig {
     // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
     pub check_revm_consistency: bool,
     /// When true, REVM computes gas independently instead of using
-    /// ZKsync OS's `gas_used` override. Best combined with `unlimited_native`.
+    /// ZKsync OS's `gas_used` override. Best combined with `native_price = 0`
+    /// in the block metadata.
     pub revm_independent_gas: bool,
     pub update_state_after_block_execution: bool,
+}
+
+pub(crate) struct ProverInputArtifacts {
+    pub proof_input: Vec<u32>,
+    pub pubdata: Vec<u8>,
+    pub block_output: BlockOutput,
+    pub batch_output: BatchOutput,
+}
+
+pub(crate) struct ExecutedBlockArtifacts {
+    pub block_output: BlockOutput,
+    pub block_extra_stats: BlockExtraStats,
+    pub prover_input: Option<ProverInputArtifacts>,
 }
 
 impl Default for RunConfig {
@@ -216,10 +346,11 @@ impl Default for RunConfig {
         RunConfig {
             app: Some("for_tests".to_string()),
             do_riscv_run,
+            do_prover_input_run: true,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
             revm_independent_gas: false,
-            profiler_config: None,
+            flamegraph: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
         }
@@ -307,9 +438,11 @@ impl Chain<false> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -330,9 +463,11 @@ impl Chain<true> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
+            chain_config: ChainConfig::new(chain_id.unwrap_or(37), false, DEFAULT_MAX_TX_GAS_LIMIT)
+                .unwrap(),
         }
     }
 }
@@ -343,21 +478,272 @@ pub struct BlockExtraStats {
     pub effective_used: Option<u64>,
 }
 
+fn assert_storage_write_matches(actual: &StorageWrite, expected: &StorageWrite, context: &str) {
+    assert_eq!(actual.key, expected.key, "{context}: storage key mismatch");
+    assert_eq!(
+        actual.value, expected.value,
+        "{context}: storage value mismatch"
+    );
+    assert_eq!(
+        actual.account, expected.account,
+        "{context}: storage account mismatch"
+    );
+    assert_eq!(
+        actual.account_key, expected.account_key,
+        "{context}: storage account key mismatch"
+    );
+}
+
+fn assert_account_diff_matches(actual: &AccountDiff, expected: &AccountDiff, context: &str) {
+    assert_eq!(
+        actual.address, expected.address,
+        "{context}: address mismatch"
+    );
+    assert_eq!(actual.nonce, expected.nonce, "{context}: nonce mismatch");
+    assert_eq!(
+        actual.balance, expected.balance,
+        "{context}: balance mismatch"
+    );
+    assert_eq!(
+        actual.bytecode_hash, expected.bytecode_hash,
+        "{context}: bytecode hash mismatch"
+    );
+}
+
+fn assert_execution_output_matches(
+    actual: &ExecutionOutput,
+    expected: &ExecutionOutput,
+    context: &str,
+) {
+    match (actual, expected) {
+        (ExecutionOutput::Call(actual), ExecutionOutput::Call(expected)) => {
+            assert_eq!(actual, expected, "{context}: call output mismatch");
+        }
+        (
+            ExecutionOutput::Create(actual_bytes, actual_address),
+            ExecutionOutput::Create(expected_bytes, expected_address),
+        ) => {
+            assert_eq!(
+                actual_bytes, expected_bytes,
+                "{context}: create output mismatch"
+            );
+            assert_eq!(
+                actual_address, expected_address,
+                "{context}: create address mismatch"
+            );
+        }
+        _ => panic!("{context}: execution output kind mismatch"),
+    }
+}
+
+fn assert_execution_result_matches(
+    actual: &ExecutionResult,
+    expected: &ExecutionResult,
+    context: &str,
+) {
+    match (actual, expected) {
+        (ExecutionResult::Success(actual), ExecutionResult::Success(expected)) => {
+            assert_execution_output_matches(actual, expected, context);
+        }
+        (ExecutionResult::Revert(actual), ExecutionResult::Revert(expected)) => {
+            assert_eq!(actual, expected, "{context}: revert output mismatch");
+        }
+        _ => panic!("{context}: execution result kind mismatch"),
+    }
+}
+
+fn assert_tx_output_matches(actual: &TxOutput, expected: &TxOutput, tx_idx: usize) {
+    let context = format!("tx result {tx_idx}");
+    assert_execution_result_matches(
+        &actual.execution_result,
+        &expected.execution_result,
+        &context,
+    );
+    assert_eq!(
+        actual.gas_used, expected.gas_used,
+        "{context}: gas_used mismatch"
+    );
+    assert_eq!(
+        actual.gas_refunded, expected.gas_refunded,
+        "{context}: gas_refunded mismatch"
+    );
+    assert_eq!(
+        actual.computational_native_used, expected.computational_native_used,
+        "{context}: computational_native_used mismatch"
+    );
+    assert_eq!(
+        actual.native_used, expected.native_used,
+        "{context}: native_used mismatch"
+    );
+    assert_eq!(
+        actual.pubdata_used, expected.pubdata_used,
+        "{context}: pubdata_used mismatch"
+    );
+    assert_eq!(
+        actual.contract_address, expected.contract_address,
+        "{context}: contract_address mismatch"
+    );
+    assert_eq!(
+        format!("{:?}", actual.logs),
+        format!("{:?}", expected.logs),
+        "{context}: logs mismatch"
+    );
+    assert_eq!(
+        format!("{:?}", actual.l2_to_l1_logs),
+        format!("{:?}", expected.l2_to_l1_logs),
+        "{context}: l2_to_l1_logs mismatch"
+    );
+    assert_eq!(
+        actual.storage_writes.len(),
+        expected.storage_writes.len(),
+        "{context}: per-tx storage write count mismatch"
+    );
+    for (storage_idx, (actual_write, expected_write)) in actual
+        .storage_writes
+        .iter()
+        .zip(expected.storage_writes.iter())
+        .enumerate()
+    {
+        assert_storage_write_matches(
+            actual_write,
+            expected_write,
+            &format!("{context}: storage write {storage_idx}"),
+        );
+    }
+}
+
+fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
+    assert_eq!(
+        actual.header.inner(),
+        expected.header.inner(),
+        "block header mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.computational_native_used, expected.computational_native_used,
+        "block computational_native_used mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.pubdata_used, expected.pubdata_used,
+        "block pubdata_used mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.published_preimages, expected.published_preimages,
+        "published preimages mismatch between forward and prover-input runs"
+    );
+    assert_eq!(
+        actual.storage_writes.len(),
+        expected.storage_writes.len(),
+        "storage write count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_write, expected_write)) in actual
+        .storage_writes
+        .iter()
+        .zip(expected.storage_writes.iter())
+        .enumerate()
+    {
+        assert_storage_write_matches(
+            actual_write,
+            expected_write,
+            &format!("block storage write {idx}"),
+        );
+    }
+    assert_eq!(
+        actual.account_diffs.len(),
+        expected.account_diffs.len(),
+        "account diff count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_diff, expected_diff)) in actual
+        .account_diffs
+        .iter()
+        .zip(expected.account_diffs.iter())
+        .enumerate()
+    {
+        assert_account_diff_matches(actual_diff, expected_diff, &format!("account diff {idx}"));
+    }
+    assert_eq!(
+        actual.tx_results.len(),
+        expected.tx_results.len(),
+        "tx result count mismatch between forward and prover-input runs"
+    );
+    for (idx, (actual_tx, expected_tx)) in actual
+        .tx_results
+        .iter()
+        .zip(expected.tx_results.iter())
+        .enumerate()
+    {
+        match (actual_tx, expected_tx) {
+            (Ok(actual_tx), Ok(expected_tx)) => {
+                assert_tx_output_matches(actual_tx, expected_tx, idx)
+            }
+            (Err(actual_err), Err(expected_err)) => assert_eq!(
+                format!("{actual_err:?}"),
+                format!("{expected_err:?}"),
+                "tx result {idx}: invalid transaction mismatch"
+            ),
+            _ => panic!("tx result {idx}: success/error shape mismatch"),
+        }
+    }
+}
+
+fn has_validator_filtered_tx(block_output: &BlockOutput) -> bool {
+    block_output
+        .tx_results
+        .iter()
+        .any(|tx_result| matches!(tx_result, Err(InvalidTransaction::FilteredByValidator)))
+}
+
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
-        self.previous_block_number = Some(prev)
+        self.previous_block_number = prev;
     }
 
     pub fn next_block_number(&self) -> u64 {
-        self.previous_block_number.map(|n| n + 1).unwrap_or(0)
+        self.previous_block_number + 1
     }
 
     pub fn chain_id(&self) -> u64 {
         self.chain_id
     }
 
+    pub fn chain_config(&self) -> ChainConfig {
+        self.chain_config
+    }
+
+    pub fn set_chain_config(&mut self, chain_config: ChainConfig) {
+        self.chain_config = chain_config;
+        // Keep the block-level chain id (used to build block metadata) in sync
+        // with the chain config, which is now the source of truth.
+        self.chain_id = chain_config.chain_id();
+    }
+
+    pub fn set_fri_proof_verification_enabled(&mut self, enabled: bool) {
+        self.chain_config = ChainConfig::new(
+            self.chain_config.chain_id(),
+            enabled,
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
+    }
+
     pub fn block_hashes(&self) -> [U256; 256] {
         self.block_hashes
+    }
+
+    /// Current flat-storage tree root.
+    pub fn state_tree_root(&self) -> Bytes32 {
+        *self.state_tree.storage_tree.root()
+    }
+
+    /// Next free enumeration slot (== dense leaf count, includes the 2 guards).
+    pub fn next_free_slot(&self) -> u64 {
+        self.state_tree.storage_tree.next_free_slot
+    }
+
+    /// Dump the full flat-storage state (all leaves + all preimages + root) in
+    /// a prover-neutral, JSON-serializable form. Consumed by external test
+    /// rigs (equivalence checkers, second provers) via the state dump hook.
+    pub fn dump_state(&self) -> StateDump {
+        dump_state_from(&self.state_tree, &self.preimage_source)
     }
 
     pub fn set_timestamp(&mut self, timestamp: u64) {
@@ -370,41 +756,69 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_chain_id(&mut self, chain_id: u64) {
         self.chain_id = chain_id;
+        self.chain_config = ChainConfig::new(
+            chain_id,
+            self.chain_config.fri_proof_verification_enabled(),
+            self.chain_config.max_tx_gas_limit(),
+        )
+        .unwrap();
     }
 
-    /// TODO: duplicated from API, unify.
-    /// Runs a block in riscV - using zksync_os binary - and returns the
-    /// witness that can be passed to the prover subsystem.
-    pub fn run_block_generate_witness<const FLAMEGRAPH: bool>(
-        oracle: ZkEENonDeterminismSource<VectorMemoryImpl>,
-        app: &Option<String>,
-    ) -> Vec<u32> {
-        // We'll wrap the source, to collect all the reads.
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-        // By default - enable diagnostics is false (which makes the test run faster).
-        let path = get_zksync_os_img_path(app);
-
-        let diagnostics_config = if FLAMEGRAPH {
-            let mut profiler_config = ProfilerConfig::new("flamegraph.svg".into());
-            profiler_config.frequency_recip = 10;
-
-            Some(profiler_config).map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(app));
-                diagnostics_cfg.profiler_config = Some(cfg);
-                diagnostics_cfg
-            })
-        } else {
-            None
+    /// Build the batch pre-state passed to the batch prover-input runner.
+    pub fn prepare_batch_initial_proof_data(
+        &self,
+    ) -> ProofData<FlatStorageCommitment<TREE_HEIGHT>> {
+        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
+            root: *self.state_tree.storage_tree.root(),
+            next_free_slot: self.state_tree.storage_tree.next_free_slot,
         };
 
-        let output = zksync_os_runner::run(path, diagnostics_config, 1 << 36, copy_source);
+        ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: self.block_timestamp,
+        }
+    }
 
-        // We return 0s in case of failure.
-        assert_ne!(output, [0u32; 8]);
+    /// Build the per-block inputs that remain external to the batch runner.
+    ///
+    /// This snapshots the chain metadata at the current height. It does not
+    /// advance the chain, so repeated calls on the same `Chain` will reuse the
+    /// same block number and block hashes unless the caller first mutates the
+    /// chain state (e.g. by executing a block).
+    pub fn prepare_batch_block_input(
+        &self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+    ) -> BatchBlockInput<TxListSource> {
+        let block_context = block_context.unwrap_or_default();
+        let block_metadata = BlockMetadataFromOracle {
+            block_number: self.next_block_number(),
+            block_hashes: BlockHashes(self.block_hashes),
+            timestamp: block_context.timestamp,
+            eip1559_basefee: block_context.eip1559_basefee,
+            pubdata_price: block_context.pubdata_price,
+            native_price: block_context.native_price,
+            coinbase: block_context.coinbase,
+            gas_limit: block_context.gas_limit,
+            pubdata_limit: block_context.pubdata_limit,
+            mix_hash: block_context.mix_hash,
+            blob_fee: block_context.blob_fee,
+        };
 
-        let result = items.borrow().clone();
-        result
+        BatchBlockInput {
+            block_context: block_metadata,
+            tx_source: TxListSource {
+                transactions: transactions.into(),
+            },
+        }
+    }
+
+    /// Clone the batch-start state used by batch prover-input tests.
+    pub fn prepare_batch_state(&self) -> InMemoryBatchState<RANDOMIZED_TREE> {
+        InMemoryBatchState {
+            tree: self.state_tree.clone(),
+            preimage_source: self.preimage_source.clone(),
+        }
     }
 
     ///
@@ -416,8 +830,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
+        let chain_config = self.chain_config;
+
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -437,24 +854,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_tracer = NopTracer::default();
         let mut nop_validator = NopTxValidator;
 
-        let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
-            _,
-            _,
-            _,
-            _,
-            BasicBootloaderCallSimulationConfig,
-        >(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            NoopTxCallback,
-            None,
-            None,
-            &mut nop_tracer,
-            &mut nop_validator,
-        )
-        .unwrap();
+        let block_output: BlockOutput =
+            forward_system::run::run_block_with_oracle_dump_ext_with_chain_config::<
+                _,
+                _,
+                _,
+                _,
+                BasicBootloaderCallSimulationConfig,
+            >(
+                chain_config,
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                NoopTxCallback,
+                None,
+                None,
+                &mut nop_tracer,
+                &mut nop_validator,
+            )
+            .unwrap();
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -512,6 +931,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut NopTracer::default(),
             &mut NopTxValidator,
             oracle_factory,
+            Default::default(),
+            None,
         )
         .unwrap()
         .0
@@ -532,10 +953,36 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config.unwrap_or_default(),
             &factory,
+            Default::default(),
+            None,
             &mut NopTracer::default(),
             &mut NopTxValidator,
         )
-        .map(|r| r.0)
+        .map(|r| r.block_output)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn run_block_with_execution_artifacts(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        self.run_inner(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config.unwrap_or_default(),
+            &factory,
+            Default::default(),
+            None,
+            tracer,
+            validator,
+        )
     }
 
     #[allow(clippy::result_large_err)]
@@ -547,14 +994,50 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
-        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
+        self.run_block_with_execution_artifacts(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config,
+            tracer,
+            validator,
+        )
+        .map(|result| {
+            let ExecutedBlockArtifacts {
+                block_output,
+                block_extra_stats,
+                prover_input,
+            } = result;
+            let (proof_input, pubdata) = prover_input
+                .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
+                .unwrap_or_else(|| (vec![], vec![]));
+            (block_output, block_extra_stats, proof_input, pubdata)
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn run_block_with_execution_artifacts_with_oracle_factory(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
         self.run_inner(
             transactions,
             block_context,
             da_commitment_scheme,
             run_config.unwrap_or_default(),
-            &factory,
+            oracle_factory,
+            fri_sidecar,
+            fri_artifacts,
             tracer,
             validator,
         )
@@ -571,16 +1054,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
-        self.run_inner(
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
+        self.run_block_with_execution_artifacts_with_oracle_factory(
             transactions,
             block_context,
             da_commitment_scheme,
-            run_config.unwrap_or_default(),
-            oracle_factory,
+            run_config,
             tracer,
             validator,
+            oracle_factory,
+            fri_sidecar,
+            fri_artifacts,
         )
+        .map(|result| {
+            let ExecutedBlockArtifacts {
+                block_output,
+                block_extra_stats,
+                prover_input,
+            } = result;
+            let (proof_input, pubdata) = prover_input
+                .map(|prover_input| (prover_input.proof_input, prover_input.pubdata))
+                .unwrap_or_else(|| (vec![], vec![]));
+            (block_output, block_extra_stats, proof_input, pubdata)
+        })
     }
 
     #[allow(clippy::result_large_err)]
@@ -592,14 +1090,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: RunConfig,
         oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
+        fri_sidecar: crate::fri::InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<ExecutedBlockArtifacts, BootloaderSubsystemError> {
         let RunConfig {
-            profiler_config,
+            flamegraph,
             witness_output_file,
             app,
             do_riscv_run,
+            do_prover_input_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
             revm_independent_gas: _,
@@ -607,8 +1108,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         } = run_config;
 
         let block_context = block_context.unwrap_or_default();
+        let chain_config = self.chain_config;
+
+        // Intrinsic cost formulas assume coinbase is an existing account.
+        self.ensure_account_exists(block_context.coinbase);
+
         let block_metadata = BlockMetadataFromOracle {
-            chain_id: self.chain_id,
             block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
@@ -629,47 +1134,88 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             state_root_view: state_commitment,
             last_block_timestamp: self.block_timestamp,
         };
+
+        // STATE DUMP HOOK (pre): when ZKOS_STATE_DUMP_DIR is set, snapshot the
+        // batch initial state exactly as the STF sees it via `proof_data`
+        // above, i.e. after `ensure_account_exists(coinbase)` (the only
+        // pre-block state mutation on this path) and before any transaction
+        // executes.
+        let state_dump_snapshot =
+            crate::state_dump::dump_dir().map(|dir| crate::state_dump::PreBlockSnapshot {
+                dir,
+                signed_txs: transactions
+                    .iter()
+                    .map(|tx| match tx {
+                        EncodedTx::Rlp(bytes, _signer) => hex::encode(bytes),
+                        EncodedTx::Abi(bytes) => hex::encode(bytes),
+                    })
+                    .collect(),
+                pre: self.dump_state(),
+                root_before: self.state_tree_root(),
+                next_free_slot_before: self.next_free_slot(),
+                block_hashes_before: self.block_hashes,
+                previous_block_number: self.previous_block_number,
+                last_block_timestamp_before: self.block_timestamp,
+                chain_config,
+            });
+
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let da_commitment_scheme =
             da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256);
-        let oracle = oracle_factory.create_proof_oracle(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            Some(proof_data),
-            Some(da_commitment_scheme),
-            true,
-        );
 
         let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
+            chain_config,
             self.state_tree.clone(),
             self.preimage_source.clone(),
             tx_source.clone(),
+            fri_sidecar.clone(),
+            fri_artifacts.clone(),
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
+            false,
         );
-
-        #[cfg(feature = "simulate_witness_gen")]
-        let source_for_witness_bench = {
-            oracle_factory.create_proof_oracle(
-                block_metadata,
-                self.state_tree.clone(),
-                self.preimage_source.clone(),
-                tx_source.clone(),
-                Some(proof_data),
-                Some(da_commitment_scheme),
-                false,
-            )
-        };
 
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+
+        // The regular forward run uses ZKHeaderStructurePostTxOpSequencing,
+        // which substitutes NopCommitmentGenerator for the DA commit work.
+        // Under DA schemes that fire cycle markers only in proving mode
+        // (notably BlobsZKsyncOS → blob_versioned_hash), the sequencing run's
+        // LABELS would have fewer entries than the RISC-V proving run's
+        // markers, tripping the count assertion in print_cycle_markers.
+        // Snapshot LABELS before the sequencing run and revert after, so the
+        // sequencing labels are discarded; only the prover_input forward run
+        // (which uses proving STF) contributes labels for RISC-V matching.
+        // LABELS is a `thread_local!`, so the snapshot is local to whichever
+        // thread runs `run_inner`; the snapshot covers only the sequencing
+        // forward call below.
+        //
+        // The guard pattern ensures the revert runs even when
+        // `run_forward_no_panic` returns `Err` (the `?` propagation would
+        // otherwise leave stale sequencing labels in LABELS and the next
+        // run on this thread would trip the marker-count assertion).
+        #[cfg(feature = "cycle_marker")]
+        struct SeqLabelsGuard {
+            snap: Option<cycle_marker::Snapshot>,
+        }
+        #[cfg(feature = "cycle_marker")]
+        impl Drop for SeqLabelsGuard {
+            fn drop(&mut self) {
+                if let Some(snap) = self.snap.take() {
+                    cycle_marker::revert(snap);
+                }
+            }
+        }
+        #[cfg(feature = "cycle_marker")]
+        let _seq_labels_guard = SeqLabelsGuard {
+            snap: Some(cycle_marker::snapshot()),
+        };
 
         // we use proving config here for benchmarking,
         // although sequencer can have extra optimizations
@@ -680,7 +1226,97 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             validator,
         )?;
 
+        // Explicit drop: sequencing labels are discarded HERE so the
+        // prover_input forward run below appends to a clean LABELS.
+        #[cfg(feature = "cycle_marker")]
+        drop(_seq_labels_guard);
+
+        // STATE DUMP HOOK: keep the native (pre-conversion) block header so
+        // the dump can expose every field the STF actually produced. The
+        // `Sealed<Header>` on `BlockOutput` carries the same values, but the
+        // native struct is the authoritative one the header hash commits to.
+        let native_block_header = if state_dump_snapshot.is_some() {
+            result_keeper.block_header.clone()
+        } else {
+            None
+        };
+
         let block_output: BlockOutput = result_keeper.into();
+
+        let prover_input = if do_prover_input_run {
+            let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
+
+            let prover_input_oracle = oracle_factory.create_forward_oracle(
+                block_metadata,
+                chain_config,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                fri_sidecar,
+                fri_artifacts,
+                Some(proof_data),
+                Some(da_commitment_scheme),
+                false,
+                true,
+            );
+            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut tracer = NopTracer::default();
+            let mut validator = NopTxValidator;
+            let (prover_input_forward, prover_input_batch_output) = {
+                // This run uses ProverInputSystem (proving STF) — its labels
+                // are exactly what RISC-V will fire markers for, so we keep
+                // them in LABELS for the post-RISC-V count match. The earlier
+                // sequencing forward run's labels were already reverted, so
+                // LABELS now contains only this run's proving-mode labels.
+                let result = run_prover_input_with_batch_output_no_panic::<
+                    BasicBootloaderProvingExecutionConfig,
+                >(
+                    copy_source,
+                    &mut result_keeper_prover_input,
+                    &mut tracer,
+                    &mut validator,
+                );
+                result?
+            };
+
+            if let Some(path) = witness_output_file {
+                let mut file = File::create(&path).expect("should create file");
+                let witness: Vec<u8> = prover_input_forward
+                    .iter()
+                    .flat_map(|x| x.to_be_bytes())
+                    .collect();
+                let hex = hex::encode(witness);
+                file.write_all(hex.as_bytes())
+                    .expect("should write to file");
+            }
+
+            let pubdata = std::mem::take(&mut result_keeper_prover_input.pubdata);
+            let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
+            let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
+            if has_filtered_by_validator {
+                warn!(
+                    "Skipping forward/prover-input output equivalence checks because the custom \
+                 validator filtered at least one transaction, and prover-input replay uses \
+                 NopTxValidator"
+                );
+            } else {
+                assert_block_outputs_match(&block_output, &prover_input_block_output);
+            }
+            Some(ProverInputArtifacts {
+                proof_input: prover_input_forward,
+                pubdata,
+                block_output: prover_input_block_output,
+                batch_output: prover_input_batch_output,
+            })
+        } else {
+            // We use the forward prover input run outputs to validate the risc-v run,
+            // so we check consistency in config
+            assert!(
+                !do_riscv_run,
+                "Native prover input run should be performed if risc v run is enabled"
+            );
+            None
+        };
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -709,7 +1345,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         if update_state_after_block_execution {
             // update state
-            self.previous_block_number = Some(self.next_block_number());
+            self.previous_block_number = self.next_block_number();
             self.block_timestamp = block_context.timestamp;
             for i in 0..255 {
                 self.block_hashes[i] = self.block_hashes[i + 1];
@@ -732,114 +1368,159 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             }
         }
 
-        let proof_input = if do_riscv_run {
-            if let Some(path) = witness_output_file {
-                let result = Self::run_block_generate_witness::<false>(oracle, &app);
-                let mut file = File::create(&path).expect("should create file");
-                let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
-                let hex = hex::encode(witness);
-                file.write_all(hex.as_bytes())
-                    .expect("should write to file");
-                result
-            } else {
-                // We'll wrap the source, to collect all the reads.
-                let copy_source = ReadWitnessSource::new(oracle);
-                let items = copy_source.get_read_items();
+        if do_riscv_run {
+            let proof_input = &prover_input
+                .as_ref()
+                .expect("native prover input run should exist when risc-v run is enabled")
+                .proof_input;
+            let dist_dir = get_zksync_os_dist_dir(&app);
 
-                let diagnostics_config = profiler_config.map(|cfg| {
-                    let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
-                    diagnostics_cfg.profiler_config = Some(cfg);
-                    diagnostics_cfg
-                });
-
-                let now = std::time::Instant::now();
-                let (proof_output, block_effective) = {
-                    zksync_os_runner::run_and_get_effective_cycles(
-                        get_zksync_os_img_path(&app),
-                        diagnostics_config,
-                        1 << 36,
-                        copy_source,
-                    )
-                };
-
-                info!(
-                    "Simulator without witness tracing executed over {:?}",
-                    now.elapsed()
-                );
-                stats.effective_used = block_effective;
-
-                #[cfg(feature = "simulate_witness_gen")]
-                {
-                    zksync_os_runner::simulate_witness_tracing(
-                        get_zksync_os_img_path(),
-                        source_for_witness_bench,
-                    )
-                }
-
-                // dump csr reads if env var set
-                if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
-                    // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
-                    let mut file =
-                        File::create(&output_csr).expect("Failed to create csr reads file");
-                    // Write each u32 as an 8-character hexadecimal string without newlines
-                    for num in items.borrow().iter() {
-                        write!(file, "{num:08X}").expect("Failed to write to file");
-                    }
-                    debug!(
-                        "Successfully wrote {} u32 csr reads elements to file: {}",
-                        items.borrow().len(),
-                        output_csr
-                    );
-                }
-
-                let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
-
-                debug!(
-                    "{}Proof running output{} = 0x",
-                    colors::GREEN,
-                    colors::RESET
-                );
-                for word in proof_output.into_iter() {
-                    debug!("{word:08x}");
-                }
-
-                // Ensure that proof running didn't fail: check that output is not zero
-                assert!(proof_output.into_iter().any(|word| word != 0));
-                let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
-
-                if check_storage_diff_hashes {
-                    // Also ensure that storage diff hash matches
-                    use crypto::MiniDigest;
-                    let mut hasher = crypto::blake2s::Blake2s256::new();
-                    for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
-                        hasher.update(key.0.as_ref());
-                        hasher.update(value.0.as_ref());
-                    }
-                    let forward_storage_diff_hash = hasher.finalize();
-                    info!(
-                        "Forward storage diff hash: 0x{}",
-                        hex::encode(forward_storage_diff_hash.as_ref())
-                    );
-                    assert_eq!(proof_output_u8, forward_storage_diff_hash);
-
-                    #[cfg(feature = "e2e_proving")]
-                    run_prover(items.borrow().as_slice());
-                }
-
-                proof_input
+            let now = std::time::Instant::now();
+            let mut runner = zksync_os_runner::Runner::new(dist_dir);
+            if let Some(fg_options) = flamegraph {
+                runner = runner.with_flamegraph(fg_options);
             }
-        } else {
-            vec![]
-        };
-        Ok((block_output, stats, proof_input))
+            let zksync_os_runner::RunResult {
+                output: proof_output,
+                block_effective,
+            } = runner.run(proof_input);
+
+            info!(
+                "Simulator without witness tracing executed over {:?}",
+                now.elapsed()
+            );
+            stats.effective_used = block_effective;
+
+            // dump csr reads if env var set
+            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
+                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
+                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
+                // Write each u32 as an 8-character hexadecimal string without newlines
+                for num in proof_input.iter() {
+                    write!(file, "{num:08X}").expect("Failed to write to file");
+                }
+                debug!(
+                    "Successfully wrote {} u32 csr reads elements to file: {}",
+                    proof_input.len(),
+                    output_csr
+                );
+            }
+
+            debug!(
+                "{}Proof running output{} = 0x",
+                colors::GREEN,
+                colors::RESET
+            );
+            for word in proof_output.into_iter() {
+                debug!("{word:08x}");
+            }
+
+            // Ensure that proof running didn't fail: check that output is not zero
+            assert!(proof_output.into_iter().any(|word| word != 0));
+            let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
+
+            if check_storage_diff_hashes {
+                // Also ensure that storage diff hash matches
+                use crypto::MiniDigest;
+                let mut hasher = crypto::blake2s::Blake2s256::new();
+                for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
+                    hasher.update(key.0.as_ref());
+                    hasher.update(value.0.as_ref());
+                }
+                let forward_storage_diff_hash = hasher.finalize();
+                info!(
+                    "Forward storage diff hash: 0x{}",
+                    hex::encode(forward_storage_diff_hash.as_ref())
+                );
+                assert_eq!(proof_output_u8, forward_storage_diff_hash);
+
+                #[cfg(feature = "e2e_proving")]
+                run_prover(proof_input);
+            }
+        }
+        // STATE DUMP HOOK (post): the block executed successfully (a failed
+        // run returns/propagates earlier and writes no dump), so snapshot the
+        // post state and write the prover-neutral JSON bundle.
+        if let Some(snapshot) = state_dump_snapshot {
+            let (post, root_after, next_free_slot_after) = if update_state_after_block_execution {
+                // `self` was already advanced to the post-block state above.
+                (
+                    self.dump_state(),
+                    self.state_tree_root(),
+                    self.next_free_slot(),
+                )
+            } else {
+                // The chain state was intentionally left untouched; apply the
+                // block's net writes to clones to obtain the post state.
+                let mut state_tree = self.state_tree.clone();
+                let mut preimage_source = self.preimage_source.clone();
+                for storage_write in block_output.storage_writes.iter() {
+                    state_tree
+                        .cold_storage
+                        .insert(storage_write.key.0.into(), storage_write.value.0.into());
+                    state_tree
+                        .storage_tree
+                        .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
+                }
+                for (hash, preimage) in block_output.published_preimages.iter() {
+                    preimage_source
+                        .inner
+                        .insert(hash.0.into(), preimage.clone());
+                }
+                let post = dump_state_from(&state_tree, &preimage_source);
+                let root_after = *state_tree.storage_tree.root();
+                let next_free_slot_after = state_tree.storage_tree.next_free_slot;
+                (post, root_after, next_free_slot_after)
+            };
+            let native_block_header = native_block_header
+                .expect("native block header must be present after a successful run");
+            crate::state_dump::write_block_dump(
+                snapshot,
+                post,
+                root_after,
+                next_free_slot_after,
+                &block_output,
+                &native_block_header,
+                prover_input.as_ref().map(|p| &p.batch_output),
+                prover_input.as_ref().map(|p| p.pubdata.as_slice()),
+                da_commitment_scheme,
+            );
+        }
+
+        Ok(ExecutedBlockArtifacts {
+            block_output,
+            block_extra_stats: stats,
+            prover_input,
+        })
     }
 
-    pub fn make_eth_block_oracle<M: MemorySource + 'static>(
+    pub fn make_eth_block_oracle(
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, false)
+    }
+
+    /// Build an oracle for the prover-input recording pass.
+    /// Uses native callable oracles that don't require RamPeek (guest memory access).
+    fn make_eth_block_oracle_for_prover_input(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+    ) -> ZkEENonDeterminismSource {
+        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, true)
+    }
+
+    fn make_eth_block_oracle_inner(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
 
@@ -941,6 +1622,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let da_commitment_scheme_responder = DACommitmentSchemeResponder {
             da_commitment_scheme: Some(DACommitmentScheme::None),
         };
+        let chain_config_responder = ChainConfigResponder {
+            chain_config: ChainConfig::default(),
+        };
         let preimage_responder = GenericPreimageResponder { preimage_source };
         let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
             initial_root.0,
@@ -957,6 +1641,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         };
 
         let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(chain_config_responder);
         oracle.add_external_processor(target_header_responder.clone());
         oracle.add_external_processor(tx_data_responder.clone());
         oracle.add_external_processor(preimage_responder.clone());
@@ -964,10 +1649,22 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(initial_values_responder.clone());
         oracle.add_external_processor(cl_responder.clone());
         oracle.add_external_processor(da_commitment_scheme_responder);
-        oracle.add_external_processor(
-            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
-        );
-        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+        if use_native_callable_oracles {
+            // Native callable oracles compute results on the host without reading
+            // guest memory (RamPeek). Required for prover-input recording where
+            // there is no guest memory to read.
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
+        } else {
+            oracle.add_external_processor(
+                callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
+            );
+            oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
+            oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
+        }
         oracle.add_external_processor(UARTPrintResponder);
 
         oracle
@@ -1020,33 +1717,60 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_validator = NopTxValidator;
 
         BasicBootloader::<
-            EthereumStorageSystemTypesWithPostOps<_>,
-            EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            EthereumStorageSystemTypes<_>,
+            EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
         >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
             oracle,
             &mut (),
             &mut result_keeper,
             &mut nop_tracer,
             &mut nop_validator,
+            ChainConfig::default(),
         )
         .expect("must succeed");
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
-
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-
         let proof_input = if only_forward {
             None
         } else {
-            let (proof_output, block_effective) = {
-                zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
-                    None,
-                    1 << 36,
-                    copy_source,
-                )
-            };
-            Some(items.borrow().iter().copied().collect::<Vec<u32>>())
+            // Record non-determinism input words by re-running with the Ethereum
+            // proving system types (EthereumStorageSystemTypesWithPostOps uses
+            // Ethereum MPT storage, matching the eth_stf RISC-V binary).
+            let prover_input_oracle = Self::make_eth_block_oracle_for_prover_input(
+                transactions,
+                witness,
+                block_header,
+                withdrawals,
+            );
+            let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let chain_config =
+                ChainConfig::read_from_oracle(&mut copy_source).expect("must read chain config");
+            let mut pi_result_keeper: ForwardRunningResultKeeper<_, PectraForkHeader> =
+                ForwardRunningResultKeeper::new(NoopTxCallback);
+            let mut pi_tracer = NopTracer::default();
+            let mut pi_validator = NopTxValidator;
+            let (returned_oracle, _, _) = BasicBootloader::<
+                EthereumStorageSystemTypesWithPostOps<_>,
+                EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+                copy_source,
+                &mut (),
+                &mut pi_result_keeper,
+                &mut pi_tracer,
+                &mut pi_validator,
+                chain_config,
+            )
+            .expect("prover-input forward run must succeed");
+
+            assert_eq!(
+                result_keeper.storage_writes, pi_result_keeper.storage_writes,
+                "storage writes mismatch between forward and prover-input runs"
+            );
+
+            let prover_input_words: Vec<u32> = returned_oracle.get_read_items().borrow().clone();
+
+            // RISC-V simulation using pre-recorded input
+            let dist_dir = get_zksync_os_dist_dir(&app);
+            zksync_os_runner::Runner::new(dist_dir).run(&prover_input_words);
+            Some(prover_input_words)
         };
         (Some(result_keeper), proof_input)
     }
@@ -1123,6 +1847,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Ensure an account exists in the state tree with default properties.
+    /// No-op if the account already exists.
+    pub fn ensure_account_exists(&mut self, address: B160) {
+        if self.get_account_properties_maybe(&address).is_some() {
+            return;
+        }
+        self.set_balance(address, U256::ZERO);
+    }
+
     /// Initialize the L2 base token treasury with 2^128 - 1 balance.
     ///
     /// This should be called during chain setup to pre-fund the treasury account.
@@ -1261,24 +1994,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+/// Returns the dist directory for the given app (e.g. `zksync_os/dist/for_tests`).
+pub fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("for_tests");
-    // let app = app_name.as_deref().unwrap_or("app_debug");
-    let filename = format!("{app}.{extension}");
-    let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
+    let zksync_os_root = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os")
         });
-    zksync_os_path.join(filename)
-}
-
-pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "bin")
-}
-
-fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
-    get_zksync_os_path(app_name, "elf")
+    zksync_os_root.join("dist").join(app)
 }
 
 // TODO: utils?
@@ -1287,48 +2011,20 @@ pub fn is_account_properties_address(address: &B160) -> bool {
 }
 
 #[cfg(feature = "e2e_proving")]
-fn run_prover(csr_reads: &[u32]) {
-    use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
-    use std::alloc::Global;
-    use std::io::Read;
+fn run_prover(input_words: &[u32]) {
+    use airbender_host::{Program, Prover};
 
-    let mut file = File::open(get_zksync_os_img_path(&None)).expect("must open provided file");
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
-    let mut binary = vec![];
-    for el in buffer.as_chunks::<4>().0.iter() {
-        binary.push(u32::from_le_bytes(*el));
-    }
+    let dist_dir = get_zksync_os_dist_dir(&None);
+    let program = Program::load(&dist_dir).expect("failed to load program");
+    let prover = program
+        .cpu_prover()
+        .with_cycles(1 << 36)
+        .build()
+        .expect("failed to build prover");
 
-    use prover_examples::prover::worker::Worker;
-    use prover_examples::setups;
+    let result = prover.prove(input_words).expect("proving failed");
 
-    setups::pad_bytecode_for_proving(&mut binary);
-
-    let worker = Worker::new_with_num_threads(8);
-
-    let main_circuit_precomputations =
-        setups::get_main_riscv_circuit_setup::<Global, Global>(&binary, &worker);
-
-    let delegation_precomputations =
-        setups::all_delegation_circuits_precomputations::<Global, Global>(&worker);
-
-    // TODO: fix
-    let mut non_determinism_source = QuasiUARTSource::default();
-    for word in csr_reads {
-        non_determinism_source.oracle.push_back(*word);
-    }
-
-    let _ = prover_examples::prove_image_execution(
-        32,
-        &binary,
-        non_determinism_source,
-        &main_circuit_precomputations,
-        &delegation_precomputations,
-        &worker,
-    );
-
-    info!("block proved successfully");
+    info!("block proved successfully in {} cycles", result.cycles);
 }
 
 #[cfg(test)]

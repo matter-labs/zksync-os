@@ -1,6 +1,6 @@
 use super::*;
 use core::marker::PhantomData;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
+use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
 use zk_ee::{internal_error, system_log, types_config::*};
 
@@ -10,11 +10,13 @@ mod metadata_op;
 mod post_init_op;
 mod post_tx_op;
 mod pre_tx_loop;
+mod receipt;
 mod tx_loop;
 
 pub use self::batch_data::*;
 pub use self::block_data::*;
 pub use self::post_tx_op::*;
+pub(crate) use self::receipt::compute_receipt_hash;
 
 pub struct ZKHeaderPostInitOp;
 
@@ -51,7 +53,7 @@ fn check_for_block_limits<S: EthereumLikeTypes>(
 ) -> Result<(), InvalidTransaction>
 where
     S::IO: IOSubsystemExt,
-    <S as SystemTypes>::Metadata: ZkSpecificPricingMetadata,
+    <S as SystemTypes>::Metadata: ZkSpecificMetadata,
 {
     if gas_used > system.get_gas_limit() {
         system_log!(
@@ -65,24 +67,19 @@ where
             "Block blob gas limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockBlobGasLimitReached)
-    } else if !cfg!(feature = "resources_for_tester")
-        && computational_native_used > MAX_NATIVE_COMPUTATIONAL
-    {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if computational_native_used > MAX_NATIVE_COMPUTATIONAL {
         system_log!(
             system,
             "Block native limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockNativeLimitReached)
-    } else if !cfg!(feature = "resources_for_tester") && pubdata_used > system.get_pubdata_limit() {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if pubdata_used > system.get_pubdata_limit() {
         system_log!(
             system,
             "Block pubdata limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockPubdataLimitReached)
-    } else if !cfg!(feature = "resources_for_tester") && logs_used > MAX_NUMBER_OF_LOGS {
-        // ZKsync OS-specific resources are not checked for evm tester
+    } else if logs_used > MAX_NUMBER_OF_LOGS {
         system_log!(
             system,
             "Block logs limit reached, invalidating transaction\n"

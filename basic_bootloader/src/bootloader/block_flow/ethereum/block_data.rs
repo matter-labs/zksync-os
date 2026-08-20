@@ -1,8 +1,8 @@
-use crate::bootloader::block_flow::ethereum::rlp_encodings::CellEnvelope;
-use crate::bootloader::block_flow::ethereum::rlp_encodings::ReceiptEncoder;
+use crate::bootloader::block_flow::ethereum::mpt_leaf::CellEnvelope;
 use crate::bootloader::block_flow::ethereum::rlp_ordering_and_key_for_index;
+use crate::bootloader::rlp::ReceiptEncoder;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
-use crate::bootloader::transaction_flow::ethereum::LogsBloom;
+use crate::bootloader::transaction_flow::logs_bloom::LogsBloom;
 use crate::bootloader::BasicTransactionFlow;
 use crate::bootloader::ExecutionResult;
 use alloc::collections::BTreeMap;
@@ -149,7 +149,7 @@ impl<A: Allocator + Clone, B: Allocator> EthereumBasicTransactionDataKeeper<A, B
                 tx_type,
                 tx_status,
                 cumulative_gas,
-                bloom,
+                bloom.as_bytes(),
                 events_it,
             );
 

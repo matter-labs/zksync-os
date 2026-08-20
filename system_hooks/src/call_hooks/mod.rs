@@ -1,7 +1,6 @@
-#[cfg(feature = "mock-unsupported-precompiles")]
-pub mod mock_precompiles;
-
 pub mod contract_deployer_temp;
+#[cfg(feature = "fri_precompile")]
+pub mod fri_precompile;
 pub mod l1_messenger;
 pub mod precompiles;
 pub mod set_bytecode_on_address;

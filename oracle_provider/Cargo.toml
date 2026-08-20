@@ -11,4 +11,4 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
-risc_v_simulator = { workspace = true }
+riscv_transpiler = { workspace = true }

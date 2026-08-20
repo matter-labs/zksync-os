@@ -3,10 +3,10 @@ use crate::bootloader::transaction::rlp_encoded::transaction_types::EthereumTxTy
 
 use crypto::MiniDigest;
 
-use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
-use crate::bootloader::transaction::rlp_encoded::rlp::{
-    apply_list_concatenation_encoding_to_hash, apply_u64_encoding_to_hash, u64_encoding_len,
+use crate::bootloader::rlp::{
+    apply_list_length_encoding, apply_number_encoding, estimate_number_encoding_len,
 };
+use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
 use ruint::aliases::U256;
 use zk_ee::utils::Bytes32;
 
@@ -89,7 +89,7 @@ impl LegacyPayloadParser {
         let sig_hash: Bytes32 = if legacy_signature.is_eip155() == false {
             // Unprotected legacy
             let mut hasher = crypto::sha3::Keccak256::new();
-            apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
+            apply_list_length_encoding(inner_slice.len(), &mut hasher);
             hasher.update(inner_slice);
             hasher.finalize_reset().into()
         } else {
@@ -101,15 +101,15 @@ impl LegacyPayloadParser {
 
             // Compute signing hash over the 6-field payload plus chainId and two empty strings.
             let chain_id = expected_chain_id;
-            let chain_id_encoding_len = u64_encoding_len(chain_id);
+            let chain_id_encoding_len = estimate_number_encoding_len(&chain_id.to_be_bytes());
 
             let mut hasher = crypto::sha3::Keccak256::new();
-            apply_list_concatenation_encoding_to_hash(
-                (inner_slice.len() + chain_id_encoding_len + 2) as u32, // 0x80, 0x80 for r/s
+            apply_list_length_encoding(
+                inner_slice.len() + chain_id_encoding_len + 2, // 0x80, 0x80 for r/s
                 &mut hasher,
             );
             hasher.update(inner_slice);
-            apply_u64_encoding_to_hash(chain_id, &mut hasher);
+            apply_number_encoding(&chain_id.to_be_bytes(), &mut hasher);
             hasher.update(&[0x80, 0x80]);
             hasher.finalize_reset().into()
         };

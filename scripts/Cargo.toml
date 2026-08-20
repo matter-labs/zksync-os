@@ -10,4 +10,4 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }

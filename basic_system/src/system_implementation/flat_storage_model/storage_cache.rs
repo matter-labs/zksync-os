@@ -99,8 +99,7 @@ impl<
             key: *key,
         };
 
-        #[allow(unused_variables)]
-        let (old_value, val_at_tx_start) = self
+        let old_value = self
             .0
             .apply_write_impl(ee_type, &key, new_value, oracle, resources)?;
 
@@ -165,7 +164,7 @@ impl<
             core::ptr::read((new_value as *const T::Value).cast::<Bytes32>())
         };
 
-        let (old_value, _) = self
+        let old_value = self
             .0
             .apply_write_impl(ee_type, &key, &new_value, oracle, resources)?;
 
@@ -217,6 +216,21 @@ impl<
         P: StorageAccessPolicy<R, Bytes32>,
     > NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>
 {
+    /// Returns the block-start account-properties hash already materialized for
+    /// `address`, without charging resources or changing cache metadata.
+    ///
+    /// Account and storage initial records both survive frame rollback. This
+    /// lets the account cache reconnect a retained decoded account to its raw
+    /// preimage even when the access that populated it happened outside the
+    /// transaction rollback frame.
+    pub(super) fn initial_account_properties_hash(&self, address: &B160) -> Option<Bytes32> {
+        let key = WarmStorageKey {
+            address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+            key: address_into_special_storage_key(address),
+        };
+        self.0.cache.get(&key).map(|item| *item.initial().value())
+    }
+
     pub fn iter_as_storage_types(
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>

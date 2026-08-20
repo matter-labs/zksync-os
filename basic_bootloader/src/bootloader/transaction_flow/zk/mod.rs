@@ -20,7 +20,7 @@ use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
-use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use metadata::zk_metadata::TxLevelMetadata;
 use ruint::aliases::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -41,6 +41,8 @@ use zk_ee::{interface_error, internal_error, out_of_native_resources, wrap_error
 
 use super::gas_helpers::check_enough_resources_for_pubdata;
 
+#[cfg(feature = "fri_precompile")]
+mod fri;
 pub mod process_l1_transaction;
 mod validation_impl;
 
@@ -52,6 +54,7 @@ pub struct ZkTransactionFlowOnlyEOA<S: EthereumLikeTypes> {
 pub struct ZkTxResult<'a> {
     pub result: ExecutionResult<'a, EthereumIOTypesConfig>,
     pub tx_hash: Bytes32,
+    pub tx_type: u8,
     pub is_priority_tx: bool,
     pub is_upgrade_tx: bool,
     pub is_service_tx: bool,
@@ -129,11 +132,19 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     /// recovered by subtracting the residual from `FORMAL_INFINITE` and
     /// compared against the formula as an upper bound.
     pub intrinsic_resources: S::Resources,
+    /// Intrinsic computational native that was precharged against
+    /// `resources.main_resources` during validation. Recorded here so
+    /// `after_execution` can add it back when computing the total
+    /// `computational_native_used`, and so `verify_intrinsic_native` can
+    /// compare actual consumption against the formula.
+    pub intrinsic_computational_native: u64,
     /// Number of EIP-7702 authorization list entries in the transaction.
     /// Used by `verify_intrinsic_native` to skip the overcharging check when
     /// authorizations are present (failed auths consume much less native than
     /// the worst-case formula budgets).
     pub authorization_list_num: u64,
+    /// Number of FRI statement hashes referenced by the transaction.
+    pub statement_versioned_hashes_num: u64,
 }
 
 impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
@@ -154,7 +165,15 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
             .field("intrinsic_resources", &self.intrinsic_resources)
+            .field(
+                "intrinsic_computational_native",
+                &self.intrinsic_computational_native,
+            )
             .field("authorization_list_num", &self.authorization_list_num)
+            .field(
+                "statement_versioned_hashes_num",
+                &self.statement_versioned_hashes_num,
+            )
             .finish()
     }
 }
@@ -182,7 +201,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
 impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     type TransactionContext = TxContextForPreAndPostProcessing<S>;
@@ -554,15 +573,14 @@ where
         _transaction_data_keeper: &mut impl BlockTransactionsDataKeeper<S, Self>,
         _tracer: &mut impl Tracer<S>,
     ) -> Self::ExecutionResult<'a> {
-        // Add back the intrinsic native charged in get_resources_for_tx,
-        // as initial_resources doesn't include them.
+        // Add back as initial_resources doesn't include the intrinsic.
         let computational_native_used = context
             .resources_before_refund
             .clone()
             .diff(context.initial_resources.clone())
             .native()
             .as_u64()
-            .saturating_add(context.resources.intrinsic_computational_native_charged);
+            .saturating_add(context.intrinsic_computational_native);
 
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
@@ -586,6 +604,7 @@ where
         ZkTxResult {
             result,
             tx_hash: context.tx_hash,
+            tx_type: transaction.tx_type(),
             is_priority_tx: false,
             is_upgrade_tx: false,
             is_service_tx: transaction.is_service(),
@@ -627,7 +646,7 @@ where
 impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     fn execute_call<'a>(
@@ -919,7 +938,7 @@ where
         let initial = S::Resources::FORMAL_INFINITE.native().as_u64();
         let remaining = context.intrinsic_resources.native().as_u64();
         let actual_used = initial.saturating_sub(remaining);
-        let formula = context.resources.intrinsic_computational_native_charged;
+        let formula = context.intrinsic_computational_native;
         system_log!(
             system,
             "intrinsic native verification: formula={}, actually_used={}\n",
@@ -932,11 +951,19 @@ where
             formula,
             actual_used
         );
-        // Skip the overcharging check when authorization-list entries are
-        // present: failed auths (bad sig, wrong chain id, nonce overflow)
-        // consume only PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the
-        // formula budgets worst-case success cost per entry.
-        if context.authorization_list_num == 0 {
+        // The overcharging guard does not apply in two cases:
+        //
+        // - Authorization-list entries are present: failed auths (bad sig,
+        //   wrong chain id, nonce overflow) consume only
+        //   PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD while the formula budgets
+        //   worst-case success cost per entry.
+        // - Native is free (`native_per_gas == 0`): the formula intentionally
+        //   uses the worst-case "new sender" intrinsic constant
+        //   (`L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE`), which can exceed
+        //   twice the actual consumption for an already-existing sender. Native
+        //   over-budgeting is harmless when native isn't priced, so this is by
+        //   design rather than a misestimate.
+        if context.authorization_list_num == 0 && context.native_per_gas != 0 {
             assert!(
                 formula <= actual_used * 2,
                 "intrinsic computational native formula ({}) is overcharging more than twice compared to actual consumption ({})",

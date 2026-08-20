@@ -2,14 +2,18 @@ use basic_system::cost_constants::{
     blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
 use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
+use basic_system::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
-    COLD_NEW_STORAGE_READ_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
+    ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST, ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST,
+    COLD_EXISTING_STORAGE_READ_NATIVE_COST, COLD_NEW_STORAGE_READ_NATIVE_COST,
+    EVENT_STORAGE_BASE_NATIVE_COST, PREIMAGE_CACHE_GET_NATIVE_COST, PREIMAGE_CACHE_SET_NATIVE_COST,
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST, WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
     WARM_STORAGE_READ_NATIVE_COST,
 };
+use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
@@ -19,6 +23,15 @@ pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
 
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
+
+/// Upper bound on the receipt bytes outside its encoded logs: optional type byte
+/// (1), status (1), cumulative gas (9), zero bloom (259), and the logs-list and
+/// receipt-list headers (up to 9 each on a 64-bit host).
+const RECEIPT_FIXED_AND_FRAMING_MAX_LEN: usize = 288;
+/// Intrinsic native cost of hashing the fixed receipt fields and enclosing list
+/// framing. Each encoded log's blake2s rounds are charged at emit time.
+pub const RECEIPT_HASH_BASE_NATIVE_COST: u64 =
+    blake2s_native_cost(RECEIPT_FIXED_AND_FRAMING_MAX_LEN);
 
 const _: () = const {
     assert!(MAX_TX_LEN_BYTES.is_multiple_of(core::mem::size_of::<usize>()));
@@ -44,6 +57,15 @@ pub const TX_INTRINSIC_GAS: u64 = 21_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
+/// FRI proof verification cost charged per submitted statement hash.
+/// Sized as an upper bound on the RISC-V `process_transaction` cycles for a
+/// single 100-bit FRI proof (~16.5M effective).
+pub const FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF: u64 = 17_000_000;
+/// Per-statement intrinsic gas surcharge for `FriProofTx`.
+pub const FRI_PROOF_TX_INTRINSIC_GAS: u64 = 100_000;
+/// Current statement-hash version of FRI proof transactions.
+pub const FRI_STATEMENT_HASH_VERSION: u8 = 1;
+
 /// Cost to convert zero byte of calldata into "token"
 pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 
@@ -61,30 +83,54 @@ pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
 /// value. The value is so high because of modexp tests.
 pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 
-// Default native price for L1->L2 transactions.
-// TODO (EVM-1157): find a reasonable value for it.
-pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
-
-// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
-// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const FREE_L1_TX_NATIVE_PER_GAS: u64 = 10000;
+/// Fixed `native_per_gas` ratio used for all L1->L2 transactions
+/// (including upgrade, service txs):
+/// - high enough that computational part becomes negligible (with current
+///   ratio, ~350 gas is enough to exceed computational native limit)
+/// - low enough that native resources doesn't overflow `u64` for
+///   any realistic L1 gas_limit.
+pub const L1_TX_NATIVE_PER_GAS: u64 = 100_000_000;
 
 // computational native consts
-/// Constant part of l2 tx intrinsic computational native cost.
-pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = ECRECOVER_NATIVE_COST + // signature verification
-    NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+/// Account read native cost for an existing cold account (present in the tree).
+pub const EXISTING_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_EXISTING_STORAGE_READ_NATIVE_COST;
+
+/// Constant part of l2 tx intrinsic computational native cost, shared by both
+/// pricing modes. Holds everything except the sender's cold account read and
+/// persist — the only parts that depend on whether the sender may be new. The
+/// two modes below add only the sender delta, so they cannot drift apart.
+const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_COMMON: u64 = RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
+    ECRECOVER_NATIVE_COST +
     ACCOUNT_UPDATE_COST + // nonce update
     keccak256_native_cost_for_rounds_u64(3) * 2 + // keccak for signing and full hash, 2 rounds worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
-    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1) + // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_PERSIST_EXISTING_NATIVE_COST; // coinbase persist (operator ensures coinbase exists)
+
+/// Free-native chains: the sender may not exist yet, so charge the worst-case
+/// cold read of a new account plus a new-account persist.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_FREE: u64 =
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_COMMON
+        + NEW_COLD_ACCOUNT_READ_COST // sender read (new on free-native chains)
+        + ACCOUNT_PERSIST_NEW_NATIVE_COST; // sender persist (new on free-native chains)
+
+/// Fee-paying chains: the sender holds balance and therefore already exists in
+/// the tree, so the cheaper cold-existing read and existing persist apply.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 =
+    L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST_COMMON
+        + EXISTING_COLD_ACCOUNT_READ_COST // sender read (sender exists)
+        + ACCOUNT_PERSIST_EXISTING_NATIVE_COST; // sender persist (sender exists)
 
 /// Service tx intrinsic computational native cost.
 /// Service txs are not signed, so there is no ecrecover and only a single
 /// (full-tx) keccak is performed.
-pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = NEW_COLD_ACCOUNT_READ_COST + // worst case account read
+pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST: u64 = RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
+    NEW_COLD_ACCOUNT_READ_COST + // worst case sender (bootloader) cold read
     keccak256_native_cost_for_rounds_u64(2) + // keccak for full hash, 1 round worst case tx size + 1 round precharge for dynamic parts
     ACCOUNT_UPDATE_COST + // balance change for fee prepayment
-    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // post execution logic: transferring fee to coinbase, transferring the gas refund, hashing of tx hash into rolling hash
+    ACCOUNT_UPDATE_COST * 2 + keccak256_native_cost_for_rounds_u64(1); // coinbase + refund materializes, hashing of tx hash into rolling hash; no persist (gas_price=0, all balance updates are no-ops)
 
 /// Service tx calldata byte intrinsic computational native cost.
 pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
@@ -99,6 +145,11 @@ pub const SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
 const DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE: u64 =
     KECCAK256_ROUND_NATIVE_COST.div_ceil(KECCAK256_CHUNK_SIZE as u64);
 
+/// Maximum RLP length of one EIP-7702 authorization: 33-byte chain ID,
+/// 21-byte address, 9-byte nonce, 1-byte parity, two 33-byte signature
+/// scalars, and a 2-byte list prefix.
+const L2_TX_AUTHORIZATION_MAX_RLP_BYTES: u64 = 132;
+
 /// L2 tx calldata byte intrinsic computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 =
     COPY_BYTE_NATIVE_COST + 2 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE; // to cover copying + signing hash + full hash
@@ -112,7 +163,8 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_ADDRESS: u64 =
 /// L2 tx access list storage slot computational native cost.
 pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_ACCESS_LIST_PER_STORAGE_KEY: u64 =
     PER_SLOT_ACCESS_LIST_NATIVE_COMPUTATIONAL_OVERHEAD + // computational overhead
-    WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case storage slot read
+    WARM_STORAGE_READ_NATIVE_COST + // materialize_element always charges warm read
+    COLD_NEW_STORAGE_READ_NATIVE_COST + // worst case cold read extra
     33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for signing + full hash, 33 contribution to rlp encoding length
 
 /// L2 tx authorization computational native cost.
@@ -123,7 +175,12 @@ pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_AUTHORIZATION: u64 =
     NEW_COLD_ACCOUNT_READ_COST + // worst case account read
     ACCOUNT_UPDATE_COST + // nonce update
     ACCOUNT_UPDATE_COST + PREIMAGE_CACHE_SET_NATIVE_COST + keccak256_native_cost_for_rounds_u64(1) /*bytecode hashing */ + blake2s_native_cost(24) /* blake2s padded bytecode */ + // delegation write
-    132 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // keccak for tx signing + full hash, 132 - worst case contribution to rlp encoding (33 chain_id, 21 address, 9 nonce, 1 y_parity, 33 r, 33 s, 2 list overhead)
+    L2_TX_AUTHORIZATION_MAX_RLP_BYTES * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2 + // keccak for tx signing + full hash
+    ACCOUNT_PERSIST_NEW_NATIVE_COST; // delegatee persist (worst case: new account)
+
+/// L2 tx blob versioned-hash computational native cost per hash.
+pub const L2_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_BLOB_VERSIONED_HASH: u64 =
+    33 * DYNAMIC_PART_KECCAK_COMPUTATIONAL_NATIVE_PER_BYTE * 2; // full-hash + signing-hash RLP contribution for one 32-byte blob hash
 
 /// Native computational overhead of 7702 auth.
 pub const PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD: u64 = 2000;
@@ -143,56 +200,65 @@ pub const NEW_COLD_ACCOUNT_READ_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COS
 pub const ACCOUNT_UPDATE_COST: u64 =
     WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
 
+/// Decommitment cost for non-empty account properties.
+const ACCOUNT_DECOMMITMENT_NATIVE_COST: u64 =
+    PREIMAGE_CACHE_GET_NATIVE_COST + blake2s_native_cost(AccountProperties::ENCODED_SIZE);
+
+/// Cold balance write cost for an existing non-empty account (e.g. treasury).
+/// Covers: materialize (cold access + decommitment) + cache write.
+const COLD_EXISTING_BALANCE_WRITE_NATIVE_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_EXISTING_STORAGE_READ_NATIVE_COST
+    + ACCOUNT_DECOMMITMENT_NATIVE_COST
+    + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
+
+/// Cold balance write cost for a new empty account (e.g. first-time refund recipient).
+/// Covers: materialize (cold access, no decommitment) + cache write.
+const COLD_NEW_BALANCE_WRITE_NATIVE_COST: u64 = WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+    + WARM_STORAGE_READ_NATIVE_COST
+    + COLD_NEW_STORAGE_READ_NATIVE_COST
+    + WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST;
+
+/// Preimage hash cost for account properties.
+const ACCOUNT_PROPERTIES_PREIMAGE_HASH_NATIVE_COST: u64 =
+    blake2s_native_cost(AccountProperties::ENCODED_SIZE);
+
+/// Combined persist cost for existing accounts (0x8003 write + preimage hash).
+const ACCOUNT_PERSIST_EXISTING_NATIVE_COST: u64 =
+    ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST + ACCOUNT_PROPERTIES_PREIMAGE_HASH_NATIVE_COST;
+
+/// Combined persist cost for new accounts (0x8003 write + preimage hash).
+const ACCOUNT_PERSIST_NEW_NATIVE_COST: u64 =
+    ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST + ACCOUNT_PROPERTIES_PREIMAGE_HASH_NATIVE_COST;
+
 /// Constant part of l1 tx intrinsic computational native cost.
 // Covers intrinsic L1 tx work not charged as tx-body computation.
 //
-//  - storing and hashing the L1 tx log:
-//      EVENT_STORAGE_BASE_NATIVE_COST
-//    + keccak256_native_cost(88)
-//    + 2 * keccak256_native_cost(64)
-//    = 6_000 + 20_000 + 40_000
-//    = 66_000
-//  - hashing tx hash into the rolling hash and linear hashers:
-//      3 * keccak256_native_cost(64)
-//    = 3 * 20_000
-//    = 60_000
-//  - coinbase transfer:
-//      warm existing balance write
-//    = WARM_STORAGE_READ_NATIVE_COST + WARM_STORAGE_WRITE_EXTRA_NATIVE_COST x 2 (to account for treasury)
-//    = (4_000 + 1_000) x 2
-//    = 10_000
-//  - coinbase L2AssetTracker notification:
-//      cold call into L2AssetTracker
-//    + BASE_TOKEN_ASSET_ID read
-//    + isAssetRegistered read
-//    + assetMigrationNumber read
-//    + L2BaseTokenZKOS.totalSupply() path
-//    + L2_CHAIN_ASSET_HANDLER.migrationNumber() call
-//    + assetMigrationNumber write
-//    + SystemContext.currentSettlementLayerChainId() call
-//    + interopInfo.totalSuccessfulDepositsFromL1 += amount
-//    = 132_600
-//    + 125_120
-//    + 145_120
-//    + 286_240
-//    + 392_340
-//    + 277_720
-//    + 164_800
-//    + 257_720
-//    + 391_040
-//    ~= 2_172_700
-//  - refund transfer:
-//      treasury cold existing write
-//    + refund recipient cold new write
-//    = 171_680 + 363_040
-//    = 534_720
-//  - refund L2AssetTracker notification:
-//      warm-path estimate
-//    = 32_000
+// Hardcoded component: L2AssetTracker contract execution native cost.
+// Cold path: first call in a tx, contract storage is cold.
+// Warm path: subsequent calls in the same tx, contract storage is warm.
 //
-// We use the cold-path cost for asset tracker first notification because
-// first mint / call to L2AssetTracker can fail due to out-of-native
-pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 2_875_420;
+// To re-measure: run an L1 tx test without no_print and grep for
+// "L1 notify_l2_asset_tracker native" in the output. The first value
+// per tx is cold, subsequent values are warm.
+const L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST: u64 = 2_043_860;
+const L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST: u64 = 212_100;
+
+pub const L1_TX_INTRINSIC_NATIVE_COST: u64 =
+    // Pre-budgeted (not charged against inf_resources, but reserved upfront):
+    RECEIPT_HASH_BASE_NATIVE_COST + // fixed receipt hash work
+    EVENT_STORAGE_BASE_NATIVE_COST + 3 * keccak256_native_cost_for_rounds_u64(1) + // L1 tx log: storage + keccak(88) + 2 * keccak(64)
+    3 * keccak256_native_cost_for_rounds_u64(1) + // hashing tx hash into rolling hash and linear hashers
+    // Coinbase mint (notify AssetTracker + transfer treasury→coinbase):
+    L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST +
+    COLD_EXISTING_BALANCE_WRITE_NATIVE_COST + // treasury debit (cold — may be first access if deposit=0)
+    ACCOUNT_UPDATE_COST + // coinbase credit (warm — pre-warmed by tx_loop)
+    // Refund mint (notify AssetTracker + transfer treasury→recipient):
+    L1_TX_ASSET_TRACKER_WARM_NOTIFICATION_NATIVE_COST +
+    ACCOUNT_UPDATE_COST + // treasury debit (warm — accessed in coinbase mint)
+    COLD_NEW_BALANCE_WRITE_NATIVE_COST + // recipient credit (cold new — worst case first-time depositor)
+    2 * ACCOUNT_PERSIST_EXISTING_NATIVE_COST + // coinbase + treasury persist (operator ensures these exist)
+    ACCOUNT_PERSIST_NEW_NATIVE_COST; // refund recipient persist (may be new — set by L1 sender)
 
 /// L1 tx calldata byte intrinsic computational native cost.
 pub const L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE: u64 = COPY_BYTE_NATIVE_COST;
@@ -215,8 +281,7 @@ pub const L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION: u64 = // Full diff compress
     2 + // nonce
     1 + // balance
     4 + // unpadded code length
-    4 + // artifacts length
-    24 + // padded bytecode
+    23 + // unpadded delegation bytecode
     4; // observable length
 
 // Pubdata needed for the diff in balance as a result of
@@ -252,3 +317,97 @@ pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88
     + TREASURY_BALANCE_INTRINSIC_PUBDATA
     + REFUND_RECIPIENT_BALANCE_INTRINSIC_PUBDATA
     + ASSET_TRACKER_INTRINSIC_PUBDATA;
+
+/// Native cost of the EIP-2935 pre-tx-loop work: a cold read of the
+/// `HISTORY_STORAGE_ADDRESS` account properties followed by a cold write of
+/// the history slot.
+///
+/// We assume `HISTORY_STORAGE_ADDRESS` exists in the tree — it's deployed via
+/// genesis or an earlier block and is only absent at block number 0, which
+/// cannot run EIP-2935 anyway. That lets us use the cold-EXISTING path for
+/// the account read rather than the NEW worst case (which
+/// `NEW_COLD_ACCOUNT_READ_COST` bundles for other callers). Because the
+/// account is non-empty, the cold read also pays a decommitment of the
+/// account properties preimage.
+///
+/// The slot write keeps the cold-NEW worst case so the reserve holds during
+/// the first 8191-block cycle when slots are freshly touched. This matches
+/// what the storage layer actually charges in `materialize_element`
+/// (warm read + cold-new read-extra) followed by `charge_storage_write_extra`
+/// (cold-new write-extra).
+const EIP_2935_INTRINSIC_NATIVE: u64 =
+    // Cold read of HISTORY_STORAGE_ADDRESS account properties (assume exists)
+    WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST
+        + WARM_STORAGE_READ_NATIVE_COST
+        + COLD_EXISTING_STORAGE_READ_NATIVE_COST
+        + PREIMAGE_CACHE_GET_NATIVE_COST
+        + blake2s_native_cost(AccountProperties::ENCODED_SIZE)
+        // Cold write of the history slot (worst case: new slot)
+        + WARM_STORAGE_READ_NATIVE_COST
+        + COLD_NEW_STORAGE_READ_NATIVE_COST
+        + COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
+
+/// Pubdata cost of the EIP-2935 history-slot write. One state diff:
+/// 32-byte derived key + worst-case 33-byte compressed value (the parent-hash
+/// value does not compress, so the `Nothing` strategy applies — same shape
+/// as `ASSET_TRACKER_INTRINSIC_PUBDATA`).
+const EIP_2935_INTRINSIC_PUBDATA: u64 = 32 + 33;
+
+/// Three u32 counters serialized into pubdata for state diffs, logs, and
+/// messages.
+pub const BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES: u64 = 3 * 4;
+
+/// Intrinsic per-block pubdata overhead, applied to block-limit enforcement
+/// from block start. Accounts for:
+/// - the fixed envelope written by `write_pubdata`: 1 byte
+///   (PUBDATA_ENCODING_VERSION) + 32 bytes (block hash) + 8 bytes (timestamp),
+/// - the fixed serialized counters for state diffs, logs, and messages,
+/// - the EIP-2935 history-slot diff when the feature is enabled.
+pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
+    1 + 32 + 8 + BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES + EIP_2935_INTRINSIC_PUBDATA;
+
+/// Intrinsic per-block native overhead, applied to block-limit enforcement
+/// from block start. Covers fixed pre-tx-loop system work: the EIP-2935
+/// historical block hash write, the direct L2ChainAssetHandler prewarm, and
+/// the rolled-back, non-zero L2AssetTracker notification that admits mandatory
+/// L1-finalization preimages. Conservatively charge each synthetic call as one
+/// cold AssetTracker notification.
+pub const BLOCK_INTRINSIC_NATIVE: u64 =
+    EIP_2935_INTRINSIC_NATIVE + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST;
+
+#[cfg(test)]
+mod tests {
+    use super::{L2_TX_AUTHORIZATION_MAX_RLP_BYTES, L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION};
+
+    #[test]
+    fn l2_authorization_max_rlp_length_matches_field_encoding() {
+        assert_eq!(
+            L2_TX_AUTHORIZATION_MAX_RLP_BYTES,
+            33 /* chain_id */
+                + 21 /* address */
+                + 9 /* nonce */
+                + 1 /* y_parity */
+                + 33 /* r */
+                + 33 /* s */
+                + 2 /* list prefix */
+        );
+    }
+
+    #[test]
+    fn l2_authorization_intrinsic_pubdata_matches_published_diff() {
+        // Full diff compression publishes an EIP-7702 delegation write as:
+        //   storage key (32) + account metadata (1) + versioning data (8)
+        //   + nonce diff (2) + balance diff (1) + unpadded code length (4)
+        //   + the raw delegation designator + observable code length (4).
+        // Only the unpadded designator bytes are published (padding and
+        // artifacts are not; see `account_cache_entry.rs`). The designator is
+        // `0xef0100 || address`, i.e. a 3-byte prefix plus a 20-byte address.
+        // Deriving its length from that structure (rather than restating `23`)
+        // keeps this coupled to the actual EIP-7702 encoding.
+        const DELEGATION_DESIGNATOR_LEN: u64 = 3 /* 0xef0100 */ + 20 /* address */;
+        assert_eq!(
+            L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION,
+            32 + 1 + 8 + 2 + 1 + 4 + DELEGATION_DESIGNATOR_LEN + 4
+        );
+    }
+}

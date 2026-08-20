@@ -154,7 +154,15 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         };
 
         let stack = if self.enable_stack {
-            Some(interpreter_state.stack().to_slice().to_vec())
+            // Convert from u256::U256 to ruint::aliases::U256
+            Some(
+                interpreter_state
+                    .stack()
+                    .to_slice()
+                    .iter()
+                    .map(|v| -> U256 { v.clone().into() })
+                    .collect(),
+            )
         } else {
             None
         };

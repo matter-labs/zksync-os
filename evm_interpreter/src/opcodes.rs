@@ -38,6 +38,7 @@ pub const CODECOPY: u8 = 0x39;
 pub const SHL: u8 = 0x1b;
 pub const SHR: u8 = 0x1c;
 pub const SAR: u8 = 0x1d;
+pub const CLZ: u8 = 0x1e;
 pub const SHA3: u8 = 0x20;
 pub const POP: u8 = 0x50;
 pub const MLOAD: u8 = 0x51;
@@ -217,7 +218,7 @@ pub const OPCODE_JUMPMAP: [Option<&'static str>; 256] = [
     /* 0x1b */ Some("SHL"),
     /* 0x1c */ Some("SHR"),
     /* 0x1d */ Some("SAR"),
-    /* 0x1e */ None,
+    /* 0x1e */ Some("CLZ"),
     /* 0x1f */ None,
     /* 0x20 */ Some("SHA3"),
     /* 0x21 */ None,

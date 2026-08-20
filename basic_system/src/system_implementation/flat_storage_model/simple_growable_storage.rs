@@ -1416,7 +1416,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
 
     pub fn new_in_with_leaves(allocator: A, mut leaves_vec: Vec<(Bytes32, Bytes32), A>) -> Self {
         let (mut positions, next) = Self::initial_positions(leaves_vec.len() as u64);
-        leaves_vec.sort_by(|(kl, _), (kr, _)| kl.cmp(kr));
+        leaves_vec.sort_by_key(|(k, _)| *k);
 
         let start_guard = FlatStorageLeaf::<N> {
             key: Bytes32::from_byte_fill(0),

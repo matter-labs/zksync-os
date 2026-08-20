@@ -1,7 +1,8 @@
 use super::*;
 use basic_bootloader::bootloader::block_flow::ethereum::*;
 use basic_system::system_implementation::ethereum_storage_model::{
-    vec_trait::VecCtor, EthereumStorageModel,
+    vec_trait::{BiVecCtor, VecCtor},
+    EthereumStorageModel,
 };
 
 pub struct EthereumStorageSystemTypes<O>(O);
@@ -26,8 +27,8 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypes<O> {
         >,
         false,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<false>;
+    type SystemFunctionsExt = NoStdSystemFunctions<false>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;
@@ -70,8 +71,10 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    // USE_ADVICE = true: proof environment must use oracle advice for ecrecover/modexp
+    // to match the proving binary's oracle query sequence
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;
@@ -87,7 +90,7 @@ impl<O: IOOracle> BasicSTF for EthereumStorageSystemTypesWithPostOps<O> {
     type PostSystemInitOp = EthereumPostInitOp;
     type PreTxLoopOp = EthereumPreOp;
     type TxLoopOp = EthereumLoopOp;
-    type PostTxLoopOp = EthereumPostOp<VecCtor, true>;
+    type PostTxLoopOp = EthereumPostOp<BiVecCtor, true>;
 }
 
 impl<O: IOOracle> EthereumLikeBasicSTF for EthereumStorageSystemTypesWithPostOps<O> {}

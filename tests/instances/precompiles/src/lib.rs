@@ -1,11 +1,14 @@
 #![cfg(test)]
-#![feature(assert_matches)]
 
+use std::sync::{Mutex, OnceLock};
+
+use forward_system::system::system_types::ForwardRunningSystem;
+use forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
-use rig::zksync_os_interface::types::BlockOutput;
+use rig::zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
-use rig::BlockContext;
 use rig::{
     alloy::{
         primitives::{address, Address, TxKind},
@@ -14,8 +17,43 @@ use rig::{
     ruint::aliases::U256,
     TestingFramework,
 };
-use std::assert_matches::assert_matches;
+use rig::{BlockContext, BlockOutput};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+// `std::assert_matches` is not available on nightly-2026-02-10, but is on 02-13
+// NOTE: remove after bumping nightly.
+macro_rules! assert_matches {
+    ($expr:expr, $pat:pat $(,)?) => {
+        match $expr {
+            $pat => {}
+            ref val => panic!(
+                "assertion `assert_matches!` failed\n  value: {:?}\nexpected: {}",
+                val,
+                stringify!($pat),
+            ),
+        }
+    };
+}
+
+/// Process-scoped tracer enabled when `PRECOMPILE_STATS_PATH` (or
+/// `PRECOMPILE_SAMPLES_DIR`) is set. Forward-mode-only; serialized across
+/// concurrent tests via the wrapping `Mutex`. The CSV and per-execution
+/// `.samples` files are rewritten after every precompile call — last writer
+/// wins, with each rewrite containing the cumulative in-memory state.
+static PRECOMPILE_STATS: OnceLock<Mutex<PrecompileStatsTracer<ForwardRunningSystem>>> =
+    OnceLock::new();
+
+fn precompile_stats_path() -> Option<std::path::PathBuf> {
+    std::env::var("PRECOMPILE_STATS_PATH").ok().map(Into::into)
+}
+
+fn precompile_samples_dir() -> Option<std::path::PathBuf> {
+    std::env::var("PRECOMPILE_SAMPLES_DIR").ok().map(Into::into)
+}
+
+fn precompile_stats_tracer() -> &'static Mutex<PrecompileStatsTracer<ForwardRunningSystem>> {
+    PRECOMPILE_STATS.get_or_init(|| Mutex::new(PrecompileStatsTracer::default()))
+}
 
 /// Performs two calls:
 /// 1. Calls the precompile with given input and gas limit.
@@ -28,7 +66,7 @@ fn run_precompile_inner(
     input: &[u8],
     disable_revm_consistency_checker: bool,
 ) -> BlockOutput {
-    let gas = gas.unwrap_or(1 << 27);
+    let gas = gas.unwrap_or(DEFAULT_MAX_TX_GAS_LIMIT);
 
     let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
@@ -66,9 +104,9 @@ fn run_precompile_inner(
         wallet.clone(),
     );
 
-    // We use a very high native per gas ratio
+    // Unlimited native (native price == 0)
     let block_context = BlockContext {
-        native_price: U256::ONE,
+        native_price: U256::ZERO,
         eip1559_basefee: U256::from(25_000),
         ..Default::default()
     };
@@ -79,7 +117,35 @@ fn run_precompile_inner(
         tester = tester.without_revm_consistency_check();
     }
 
-    tester.execute_block(vec![direct_tx, forwarded_tx])
+    let txs = vec![direct_tx, forwarded_tx];
+
+    let stats_path = precompile_stats_path();
+    let samples_dir = precompile_samples_dir();
+    if stats_path.is_some() || samples_dir.is_some() {
+        let mutex = precompile_stats_tracer();
+        let mut guard = mutex.lock().expect("stats mutex poisoned");
+        // The mutex is held across the full forward+proof run inside
+        // `execute_block_with_tracing`. The stats tracer only sees the forward
+        // pass; the proof-mode (RISC-V) pass uses its own nop tracer. When the
+        // CI cycle bench runs with `ZKSYNC_RISC_V_RUN=true` this serializes
+        // the proof run across precompile invocations — still correct, just
+        // sequential.
+        let out = tester.execute_block_with_tracing(txs, &mut *guard, &mut NopTxValidator);
+        // Cumulative writes: each rewrite contains the in-memory state so far.
+        if let Some(path) = stats_path.as_ref() {
+            if let Err(e) = guard.write_csv(path) {
+                eprintln!("warning: failed to write {}: {e}", path.display());
+            }
+        }
+        if let Some(dir) = samples_dir.as_ref() {
+            if let Err(e) = guard.dump_samples(dir) {
+                eprintln!("warning: failed to dump samples to {}: {e}", dir.display());
+            }
+        }
+        out
+    } else {
+        tester.execute_block(txs)
+    }
 }
 
 fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
@@ -1175,39 +1241,11 @@ const KZG_TESTS: [Test; 1] = [
     },
 ];
 
-#[test]
-fn test_kzg_regression() {
-    for test in KZG_TESTS.iter() {
-        let input = hex::decode(test.input).unwrap();
-        let expected = hex::decode(test.expected).unwrap();
-        dbg!(test.name);
-
-        // TODO: currently the KZG precompile is not enabled in production, so we should skip Revm consistency check
-        let disable_revm_consistency_checker = true;
-        let tx_result = run_precompile_inner(
-            test.precompile_id,
-            None::<u64>,
-            &input,
-            disable_revm_consistency_checker,
-        )
-        .tx_results
-        .first()
-        .unwrap()
-        .clone()
-        .expect("Tx should have succeeded");
-
-        assert_eq!(
-            expected,
-            tx_result.as_returned_bytes(),
-            "{} failed",
-            test.name
-        );
-    }
-}
-
-#[test]
-fn test_precompiles() {
-    for test in TESTS.iter() {
+/// Run a slice of precompile test vectors, asserting each returns its expected output.
+/// Every vector is cross-checked against revm, whose AtlasV4 spec covers all the
+/// precompiles exercised here (incl. point evaluation and the Pectra precompiles).
+fn run_test_vectors(tests: &[Test]) {
+    for test in tests.iter() {
         let input = hex::decode(test.input).unwrap();
         let expected = hex::decode(test.expected).unwrap();
         dbg!(test.name);
@@ -1225,6 +1263,344 @@ fn test_precompiles() {
             "{} failed",
             test.name
         );
+    }
+}
+
+#[test]
+fn test_kzg_regression() {
+    run_test_vectors(&KZG_TESTS);
+}
+
+#[test]
+fn test_precompiles() {
+    run_test_vectors(&TESTS);
+
+    // EIP-152 BLAKE2F and EIP-2537 BLS12-381 precompile vectors (incl. the
+    // MAP_FP*_TO_G* mappings) are cross-checked against revm's AtlasV4 spec just
+    // like the rest.
+    run_test_vectors(&PECTRA_TESTS);
+}
+
+// BLS12-381 generator and scalar constants shared across PECTRA test and bench functions.
+const BLS_G1: &str = "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1";
+
+const BLS_G2: &str = "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be";
+
+const SCALAR_SMALL: &str = "0000000000000000000000000000000000000000000000000000000000000007";
+
+const SCALAR_MEDIUM: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+
+const SCALAR_WORST: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+// Test vectors for the Pectra precompiles (EIP-152 BLAKE2F and EIP-2537 BLS12-381),
+// which are always registered. Values come from the EIP specifications and well-known
+// group identities (G + 0 = G, G * 1 = G, e(0, 0) = 1). Always exercised by `test_precompiles`.
+const PECTRA_TESTS: [Test; 13] = [
+    // BLAKE2F: EIP-152 test vector (rounds = 12, message = "abc" padded, f = 1).
+    Test {
+        input: "0000000c48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b61626300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000001",
+        expected: "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923",
+        name: "blake2f eip-152 rounds=12 abc",
+        precompile_id: "0000000000000000000000000000000000000009",
+    },
+    // BLS12-381 G1 addition: G1 + 0 = G1 (generator coordinates from EIP-2537).
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        expected: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1",
+        name: "bls12-381 g1 add G+0=G",
+        precompile_id: "000000000000000000000000000000000000000b",
+    },
+    // BLS12-381 G2 addition: G2 + 0 = G2 (generator coordinates from EIP-2537).
+    Test {
+        input: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        expected: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be",
+        name: "bls12-381 g2 add G+0=G",
+        precompile_id: "000000000000000000000000000000000000000d",
+    },
+    // BLS12-381 G1 MSM: G1 * 1 = G1.
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e10000000000000000000000000000000000000000000000000000000000000001",
+        expected: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1",
+        name: "bls12-381 g1 msm G*1=G",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    // BLS12-381 G2 MSM: G2 * 1 = G2.
+    Test {
+        input: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be0000000000000000000000000000000000000000000000000000000000000001",
+        expected: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be",
+        name: "bls12-381 g2 msm G*1=G",
+        precompile_id: "000000000000000000000000000000000000000e",
+    },
+    // BLS12-381 pairing check on a single (0_G1, 0_G2) pair: result is 1.
+    Test {
+        input: "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        expected: "0000000000000000000000000000000000000000000000000000000000000001",
+        name: "bls12-381 pairing e(0,0)=1",
+        precompile_id: "000000000000000000000000000000000000000f",
+    },
+    // BLS12-381 G1 addition: G1 + G1 = 2*G1 (non-trivial).
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e10000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1",
+        expected: "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28",
+        name: "bls12-381 g1 add G+G=2G",
+        precompile_id: "000000000000000000000000000000000000000b",
+    },
+    // BLS12-381 G2 addition: G2 + G2 = 2*G2 (non-trivial).
+    Test {
+        input: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be",
+        expected: "000000000000000000000000000000001638533957d540a9d2370f17cc7ed5863bc0b995b8825e0ee1ea1e1e4d00dbae81f14b0bf3611b78c952aacab827a053000000000000000000000000000000000a4edef9c1ed7f729f520e47730a124fd70662a904ba1074728114d1031e1572c6c886f6b57ec72a6178288c47c33577000000000000000000000000000000000468fb440d82b0630aeb8dca2b5256789a66da69bf91009cbfe6bd221e47aa8ae88dece9764bf3bd999d95d71e4c9899000000000000000000000000000000000f6d4552fa65dd2638b361543f887136a43253d9c66c411697003f7a13c308f5422e1aa0a59c8967acdefd8b6e36ccf3",
+        name: "bls12-381 g2 add G+G=2G",
+        precompile_id: "000000000000000000000000000000000000000d",
+    },
+    // BLS12-381 G1 MSM: G1 * 0xff...ff (worst-case 256-bit scalar).
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        expected: "0000000000000000000000000000000016ea601ca88f7d3489479129b258960b4c1df37194d30803627c30c34252679a0ada1a51bc7a4006a4f0564050d3174600000000000000000000000000000000039e394a6f95c4a2f27bf38f950b2af8d2aa8e0c4a1ffbe9ca518d1bedb573e310fba8f436aec3a3c8f2655fad5e2013",
+        name: "bls12-381 g1 msm G*ff worst-case",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    // BLS12-381 G2 MSM: G2 * 0xff...ff (worst-case 256-bit scalar).
+    Test {
+        input: "00000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79beffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        expected: "000000000000000000000000000000001894914549a2c52cf2780a07ca06db9147bf7b6a8ca3bc54915a6b3173986be41448500d2f103b6b51c59d71cb8ffcff00000000000000000000000000000000103fce7f3245b093eb614cb59dadb177f3462b162204f785dda90bdc1b5a34bf93ad1b41289bea4a9a944887974cfda2000000000000000000000000000000000a37200b9f3309d4c123ef920f20424e10d075f130057e3d4e7390b4eaca02d59e46171ef74907370b6277418252ff8800000000000000000000000000000000170fc445500aeebc2a728d9c10a760f94e4076091493430284434c67e1bd5561516c1ad102430cd7c115fe7903e95e96",
+        name: "bls12-381 g2 msm G*ff worst-case",
+        precompile_id: "000000000000000000000000000000000000000e",
+    },
+    // BLS12-381 pairing: e(G1, G2) != 1 (non-trivial generators).
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e100000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be",
+        expected: "0000000000000000000000000000000000000000000000000000000000000000",
+        name: "bls12-381 pairing e(G1,G2)!=1",
+        precompile_id: "000000000000000000000000000000000000000f",
+    },
+    // BLS12-381 MAP_FP_TO_G1: field element 0xff.
+    Test {
+        input: "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
+        expected: "000000000000000000000000000000000b23aa385572d7fe28b7aee4ca7559cff857907dd404b8a9e238c00a2a4409f613f4b64311de5e7f6688ef9753412ddb00000000000000000000000000000000119f2c9b906c3a2dfbd69501027b72fa3ded627c3bb161c47ff6505f91571456941a1dd699bce7010345f7ef200d61ee",
+        name: "bls12-381 map_fp_to_g1 0xff",
+        precompile_id: "0000000000000000000000000000000000000010",
+    },
+    // BLS12-381 MAP_FP2_TO_G2: field element (0xff, 0xaa).
+    Test {
+        input: "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa",
+        expected: "000000000000000000000000000000000f8b267a76004a67f807efc9a4f0b4d4ef7c0f93e75cade7a65e6284d1dbe2e4fc178d6e83744768919ff486582bd7320000000000000000000000000000000017f1601c6c753ffdbcd732e4664fdc95d95a018dc32441b9fe6cc42a79a27f96c4c1e9ff2a74da384cf7b1a1c08302310000000000000000000000000000000003860dc280f79c90d578173a63731288c38b846e40ef47b4be6dce3fa0bbf12b761ad83d72169a52a823d64ddc28eebb00000000000000000000000000000000170760a035453d5e2b4bcb4bb4e6a16677cb965b3bb713b2a3cc26bb2fa0eba3a0311b1f37047cafd7f988590213ada4",
+        name: "bls12-381 map_fp2_to_g2 (0xff,0xaa)",
+        precompile_id: "0000000000000000000000000000000000000011",
+    },
+];
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g1add() {
+    let two_g1 = "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28";
+    let cases: [(&str, String); 3] = [
+        ("G+G", format!("{BLS_G1}{BLS_G1}")),
+        ("G+2G", format!("{BLS_G1}{two_g1}")),
+        ("2G+2G", format!("{two_g1}{two_g1}")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000b",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("g1 add should succeed");
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g2add() {
+    let two_g2 = "000000000000000000000000000000001638533957d540a9d2370f17cc7ed5863bc0b995b8825e0ee1ea1e1e4d00dbae81f14b0bf3611b78c952aacab827a053000000000000000000000000000000000a4edef9c1ed7f729f520e47730a124fd70662a904ba1074728114d1031e1572c6c886f6b57ec72a6178288c47c33577000000000000000000000000000000000468fb440d82b0630aeb8dca2b5256789a66da69bf91009cbfe6bd221e47aa8ae88dece9764bf3bd999d95d71e4c9899000000000000000000000000000000000f6d4552fa65dd2638b361543f887136a43253d9c66c411697003f7a13c308f5422e1aa0a59c8967acdefd8b6e36ccf3";
+    let cases: [(&str, String); 3] = [
+        ("G+G", format!("{BLS_G2}{BLS_G2}")),
+        ("G+2G", format!("{BLS_G2}{two_g2}")),
+        ("2G+2G", format!("{two_g2}{two_g2}")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000d",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("g2 add should succeed");
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g1msm() {
+    let scalars: [(&str, &str); 3] = [
+        ("small", SCALAR_SMALL),
+        ("medium", SCALAR_MEDIUM),
+        ("worst", SCALAR_WORST),
+    ];
+    for num_points in [1, 2, 4, 8, 16, 32] {
+        for (scalar_name, scalar) in &scalars {
+            cycle_marker::log_marker(
+                format!("Params: pts:{num_points}, scalar:{scalar_name}").as_str(),
+            );
+            let one_pair = format!("{BLS_G1}{scalar}");
+            let input_hex: String = one_pair.repeat(num_points);
+            let input = hex::decode(&input_hex).unwrap();
+            run_precompile_inner(
+                "000000000000000000000000000000000000000c",
+                None::<u64>,
+                &input,
+                true,
+            )
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect("g1 msm should succeed");
+        }
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_g2msm() {
+    let scalars: [(&str, &str); 3] = [
+        ("small", SCALAR_SMALL),
+        ("medium", SCALAR_MEDIUM),
+        ("worst", SCALAR_WORST),
+    ];
+    for num_points in [1, 2, 4, 8, 16, 32] {
+        for (scalar_name, scalar) in &scalars {
+            cycle_marker::log_marker(
+                format!("Params: pts:{num_points}, scalar:{scalar_name}").as_str(),
+            );
+            let one_pair = format!("{BLS_G2}{scalar}");
+            let input_hex: String = one_pair.repeat(num_points);
+            let input = hex::decode(&input_hex).unwrap();
+            run_precompile_inner(
+                "000000000000000000000000000000000000000e",
+                None::<u64>,
+                &input,
+                true,
+            )
+            .tx_results
+            .first()
+            .unwrap()
+            .clone()
+            .expect("g2 msm should succeed");
+        }
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_pairing() {
+    let one_pair = format!("{BLS_G1}{BLS_G2}");
+    for num_pairs in [1, 2, 4, 8, 16, 32] {
+        cycle_marker::log_marker(format!("Params: pairs:{num_pairs}").as_str());
+        let input_hex: String = one_pair.repeat(num_pairs);
+        let input = hex::decode(&input_hex).unwrap();
+        run_precompile_inner(
+            "000000000000000000000000000000000000000f",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("pairing should succeed");
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_map_fp_to_g1() {
+    let cases: [(&str, &str); 3] = [
+        ("small", "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff"),
+        ("mid", "0000000000000000000000000000000000000000000000007fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff"),
+        ("large", "000000000000000000000000000000001a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa"),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "0000000000000000000000000000000000000010",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("map_fp_to_g1 should succeed");
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_bls_map_fp2_to_g2() {
+    let cases: [(&str, String); 3] = [
+        ("small", format!("{}{}",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff",
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aa")),
+        ("mid", format!("{}{}",
+            "0000000000000000000000000000000000000000000000007fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff7fffffffffffffff",
+            "00000000000000000000000000000000000000000000000055555555555555555555555555555555555555555555555555555555555555555555555555555555")),
+        ("large", format!("{}{}",
+            "000000000000000000000000000000001a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa",
+            "0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1")),
+    ];
+    for (case_name, input_hex) in &cases {
+        cycle_marker::log_marker(format!("Params: case:{case_name}").as_str());
+        let input = hex::decode(input_hex).unwrap();
+        run_precompile_inner(
+            "0000000000000000000000000000000000000011",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("map_fp2_to_g2 should succeed");
+    }
+}
+
+#[test]
+#[ignore = "Requires max emulator cycle limit"]
+fn bench_blake2f() {
+    for rounds in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
+        cycle_marker::log_marker(format!("Params: rounds:{rounds}").as_str());
+        let rounds_be = (rounds as u32).to_be_bytes();
+        let mut input = Vec::with_capacity(213);
+        input.extend_from_slice(&rounds_be);
+        input.extend_from_slice(&[0u8; 209]);
+        run_precompile_inner(
+            "0000000000000000000000000000000000000009",
+            None::<u64>,
+            &input,
+            true,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("blake2f should succeed");
     }
 }
 
@@ -6469,9 +6845,9 @@ fn test_regression_p256_is_warm() {
         wallet.clone(),
     );
 
-    // We use a very high native per gas ratio
+    // Unlimited native (native price == 0)
     let block_context = BlockContext {
-        native_price: U256::ONE,
+        native_price: U256::ZERO,
         eip1559_basefee: U256::from(25_000),
         ..Default::default()
     };

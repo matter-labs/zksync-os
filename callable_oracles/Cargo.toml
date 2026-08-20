@@ -12,17 +12,14 @@ categories.workspace = true
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
 ruint = { workspace = true, default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 
-risc_v_simulator = { workspace = true, optional = true }
 c-kzg = "2.1.5"
-
-[dev-dependencies]
-hex = { workspace = true }
 
 [features]
 default = ["evaluate"]
-evaluate = ["risc_v_simulator"]
+evaluate = []
+testing = []

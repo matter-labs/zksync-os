@@ -1,186 +1,140 @@
-#![feature(allocator_api)]
-#![allow(incomplete_features)]
+//! ZKsync OS RISC-V runner.
+//!
+//! Wrapper around airbender-host's `TranspilerRunner` that plugs
+//! in our MOP-aware decoder.
 
-use prover_examples::prover::VectorMemoryImplWithRom;
-use risc_v_simulator::sim::BinarySource;
-use risc_v_simulator::{
-    abstractions::{memory::VectorMemoryImpl, non_determinism::NonDeterminismCSRSource},
-    cycle::IMStandardIsaConfig,
-    sim::{DiagnosticsConfig, ProfilerConfig, SimulatorConfig},
-};
-use std::{alloc::Global, io::Read, path::PathBuf};
+use airbender_host::{ExecutionResult, FlamegraphConfig, Program, Runner as _};
+use riscv_transpiler::ir::{DecodingOptions, FullUnsignedMachineDecoderConfig};
+use std::path::PathBuf;
 
-pub fn run_default_with_flamegraph_path(
-    bin_path: PathBuf,
-    sym_path: PathBuf,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-    diagnostics_path: Option<PathBuf>,
-) -> [u32; 8] {
-    let diag_config = diagnostics_path.map(|path| {
-        let mut d = DiagnosticsConfig::new(sym_path);
+/// Decoder config used by the FRI-aware RISC-V runner.
+struct FullUnsignedMachineWithMopDecoderConfig;
 
-        d.profiler_config = {
-            let mut p = ProfilerConfig::new(path);
-
-            p.frequency_recip = 1;
-            p.reverse_graph = false;
-
-            Some(p)
-        };
-
-        d
-    });
-    run(bin_path, diag_config, cycles, non_determinism_source)
+impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
+    const SUPPORT_MOP: bool = true;
+    const SUPPORT_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_MUL_DIV;
+    const SUPPORT_SIGNED_MUL_DIV: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
+    const SUPPORT_SUBWORD_MEM_ACCESS: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
 }
 
-///
-/// Runs zkOS on RISC-V (proof running) with given params:
-/// `img_path` - path to ZKsync OS binary file (for example "zksync_os/for_tests.bin")
-/// `diagnostics` - optional diagnostics config, can be used to enable profiler.
-/// `cycles` - limit for number of cycles.
-/// `non_determinism_source` - non-determinism source used to read values from outside
-///  (inside risc-v can be accessed via special system register read). In practice used to get all the block data - txs, metadata, storage values, etc.
-///
-/// Returns 256 bit program output. In real env this output will be exposed as proof public input.
-///
-pub fn run(
-    img_path: PathBuf,
-    diagnostics: Option<DiagnosticsConfig>,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-) -> [u32; 8] {
-    run_and_get_effective_cycles(img_path, diagnostics, cycles, non_determinism_source).0
+/// Default upper bound on RISC-V cycles used when the caller doesn't override it.
+pub const DEFAULT_CYCLE_LIMIT: usize = 1 << 36;
+
+/// Flamegraph profiling options passed through to the transpiler VM.
+#[derive(Clone)]
+pub struct FlamegraphOptions {
+    /// Path to write the flamegraph SVG.
+    pub output_path: PathBuf,
+    /// Collect one sample every `frequency_recip` VM cycles.
+    /// Lower values give more detail but add runtime overhead.
+    /// Defaults to 1 (sample every cycle).
+    pub frequency_recip: usize,
 }
 
-fn run_and_get_effective_cycles_inner(
-    img_source: BinarySource,
-    diagnostics: Option<DiagnosticsConfig>,
+impl FlamegraphOptions {
+    pub fn new(output_path: PathBuf) -> Self {
+        Self {
+            output_path,
+            frequency_recip: 1,
+        }
+    }
+}
+
+/// Result of running a ZKsync OS RISC-V program.
+#[derive(Clone, Debug)]
+pub struct RunResult {
+    /// 256-bit program output (registers x10-x17 at exit).
+    pub output: [u32; 8],
+    /// Effective cycle count for the `process_block` marker when the
+    /// `cycle_marker` feature is enabled and the program wrote markers;
+    /// `None` otherwise.
+    pub block_effective: Option<u64>,
+}
+
+/// Builder for running a ZKsync OS RISC-V program against an airbender-host
+/// `TranspilerRunner`.
+pub struct Runner {
+    dist_dir: PathBuf,
     cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-) -> ([u32; 8], Option<u64>) {
-    println!("ZK RISC-V simulator is starting");
+    flamegraph: Option<FlamegraphOptions>,
+}
 
-    let config = SimulatorConfig {
-        bin: img_source,
-        cycles,
-        entry_point: 0,
-        diagnostics,
-    };
-
-    let run_result =
-        risc_v_simulator::runner::run_simple_with_entry_point_and_non_determimism_source(
-            config,
-            non_determinism_source,
-        );
-
-    risc_v_simulator::cycle::state::output_opcode_stats();
-
-    #[allow(unused_mut, unused_assignments)]
-    let mut block_effective = None;
-
-    #[cfg(feature = "cycle_marker")]
-    {
-        block_effective = cycle_marker::print_cycle_markers();
+impl Runner {
+    pub fn new(dist_dir: PathBuf) -> Self {
+        Self {
+            dist_dir,
+            cycles: DEFAULT_CYCLE_LIMIT,
+            flamegraph: None,
+        }
     }
 
-    // our convention is to return 32 bytes placed into registers x10-x17
+    pub fn with_cycles(mut self, cycles: usize) -> Self {
+        self.cycles = cycles;
+        self
+    }
 
-    // TODO: move to new simulator
-    #[allow(deprecated)]
-    (
-        run_result.state.registers[10..18].try_into().unwrap(),
-        block_effective,
-    )
-}
+    /// Enable flamegraph profiling. Stack frames are resolved against
+    /// `<dist_dir>/app.elf` (always produced by `cargo airbender build`).
+    pub fn with_flamegraph(mut self, options: FlamegraphOptions) -> Self {
+        self.flamegraph = Some(options);
+        self
+    }
 
-pub fn run_and_get_effective_cycles_from_bytes(
-    img_bytes: &[u8],
-    diagnostics: Option<DiagnosticsConfig>,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-) -> ([u32; 8], Option<u64>) {
-    run_and_get_effective_cycles_inner(
-        BinarySource::Slice(img_bytes),
-        diagnostics,
-        cycles,
-        non_determinism_source,
-    )
-}
+    /// Execute the program with the configured options.
+    pub fn run(self, input_words: &[u32]) -> RunResult {
+        log::info!("ZK RISC-V transpiler runner is starting");
 
-pub fn run_and_get_effective_cycles(
-    img_path: PathBuf,
-    diagnostics: Option<DiagnosticsConfig>,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-) -> ([u32; 8], Option<u64>) {
-    // Check that the bin file is present and readable.
-    let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
+        let program = Program::load(&self.dist_dir).unwrap_or_else(|err| {
+            panic!(
+                "failed to load program from {}: {err}",
+                self.dist_dir.display()
+            )
+        });
 
-    run_and_get_effective_cycles_inner(
-        BinarySource::Path(img_path),
-        diagnostics,
-        cycles,
-        non_determinism_source,
-    )
-}
+        let mut builder = program
+            .transpiler_runner()
+            .with_unstable_raw_decoder::<FullUnsignedMachineWithMopDecoderConfig>(
+                "zksync-os mop decoder",
+            )
+            .with_cycles(self.cycles);
 
-pub fn simulate_witness_tracing(
-    img_path: PathBuf,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImplWithRom>,
-) {
-    println!("ZK RISC-V simulator is starting");
+        if let Some(fg) = self.flamegraph {
+            builder = builder.with_flamegraph(FlamegraphConfig {
+                output: fg.output_path,
+                sampling_rate: fg.frequency_recip,
+                inverse: false,
+                elf_path: Some(self.dist_dir.join("app.elf")),
+            });
+        }
 
-    // Check that the bin file is present and readable.
-    let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
+        let runner = builder.build().expect("failed to build transpiler runner");
+        let ExecutionResult {
+            receipt,
+            cycles_executed,
+            cycle_markers,
+            ..
+        } = runner
+            .run(input_words)
+            .expect("transpiler runner execution failed");
 
-    let num_instances_upper_bound = 1 << 14;
-    let binary = execution_utils::get_padded_binary(&buffer);
+        #[allow(unused_mut, unused_assignments)]
+        let mut block_effective = None;
 
-    let worker = prover_examples::prover::worker::Worker::new();
+        #[cfg(feature = "cycle_marker")]
+        if let Some(cm) = cycle_markers {
+            let results = cycle_marker::print_cycle_markers(cm);
+            block_effective = results.block_effective;
+        }
 
-    let now = std::time::Instant::now();
-    let (all_witness_instances, _, _, _) =
-        prover_examples::trace_execution_for_gpu::<_, IMStandardIsaConfig, Global>(
-            num_instances_upper_bound,
-            &binary,
-            non_determinism_source,
-            1 << 22,
-            &worker,
-        );
-    let elapsed = now.elapsed();
-    let cycles_upper_bound =
-        all_witness_instances.len() * all_witness_instances[0].num_cycles_chunk_size;
-    let speed = (cycles_upper_bound as f64) / elapsed.as_secs_f64() / 1_000_000f64;
-    println!(
-        "Simulator witness gen speed is roughly {speed} MHz: ran {cycles_upper_bound} cycles over {elapsed:?}"
-    );
-}
+        #[cfg(not(feature = "cycle_marker"))]
+        let _ = cycle_markers;
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
-    use std::str::FromStr;
-
-    #[test]
-    /// Quick test that uses the .bin file that computes the n-th fibonacci number.
-    fn quick_runner() {
-        let mut non_determinism_source = QuasiUARTSource::default();
-        // Get 11th fibonacci number.
-        non_determinism_source.oracle.push_back(11);
-        let output = run(
-            PathBuf::from_str("generated/dynamic_fibonacci.bin").unwrap(),
-            None,
-            1 << 25,
-            non_determinism_source,
-        );
-        assert_eq!(output, [233u32, 11, 0, 0, 0, 0, 0, 0])
+        RunResult {
+            output: receipt.output,
+            block_effective: block_effective.or(Some(cycles_executed as u64)),
+        }
     }
 }

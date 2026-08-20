@@ -11,6 +11,16 @@ pub struct BasicAccountPropertiesMetadata {
     pub last_touched_in_tx: Option<u32>,
     /// Marks if account is marked for deconstruction is transaction
     pub is_marked_for_deconstruction: bool,
+    /// Transaction where the persist cost (0x8003 write + preimage hash) was
+    /// proactively charged. None means not yet charged in the current block.
+    pub persist_charged_in_tx: Option<u32>,
+    /// Whether the cold NEW-account read extra was already charged for this
+    /// account. Kept in rollback-aware metadata rather than derived from cache
+    /// presence: entries materialized by a transaction that is later dropped
+    /// from the block stay in the cache, but their metadata updates are rolled
+    /// back together with the charge, so charging never depends on dropped
+    /// transactions (which the proving run doesn't re-execute).
+    pub new_read_extra_charged: bool,
 }
 
 impl BasicAccountPropertiesMetadata {

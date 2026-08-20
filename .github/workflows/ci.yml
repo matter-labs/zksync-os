@@ -10,6 +10,8 @@ env:
     CARGO_INCREMENTAL: 0
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
+    CARGO_PROFILE_RELEASE_DEBUG: "false"
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -22,71 +24,33 @@ jobs:
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type for-tests
+                  ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3
+              run: cargo test --release
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type for-tests
+                  ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release -j 3
-    crypto_test:
-        name: crypto crate tests
-        runs-on: [matterlabs-ci-runner-high-performance]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-            - name: Run crypto tests 10 times with overflow checks
-              run: |
-                  for i in {1..10}; do
-                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
-                  done
+              run: ZKSYNC_REVM_CONSISTENCY_CHECK=true ZKSYNC_RISC_V_RUN=false cargo test --release
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
@@ -99,7 +63,7 @@ jobs:
               run: |
                   rustup toolchain install
                   rustup set profile minimal
-                  cargo install cargo-binutils
+                  cargo install cargo-binutils --locked
             - name: Download ethereum execution spec tests fixtures
               working-directory: ./tests/evm_tester
               run: |
@@ -113,17 +77,7 @@ jobs:
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              working-directory: ./zksync_os
-              run: |
-                  rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -134,22 +88,13 @@ jobs:
 
     e2e_prove:
         name: e2e_prove
-        runs-on: [matterlabs-ci-runner-highmem]
+        runs-on: [matterlabs-ci-runner-c3d]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type for-tests
             - name: Run proving test
               # Runs with e2e_proving feature
@@ -157,50 +102,24 @@ jobs:
 
     eth_stf_run:
         name: eth_stf_run
+        # Disabled: the eth-stf `eth-run` fixture (block 23846054) is a pre-Fusaka
+        # (Prague) mainnet block, but the STF is now unconditionally Fusaka, so
+        # replaying it diverges (e.g. EIP-7883 modexp repricing -> receipts root
+        # mismatch). Re-enable once an Osaka mainnet `eth-run` fixture (block.json
+        # + debug_executionWitness witness.json) is available; the eth-stf binary
+        # will then also need `fusaka-bpo-2` for the post-BPO blob schedule.
+        if: false
         runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type eth-stf
             - name: Run ethereum block
               working-directory: ./tests/instances/eth_runner
-              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054 
-
-    blake_tests:
-        name: blake_tests
-        runs-on: [matterlabs-ci-runner-highmem]
-        steps:
-            - uses: actions/checkout@v3
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-            - name: Compile for RISC-V
-              working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh --type for-tests
-            - name: Run proving test
-              working-directory: ./crypto/src/blake2s
-              run: |
-                  cargo test --release run_naive_test
-                  cargo test --release run_extended_delegation_test
+              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054
 
     formatting:
         name: cargo fmt
@@ -223,7 +142,46 @@ jobs:
                   components: clippy
             - name: Run Clippy
               run: |
-                  cargo clippy --all -- -D warnings
+                  cargo clippy --workspace -- -D warnings
+
+    clippy_zksync_os:
+        name: Clippy Lint Check (zksync_os)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  components: clippy
+                  rustflags: ""
+            - name: Run Clippy
+              working-directory: ./zksync_os
+              run: |
+                  cargo clippy --features proving -- -D warnings
+
+    miri:
+        # Runs the `history_map` and `ptr_arena` unit tests under Miri to guard
+        # the storage cache's raw-pointer/arena code against aliasing-provenance
+        # UB. Scoped to these modules because they are the ones verified
+        # Miri-clean; widen the filters as other modules are made clean. The
+        # two filters are passed after `--` so libtest ORs them (before `--`
+        # only the first would apply). Pure unit tests — no RISC-V binary
+        # needed, so this runs on a lightweight runner.
+        name: Miri (history_map aliasing/UB)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  # Channel comes from rust-toolchain.toml (pinned nightly);
+                  # `miri` needs `rust-src` to build a checked std.
+                  components: miri, rust-src
+                  rustflags: ""
+            - name: Miri (Stacked Borrows)
+              run: cargo miri test -p zk_ee -- history_map ptr_arena
+            - name: Miri (Tree Borrows)
+              env:
+                  MIRIFLAGS: "-Zmiri-tree-borrows"
+              run: cargo miri test -p zk_ee -- history_map ptr_arena
 
     typos:
         name: typos check
@@ -242,29 +200,34 @@ jobs:
             - uses: actions/setup-node@v3
               with:
                   node-version: "20"
+            - uses: ./.github/actions/setup-toolchain
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz --locked
+            - name: Run regression tests
+              working-directory: ./tests/fuzzer
+              run: ./fuzz.sh regression
+
+    check_lockfile:
+        name: Check RISC-V binary lockfile freshness
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
+            - name: Verify zksync_os/Cargo.lock is up to date
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
-                  ./dump_bin.sh --type for-tests
-            - name: Run regression tests
-              working-directory: ./tests/fuzzer
-              run: |
-                  ./fuzz.sh install
-                  ./fuzz.sh regression
+                  if ! cargo metadata --locked --manifest-path zksync_os/Cargo.toml --format-version 1 > /dev/null 2>&1; then
+                    echo "::error::zksync_os/Cargo.lock is stale. Merge the base branch and run: cargo generate-lockfile --manifest-path zksync_os/Cargo.toml"
+                    exit 1
+                  fi
 
     check_app_bin:
         name: Check that binaries can be built
+        needs: check_lockfile
         runs-on: [matterlabs-ci-runner]
         steps:
             - uses: actions/checkout@v4
-
+            - uses: ./.github/actions/setup-toolchain
             - name: Build fresh app bin
-              run: |
-                  zksync_os/reproduce/reproduce.sh
+              run: zksync_os/reproduce/reproduce.sh

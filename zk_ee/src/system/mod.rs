@@ -48,8 +48,10 @@ use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::basic_metadata::{
-        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ChainConfigMetadata,
+        ZkSpecificMetadata,
     },
+    metadata::chain_config::ChainConfig,
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -57,7 +59,6 @@ use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 
@@ -75,7 +76,7 @@ pub trait SystemTypes {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
-    type Metadata: BasicMetadata<Self::IOTypes>;
+    type Metadata: BasicMetadata<Self::IOTypes> + ChainConfigMetadata;
 }
 
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
@@ -142,7 +143,7 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_chain_id(&self) -> u64 {
-        self.metadata.chain_id()
+        self.metadata.chain_config().chain_id()
     }
 
     pub fn get_coinbase(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
@@ -163,6 +164,17 @@ impl<S: SystemTypes> System<S> {
 
     pub fn get_gas_limit(&self) -> u64 {
         self.metadata.block_gas_limit()
+    }
+
+    pub fn get_chain_config(&self) -> ChainConfig {
+        self.metadata.chain_config()
+    }
+
+    pub fn get_individual_tx_gas_limit(&self) -> u64 {
+        core::cmp::min(
+            self.metadata.block_gas_limit(),
+            self.metadata.max_tx_gas_limit(),
+        )
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {
@@ -219,7 +231,7 @@ impl<S: SystemTypes> System<S> {
 
 impl<S: SystemTypes> System<S>
 where
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificMetadata,
 {
     pub fn get_native_price(&self) -> ruint::aliases::U256 {
         self.metadata.native_price()
@@ -434,7 +446,11 @@ define_subsystem!(NextTx,
 );
 
 /// Logging macros for the system.
-/// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
+/// Logging is enabled on non-riscv32 targets, and also on riscv32 when the `global-alloc` feature
+/// is active (debug proving mode). In production proving mode (riscv32 without `global-alloc`),
+/// the global allocator is not present, so any heap allocation (e.g. via `alloc::format!`) would
+/// panic; logging is therefore compiled to a no-op to prevent accidental allocations and ensure
+/// correct behaviour in the proving environment.
 #[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
 #[macro_export]
 macro_rules! logger_log {
@@ -443,7 +459,11 @@ macro_rules! logger_log {
     }};
 }
 
-// No-op only if riscv32 AND no allocator feature
+// No-op in production proving mode (riscv32 without `global-alloc`).
+// Format-argument expressions (including heap-allocating ones such as `alloc::format!()` or
+// `.to_string()`) are never evaluated in this configuration, so they do not trigger any
+// allocation.  This property only holds for the no-op variant; on other targets or with
+// `global-alloc` the macro is active and format expressions are evaluated normally.
 #[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
 #[macro_export]
 macro_rules! logger_log {

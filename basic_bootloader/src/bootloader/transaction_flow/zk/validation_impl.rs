@@ -7,7 +7,7 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2TxIntrinsicNativeInput,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -24,25 +24,24 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
-use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
-use zk_ee::system::{AccountDataRequest, SystemFunctions};
+use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
-use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
+use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_TX};
 use zk_ee::system_log;
 use zk_ee::{internal_error, out_of_native_resources};
 use zk_ee::{utils::*, wrap_error};
 
 ///
-/// Will perform basic validation, namely - checking signature, minimal resource requirements for transaction validity,
-/// and will pre-charge sender to cover worst case cost. It may perform IO if needed to e.g. warm up some storage slots,
+/// Will perform basic validation, namely - checking signature, minimal resource requirements for transaction validity.
+/// It may perform IO if needed to e.g. warm up some storage slots,
 /// or mark delegation
 ///
-/// NOTE: This function will open and close IO frame
 pub(crate) fn validate_and_compute_fee_for_transaction<
     S: EthereumLikeTypes,
     Config: BasicBootloaderExecutionConfig,
@@ -53,7 +52,7 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 ) -> Result<TxContextForPreAndPostProcessing<S>, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata
+    S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,
@@ -74,29 +73,23 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate block-level invariants (for non-service transactions)
-    if !transaction.is_service() {
-        {
-            // Validate that the transaction's gas limit is not larger than
-            // the block's gas limit.
-            let block_gas_limit = system.get_gas_limit();
-            // First, check block gas limit can be represented as ergs.
-            require!(
-                block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
-                InvalidTransaction::BlockGasLimitTooHigh,
-                system
-            )?;
-            require!(
-                tx_gas_limit <= block_gas_limit,
-                InvalidTransaction::CallerGasLimitMoreThanBlock,
-                system
-            )?;
-        }
+    // Validate that the tx gas limit doesn't exceed the effective per-tx
+    // limit, for non-service transactions. Call simulation intentionally skips
+    // normal tx-admission checks so RPC callers can estimate with a high gas
+    // ceiling. The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
+    // enforced once per block in `MetadataOp::metadata_op`, so it is not
+    // re-checked here per transaction.
+    if !Config::SIMULATION && !transaction.is_service() {
+        let individual_limit = system.get_individual_tx_gas_limit();
+        require!(
+            tx_gas_limit <= individual_limit,
+            InvalidTransaction::CallerGasLimitMoreThanTxLimit,
+            system
+        )?;
     }
 
     // EIP-7623
     let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata);
-    #[cfg(feature = "eip_7623")]
     require!(
         minimal_gas_used <= tx_gas_limit,
         InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
@@ -118,30 +111,29 @@ where
         )?
     };
 
-    let native_per_gas = {
-        if native_price.is_zero() {
-            return Err(internal_error!("Native price cannot be 0").into());
-        }
-
-        if cfg!(feature = "resources_for_tester") {
-            crate::bootloader::constants::TESTER_NATIVE_PER_GAS
-        } else if Config::SIMULATION && gas_price.is_zero() {
-            // For simulation, if gas price isn't set, we use base fee
-            // for native calculation
-            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
-                TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
-            )?
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
-                InvalidTransaction::NativeResourcesAreTooExpensive,
-            ))?
-        }
+    // `native_price == 0` means the chain doesn't price native. Downstream
+    // treats `native_per_gas == 0` as "unlimited native budget"
+    let native_per_gas = if native_price.is_zero() {
+        0u64
+    } else if Config::SIMULATION && gas_price.is_zero() {
+        // For simulation, if gas price isn't set, we use base fee
+        // for native calculation
+        u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
+            TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
+        )?
+    } else {
+        u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
+            InvalidTransaction::NativeResourcesAreTooExpensive,
+        ))?
     };
-
-    // We checked native_price != 0 above
-    let native_per_pubdata = u256_try_to_u64(&pubdata_price.wrapping_div(native_price))
-        .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
+    // If native resources are free (native_price == 0), pubdata is free too:
+    // `checked_div` returns `None` and we fall back to 0.
+    let native_per_pubdata =
+        u256_try_to_u64(&pubdata_price.checked_div(native_price).unwrap_or_default())
+            .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
+    let statement_versioned_hashes_num = transaction.statement_versioned_hashes_len();
+    let blob_versioned_hashes_num = transaction.blobs().map_or(0, |blobs| blobs.count as u64);
 
     let mut access_list_accounts = 0;
     let mut access_list_storage_keys = 0;
@@ -155,15 +147,12 @@ where
             access_list_storage_keys += slots_list.count as u64;
         }
     }
-    #[cfg(feature = "eip-7702")]
     let authorization_list_num = if let Some(authorization_list) = transaction.authorization_list()
     {
         authorization_list.len() as u64
     } else {
         0u64
     };
-    #[cfg(not(feature = "eip-7702"))]
-    let authorization_list_num = 0;
 
     let is_deployment = transaction.is_deployment().is_some();
     if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
@@ -178,20 +167,25 @@ where
         access_list_accounts,
         access_list_storage_keys,
         authorization_list_num,
+        statement_versioned_hashes_num,
     );
-    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
-        calldata.len() as u64,
-        access_list_accounts,
-        access_list_storage_keys,
-        authorization_list_num,
-        transaction.is_service(),
-    );
+    let intrinsic_computational_native =
+        calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
+            calldata_byte_length: calldata.len() as u64,
+            access_list_accounts,
+            access_list_storages: access_list_storage_keys,
+            authorization_list_num,
+            blob_versioned_hashes_num,
+            statement_versioned_hashes_num,
+            is_service: transaction.is_service(),
+            free_native: native_per_gas == 0,
+        });
     let intrinsic_pubdata =
         calculate_l2_tx_intrinsic_pubdata(authorization_list_num, transaction.is_service());
 
-    // Now we will materialize resources, from which we will try to charge intrinsic cost on top.
-    let tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
-        system,
+    // Materialize the tx's resource budget and charge the intrinsic overheads.
+    // Underflow on any of the charges surfaces as a validation error
+    let (tx_resources, charge_err) = create_resources_for_tx::<S>(
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
@@ -199,7 +193,10 @@ where
         intrinsic_gas,
         intrinsic_computational_native,
         intrinsic_pubdata,
-    )?;
+    );
+    if let Some(e) = charge_err {
+        return Err(TxError::Validation(e));
+    }
 
     system_log!(
         system,
@@ -268,13 +265,17 @@ where
             ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
+            let mut logger = system.get_logger();
+            let allocator = system.get_allocator();
             // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
             intrinsic_resources.with_infinite_ergs(|resources| {
-                S::SystemFunctions::secp256k1_ec_recover(
+                S::SystemFunctionsExt::secp256k1_ec_recover(
                     ecrecover_input.as_slice(),
                     &mut ecrecover_output,
                     resources,
-                    system.get_allocator(),
+                    system.io.oracle(),
+                    &mut logger,
+                    allocator,
                 )
                 .map_err(SystemError::from)
             })?;
@@ -300,6 +301,19 @@ where
         }
     };
     let tx_hash: Bytes32 = transaction.transaction_hash(&mut intrinsic_resources)?;
+
+    // Charge the per-statement FRI verifier native budget against
+    // `intrinsic_resources` so `verify_intrinsic_native` exercises this
+    // portion of the intrinsic formula. The verifier itself runs later
+    // and is gated by this prepayment.
+    if statement_versioned_hashes_num > 0 {
+        intrinsic_resources.charge(&Resources::from_native(
+            <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF
+                    .saturating_mul(statement_versioned_hashes_num),
+            ),
+        ))?;
+    }
 
     // any IO starts here
 
@@ -408,7 +422,7 @@ where
             ));
         }
 
-        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+        match parse_blobs_list::<MAX_BLOBS_PER_TX>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);
@@ -420,7 +434,6 @@ where
 
     // Now we can apply access list and authorization list, while simultaneously charging for them
     // Parse, validate and apply authorization list, following EIP-7702
-    #[cfg(feature = "eip-7702")]
     {
         if let Some(authorization_list) = transaction.authorization_list() {
             // Same as for the access list: gas is included in the intrinsic
@@ -450,10 +463,15 @@ where
         ));
     }
 
+    // FRI proof handling is centralized so the feature-off build can
+    // encapsulate the entire path in one helper.
+    let verified_fri_statements = maybe_drive_fri_verification::<S, Config>(system, transaction)?;
+
     system.set_tx_context(TxLevelMetadata {
         tx_origin: *transaction.from(),
         tx_gas_price: gas_price,
         blobs,
+        verified_fri_statements,
     });
 
     // But the fee to charge is based on current block context, and not worst case of max fee (backward-compatible manner)
@@ -508,13 +526,14 @@ where
         initial_resources: S::Resources::empty(),
         resources_before_refund: S::Resources::empty(),
         intrinsic_resources,
+        intrinsic_computational_native,
         authorization_list_num,
+        statement_versioned_hashes_num,
     })
 }
 
 ///
-/// Compute number of calldata tokens and EIP-7623 floor gas,
-/// floor gas == 0, if EIP-7623 disabled.
+/// Compute the number of calldata tokens and the EIP-7623 floor gas.
 ///
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
@@ -527,16 +546,46 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
     let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
 
-    #[cfg(feature = "eip_7623")]
-    {
-        let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+    let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
+    let floor_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
-        (num_tokens, intrinsic_gas)
+    (num_tokens, floor_gas)
+}
+
+#[cfg(feature = "fri_precompile")]
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<
+    arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
+    TxError,
+>
+where
+    S::IO: IOSubsystemExt,
+{
+    if !transaction.is_fri_proof() {
+        return Ok(arrayvec::ArrayVec::new());
     }
 
-    #[cfg(not(feature = "eip_7623"))]
-    {
-        (num_tokens, 0)
+    let verified_fri_statements =
+        super::fri::build_verified_fri_statements_list(system, transaction)?;
+    if Config::VERIFY_FRI_PROOFS {
+        super::fri::drive_fri_verification(system, &verified_fri_statements)?;
     }
+    Ok(verified_fri_statements)
+}
+
+#[cfg(not(feature = "fri_precompile"))]
+fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+    system: &mut System<S>,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<
+    arrayvec::ArrayVec<Bytes32, { zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX }>,
+    TxError,
+>
+where
+    S::IO: IOSubsystemExt,
+{
+    let _ = (system, transaction, core::marker::PhantomData::<Config>);
+    Ok(arrayvec::ArrayVec::new())
 }

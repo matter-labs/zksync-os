@@ -6,8 +6,8 @@ use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
-use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
@@ -147,20 +147,12 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 /// Returns public input.
 ///
 #[inline(never)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>(
-    heap_start: *mut usize,
-    heap_end: *mut usize,
-) -> [u32; 8] {
+pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>() -> [u32; 8] {
     logger_log!(L::default(), "Enter proving bootloader");
 
-    // init allocator
-    // allocator is a global singleton object, that can be later accessed by ProxyAllocator
-    unsafe {
-        init_allocator(heap_start, heap_end);
-    }
-
     logger_log!(L::default(), "Allocator init is complete");
+
+    u256::init();
 
     // oracle is just a thin proxy
     let oracle = CsrBasedIOOracle::<I>::init();
@@ -176,27 +168,23 @@ pub fn run_proving_inner<
     I: NonDeterminismCSRSourceImplementation,
     L: Logger + Default,
 >(
-    oracle: O,
+    mut oracle: O,
 ) -> [u32; 8] {
     logger_log!(L::default(), "IO implementer init is complete");
 
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
+
     // Load all transactions from oracle and apply them.
-    let (mut oracle, public_input) =
+    let (_oracle, public_input, _batch_output) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut (),
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
-
-    // disconnect oracle before returning, if some other post-logic is needed that doesn't use Oracle trait
-    // TODO: check this is the intended behaviour (ignoring the result)
-    #[allow(unused_must_use)]
-    oracle
-        .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
-        .expect("must disconnect an oracle before performing arbitrary CSR access");
 
     unsafe { core::mem::transmute(public_input) }
 }
@@ -209,12 +197,19 @@ pub fn run_proving_inner<
 >(
     mut oracle: O,
 ) -> [u32; 8] {
+    use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
+    use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+
     logger_log!(L::default(), "IO implementer init is complete");
 
     // simulating query, just in case
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
+    // Batch proof input stores exactly one chain-config oracle response after
+    // the block count. Forward batch-input generation asserts per-block
+    // responses are equal, then compacts them to match this read pattern.
+    let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
         oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
@@ -223,14 +218,9 @@ pub fn run_proving_inner<
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
+            chain_config,
         )
         .expect("Tried to prove a failing batch");
-        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
-        // but during proving this request shouldn't have the effect with "u32 array based" oracle
-        #[allow(unused_must_use)]
-        oracle
-            .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
-            .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
     let public_input = zk_ee::utils::Bytes32::from_array(
@@ -238,6 +228,11 @@ pub fn run_proving_inner<
             .into_public_input(L::default(), &mut oracle)
             .hash(),
     );
+    // The multiblock post-op is re-entered once per block and cannot know when
+    // the batch is complete, so the final disconnect has to be emitted by the
+    // outer runner.
+    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+        .expect("disconnect query must not fail");
 
     unsafe { core::mem::transmute(public_input) }
 }

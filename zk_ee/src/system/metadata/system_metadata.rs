@@ -8,12 +8,16 @@ pub struct SystemMetadata<
     IOTypes: SystemIOTypesConfig,
     B: BasicBlockMetadata<IOTypes>,
     TX: BasicTransactionMetadata<IOTypes>,
+    C: ChainConfigMetadata,
 > {
     /// Provider of block-scoped metadata.
     pub block_level: B,
 
     /// Provider of metadata for the current transaction.
     pub tx_level: TX,
+
+    /// Provider of static chain-level configuration.
+    pub chain_config: C,
 
     pub _marker: core::marker::PhantomData<IOTypes>,
 }
@@ -23,11 +27,9 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-    > BasicBlockMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
+        C: ChainConfigMetadata,
+    > BasicBlockMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, C>
 {
-    fn chain_id(&self) -> u64 {
-        self.block_level.chain_id()
-    }
     fn block_number(&self) -> u64 {
         self.block_level.block_number()
     }
@@ -45,9 +47,6 @@ impl<
     }
     fn block_gas_limit(&self) -> u64 {
         self.block_level.block_gas_limit()
-    }
-    fn individual_tx_gas_limit(&self) -> u64 {
-        self.block_level.individual_tx_gas_limit()
     }
     fn eip1559_basefee(&self) -> U256 {
         self.block_level.eip1559_basefee()
@@ -68,7 +67,8 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-    > BasicTransactionMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
+        C: ChainConfigMetadata,
+    > BasicTransactionMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, C>
 {
     fn tx_origin(&self) -> IOTypes::Address {
         self.tx_level.tx_origin()
@@ -82,14 +82,31 @@ impl<
     fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
         self.tx_level.get_blob_hash(idx)
     }
+    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
+        self.tx_level
+            .is_fri_statement_verified(statement_versioned_hash)
+    }
 }
 
-/// Assumes that ZK specific pricing metadata is implemented at the block level.
 impl<
         IOTypes: SystemIOTypesConfig,
-        B: BasicBlockMetadata<IOTypes> + ZkSpecificPricingMetadata,
+        B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-    > ZkSpecificPricingMetadata for SystemMetadata<IOTypes, B, TX>
+        C: ChainConfigMetadata,
+    > ChainConfigMetadata for SystemMetadata<IOTypes, B, TX, C>
+{
+    fn chain_config(&self) -> super::chain_config::ChainConfig {
+        self.chain_config.chain_config()
+    }
+}
+
+/// Assumes that ZK-specific metadata is implemented at the block level.
+impl<
+        IOTypes: SystemIOTypesConfig,
+        B: BasicBlockMetadata<IOTypes> + ZkSpecificMetadata,
+        TX: BasicTransactionMetadata<IOTypes>,
+        C: ChainConfigMetadata,
+    > ZkSpecificMetadata for SystemMetadata<IOTypes, B, TX, C>
 {
     fn native_price(&self) -> U256 {
         self.block_level.native_price()
@@ -106,7 +123,8 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-    > BasicMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
+        C: ChainConfigMetadata,
+    > BasicMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, C>
 {
     type TransactionMetadata = TX;
 

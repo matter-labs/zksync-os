@@ -1,9 +1,9 @@
 use crate::run::convert::IntoInterface;
 use crate::run::convert_alloy::IntoAlloy;
 use alloy::primitives::{Address, U256};
-use std::marker::PhantomData;
+use std::{cell::OnceCell, marker::PhantomData};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::evm::{EvmError as ZkEEEvmError, EvmFrameInterface};
+use zk_ee::system::evm::{EvmError as ZkEEEvmError, EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
@@ -26,23 +26,30 @@ struct ExecutionEnvironmentLaunchParamsWrapped<'a, 'b, S: EthereumLikeTypes>(
 struct EvmFrameInterfaceWrapped<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>> {
     inner: &'a T,
     stack_wrapper: EvmStackInterfaceWrapped<'a>,
+    /// Cached conversion of call_value from u256::U256 to alloy U256, so we can return a
+    /// reference without relying on layout transmute.
+    call_value_converted: U256,
     _phantom: PhantomData<S>,
 }
 
 /// Wrapper around internal [`EvmStackInterface`] to make it compatible with interface tracing API.
 struct EvmStackInterfaceWrapped<'a> {
-    inner: &'a dyn zk_ee::system::evm::EvmStackInterface,
+    cached_values: OnceCell<Vec<U256>>,
+    inner: &'a dyn EvmStackInterface,
 }
 
 impl<'a, S: EthereumLikeTypes + 'a, T: EvmFrameInterface<S>> From<&'a T>
     for EvmFrameInterfaceWrapped<'a, S, T>
 {
     fn from(value: &'a T) -> Self {
+        let call_value_converted: ruint::aliases::U256 = value.call_value().clone().into();
         Self {
             inner: value,
             stack_wrapper: EvmStackInterfaceWrapped {
+                cached_values: OnceCell::new(),
                 inner: value.stack(),
             },
+            call_value_converted,
             _phantom: PhantomData,
         }
     }
@@ -303,7 +310,7 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
     }
 
     fn call_value(&self) -> &U256 {
-        self.inner.call_value()
+        &self.call_value_converted
     }
 
     fn refund_counter(&self) -> u32 {
@@ -325,7 +332,15 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
 
 impl<'a> zksync_os_interface::tracing::EvmStackInterface for EvmStackInterfaceWrapped<'a> {
     fn to_slice(&self) -> &[U256] {
-        self.inner.to_slice()
+        self.cached_values
+            .get_or_init(|| {
+                self.inner
+                    .to_slice()
+                    .iter()
+                    .map(|value| -> U256 { value.clone().into() })
+                    .collect()
+            })
+            .as_slice()
     }
 
     fn len(&self) -> usize {
@@ -333,8 +348,13 @@ impl<'a> zksync_os_interface::tracing::EvmStackInterface for EvmStackInterfaceWr
     }
 
     fn peek_n(&self, index: usize) -> Result<&U256, InterfaceEvmError> {
-        self.inner
-            .peek_n(index)
-            .map_err(|error| error.into_interface())
+        let offset = self
+            .inner
+            .len()
+            .checked_sub(index + 1)
+            .ok_or(InterfaceEvmError::StackUnderflow)?;
+        self.to_slice()
+            .get(offset)
+            .ok_or(InterfaceEvmError::StackUnderflow)
     }
 }

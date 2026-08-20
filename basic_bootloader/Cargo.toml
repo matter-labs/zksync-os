@@ -18,32 +18,44 @@ basic_system = { path = "../basic_system", default-features = false }
 ruint = { workspace = true, default-features = false }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 hex = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 paste = { workspace = true }
 cfg-if = { workspace = true }
 serde-big-array = "0.5"
 
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+full_statement_verifier = { workspace = true, optional = true, default-features = false, features = ["unified_verifier_only_security_100", "modular_ops", "blake2_with_compression"] }
+
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+# Host-side verifier. `replace_csr` swaps the CSR-backed
+# non-determinism source for `nd_source_std::set_iterator`, and
+# `modular_ops` is intentionally omitted because it is riscv32-only.
+full_statement_verifier = { workspace = true, optional = true, default-features = false, features = ["unified_verifier_only_security_100", "blake2_with_compression", "replace_csr"] }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["rlp", "full"] }
 alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["arbitrary"] }
+proptest = { workspace = true }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "hex", "serde"]
 default = ["testing"]
-eip-7702 = []
-eip_7623 = []
-eip-4844 = ["system_hooks/point_eval_precompile"]
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["zk_ee/fusaka-bpo-2"]
+# EIP-4844 blob transactions (type 0x03). L1-specific; enabled for the Ethereum
+# compatibility paths (eth_runner / evm_tester / for_tests) but not production,
+# where blob transactions are not accepted.
+eip-4844 = []
 burn_base_fee = []
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
-resources_for_tester = []
-unlimited_native = []
 disable_system_contracts = []
 error_origins = ["zk_ee/error_origins"]
+delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "system_hooks/delegation", "basic_system/delegation"]
+fri_precompile = ["dep:full_statement_verifier", "system_hooks/fri_precompile"]
 # Enables runtime verification that the intrinsic computational native formula
 # (`calculate_l2_tx_intrinsic_computational_native_resources`) is an upper bound
 # on the native resources actually consumed by validation and post-execution

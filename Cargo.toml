@@ -6,7 +6,6 @@ members = [
     "basic_bootloader",
     "basic_system",
     "callable_oracles",
-    "crypto",
     "evm_interpreter",
     "forward_system",
     "oracle_provider",
@@ -19,7 +18,58 @@ members = [
     "supporting_crates/keccak",
     "supporting_crates/solidity_abi",
     "supporting_crates/solidity_abi_derive",
+    "supporting_crates/delegated_u256",
+    "supporting_crates/u256",
+    "supporting_crates/nostd_compression",
     "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
+    "cycle_marker",
+    "tests/common",
+    "tests/rig",
+    "tests/instances/transactions",
+    "tests/instances/erc20",
+    "tests/instances/forge_tests",
+    "tests/instances/precompiles",
+    "tests/instances/bench",
+    "tests/instances/unit",
+    "tests/instances/system_hooks",
+    "tests/instances/multiblock_batch",
+    "tests/instances/header",
+    "tests/instances/interop",
+    "tests/instances/evm",
+    "tests/instances/eth_runner",
+    "tests/block_reexecutor",
+    "tests/revm_runner",
+    "tests/binary_checker",
+    "tests/evm_tester",
+    "tests/evm_divergence_validator",
+    "scripts",
+]
+
+# evm_tester, evm_divergence_validator, and eth_runner are intentionally
+# excluded from default-members: they enable features on forward_system
+# (via rig) that conflict with other tests through workspace feature unification.
+default-members = [
+    "api",
+    "basic_bootloader",
+    "basic_system",
+    "callable_oracles",
+    "evm_interpreter",
+    "forward_system",
+    "oracle_provider",
+    "proof_running_system",
+    "storage_models",
+    "zk_ee",
+    "zksync_os_runner",
+    "system_hooks",
+    "supporting_crates/modexp",
+    "supporting_crates/keccak",
+    "supporting_crates/solidity_abi",
+    "supporting_crates/solidity_abi_derive",
+    "supporting_crates/delegated_u256",
+    "supporting_crates/u256",
+    "supporting_crates/nostd_compression",
+    "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
+    "cycle_marker",
     "tests/common",
     "tests/rig",
     "tests/instances/transactions",
@@ -35,21 +85,13 @@ members = [
     "tests/instances/evm",
     "tests/block_reexecutor",
     "tests/revm_runner",
-    "cycle_marker",
     "tests/binary_checker",
-    "supporting_crates/delegated_u256",
-    "supporting_crates/u256",
-    "scripts"
+    "scripts",
 ]
 
 exclude = [
     "zksync_os",
-    "supporting_crates/nostd_compression",
-    "crypto/src/blake2s/test_program",
     "circuit_test_program",
-    "tests/evm_tester",
-    "tests/evm_divergence_validator",
-    "tests/instances/eth_runner",
 ]
 
 [workspace.package]
@@ -63,18 +105,30 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { version = "0.0.15", default-features = false }
-zksync_os_interface = { version = "0.0.15", default-features = false }
+zksync_os_evm_errors = { version = "0.1.3", default-features = false }
+zksync_os_interface = { version = "0.1.3" }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2", default-features = false }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
-prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
-cli = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
+# zksync-airbender deps pinned to the same commit airbender-platform
+# resolves `branch = "dev"` to at the time of pinning.
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
 
-ruint = { version = "1.16", default-features = false }
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false }
+
+seq-macro = { version = "0.3.6", default-features = false }
+
+anyhow = "1"
+ruint = { version = "1.20", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
 hex = "0.4.3"
@@ -86,10 +140,7 @@ num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-integer = { version = "0.1", default-features = false }
 proptest = "1.7.0"
-alloy = { version = "2", default-features = false }
-# Temporaraliy also depend on alloy-consensus v1 because zksync-os-intreface requires it. This will dropped on the next
-# breaking change in interfaces.
-alloy-consensus-v1 = { package = "alloy-consensus", version = "1", default-features = false }
+alloy = { version = "2.4.1", default-features = false }
 alloy-rlp = "0.3.13"
 alloy-sol-types = "1"
 alloy-primitives = "1"
@@ -100,16 +151,18 @@ log = "0.4.22"
 env_logger = "0.11.6"
 once_cell = "1.20.3"
 
-
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
 zerocopy = { version = "=0.8.28" }
 
 
-# [profile.dev]
-# opt-level = 0
-# lto = false
-# panic = "abort"
+[profile.dev]
+# The Airbender dependency graph currently triggers an LLVM/DWARF SIGBUS
+# on this toolchain when compiling debug-info-heavy host builds.
+debug = false
+
+[profile.test]
+debug = false
 
 [profile.release]
 opt-level = 3
@@ -117,17 +170,28 @@ lto = true
 codegen-units = 1
 debug = true
 
+# Fast-compile variant used by the bench CI for in-workspace bench
+# targets — specifically `cargo test -p precompiles --profile bench-fast`.
+# `tests/instances/eth_runner/` is excluded from this workspace (see
+# `workspace.exclude` above), so its `cargo run --manifest-path …` uses
+# the duplicate `[profile.bench-fast]` defined in
+# `tests/instances/eth_runner/Cargo.toml`; keep the two in sync.
+# Runtime perf of these driver binaries doesn't affect measurements
+# (cycle counts come from the RISC-V simulator), so disabling fat LTO
+# and parallelizing codegen cuts "Run benchmarks" compile time by a
+# large factor. The RISC-V proving binary is yet another workspace at
+# `zksync_os/Cargo.toml` and uses its own `[profile.release]` — also
+# unaffected.
+# NOTE: the literal string `bench-fast` is used as a `grep -q` fallback
+# target by `.github/workflows/bench.yml` — if this profile name is
+# changed, update the workflow too.
+[profile.bench-fast]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 16
+debug = false
+
 [patch.crates-io]
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
-
-[patch."https://github.com/matter-labs/zksync-airbender"]
-# blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# risc_v_simulator = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# prover_examples = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-# riscv_common = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
-
-# blake2s_u32 = { path = "../zksync-airbender/blake2s_u32" }
-# prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
-# risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
-# execution_utils = { path = "../zksync-airbender/execution_utils" }

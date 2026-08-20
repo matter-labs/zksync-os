@@ -121,8 +121,8 @@ where
         // Events
         result_keeper.events(io.events_iterator());
 
-        // // 3. Verify/apply reads and writes
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        // 3. Verify/apply reads and writes
+        cycle_marker::wrap!("state_commitment_update", {
             io.update_commitment(None, &mut logger, result_keeper);
         });
 

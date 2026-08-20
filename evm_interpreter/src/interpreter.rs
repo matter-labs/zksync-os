@@ -106,7 +106,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     #[inline]
     pub(crate) fn get_bytecode_unchecked(&self, offset: usize) -> u8 {
         self.bytecode
-            .as_ref()
             .get(offset)
             .copied()
             .unwrap_or(crate::opcodes::STOP)
@@ -118,7 +117,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         hooks: &mut HooksStorage<S, S::Allocator>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExitCode, EvmSubsystemError> {
+    ) -> Result<ExitCode, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut cycles = 0;
         let result = loop {
             let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
@@ -140,6 +142,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             );
 
             self.instruction_pointer += 1;
+            cycle_marker::opcode_start!();
             let result = self
                 .gas
                 .spend_gas_and_native(0, STEP_NATIVE_COST)
@@ -154,12 +157,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::ADD => self.wrapped_add(),
                     opcodes::MUL => self.wrapping_mul(),
                     opcodes::SUB => self.wrapping_sub(),
-                    opcodes::DIV => self.div(),
-                    opcodes::SDIV => self.sdiv(),
-                    opcodes::MOD => self.rem(),
-                    opcodes::SMOD => self.smod(),
-                    opcodes::ADDMOD => self.addmod(),
-                    opcodes::MULMOD => self.mulmod(),
+                    opcodes::DIV => self.div(system),
+                    opcodes::SDIV => self.sdiv(system),
+                    opcodes::MOD => self.rem(system),
+                    opcodes::SMOD => self.smod(system),
+                    opcodes::ADDMOD => self.addmod(system),
+                    opcodes::MULMOD => self.mulmod(system),
                     opcodes::EXP => self.eval_exp(),
                     opcodes::SIGNEXTEND => self.sign_extend(),
                     opcodes::LT => self.lt(),
@@ -176,6 +179,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::SHL => self.shl(),
                     opcodes::SHR => self.shr(),
                     opcodes::SAR => self.sar(),
+                    opcodes::CLZ => self.clz(),
                     opcodes::SHA3 => self.sha3(system),
                     opcodes::ADDRESS => self.address(),
                     opcodes::BALANCE => self.balance(system),
@@ -195,14 +199,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::MSIZE => self.msize(),
                     opcodes::JUMPDEST => self.jumpdest(),
                     opcodes::PUSH0 => self.push0(),
-                    opcodes::PUSH1 => self.push::<1>(),
-                    opcodes::PUSH2 => self.push::<2>(),
-                    opcodes::PUSH3 => self.push::<3>(),
-                    opcodes::PUSH4 => self.push::<4>(),
-                    opcodes::PUSH5 => self.push::<5>(),
-                    opcodes::PUSH6 => self.push::<6>(),
-                    opcodes::PUSH7 => self.push::<7>(),
-                    opcodes::PUSH8 => self.push::<8>(),
+                    opcodes::PUSH1 => self.push1(),
+                    opcodes::PUSH2 => self.push2(),
+                    opcodes::PUSH3 => self.push_small::<3>(),
+                    opcodes::PUSH4 => self.push_small::<4>(),
+                    opcodes::PUSH5 => self.push_small::<5>(),
+                    opcodes::PUSH6 => self.push_small::<6>(),
+                    opcodes::PUSH7 => self.push_small::<7>(),
+                    opcodes::PUSH8 => self.push_small::<8>(),
                     opcodes::PUSH9 => self.push::<9>(),
                     opcodes::PUSH10 => self.push::<10>(),
                     opcodes::PUSH11 => self.push::<11>(),
@@ -297,6 +301,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::BLOBBASEFEE => self.blobbasefee(system),
                     x => Err(EvmError::InvalidOpcode(x).into()),
                 });
+            cycle_marker::opcode_end!(
+                crate::opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("UNKNOWN")
+            );
 
             tracer.evm_tracer().after_evm_interpreter_execution_step(
                 opcode,
@@ -436,20 +443,25 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         ))
     }
 
-    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
-        // NOTE: it's not "returndatacopy", but if there was a "call" that did set up non-empty buffer for returndata,
-        // it'll be automatically copied there
+    pub(crate) fn copy_returndata_to_heap(
+        &mut self,
+        returndata_region: &'ee [u8],
+    ) -> Result<(), ExitCode> {
         if !self.returndata_location.is_empty() {
-            unsafe {
-                let to_copy =
-                    core::cmp::min(returndata_region.len(), self.returndata_location.len());
-                let src = returndata_region.as_ptr();
-                let dst = self.heap.as_mut_ptr().add(self.returndata_location.start);
-                core::ptr::copy_nonoverlapping(src, dst, to_copy);
+            let to_copy = core::cmp::min(returndata_region.len(), self.returndata_location.len());
+            if to_copy > 0 {
+                let (_, native_cost) = gas::gas_utils::copy_cost(to_copy as u64)?;
+                self.gas.spend_gas_and_native(0, native_cost)?;
+                unsafe {
+                    let src = returndata_region.as_ptr();
+                    let dst = self.heap.as_mut_ptr().add(self.returndata_location.start);
+                    core::ptr::copy_nonoverlapping(src, dst, to_copy);
+                }
             }
         }
 
         self.returndata = returndata_region;
+        Ok(())
     }
 
     pub fn derive_address_for_deployment_create(
@@ -457,7 +469,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployer_nonce: u64,
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
-        use crypto::sha3::{Digest, Keccak256};
+        use crypto::sha3::Keccak256;
+        use crypto::MiniDigest;
         let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
         let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
         let encoding_len = ExactSizeIterator::len(&encoding_it);
@@ -465,7 +478,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             *dst = src;
         }
         let new_address = Keccak256::digest(&buffer[..encoding_len]);
-        #[allow(deprecated)]
         let new_address =
             B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
 
@@ -479,7 +491,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployment_code: &[u8],
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
-        use crypto::sha3::{Digest, Keccak256};
+        use crypto::sha3::Keccak256;
+        use crypto::MiniDigest;
         // we need to compute address based on the hash of the code and salt
         let mut initcode_hash = ArrayBuilder::default();
         resources
@@ -504,13 +517,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
         create2_buffer[1..(1 + 20)]
             .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
-        create2_buffer[(1 + 20)..(1 + 20 + 32)]
-            .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+        create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
         create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
             .copy_from_slice(initcode_hash.as_u8_array_ref());
 
         let new_address = Keccak256::digest(&create2_buffer);
-        #[allow(deprecated)]
         let new_address =
             B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
 

@@ -8,6 +8,7 @@ use alloy::primitives::*;
 ///
 /// The VM execution result.
 ///
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
     /// The VM snapshot execution result.
@@ -24,6 +25,7 @@ impl ExecutionResult {
     ///
     /// A shortcut constructor.
     ///
+    #[allow(dead_code)]
     pub fn new(output: ExecutionOutput, cycles: usize, ergs: u64, gas: U256) -> Self {
         Self {
             output,

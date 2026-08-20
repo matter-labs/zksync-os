@@ -10,6 +10,7 @@ permissions: read-all
 env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 jobs:
     evm_state_tests:
@@ -17,21 +18,10 @@ jobs:
         runs-on: [matterlabs-ci-runner-high-performance]
         steps:
             - uses: actions/checkout@v4
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              run: |
-                  rustup toolchain install
-                  rustup set profile minimal
-                  cargo install cargo-binutils
+            - uses: ./.github/actions/setup-toolchain
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type evm-tester
             - name: Download ethereum execution spec tests fixtures
               working-directory: ./tests/evm_tester

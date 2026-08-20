@@ -1,9 +1,8 @@
 //! TODO: this actually belongs to the bootloader, just for the ZK STF.
 //! We will move it in future PRs.
 
-use super::basic_metadata::{
-    BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
-};
+use super::basic_metadata::{BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificMetadata};
+use super::chain_config::ChainConfig;
 use super::system_metadata::SystemMetadata;
 use crate::system::constants::*;
 use crate::system::errors::internal::InternalError;
@@ -19,13 +18,15 @@ pub type ZkMetadata = SystemMetadata<
     EthereumIOTypesConfig,
     BlockMetadataFromOracle,
     TxLevelMetadata<EthereumIOTypesConfig>,
+    ChainConfig,
 >;
 
 #[derive(Clone, Debug, Default)]
 pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
-    pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_BLOCK }>,
+    pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_TX }>,
+    pub verified_fri_statements: arrayvec::ArrayVec<Bytes32, { MAX_FRI_STATEMENTS_PER_TX }>,
 }
 
 impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<EthereumIOTypesConfig> {
@@ -40,6 +41,10 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
     }
     fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
         self.blobs.get(idx).copied()
+    }
+    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool {
+        self.verified_fri_statements
+            .contains(statement_versioned_hash)
     }
 }
 
@@ -112,10 +117,6 @@ impl UsizeDeserializable for BlockHashes {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BlockMetadataFromOracle {
-    // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
-    // long term, we have to decide whether we want to keep it here, or add a separate oracle
-    // type that would return some 'chain' specific metadata (as this class is supposed to hold block metadata only).
-    pub chain_id: u64,
     pub block_number: u64,
     pub block_hashes: BlockHashes,
     pub timestamp: u64,
@@ -132,10 +133,6 @@ pub struct BlockMetadataFromOracle {
 }
 
 impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
-    fn chain_id(&self) -> u64 {
-        self.chain_id
-    }
-
     fn block_number(&self) -> u64 {
         self.block_number
     }
@@ -167,12 +164,6 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
         self.gas_limit
     }
 
-    fn individual_tx_gas_limit(&self) -> u64 {
-        // Currently we don't have a separate individual tx gas limit,
-        // so we return the block gas limit here.
-        self.gas_limit
-    }
-
     fn eip1559_basefee(&self) -> U256 {
         self.eip1559_basefee
     }
@@ -190,7 +181,7 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     }
 }
 
-impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
+impl ZkSpecificMetadata for BlockMetadataFromOracle {
     fn get_pubdata_price(&self) -> U256 {
         self.pubdata_price
     }
@@ -210,7 +201,6 @@ impl BlockMetadataFromOracle {
             native_price: U256::from(10),
             block_number: 1,
             timestamp: 42,
-            chain_id: 37,
             gas_limit: u64::MAX / 256,
             pubdata_limit: u64::MAX,
             coinbase: B160::ZERO,
@@ -224,7 +214,7 @@ impl BlockMetadataFromOracle {
 impl UsizeSerializable for BlockMetadataFromOracle {
     const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN
         * (5 + BLOCK_HASHES_WINDOW_SIZE)
-        + <u64 as UsizeSerializable>::USIZE_LEN * 5
+        + <u64 as UsizeSerializable>::USIZE_LEN * 4
         + <B160 as UsizeDeserializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -238,17 +228,14 @@ impl UsizeSerializable for BlockMetadataFromOracle {
                                     ExactSizeChain::new(
                                         ExactSizeChain::new(
                                             ExactSizeChain::new(
-                                                ExactSizeChain::new(
-                                                    UsizeSerializable::iter(&self.eip1559_basefee),
-                                                    UsizeSerializable::iter(&self.pubdata_price),
-                                                ),
-                                                UsizeSerializable::iter(&self.native_price),
+                                                UsizeSerializable::iter(&self.eip1559_basefee),
+                                                UsizeSerializable::iter(&self.pubdata_price),
                                             ),
-                                            UsizeSerializable::iter(&self.block_number),
+                                            UsizeSerializable::iter(&self.native_price),
                                         ),
-                                        UsizeSerializable::iter(&self.timestamp),
+                                        UsizeSerializable::iter(&self.block_number),
                                     ),
-                                    UsizeSerializable::iter(&self.chain_id),
+                                    UsizeSerializable::iter(&self.timestamp),
                                 ),
                                 UsizeSerializable::iter(&self.gas_limit),
                             ),
@@ -274,7 +261,6 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
         let native_price = UsizeDeserializable::from_iter(src)?;
         let block_number = UsizeDeserializable::from_iter(src)?;
         let timestamp = UsizeDeserializable::from_iter(src)?;
-        let chain_id = UsizeDeserializable::from_iter(src)?;
         let gas_limit = UsizeDeserializable::from_iter(src)?;
         let pubdata_limit = UsizeDeserializable::from_iter(src)?;
         let coinbase = UsizeDeserializable::from_iter(src)?;
@@ -288,7 +274,6 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
             native_price,
             block_number,
             timestamp,
-            chain_id,
             gas_limit,
             pubdata_limit,
             coinbase,
@@ -314,5 +299,25 @@ mod tests {
         let deserialized = BlockMetadataFromOracle::from_iter(&mut iter).unwrap();
 
         assert_eq!(original, deserialized);
+    }
+
+    /// Pins the `is_fri_statement_verified` membership contract:
+    /// finds hashes at any position in the per-tx list, and returns
+    /// `false` for hashes not present.
+    #[test]
+    fn tx_metadata_accumulates_multiple_fri_statements() {
+        let mut meta = TxLevelMetadata::<EthereumIOTypesConfig>::default();
+        let h1 = Bytes32::from_array([1u8; 32]);
+        let h2 = Bytes32::from_array([2u8; 32]);
+        let h3 = Bytes32::from_array([3u8; 32]);
+
+        assert!(!meta.is_fri_statement_verified(&h1));
+
+        meta.verified_fri_statements.push(h1);
+        meta.verified_fri_statements.push(h2);
+
+        assert!(meta.is_fri_statement_verified(&h1));
+        assert!(meta.is_fri_statement_verified(&h2));
+        assert!(!meta.is_fri_statement_verified(&h3));
     }
 }

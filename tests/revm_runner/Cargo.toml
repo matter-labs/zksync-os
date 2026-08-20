@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-anyhow = "1"
+anyhow = { workspace = true }
 alloy = { workspace = true, default-features = false, features = [
     "eips",
     "rpc",
@@ -20,11 +20,14 @@ alloy = { workspace = true, default-features = false, features = [
     "serde-bincode-compat",
 ] }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
-revm = "=38.0.0"
-revm-inspectors = "0.39.0"
+revm = "=42.0.1"
+revm-inspectors = "0.42.2"
 log = { workspace = true }
 
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", rev = "6777d01e63aa7bbe4b0478e496f0be04488ffc52" }
+# Pinned to the v0.2.0 release: AtlasV4, the apply_pre_block_system_calls
+# helper (matter-labs/zksync-os-revm#19), the revm v42.0.1 bump (#21), and the
+# merge that brings the two lines back together (#24).
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = "v0.2.0" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }

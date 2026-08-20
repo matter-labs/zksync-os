@@ -12,8 +12,6 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# temporary for witgen
-zksync_os_runner = {path = "../zksync_os_runner"}
 oracle_provider = { path = "../oracle_provider" }
 callable_oracles = { path = "../callable_oracles" }
 zk_ee = { path = "../zk_ee", default-features = false }
@@ -23,16 +21,18 @@ basic_bootloader = { path = "../basic_bootloader", default-features = false }
 zksync_os_evm_errors = { workspace = true, default-features = false }
 zksync_os_interface = { workspace = true }
 system_hooks = { path = "../system_hooks", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true }
 
 
 ruint = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive", "alloc"] }
 
 alloy = { workspace = true, features = ["consensus", "rpc-types-trace"] }
-alloy-consensus-v1 = { workspace = true }
 hex = { workspace = true }
 bincode = "1.3"
+bincode_v2 = { package = "bincode", version = "2.0.1", features = ["serde"], optional = true }
+execution_utils = { workspace = true, optional = true }
+log = { workspace = true }
 strum_macros = { workspace = true }
 paste = { workspace = true }
 
@@ -41,25 +41,32 @@ testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "
 default = ["testing"]
 error_origins = ["zk_ee/error_origins"]
 no_print = []
-unlimited_native = ["basic_bootloader/unlimited_native"]
+fri_precompile = [
+    "basic_bootloader/fri_precompile",
+    "system_hooks/fri_precompile",
+    "dep:bincode_v2",
+    "dep:execution_utils",
+]
 
 # A feature for every specific use case
 
+# Selects the BPO2 blob-count schedule; default is base-Osaka.
+fusaka-bpo-2 = ["basic_bootloader/fusaka-bpo-2"]
+
 # Features used for production, by both the singleblock_batch and multiblock_batch binaries.
-production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
+production = ["fusaka-bpo-2"]
 
 # Features used for tests.
 for_tests = ["production", "basic_bootloader/eip-4844"]
 
-# Features used for eth_runner
-eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "unlimited_native","basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
+# Features used for eth_runner.
+eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
 # Additional features used for eth_stf in eth_runner
-eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip_7623", "evm_interpreter/eip-2537", "evm_interpreter/eip-152"]
+eth_stf = []
 
 # Features used for evm_tester
-evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
+evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
-# Features used for legacy evm_tester. Only defined in forward system,
-# as the legacy evm_tester does not perform a proof run.
-evm_tester_legacy = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]
+[dev-dependencies]
+tempfile = "3"

@@ -805,7 +805,6 @@ entries:
           test_valid_tx_invalid_chain_id.json:
             hash: '0xd94fbf422fcca3412f23724934c02817'
             enabled: true
-        hardforkOverride: Prague
   shanghai:
     enabled: true
     entries:

@@ -120,6 +120,14 @@ impl<
             + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
+    fn block_scoped_cache_limit_hit_for_current_tx(&self) -> bool {
+        self.preimages_cache.block_limit_hit_for_current_tx()
+    }
+
+    fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
+        self.preimages_cache.tx_limit_hit_for_current_tx()
+    }
+
     fn storage_read(
         &mut self,
         ee_type: ExecutionEnvironmentType,

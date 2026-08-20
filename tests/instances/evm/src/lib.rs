@@ -24,6 +24,8 @@ mod test_support;
 mod deployment_outcomes;
 // CALL execution outcomes that are part of normal EVM runtime semantics.
 mod execution_outcomes;
+// ZK STF pre-tx writes for the EIP-2935 history contract.
+mod historical_block_hash;
 // State rollback guarantees for reverted frames.
 mod rollback_semantics;
 

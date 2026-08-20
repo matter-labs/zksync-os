@@ -5,9 +5,11 @@ use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
 use rig::ruint::aliases::U256;
+use rig::zk_ee::system::metadata::chain_config::DEFAULT_MAX_TX_GAS_LIMIT;
+use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::TestingFramework;
 use rig::{assert_tx_rejected, assert_tx_success};
+use rig::{BlockContext, TestingFramework};
 
 fn new_tester() -> TestingFramework<false> {
     TestingFramework::new()
@@ -53,6 +55,13 @@ fn create_tx(signer: PrivateKeySigner, gas_limit: u64, init_code: Vec<u8>) -> ZK
     ZKsyncTxEnvelope::from_eth_tx(tx, signer)
 }
 
+fn block_context_with_gas_limit(gas_limit: u64) -> BlockContext {
+    BlockContext {
+        gas_limit,
+        ..Default::default()
+    }
+}
+
 #[test]
 fn out_of_gas_simple_transfer_is_rejected_during_validation() {
     let signer = PrivateKeySigner::random();
@@ -72,6 +81,113 @@ fn out_of_gas_simple_transfer_is_rejected_during_validation() {
     );
     let output = tester.execute_block(vec![tx]);
     assert_tx_rejected!(output, 0);
+}
+
+#[test]
+fn default_max_tx_gas_limit_accepts_boundary() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let recipient = address!("0000000000000000000000000000000000000002");
+
+    let mut tester = new_tester()
+        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_block_context(block_context_with_gas_limit(DEFAULT_MAX_TX_GAS_LIMIT));
+    let tx = call_tx(
+        signer,
+        recipient,
+        0,
+        DEFAULT_MAX_TX_GAS_LIMIT,
+        AlloyU256::ZERO,
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
+
+    let output = tester.execute_block(vec![tx]);
+    assert_tx_success!(output, 0);
+}
+
+#[test]
+fn default_max_tx_gas_limit_rejects_above_boundary() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let recipient = address!("0000000000000000000000000000000000000002");
+    let gas_limit = DEFAULT_MAX_TX_GAS_LIMIT + 1;
+
+    let mut tester = new_tester()
+        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_block_context(block_context_with_gas_limit(gas_limit));
+    let tx = call_tx(
+        signer,
+        recipient,
+        0,
+        gas_limit,
+        AlloyU256::ZERO,
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(
+        matches!(
+            &output.tx_results[0],
+            Err(InvalidTransaction::CallerGasLimitMoreThanTxLimit)
+        ),
+        "expected CallerGasLimitMoreThanTxLimit, got {:?}",
+        output.tx_results[0]
+    );
+}
+
+#[test]
+fn custom_max_tx_gas_limit_allows_above_default_boundary() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let recipient = address!("0000000000000000000000000000000000000002");
+    let gas_limit = DEFAULT_MAX_TX_GAS_LIMIT + 1;
+
+    let mut tester = new_tester()
+        .with_max_tx_gas_limit(gas_limit)
+        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_block_context(block_context_with_gas_limit(gas_limit));
+    let tx = call_tx(
+        signer,
+        recipient,
+        0,
+        gas_limit,
+        AlloyU256::ZERO,
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
+
+    let output = tester.execute_block(vec![tx]);
+    assert_tx_success!(output, 0);
+}
+
+#[test]
+fn simulation_skips_max_tx_gas_limit_admission_check() {
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
+    let recipient = address!("0000000000000000000000000000000000000002");
+    let gas_limit = DEFAULT_MAX_TX_GAS_LIMIT + 1;
+
+    let mut tester = new_tester()
+        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_block_context(block_context_with_gas_limit(gas_limit));
+    let tx = call_tx(
+        signer,
+        recipient,
+        0,
+        gas_limit,
+        AlloyU256::ZERO,
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
+
+    let output = tester.simulate_block(vec![tx]);
+    assert_tx_success!(output, 0);
 }
 
 #[test]

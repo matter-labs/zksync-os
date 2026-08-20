@@ -1,10 +1,8 @@
 use zk_ee::{system::IOResultKeeper, types_config::EthereumIOTypesConfig};
 
 use super::*;
-use crate::bootloader::block_flow::ethereum::{
-    eip_2935_historical_block_hash::eip2935_system_part,
-    eip_4788_historical_beacon_root::eip4788_system_part,
-};
+use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
+use crate::bootloader::block_flow::ethereum::eip_4788_historical_beacon_root::eip4788_system_part;
 
 impl<S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>> PreTxLoopOp<S> for EthereumPreOp
 where
@@ -14,16 +12,20 @@ where
 
     fn pre_op(
         system: &mut System<S>,
+        _system_functions: &mut HooksStorage<S, S::Allocator>,
+        _memories: RunnerMemoryBuffers<'_>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-    ) -> Self::PreTxLoopResult {
+    ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError> {
         // EIP-4788
         let beacon_root_hash = system.metadata.block_level.header.parent_beacon_block_root;
-        eip4788_system_part(system, &beacon_root_hash).expect("must perform EIP-4788");
+        eip4788_system_part(system, &beacon_root_hash)?;
 
         // EIP-2935
-        eip2935_system_part(system).expect("must perform EIP-2935");
+        eip2935_system_part(system)?;
 
         // Create data keeper
-        EthereumBasicTransactionDataKeeper::new_in(system.get_allocator())
+        Ok(EthereumBasicTransactionDataKeeper::new_in(
+            system.get_allocator(),
+        ))
     }
 }

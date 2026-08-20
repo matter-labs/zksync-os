@@ -13,7 +13,7 @@ Main runtime crates:
 - [`callable_oracles`](../callable_oracles/) - callable oracle implementations (e.g. arithmetic/KZG helpers).
 - [`crypto`](../crypto/) - cryptographic primitives.
 - [`storage_models`](../storage_models/) - shared storage abstractions and common structs.
-- [`zksync_os_runner`](../zksync_os_runner/) - RISC-V simulator runner.
+- [`zksync_os_runner`](../zksync_os_runner/) - RISC-V transpiler runner.
 
 RISC-V program crate:
 

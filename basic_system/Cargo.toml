@@ -11,11 +11,12 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
+u256 = { path = "../supporting_crates/u256", default-features = false }
 evm_interpreter = { path = "../evm_interpreter"  }
 ruint = { workspace = true, default-features = false, features = ["serde"] }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
-crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context"]}
+crypto = { workspace = true, features = ["secp256k1-static-context"] }
 either = { workspace = true, default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
 modexp = { path = "../supporting_crates/modexp" }
@@ -33,6 +34,7 @@ testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 proving = ["crypto/proving"]
+delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/delegation"]
 # The finish method will just return inputs, so outputs can be processed outside bootloader
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
@@ -41,9 +43,11 @@ state-diffs-pi = []
 [dev-dependencies]
 hex = { workspace = true }
 proptest = { workspace = true }
-crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
+crypto = { workspace = true, features = ["secp256k1-static-context", "testing"] }
 num-bigint = { workspace = true, default-features = true }
 num-traits = { workspace = true, default-features = true }
+callable_oracles = { path = "../callable_oracles" }
+oracle_provider = { path = "../oracle_provider" }
 arbitrary = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 alloy-rpc-types-debug = { workspace = true }

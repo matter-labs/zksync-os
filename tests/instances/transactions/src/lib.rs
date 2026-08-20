@@ -7,15 +7,31 @@ use alloy::primitives::TxKind;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
+use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::{
+    TransactionsRollingKeccakHasher, TxHashesAccumulator,
+};
+use rig::basic_bootloader::bootloader::constants::{
+    BLOCK_INTRINSIC_PUBDATA_BYTES, BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES,
+};
 use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR;
+use rig::chain::RunConfig;
+use rig::crypto::sha3::Keccak256;
+use rig::crypto::MiniDigest;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::{B160, B256, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, common_target_address, testing_signer, TestingFramework};
+use rig::zksync_os_interface::traits::EncodedTx;
+use rig::{
+    alloy, assert_tx_rejected, assert_tx_success, common_target_address, testing_signer,
+    TestingFramework,
+};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncSpecificTxEnvelope;
@@ -24,8 +40,96 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
+// Per-transaction memory budget of the block-scoped raw preimage cache.
+mod preimage_cache_budget;
+mod storage_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;
+
+fn last_prover_input_batch_output<const RANDOMIZED_TREE: bool>(
+    tester: &TestingFramework<RANDOMIZED_TREE>,
+) -> &BatchOutput {
+    tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .prover_input_batch_output
+        .as_ref()
+        .expect("prover-input batch output must exist")
+}
+
+fn l1_tx_hash(tx: ZKsyncTxEnvelope) -> rig::zk_ee::utils::Bytes32 {
+    let EncodedTx::Abi(encoded_tx) = tx.encode() else {
+        panic!("priority transaction should be ABI encoded");
+    };
+
+    let mut hasher = Keccak256::new();
+    hasher.update(U256::from(0x20).to_be_bytes::<32>());
+    hasher.update(&encoded_tx);
+    hasher.finalize().into()
+}
+
+fn expected_priority_operations_hash(
+    priority_txs: impl IntoIterator<Item = ZKsyncTxEnvelope>,
+) -> rig::zk_ee::utils::Bytes32 {
+    let mut accumulator = TransactionsRollingKeccakHasher::empty();
+    for tx in priority_txs {
+        accumulator.add_tx_hash(&l1_tx_hash(tx));
+    }
+    accumulator.finish().0
+}
+
+fn run_single_erc20_transfer_with_limits(
+    pubdata_limit: u64,
+    da_commitment_scheme: DACommitmentScheme,
+) -> rig::forward_system::run::output::BlockOutput {
+    let wallet = testing_signer(0);
+    let target = address!("0000000000000000000000000000000000010002");
+    let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
+    let key = compute_erc20_balance_slot(wallet.address());
+    let value = B256::from(U256::from(1_000_000_000_000_000_u64));
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 60_000,
+            to: TxKind::Call(target),
+            value: Default::default(),
+            access_list: Default::default(),
+            input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+    let block_context = BlockContext {
+        pubdata_limit,
+        ..Default::default()
+    };
+
+    TestingFramework::new()
+        .with_evm_contract(target, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_storage_slot(target, key, value)
+        .with_block_context(block_context)
+        .with_da_commitment_scheme(da_commitment_scheme)
+        .with_run_config(RunConfig {
+            do_prover_input_run: false,
+            ..RunConfig::without_riscv_run()
+        })
+        .execute_block(vec![tx])
+}
+
+fn successful_single_erc20_transfer_pubdata_used() -> u64 {
+    let output = run_single_erc20_transfer_with_limits(
+        u64::MAX,
+        DACommitmentScheme::BlobsAndPubdataKeccak256,
+    );
+    assert_tx_success!(output, 0);
+    output.tx_results[0]
+        .as_ref()
+        .expect("tx should be accepted")
+        .pubdata_used
+}
 
 #[test]
 fn run_base_system() {
@@ -113,7 +217,7 @@ fn run_base_system() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let l1_l2_transfer = {
+    let l1_l2_transfer: ZKsyncTxEnvelope = {
         L1TxBuilder::new()
             .from(address!("1234000000000000000000000000000000000000"))
             .to(common_target_address())
@@ -121,19 +225,17 @@ fn run_base_system() {
             .gas_price(10_000)
             .gas_limit(21_000)
             .build()
-            .into()
     };
 
-    let l1_l2_erc_transfer = {
+    let l1_l2_erc_transfer: ZKsyncTxEnvelope = {
         L1TxBuilder::new()
             .from(wallet.address())
             .to(to)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into())
+            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
             .gas_price(10_000)
             .gas_limit(40_000)
             .nonce(3)
             .build()
-            .into()
     };
 
     let transactions = vec![
@@ -142,8 +244,8 @@ fn run_base_system() {
         deployment_tx,
         transfer_to_eoa_tx,
         mint2_tx,
-        l1_l2_transfer,
-        l1_l2_erc_transfer,
+        l1_l2_transfer.clone(),
+        l1_l2_erc_transfer.clone(),
     ];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
@@ -167,6 +269,13 @@ fn run_base_system() {
         }
         success
     }));
+
+    let pi_batch_output = last_prover_input_batch_output(&tester);
+    assert_eq!(pi_batch_output.number_of_layer_1_txs, U256::from(2u64));
+    assert_eq!(
+        pi_batch_output.priority_operations_hash,
+        expected_priority_operations_hash([l1_l2_transfer, l1_l2_erc_transfer]),
+    );
 }
 
 #[test]
@@ -528,16 +637,14 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let tx = L1TxBuilder::new()
+        L1TxBuilder::new()
             .from(l1_messenger_contract)
             .to(l1_messenger_hook)
             .input(withdrawal_calldata)
             .gas_price(1000)
             .gas_limit(500_000)
             .nonce(0)
-            .build();
-
-        tx.into()
+            .build()
     };
 
     let transactions = vec![mint_tx_1, withdrawal_tx];
@@ -822,7 +929,7 @@ fn test_balance_overflow_protection() {
     let output = tester.execute_block(vec![overflow_fee_tx, overflow_total_tx]);
 
     assert!(
-        output.tx_results.get(0).unwrap().is_err(),
+        output.tx_results.first().unwrap().is_err(),
         "Transaction with fee overflow should fail"
     );
     assert!(
@@ -1246,10 +1353,15 @@ fn test_check_pubdata_encoding_version() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
+    let pubdata = tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .pubdata
+        .clone();
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    assert_eq!(result.pubdata[0], PUBDATA_ENCODING_VERSION);
+    assert_eq!(pubdata[0], PUBDATA_ENCODING_VERSION);
 }
 
 #[test]
@@ -1289,17 +1401,40 @@ fn test_check_pubdata_has_timestamp() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
+    let pubdata = tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .pubdata
+        .clone();
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
     // Pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
-    let pubdata_timestamp_bytes = &result.pubdata.as_slice()[33..41];
+    let pubdata_timestamp_bytes = &pubdata.as_slice()[33..41];
     let pubdata_timestamp = u64::from_be_bytes(
         pubdata_timestamp_bytes
             .try_into()
             .expect("Slice with incorrect length"),
     );
     assert_eq!(timestamp, pubdata_timestamp, "Timestamps do not match");
+}
+
+#[test]
+fn test_block_pubdata_limit_counts_serialized_counters() {
+    let tx_pubdata_used = successful_single_erc20_transfer_pubdata_used();
+    let old_limit = BLOCK_INTRINSIC_PUBDATA_BYTES + tx_pubdata_used
+        - BLOCK_SERIALIZATION_COUNTERS_PUBDATA_BYTES;
+
+    let output = run_single_erc20_transfer_with_limits(
+        old_limit,
+        DACommitmentScheme::BlobsAndPubdataKeccak256,
+    );
+
+    assert_tx_rejected!(output, 0);
+    assert!(matches!(
+        output.tx_results[0],
+        Err(InvalidTransaction::BlockPubdataLimitReached)
+    ));
 }
 
 #[test]
@@ -1497,6 +1632,10 @@ fn test_simulation_skips_nonce_check() {
 fn test_simulation_balance_check() {
     let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
+    // Create the account in the tree with zero balance so persist pricing
+    // uses the existing-account path (matching production: senders always
+    // exist because they were funded in a prior block).
+    tester.set_balance(wallet.address(), U256::ZERO);
     let target_address = common_target_address();
 
     // - gasPrice > 0 && value > 0: fail
@@ -1868,8 +2007,7 @@ fn test_treasury_based_token_distribution_regression() {
         .gas_price(gas_price.into())
         .gas_limit(gas_limit.into())
         .value(value_to_transfer)
-        .build()
-        .into();
+        .build();
 
     let block_context = BlockContext {
         coinbase: B160::from_alloy(coinbase),
@@ -1967,8 +2105,7 @@ fn test_treasury_insufficient_balance_failure() {
         .gas_price(gas_price.into())
         .gas_limit(gas_limit.into())
         .value(value_to_transfer)
-        .build()
-        .into();
+        .build();
 
     // Ensure we rely on treasury balance, not auto-minting.
     tester = tester.without_minting_tokens_to_treasury();

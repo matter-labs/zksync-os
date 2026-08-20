@@ -1,5 +1,4 @@
 /target
-/Cargo.lock
 
 instances_examples/test_contracts/node_modules
 instances_examples/test_contracts/cache
@@ -21,5 +20,10 @@ tests/instances/**/*.bench
 bench_results/
 bench_scripts/__pycache__/
 
+docs/superpowers
+coverage_results/
+coverage_scripts/__pycache__/
+
 .DS_Store
 .idea
+.claude

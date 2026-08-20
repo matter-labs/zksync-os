@@ -15,14 +15,15 @@ use std::path::PathBuf;
 pub fn read_all(
     directory_path: &Path,
     filters: &Filters,
-    environment: Environment,
+    _environment: Environment,
     mutation_path: Option<String>,
     index_path: &Path,
+    cli_hardfork: Option<String>,
 ) -> anyhow::Result<Vec<Test>> {
     let mut index_maybe = read_index(index_path);
 
     if index_maybe.is_err() {
-        create_index(&index_path, directory_path)?;
+        create_index(index_path, directory_path)?;
         index_maybe = read_index(index_path);
         assert!(index_maybe.is_ok());
     }
@@ -50,6 +51,19 @@ pub fn read_all(
                 .skip(1)
                 .collect();
 
+            // CLI hardfork takes precedence over per-test/per-directory overrides.
+            // The hardfork is considered "overridden" when the final hardfork
+            // differs from what the STF natively supports — i.e., either the CLI
+            // or the index forces a hardfork the compiled STF doesn't match.
+            // The only exception is when the CLI explicitly sets the same hardfork
+            // that the test already targets — that's not an override.
+            let hardfork_was_overridden = match (&cli_hardfork, &test.hardfork_override) {
+                (Some(cli), Some(test_hf)) => cli != test_hf,
+                (Some(_), None) | (None, Some(_)) => true,
+                (None, None) => false,
+            };
+            let hardfork_override = cli_hardfork.clone().or(test.hardfork_override);
+
             Some(Test::from_ethereum_spec_test(
                 &file,
                 test.skip_calldatas,
@@ -60,7 +74,8 @@ pub fn read_all(
                 relative_path,
                 mutation_path.clone(),
                 None,
-                test.hardfork_override,
+                hardfork_override,
+                hardfork_was_overridden,
             ))
         })
         .flatten()

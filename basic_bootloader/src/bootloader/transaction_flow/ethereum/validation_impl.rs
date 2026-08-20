@@ -19,6 +19,7 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::MAX_BLOBS_PER_TX;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
 use zk_ee::system_log;
 use zk_ee::utils::{u256_mul_by_word, u256_to_u64_saturated};
@@ -123,9 +124,9 @@ where
 
     // Validate block-level invariants
     {
-        // Validate that the transaction's gas limit is not larger than
-        // the block's gas limit.
-        let tx_limit = system.metadata.individual_tx_gas_limit();
+        // Validate that the transaction's gas limit is not larger than the
+        // effective per-tx limit.
+        let tx_limit = system.get_individual_tx_gas_limit();
         require!(
             tx_gas_limit <= tx_limit,
             InvalidTransaction::CallerGasLimitMoreThanTxLimit,
@@ -142,24 +143,16 @@ where
             non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
         let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
 
-        #[cfg(feature = "eip_7623")]
-        {
-            let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-            let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
+        let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
+        let intrinsic_gas = TX_INTRINSIC_GAS.saturating_add(floor_tokens_gas_cost);
 
-            require!(
-                intrinsic_gas <= tx_gas_limit,
-                InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
-                system
-            )?;
+        require!(
+            intrinsic_gas <= tx_gas_limit,
+            InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
+            system
+        )?;
 
-            (num_tokens, intrinsic_gas)
-        }
-
-        #[cfg(not(feature = "eip_7623"))]
-        {
-            (num_tokens, TX_INTRINSIC_GAS)
-        }
+        (num_tokens, intrinsic_gas)
     };
 
     let (effective_gas_price, priority_fee_per_gas) = get_gas_prices(
@@ -213,14 +206,18 @@ where
 
         let mut ecrecover_output = ArrayBuilder::default();
         // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
+        let mut logger = system.get_logger();
+        let allocator = system.get_allocator();
         tx_resources
             .main_resources
             .with_infinite_ergs(|resources| {
-                S::SystemFunctions::secp256k1_ec_recover(
+                S::SystemFunctionsExt::secp256k1_ec_recover(
                     ecrecover_input.as_slice(),
                     &mut ecrecover_output,
                     resources,
-                    system.get_allocator(),
+                    system.io.oracle(),
+                    &mut logger,
+                    allocator,
                 )
                 .map_err(SystemError::from)
             })?;
@@ -331,7 +328,7 @@ where
                 InvalidTransaction::BlobElementIsNotSupported,
             ));
         }
-        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+        match parse_blobs_list::<MAX_BLOBS_PER_TX>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);

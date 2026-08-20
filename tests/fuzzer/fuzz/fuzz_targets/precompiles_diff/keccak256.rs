@@ -22,8 +22,8 @@ fn fuzz(data: &[u8]) {
     let mut dst1 = Vec::new();
     let mut dst2 = Vec::new();
 
-    let digest: B256 = keccak256(msg);
-    let result_bytes: [u8; 32] = digest.to_fixed_bytes();
+    let digest: B256 = keccak256(data);
+    let result_bytes: [u8; 32] = digest.0;
 
     let r1 = keccak256_forward(&src.as_slice()[0..n], &mut dst1);
     let r1_ok = r1.is_ok();
@@ -34,7 +34,7 @@ fn fuzz(data: &[u8]) {
     if r1_ok || r2_ok {
         assert!(r1_ok,   "forward run rejected but proving run accepted");
         assert!(r2_ok,   "proving run rejected but forward run accepted");
-        
+
         assert_eq!(dst1, result_bytes, "forward <> reth mismatch");
         assert_eq!(dst2, result_bytes, "proving <> reth mismatch");
     }

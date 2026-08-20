@@ -45,7 +45,7 @@ where
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
     type PostTxLoopOpResult = O;
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator, S::Allocator>;
     type BatchDataKeeper = ZKBatchDataKeeper<A, O>;
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
 
@@ -57,11 +57,14 @@ where
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         let block_header = form_block_header(
             &system,
-            block_data.transaction_hashes_accumulator.finish().0,
+            block_data.transactions_root(),
+            block_data.receipts_root(),
             block_data.block_gas_used,
         )?;
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
+        result_keeper.record_block_native_used(block_data.block_computational_native_used);
+        result_keeper.record_block_pubdata_used(block_data.block_pubdata_used);
 
         let mut logger = system.get_logger();
         logger_log!(logger, "Basic header information was created\n");
@@ -94,17 +97,20 @@ where
                 da_commitment_scheme
             );
         }
-        write_pubdata(
-            batch_data
-                .da_commitment_generator
-                .as_mut()
-                .unwrap()
-                .as_mut(),
-            result_keeper,
-            block_hash,
-            metadata.block_timestamp(),
-            &mut io,
-        );
+        // See `post_tx_op_proving_singleblock_batch.rs` for the rationale.
+        cycle_marker::wrap!("da_commitment", {
+            write_pubdata(
+                batch_data
+                    .da_commitment_generator
+                    .as_mut()
+                    .unwrap()
+                    .as_mut(),
+                result_keeper,
+                block_hash,
+                metadata.block_timestamp(),
+                &mut io,
+            );
+        });
 
         io.logs_storage
             .apply_to_array_vec(&mut batch_data.logs_storage);
@@ -140,8 +146,8 @@ where
             last_block_timestamp,
         };
 
-        // 3. Verify/apply reads and writes
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        // 3. Verify/apply reads and writes — state-tree merkle commit.
+        cycle_marker::wrap!("state_commitment_update", {
             IOTeardown::<_>::update_commitment(
                 &mut io,
                 Some(&mut state_commitment),
@@ -163,6 +169,10 @@ where
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp: metadata.block_timestamp(),
         };
+        let next_proof_data = ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: metadata.block_timestamp(),
+        };
         logger_log!(
             logger,
             "PI calculation: state commitment after {:?}",
@@ -172,8 +182,9 @@ where
         batch_data.apply_block(
             chain_state_commitment_before.hash().into(),
             chain_state_commitment_after.hash().into(),
+            next_proof_data,
             metadata.block_timestamp(),
-            U256::from(metadata.chain_id()),
+            metadata.chain_config,
             upgrade_tx_hash,
             multichain_root,
             io.interop_root_storage.iter(),

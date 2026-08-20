@@ -46,6 +46,8 @@ The basic [IO subsystem implementation](../../../basic_system/src/system_impleme
 
 The basic implementation consist mostly on handling those storages and is now abstracted to work with any storage model that implements the required traits. The default main storage implementation, [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/flat_storage_model/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
 
+For a detailed explanation of the `StorageModel` trait, the generic type parameters of `FullIO`, the resource charging model, and how the `PROOF_ENV` const generic affects behaviour, see the [storage model guide](./storage_model.md).
+
 ### Storage model for accounts
 
 Each account has the following properties:

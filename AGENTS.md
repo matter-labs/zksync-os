@@ -27,7 +27,7 @@ Core crates and responsibilities:
 - `api/`: API interfaces and abstractions used by the sequencer and other integrations
 - `cycle_marker/`: performance and cycle tracking utilities
 - `zksync_os/`: RISC-V binary target (built separately, excluded from workspace)
-- `zksync_os_runner/`: executes RISC-V binaries via simulator, returns program output
+- `zksync_os_runner/`: executes RISC-V binaries via transpiler, returns program output
 
 Reference docs:
 - `docs/overview.md`
@@ -40,16 +40,17 @@ Reference docs:
 ## Build and Test
 Prerequisites (one-time):
 ```bash
-rustup target add riscv32i-unknown-none-elf
-cargo install cargo-binutils
-rustup component add llvm-tools-preview
+cargo install cargo-binutils --locked
+cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 ```
+Rust components (`rust-src`, `llvm-tools-preview`) and the RISC-V target are
+installed automatically via `rust-toolchain.toml`.
 
 Common commands:
 ```bash
-# Workspace build/test
+# Workspace build/test (default-members only)
 cargo build
-cargo test --workspace
+cargo test
 
 # Per-crate
 cargo build -p <crate-name>
@@ -64,7 +65,7 @@ cargo clippy --all -- -D warnings
 cargo clippy --fix -p <crate-name>
 ```
 
-Note: `cargo test --workspace` does not include crates/directories excluded in root `Cargo.toml` (e.g. `zksync_os`, `tests/fuzzer`, `tests/evm_tester`, `tests/instances/eth_runner`).
+Note: `cargo build`, `cargo test`, and `cargo clippy` operate on `default-members` by default. Tool crates (`evm_tester`, `evm_divergence_validator`, `eth_runner`) are workspace members but not default-members — they enable conflicting features on `forward_system` via `rig` that break other tests through feature unification. Use `cargo test -p <crate>` to test them individually. `zksync_os`, `circuit_test_program`, and `tests/fuzzer` are excluded from the workspace entirely.
 
 RISC-V build (from repo root):
 ```bash
@@ -121,6 +122,7 @@ When working on performance optimizations, always run benchmarks to verify the i
 - Treat behavior changes as protocol changes unless proven otherwise.
 - Avoid changing serialization/hashing/state-layout/resource-accounting/oracle-query semantics without explicit validation.
 - Keep forward/proof behavior aligned; if one path changes, inspect the other, especially important for crypto primitives.
+- Derive resource charging only from block-start facts, rollback-aware cache metadata, and cache values — never from cache entry presence, which can outlive transactions dropped from the block. See "Charging invariant" in `docs/system/io/caches.md`.
 - Add/adjust tests when corresponding logic is changed.
 - Never include credentials, keys, or tokens in code.
 - When possible, make match statements exhaustive and avoid wildcard arms.

@@ -1,11 +1,9 @@
+use super::chain_config::ChainConfig;
 use crate::{types_config::SystemIOTypesConfig, utils::Bytes32};
 use ruint::aliases::U256;
 
 /// Block-level metadata required by the bootloader to execute transactions.
 pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
-    /// Identifier of the chain/network.
-    fn chain_id(&self) -> u64;
-
     /// Current block number.
     fn block_number(&self) -> u64;
 
@@ -23,9 +21,6 @@ pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Per-block gas limit for computation.
     fn block_gas_limit(&self) -> u64;
-
-    /// Max gas allowed for an individual transaction’s computation.
-    fn individual_tx_gas_limit(&self) -> u64;
 
     /// Base fee per execution gas unit (EIP-1559 style), if supported.
     fn eip1559_basefee(&self) -> U256;
@@ -54,10 +49,15 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
 
     /// Hash (commitment) of the `idx`-th blob for this transaction, if present.
     fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32>;
+
+    /// Returns whether a given FRI statement hash was verified during
+    /// this transaction's validation phase. A `FriProofTx` may verify
+    /// more than one statement.
+    fn is_fri_statement_verified(&self, statement_versioned_hash: &Bytes32) -> bool;
 }
 
-/// ZKsync-specific pricing knobs that are *not* standardized by Ethereum.
-pub trait ZkSpecificPricingMetadata {
+/// ZKsync-specific block metadata that is *not* standardized by Ethereum.
+pub trait ZkSpecificMetadata {
     /// Price of an unit of native resources.
     fn native_price(&self) -> U256;
 
@@ -66,6 +66,25 @@ pub trait ZkSpecificPricingMetadata {
 
     /// Price in base token of 1 byte of pubdata.
     fn get_pubdata_price(&self) -> U256;
+}
+
+/// Metadata types that expose static chain-level execution configuration.
+pub trait ChainConfigMetadata {
+    fn chain_config(&self) -> ChainConfig {
+        ChainConfig::default()
+    }
+
+    fn config_chain_id(&self) -> u64 {
+        self.chain_config().chain_id()
+    }
+
+    fn fri_proof_verification_enabled(&self) -> bool {
+        self.chain_config().fri_proof_verification_enabled()
+    }
+
+    fn max_tx_gas_limit(&self) -> u64 {
+        self.chain_config().max_tx_gas_limit()
+    }
 }
 
 /// Convenience super-trait for environments that expose both block- and tx-level

@@ -1,9 +1,12 @@
 # zksync_os_runner
 
-This crate is responsible for running a program in ZKsync OS on riscV simulator.
+This crate is a thin facade over airbender-platform's `TranspilerRunner` for executing
+a ZKsync OS RISC-V program.
 
-It assumes that zksync_os binary is already compiled into riscV binary. The path to such
-binary has to be passed as an argument.
+It expects the program to be built with `cargo airbender build` into a distribution
+directory laid out as `dist/<app>/app.{bin,elf,text}` plus `manifest.toml`. The path
+to that directory is passed as an argument.
 
-The main method (lib.rs:run) - takes as input the NonDeterminismCSRSource (a trait that will simulate/provide all the read & writes) - and then runs zkOS for a given number of cycles.
-
+The main method (`lib.rs:run`) takes a slice of `u32` words as pre-recorded
+non-determinism input (typically produced by a native proof input run) and runs zkOS for
+a given number of cycles.

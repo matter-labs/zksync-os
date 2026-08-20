@@ -115,6 +115,14 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns true if this transaction is a FRI proof transaction.
+    pub fn is_fri_proof(&self) -> bool {
+        match self {
+            Self::Abi(_) => false,
+            Self::Rlp(tx) => tx.is_fri_proof(),
+        }
+    }
+
     /// Returns the transaction nonce as U256.
     pub fn nonce(&self) -> Option<U256> {
         match self {
@@ -254,6 +262,26 @@ impl<A: Allocator> Transaction<A> {
         match self {
             Self::Abi(_) => None,
             Self::Rlp(tx) => tx.authorization_list(),
+        }
+    }
+
+    /// Returns the list of signed FRI statement hashes, if present.
+    #[cfg(feature = "fri_precompile")]
+    pub fn statement_versioned_hashes<'a>(
+        &'a self,
+    ) -> Option<
+        crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList<'a>,
+    >{
+        match self {
+            Self::Abi(_) => None,
+            Self::Rlp(tx) => tx.statement_versioned_hashes(),
+        }
+    }
+
+    pub fn statement_versioned_hashes_len(&self) -> u64 {
+        match self {
+            Self::Abi(_) => 0,
+            Self::Rlp(tx) => tx.statement_versioned_hashes_len(),
         }
     }
 

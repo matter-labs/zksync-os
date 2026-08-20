@@ -16,8 +16,7 @@ use zk_ee::utils::Bytes32;
 use zk_ee::{
     memory::stack_trait::StackFactory,
     oracle::IOOracle,
-    storage_types::MAX_EVENT_TOPICS,
-    system::{errors::internal::InternalError, logger::Logger, Resources, *},
+    system::{errors::internal::InternalError, logger::Logger, Resources, MAX_EVENT_TOPICS, *},
 };
 
 pub mod interop_roots;
@@ -74,7 +73,8 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         current_value: &Bytes32,
         new_value: &Bytes32,
         resources: &mut R,
-        is_warm_write: bool,
+        is_warm_access: bool,
+        is_cold_write_charged: bool,
         is_new_slot: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
@@ -96,20 +96,32 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 let total_cost =
                     // In EVM spec there's a discrepancy for cold read and cold write costs. Cold
                     // writes add another 100 from thin air.
-                    if is_warm_write == false { total_cost + 100 }
+                    // Uses access warmness (EIP-2929): warm after any SLOAD or SSTORE.
+                    if is_warm_access == false { total_cost + 100 }
                     else { total_cost };
 
                 Ergs(total_cost * ERGS_PER_GAS)
             }
         };
-        let native = if is_new_slot {
-            R::Native::from_computational(
-                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
-            )
+        // A write has two independent native components:
+        // 1. Updating the in-memory slot data (`addr_data`). This happens on
+        //    every write — no-op, warm, and cold alike — so
+        //    `WARM_STORAGE_WRITE_EXTRA_NATIVE_COST` is always charged. (Mirrors
+        //    the account path, which always charges `WARM_ACCOUNT_CACHE_WRITE_EXTRA`.)
+        // 2. The merkle-path work of a cold write, charged on top of (1) only for
+        //    the first (cold) write to the slot this tx. A warm write (cold extra
+        //    already charged this tx) or a no-op write pays only (1).
+        use crate::system_implementation::flat_storage_model::cost_constants;
+        let merkle_extra = if new_value == current_value || is_cold_write_charged {
+            0
+        } else if is_new_slot {
+            cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST
         } else {
-            R::Native::from_computational(
-          crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
+            cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST
         };
+        let native = R::Native::from_computational(
+            cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST + merkle_extra,
+        );
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
 

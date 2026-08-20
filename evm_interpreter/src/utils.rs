@@ -5,22 +5,14 @@ use ruint::aliases::B160;
 use zk_ee::{system::EthereumLikeTypes, utils::exact_size_chain::ExactSizeChain};
 
 pub fn bytereverse_u256(value: &mut U256) {
-    // assuming LE
-    unsafe {
-        let limbs = value.as_limbs_mut();
-        core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
-        core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
-        for limb in limbs.iter_mut() {
-            *limb = limb.to_be();
-        }
-    }
+    value.bytereverse();
 }
 
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
-    use crypto::sha3::{Digest, Keccak256};
+    use crypto::sha3::Keccak256;
+    use crypto::MiniDigest;
     let hash = Keccak256::digest(bytecode);
     let mut result = [0u8; 32];
-    #[allow(deprecated)]
     result.copy_from_slice(hash.as_slice());
 
     result
@@ -29,7 +21,20 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
-        u256_try_to_usize(src).ok_or(error_to_set)
+        src.try_to_usize().ok_or(error_to_set)
+    }
+
+    /// Casts a 256-bit value to `u64`.
+    ///
+    /// Copy opcodes charge their length-dependent gas and native cost from
+    /// this width-independent value. The charge must happen before the
+    /// narrowing done by [`Self::cast_to_usize`]. A `usize` narrowing accepts
+    /// different lengths on the 64-bit forward host and on the 32-bit proving
+    /// target. A charge after the narrowing therefore makes the two
+    /// executions spend different resources for the same input.
+    #[inline]
+    pub(crate) fn cast_to_u64(src: &U256, error_to_set: ExitCode) -> Result<u64, ExitCode> {
+        src.try_to_u64().ok_or(error_to_set)
     }
 
     /// Helper for casting memory offset and length.

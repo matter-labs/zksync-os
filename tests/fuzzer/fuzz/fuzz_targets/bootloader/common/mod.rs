@@ -5,7 +5,6 @@ use basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, TestingTree, TESTING_TREE_HEIGHT,
 };
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-use oracle_provider::DummyMemorySource;
 use oracle_provider::ZkEENonDeterminismSource;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rig::ruint::aliases::{B160, U256};
@@ -16,8 +15,8 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::ProofData;
-use zk_ee::system::metadata::system_metadata::SystemMetadata;
-use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata};
+use zk_ee::system::metadata::chain_config::ChainConfig;
+use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata, ZkMetadata};
 use zk_ee::utils::Bytes32;
 use zk_ee::utils::UsizeAlignedByteBox;
 
@@ -123,7 +122,7 @@ pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
 #[allow(unused)]
 pub fn mock_oracle() -> (
     zk_ee::system::metadata::zk_metadata::ZkMetadata,
-    ZkEENonDeterminismSource<DummyMemorySource>,
+    ZkEENonDeterminismSource,
 ) {
     let tree = InMemoryTree::<false> {
         storage_tree: TestingTree::new_in(Global),
@@ -140,9 +139,10 @@ pub fn mock_oracle() -> (
     let block_level = BlockMetadataFromOracle::new_for_test();
     let tx_level = TxLevelMetadata::default();
 
-    let system_metadata = SystemMetadata {
+    let system_metadata = ZkMetadata {
         block_level: block_level.clone(),
-        tx_level: tx_level,
+        tx_level,
+        chain_config: ChainConfig::default(),
         _marker: std::marker::PhantomData,
     };
 
@@ -157,9 +157,12 @@ pub fn mock_oracle() -> (
             TxListSource {
                 transactions: VecDeque::new(),
             },
+            forward_system::run::NoFriProofSidecar,
+            None,
             init_data,
             None,
             true,
+            false,
         ),
     )
 }
@@ -170,7 +173,7 @@ pub fn mock_oracle_balance(
     balance: U256,
 ) -> (
     zk_ee::system::metadata::zk_metadata::ZkMetadata,
-    ZkEENonDeterminismSource<DummyMemorySource>,
+    ZkEENonDeterminismSource,
 ) {
     let mut tree = InMemoryTree::<false> {
         storage_tree: TestingTree::new_in(Global),
@@ -204,9 +207,10 @@ pub fn mock_oracle_balance(
 
     let block_level = BlockMetadataFromOracle::new_for_test();
     let tx_level = TxLevelMetadata::default();
-    let system_metadata = SystemMetadata {
+    let system_metadata = ZkMetadata {
         block_level: block_level.clone(),
-        tx_level: tx_level,
+        tx_level,
+        chain_config: ChainConfig::default(),
         _marker: std::marker::PhantomData,
     };
     (
@@ -218,9 +222,12 @@ pub fn mock_oracle_balance(
             TxListSource {
                 transactions: VecDeque::new(),
             },
+            forward_system::run::NoFriProofSidecar,
+            None,
             init_data,
             None,
             true,
+            false,
         ),
     )
 }

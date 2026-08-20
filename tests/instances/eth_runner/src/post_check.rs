@@ -1,13 +1,18 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
+use alloy::consensus::{Eip658Value, Receipt, ReceiptWithBloom};
 use alloy::hex;
-use rig::crypto::MiniDigest;
+use alloy::primitives::{Bloom, Log};
+use alloy::rlp::Encodable as _;
+use forward_system::run::output::BlockOutput;
+use rig::basic_bootloader::bootloader::block_flow::zk::zk_block_tx_tree_root_in_place;
+use rig::crypto::{blake2s::Blake2s256, MiniDigest};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::log::{error, info};
-use rig::zksync_os_interface::types::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -16,7 +21,8 @@ pub enum PostCheckError {
     TxShouldHaveFailed { id: TxId },
     IncorrectLogs { id: TxId },
     GasMismatch { id: TxId },
-    BadTxRollingHash,
+    BadTransactionsRoot,
+    BadReceiptsRoot,
     Internal { msg: String },
 }
 
@@ -35,6 +41,14 @@ pub enum TxId {
     Index(usize),
 }
 
+/// Account code as a byte slice, treating `None` and an empty `Bytes`
+/// identically: the ZKsync OS side leaves an account with no code as `None`
+/// while the reference/on-chain side can carry an explicit empty `Bytes`; both
+/// mean "no code" and must compare equal.
+fn code_as_slice(code: &Option<alloy::primitives::Bytes>) -> &[u8] {
+    code.as_ref().map(|c| c.as_ref()).unwrap_or(&[])
+}
+
 impl DiffTrace {
     fn collect_diffs(self, prestate_cache: &Cache) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, (Option<usize>, AccountState)> = HashMap::new();
@@ -50,6 +64,15 @@ impl DiffTrace {
                     .nonce
                     .into_iter()
                     .for_each(|x| entry.nonce = Some(x));
+                // A code set (contract deploy or EIP-7702 delegation) is
+                // reported in `post`. A code CLEAR (e.g. an EIP-7702 delegation
+                // removed within the block) is reported by the tracer OMITTING
+                // `code` from `post` — but `post` ALSO omits `code` when it is
+                // simply UNCHANGED (e.g. a delegated EOA just sends a tx), so
+                // "code absent in post" is ambiguous and cannot be resolved from
+                // the per-tx trace alone. We therefore aggregate only explicit
+                // code sets here; a possibly-stale delegation is reconciled
+                // against the authoritative on-chain code in `check_storage_writes`.
                 account
                     .code
                     .clone()
@@ -135,6 +158,9 @@ impl DiffTrace {
         self,
         output: BlockOutput,
         prestate_cache: Cache,
+        endpoint: Option<&str>,
+        block_number: u64,
+        parent_block_hash: Option<[u8; 32]>,
     ) -> Result<(), PostCheckError> {
         let diffs = self.collect_diffs(&prestate_cache);
         let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache)?;
@@ -172,13 +198,55 @@ impl DiffTrace {
                     )
                 }
             }
-            if account.code.is_some() && account.code != zk_account.code {
-                error_internal!(
-                    "Code for address {} differed. ZKsync OS: {}, reference: {}",
-                    hex::encode(address.to_be_bytes_vec()),
-                    hex::encode(zk_account.code.as_ref().unwrap_or_default()),
-                    hex::encode(account.code.as_ref().unwrap_or_default())
-                )
+            // Compare code content treating "no code" uniformly (`None` on the
+            // ZKsync OS side vs an empty `Bytes` reference both mean empty).
+            //
+            // The trace-reconstructed reference code can be a STALE EIP-7702
+            // delegation: the per-tx diff omits `code` from `post` both when a
+            // delegation is cleared and when it is left unchanged, so a
+            // delegation set earlier in the block and cleared later (or replaced)
+            // leaves an intermediate designator in `account.code`. On a mismatch
+            // we therefore reconcile against the authoritative on-chain code via
+            // `eth_getCode`: if ZKsync OS matches the real chain, the reference
+            // was merely ambiguous and this is not a divergence; otherwise it is
+            // a genuine divergence and we report it.
+            if account.code.is_some()
+                && code_as_slice(&account.code) != code_as_slice(&zk_account.code)
+            {
+                let address_hex = hex::encode(address.to_be_bytes_vec());
+                let on_chain_code = match endpoint {
+                    Some(ep) => match crate::live_run::rpc::get_code(
+                        ep,
+                        &format!("0x{address_hex}"),
+                        block_number,
+                    ) {
+                        Ok(code) => Some(code),
+                        Err(e) => error_internal!(
+                            "Failed to resolve on-chain code for address {address_hex} at block {block_number}: {e}"
+                        ),
+                    },
+                    None => None,
+                };
+                match &on_chain_code {
+                    // ZKsync OS matches the real chain; the trace-derived
+                    // reference was an ambiguous EIP-7702 delegation, not a
+                    // divergence.
+                    Some(code) if code_as_slice(&zk_account.code) == code.as_ref() => {}
+                    Some(code) => error_internal!(
+                        "Code for address {} diverges from on-chain state. ZKsync OS: {}, on-chain: {}",
+                        address_hex,
+                        hex::encode(zk_account.code.as_ref().unwrap_or_default()),
+                        hex::encode(code)
+                    ),
+                    // No endpoint to reconcile against (e.g. single-run from
+                    // fixtures): fall back to the trace-derived reference.
+                    None => error_internal!(
+                        "Code for address {} differed. ZKsync OS: {}, reference: {}",
+                        address_hex,
+                        hex::encode(zk_account.code.as_ref().unwrap_or_default()),
+                        hex::encode(account.code.as_ref().unwrap_or_default())
+                    ),
+                }
             }
             if let Some(storage) = &account.storage {
                 for (key, value) in storage {
@@ -219,13 +287,23 @@ impl DiffTrace {
                 match diffs.get(address) {
                     Some(_) => (),
                     None => {
-                        // For some reason, selfdestruct is not correctly reported in the
-                        // traces. We could use calltrace, but for now we just check that
-                        // the ZKsync OS diff is consistent with selfdestruct.
+                        // The per-tx `prestateTracer` diff does not report two
+                        // kinds of legitimate ZKsync OS writes, so an unmatched
+                        // ZKsync OS diff is not necessarily a divergence:
+                        //  * selfdestruct — not reported in the traces at all; we
+                        //    check the ZKsync OS diff is consistent with one.
+                        //  * the EIP-2935 pre-block system call — a block-boundary
+                        //    write to the history-storage contract that no per-tx
+                        //    diff can contain.
                         if !zksync_os_diff_consistent_with_selfdestruct(
                             address,
                             acc,
                             &prestate_cache,
+                        ) && !zksync_os_diff_is_eip2935_system_write(
+                            address,
+                            acc,
+                            block_number,
+                            parent_block_hash,
                         ) {
                             error_internal!(
                                 "Reference must have write for account {} {:?}",
@@ -259,6 +337,54 @@ fn zksync_os_diff_consistent_with_selfdestruct(
         })
     };
     diff_is_empty && prestate_can_be_deployed()
+}
+
+/// EIP-2935 history-storage contract and ring-buffer size, mirroring
+/// `basic_bootloader::bootloader::block_flow::eip_2935_historical_block_hash`.
+const HISTORY_STORAGE_ADDRESS: B160 =
+    B160::from_limbs([0x335B175320002935, 0x27F1C53A10CB7A02, 0x0000F908]);
+const HISTORY_SERVE_WINDOW: u64 = 8191;
+
+/// Returns true if `acc` is exactly the EIP-2935 pre-block system write the STF
+/// performs at the start of every post-Pectra block: a single storage write to
+/// `HISTORY_STORAGE_ADDRESS` at slot `(block_number - 1) % HISTORY_SERVE_WINDOW`
+/// holding the parent block hash, with no other account change.
+///
+/// This write is a block-boundary *system call*, so it never appears in the
+/// per-tx `prestateTracer` diff the reference is rebuilt from — leaving a
+/// ZKsync OS storage diff with no matching reference entry that would otherwise
+/// trip the "reference must have write" check. When the parent hash is known
+/// (`expected_parent_hash`, from the block-hash oracle the harness already
+/// fetched), the written value is validated against it so a genuinely wrong
+/// value or slot is still reported; otherwise only the address and slot are
+/// checked.
+fn zksync_os_diff_is_eip2935_system_write(
+    address: &B160,
+    acc: &AccountState,
+    block_number: u64,
+    expected_parent_hash: Option<[u8; 32]>,
+) -> bool {
+    if *address != HISTORY_STORAGE_ADDRESS || block_number == 0 {
+        return false;
+    }
+    // Only a single storage write is expected — nothing else changes.
+    if acc.balance.is_some() || acc.nonce.is_some() || acc.code.is_some() {
+        return false;
+    }
+    let Some(storage) = acc.storage.as_ref() else {
+        return false;
+    };
+    if storage.len() != 1 {
+        return false;
+    }
+    let expected_slot = U256::from((block_number - 1) % HISTORY_SERVE_WINDOW);
+    let Some(value) = storage.get(&expected_slot) else {
+        return false;
+    };
+    match expected_parent_hash {
+        Some(parent) => value.to_be_bytes::<32>() == parent,
+        None => true,
+    }
 }
 
 fn zksync_os_output_into_account_state(
@@ -333,40 +459,106 @@ fn zksync_os_output_into_account_state(
     Ok(updates)
 }
 
-fn compute_tx_rolling_hash_for_receipts(receipts: &Vec<TransactionReceipt>) -> [u8; 32] {
-    let mut hasher = rig::crypto::sha3::Keccak256::new();
-    let mut tx_rolling_hash = [
-        0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03,
-        0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85,
-        0xa4, 0x70,
-    ];
-    for receipt in receipts.iter() {
-        hasher.update(tx_rolling_hash);
-        hasher.update(receipt.transaction_hash);
-        tx_rolling_hash = hasher.finalize_reset();
-    }
-    tx_rolling_hash
+/// Reproduces the header `transactions_root`: a Blake2s simple Merkle tree over
+/// the block's transaction hashes (in execution order), matching the ZKsync OS
+/// `block_data` scheme.
+fn compute_transactions_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
+    let mut leaves: Vec<Bytes32> = receipts
+        .iter()
+        .map(|receipt| Bytes32::from_array(receipt.transaction_hash.0))
+        .collect();
+    zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
 }
 
+/// Reproduces a single ZK receipt-hash leaf independently of ZKsync OS:
+/// `blake2s(type? || rlp([status, cumulative_gas_used, logs_bloom, [logs...]]))`,
+/// matching `compute_receipt_hash`. The ZK path commits to a **zero** logs bloom
+/// (the bloom is recomputable from the logs and would be wasted prover work), so
+/// the leaf is built with a zero bloom here too. Status, cumulative gas and the
+/// logs are taken from the reference receipt, giving a check that is independent
+/// of the per-tx data ZKsync OS used to build the header.
+fn compute_receipt_leaf(receipt: &TransactionReceipt) -> Bytes32 {
+    let status = receipt.status == Some(U256::from(1u64));
+    let cumulative_gas_used = zk_ee::utils::u256_to_u64_saturated(&receipt.cumulative_gas_used);
+    // ZK/Ethereum-specific type bytes (e.g. 0x7e) all fit in one byte.
+    let tx_type = receipt
+        .tx_type
+        .map_or(0u8, |t| zk_ee::utils::u256_to_u64_saturated(&t) as u8);
+
+    let logs: Vec<Log> = receipt
+        .logs
+        .iter()
+        .map(|l| Log::new_unchecked(l.address, l.topics.clone(), l.data.clone()))
+        .collect();
+
+    let receipt_with_bloom = ReceiptWithBloom {
+        receipt: Receipt {
+            status: Eip658Value::Eip658(status),
+            cumulative_gas_used,
+            logs,
+        },
+        logs_bloom: Bloom::ZERO,
+    };
+
+    let mut rlp = Vec::new();
+    if tx_type != 0 {
+        rlp.push(tx_type);
+    }
+    receipt_with_bloom.encode(&mut rlp);
+
+    let mut hasher = Blake2s256::new();
+    hasher.update(&rlp);
+    Bytes32::from_array(hasher.finalize())
+}
+
+/// Reproduces the header `receipts_root`: a Blake2s simple Merkle tree over the
+/// block's receipt-hash leaves (in execution order), matching the ZKsync OS
+/// `block_data` scheme. Independent of ZKsync OS' own receipt encoding.
+fn compute_receipts_root_for_receipts(receipts: &[TransactionReceipt]) -> [u8; 32] {
+    let mut leaves: Vec<Bytes32> = receipts.iter().map(compute_receipt_leaf).collect();
+    zk_block_tx_tree_root_in_place(&mut leaves).as_u8_array()
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn post_check(
     output: BlockOutput,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     prestate_cache: Cache,
+    // RPC endpoint used to reconcile ambiguous EIP-7702 delegation code against
+    // the authoritative on-chain state. `None` (e.g. single-run from local
+    // fixtures) falls back to the trace-derived reference.
+    endpoint: Option<&str>,
+    block_number: u64,
+    // Parent block hash (from the block-hash oracle the harness already fetched),
+    // used to validate the EIP-2935 pre-block history-storage write that the per-tx
+    // trace cannot express. `None` skips value validation of that write.
+    parent_block_hash: Option<[u8; 32]>,
 ) -> Result<(), PostCheckError> {
     fn u256_to_usize(src: &U256) -> usize {
         zk_ee::utils::u256_to_u64_saturated(src) as usize
     }
 
-    let reference_rolling_tx_hash = compute_tx_rolling_hash_for_receipts(&receipts);
-    let zksync_os_tx_rolling_hash = output.header.inner().transactions_root.0;
-    if reference_rolling_tx_hash != zksync_os_tx_rolling_hash {
+    let reference_transactions_root = compute_transactions_root_for_receipts(&receipts);
+    let zksync_os_transactions_root = output.header.inner().transactions_root.0;
+    if reference_transactions_root != zksync_os_transactions_root {
         error!(
-            "Transaction rolling hash mismatch, reference {}, got {}",
-            hex::encode(reference_rolling_tx_hash),
-            hex::encode(zksync_os_tx_rolling_hash)
+            "Transactions root mismatch, reference {}, got {}",
+            hex::encode(reference_transactions_root),
+            hex::encode(zksync_os_transactions_root)
         );
-        return Err(PostCheckError::BadTxRollingHash);
+        return Err(PostCheckError::BadTransactionsRoot);
+    }
+
+    let reference_receipts_root = compute_receipts_root_for_receipts(&receipts);
+    let zksync_os_receipts_root = output.header.inner().receipts_root.0;
+    if reference_receipts_root != zksync_os_receipts_root {
+        error!(
+            "Receipts root mismatch, reference {}, got {}",
+            hex::encode(reference_receipts_root),
+            hex::encode(zksync_os_receipts_root)
+        );
+        return Err(PostCheckError::BadReceiptsRoot);
     }
 
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {
@@ -379,7 +571,7 @@ pub fn post_check(
                 );
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Hash(receipt.transaction_hash.to_string()),
-                    msg: format!(":e#?"),
+                    msg: format!("{e:#?}"),
                 });
             }
         };
@@ -447,7 +639,13 @@ pub fn post_check(
         }
     }
 
-    diff_trace.check_storage_writes(output, prestate_cache)?;
+    diff_trace.check_storage_writes(
+        output,
+        prestate_cache,
+        endpoint,
+        block_number,
+        parent_block_hash,
+    )?;
 
     info!("All good!");
     Ok(())

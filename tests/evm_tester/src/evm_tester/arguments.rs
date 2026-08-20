@@ -60,6 +60,13 @@ pub struct Arguments {
     /// Also run on RISC-V simulator and check consistency against forward run.
     #[structopt(long = "proof_run")]
     pub proof_run: bool,
+
+    /// Override the hardfork version for all tests (e.g., "Osaka", "Prague").
+    /// Note: Ethereum test fixtures use consensus-layer names ("Osaka"); the STF
+    /// always targets Fusaka (Osaka EL), so the default selection is "Osaka".
+    /// When set, this takes precedence over per-test/per-directory hardfork overrides.
+    #[structopt(long = "hardfork")]
+    pub hardfork: Option<String>,
 }
 
 impl Arguments {

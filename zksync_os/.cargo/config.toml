@@ -1,16 +1,18 @@
 [build]
-target = "riscv32i-unknown-none-elf"
+target = "riscv32im-risc0-zkvm-elf"
 rustflags = [
-  "-C", "target-feature=+m,-unaligned-scalar-mem,+relax",
-  "-C", "link-arg=-Tsrc/lds/memory.x",
-  "-C", "link-arg=-Tsrc/lds/link.x",
+  "-C", "target-feature=+m,-unaligned-scalar-mem,+relax,+zimop",
+  "-C", "link-arg=-Tmemory.x",
+  "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=--save-temps",
   "-C", "force-frame-pointers",
-  # reproducibility
-  "--remap-path-prefix= /=/src",
-  "-C", "link-arg=--build-id=sha1",
-  "-C", "codegen-units=1",
+  "-C", "passes=lower-atomic",
+  "--cfg", "getrandom_backend=\"custom\"",
 ]
 
+[env]
+CC = "clang"
 
-
+[unstable]
+build-std = ["alloc", "core", "panic_abort", "compiler_builtins"]
+build-std-features = ["compiler-builtins-mem"]

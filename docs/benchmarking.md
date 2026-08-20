@@ -1,210 +1,132 @@
-# Benchmarking Guide
+# Benchmarking Reference
 
-## Overview
+## Metric
 
-ZKsync OS performance is measured in **effective RISC-V cycles**, not wall-clock time. The proving cost is directly proportional to cycle count. A reduction in effective cycles = cheaper proving.
+Proving cost is proportional to **effective RISC-V cycles**:
 
 ```
 effective_cycles = raw_risc_v_cycles
-                 + 16 × blake_delegations
-                 + 4  × bigint_delegations
+                 + 16 × blake_delegations    (id 1991)
+                 + 4  × bigint_delegations   (id 1994)
+                 + 4  × keccak_delegations   (id 1995)
 ```
 
-The repository currently uses two closely related metrics:
-- `cycle_marker::print_cycle_markers()` and `zksync_os_runner::run_and_get_effective_cycles()` use the formula above.
-- `bench_scripts/compare_bench.py` derives its `Eff` column from `.bench` files using the same Blake/BigInt weights, and also adds `+1` for every other delegation type recorded in the marker output.
+`cycle_marker::print_cycle_markers()` computes this for the `process_block`
+label. `bench_scripts/compare_bench.py`'s `Eff` column uses the same
+weights and additionally adds `+1` per delegation of any other id. The
+formula is the source of truth — when in doubt re-read
+`cycle_marker/src/lib.rs::print_cycle_markers`.
 
-## Quick Start
+Results are deterministic for the same RISC-V binary + input — no
+averaging needed. Always rebuild the binary after touching any code that
+ends up in `zksync_os` (`zksync_os/dump_bin.sh --type <type>`);
+`bench_scripts/bench.sh` does this automatically.
 
-Use `bench_scripts/bench.sh` to run benchmarks. All subcommands that run benchmarks automatically rebuild the RISC-V binary first.
+## Running
 
-**Save a baseline** (do this once on the base branch):
-```bash
-bench_scripts/bench.sh baseline
-```
+`bench_scripts/bench.sh` wraps the full pipeline. Subcommands:
+`baseline`, `quick`, `run`, `compare`, `flamegraph`. Read the script for
+exact invocations. `cargo test --features rig/no_print` is preferred over
+the underlying `cargo test` invocations when running tests directly.
 
-**Quick check after making changes** (runs 1 block, compares against baseline):
-```bash
-bench_scripts/bench.sh quick
-```
+For local proof-mode simulation set `ZKSYNC_RISC_V_RUN=true`; CI sets it
+automatically.
 
-**Full benchmark run** (all blocks + precompiles):
-```bash
-bench_scripts/bench.sh run
-```
+## Data pipeline (env-var opt-ins)
 
-**Compare full results against baseline:**
-```bash
-bench_scripts/bench.sh compare
-```
+The benchmark produces several artifacts, gated by env vars on the
+forward-mode run (block bench or `precompiles` test crate):
 
-**Generate a flamegraph** (identifies where RISC-V cycles are spent — use to find optimization targets). Produces both an SVG and a text summary (`.txt`) with self-cost and call stacks, suitable for automated analysis:
-```bash
-bench_scripts/bench.sh flamegraph              # default: bench_results/flamegraph.svg + .txt
-bench_scripts/bench.sh flamegraph output.svg   # custom path (text summary at output.txt)
-```
+| Env var | Producer | File layout |
+|---|---|---|
+| `MARKER_PATH` | `cycle_marker::print_cycle_markers` | `<path>.bench` — text format: `<label>: net cycles: <n>, net delegations: {id: count}` per marker, plus a global `Total delegations`. |
+| `OPCODE_STATS_PATH` | `EvmOpcodeStatsTracer` | CSV: per-opcode gas + native stats with min/median/avg/max. |
+| `OPCODE_SAMPLES_DIR` | `EvmOpcodeStatsTracer::dump_samples` | One `<OPCODE>.samples` file per opcode, `gas,native` per line in execution order. |
+| `OPCODE_CYCLE_SAMPLES_DIR` | `cycle_marker` | One `<OPCODE>.cycles` file per opcode, raw RISC-V cycles per line in execution order. |
+| `PRECOMPILE_STATS_PATH` | `PrecompileStatsTracer` | CSV: `name, address, count, avg_gas, median_gas, min_gas, max_gas, avg_native, median_native, min_native, max_native, native_per_gas`. |
+| `PRECOMPILE_SAMPLES_DIR` | `PrecompileStatsTracer::dump_samples` | One `<precompile>.samples` file per precompile, `gas,native` per line. |
+| `LABEL_CYCLE_SAMPLES_DIR` | `cycle_marker` | Per non-opcode label: `<label>.cycles` (raw) **and** `<label>.effective.cycles` (raw + delegation weights). |
 
-Results are saved to `bench_results/` (gitignored). Negative % in effective cycles = improvement.
+All sample/cycle dump dirs use **append** mode — clean the dir between
+runs (`rm -rf`) to avoid mixing.
 
-## Prerequisites
+### Effective vs raw cycles
 
-One-time setup (in addition to the standard Rust toolchain):
+Per-execution `<label>.cycles` files store raw RISC-V cycles only and
+**undercount delegation-heavy work**. `<label>.effective.cycles` (same
+formula as the `process_block` metric) is the correct input for
+cycles/gas analysis of any label whose handler delegates (precompiles
+like `ecrecover`/`modexp`/`bn254`, the `keccak` system function call,
+account/storage-touching paths).
 
-```bash
-rustup target add riscv32i-unknown-none-elf
-cargo install cargo-binutils
-rustup component add llvm-tools-preview rust-src
-pip3 install matplotlib   # only needed for opcode frequency charts
-```
+Opcode samples in `OPCODE_CYCLE_SAMPLES_DIR` currently dump raw only;
+opcodes whose handlers delegate (`SHA3`, `SLOAD`/`SSTORE`,
+`BALANCE`/`EXTCODE*`, `CALL` family, `CREATE`/`CREATE2`) are similarly
+undercounted in `join_samples.py` output.
 
-## Interpreting Results
+### Ecrecover intrinsic filter
 
-The comparison output is a markdown table with columns:
-- **Base/Head Eff** — effective cycles (primary metric). Negative % = improvement.
-- **Base/Head Raw** — raw RISC-V cycles excluding delegations.
-- **Base/Head Blake** — number of Blake2 delegation calls.
-- **Base/Head Bigint** — number of BigInt delegation calls.
+Every L2 transaction invokes `ecrecover` internally for signature
+verification. `bench_scripts/join_precompile_samples.py --bench-file`
+strips the first `ecrecover` cycle marker per `process_transaction`
+boundary and keeps only subsequent (precompile-target) ecrecovers.
 
-`Base/Head Eff` is the comparison-script metric described above. Focus on that column when comparing two `.bench` files, and keep in mind it is slightly broader than the simulator-returned block effective value.
+Positional heuristic assumption: every tx has **exactly one** intrinsic
+ecrecover before any user code. Holds for the current mainnet block
+fixtures; does **not** hold for L1→L2 priority ops, EIP-7702 set-code
+authority recovery, or `eth_call`. Replace with a dedicated marker label
+(`ecrecover_intrinsic`) before adding fixtures that violate the
+assumption.
 
-## How It Works
+## Comparison scripts
 
-### Cycle Marker Framework
+- `compare_bench.py` — base/head `.bench` diff; produces the headline
+  effective-cycles table.
+- `compare_opcode_stats.py` — diff per-opcode gas/native stats.
+- `compare_opcode_cycles.py` — diff per-opcode RISC-V cycles + cycles/gas
+  ratios.
+- `compare_precompile_stats.py` — diff per-precompile gas/native stats;
+  emits a head-only spoiler when base lacks instrumentation.
+- `join_samples.py` — per-opcode per-execution join (gas,native,cycles).
+- `join_precompile_samples.py` — per-precompile per-execution join;
+  prefers `<label>.effective.cycles` and falls back to raw with a stderr
+  note + summary header indicating which kind was used.
+- `cycles_per_native_report.py` — local-only ad-hoc tool. Given one or
+  more `(samples_dir, cycles_dir)` pairs from prior bench runs,
+  computes per-execution `cycles / native` ratios per opcode and per
+  precompile and writes a Markdown report (median / p95 / max). Useful
+  for spotting opcodes or precompiles whose native budget is out of
+  step with their cycle cost. Not wired into the CI comment.
 
-The `cycle_marker` crate provides macros to instrument code:
+## CI
 
-```rust
-cycle_marker::wrap!("my_label", { /* measured code */ });
-// or
-cycle_marker::start!("my_label");
-// ... code ...
-cycle_marker::end!("my_label");
-```
+`.github/workflows/bench.yml` runs the full pipeline on each PR:
+checkout merge-base → bench-base, checkout head → bench-head, then
+`compare` step composes a comparison comment from
+`compare_*` and `join_*` script outputs. Script failures are surfaced
+via explicit `_… failed; see CI logs._` markers in the PR comment
+rather than silently dropping tables.
 
-On RISC-V, these write to CSR `0x7ff`, signaling the simulator to record cycle counts. On the host (forward mode), labels are collected in thread-local storage for later pairing with simulator data.
-
-The block-wide marker is `"run_prepared"` — this is what produces the overall effective cycle count.
-
-### Feature Flags
-
-| Feature | Scope | Effect |
-|---------|-------|--------|
-| `cycle_marker` | Multiple crates | Activates cycle measurement markers |
-| `unlimited_native` | `basic_bootloader`, `forward_system` | Disables native resource limits so benchmarks don't hit gas ceilings |
-| `benchmarking` | `proof_running_system`, `zksync_os` | Convenience: enables both `cycle_marker` + `unlimited_native` |
-| `rig/no_print` | Test rig | Suppresses verbose execution logs |
-
-### Benchmark Data Flow
-
-1. Build RISC-V binary with `benchmarking` feature enabled
-2. Run block replay through RISC-V simulator (`zksync_os_runner`)
-3. Simulator records cycle counts at each CSR marker
-4. `cycle_marker::print_cycle_markers()` computes effective cycles for the block-wide marker using Blake/BigInt delegation weights
-5. Results written to file at `MARKER_PATH` (default: `markers.bench`)
-6. Python scripts parse and compare `.bench` files, adding `+1` for other delegation types in the comparison report
-
-### Output File Format
-
-The `.bench` files produced by `cycle_marker` contain sections like:
-
-```
-=== Cycle markers:
-run_prepared: net cycles: 12345678, net delegations: {1991: 100, 1994: 200}
-some_inner_label: net cycles: 456789, net delegations: {1991: 50}
-Total delegations: {1991: 100, 1994: 200}
-==================
-```
-
-Delegation IDs: `1991` = Blake2, `1994` = BigInt.
-
-## Manual Commands
-
-The `bench_scripts/bench.sh` script wraps these commands. Use them directly only if you need finer control.
-
-### Build the RISC-V Benchmarking Binary
-
-```bash
-cd zksync_os && ./dump_bin.sh --type evm-replay-benchmarking
-```
-
-### Run a Single Block
-
-```bash
-ZKSYNC_RISC_V_RUN=true \
-MARKER_PATH=$(pwd)/result.bench \
-cargo run --manifest-path tests/instances/eth_runner/Cargo.toml \
-  --release -j 3 \
-  --features rig/no_print,rig/cycle_marker,rig/unlimited_native \
-  -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 \
-  > result.out
-```
-
-Available blocks: `19299001`, `22244135`, `23292836` (in `tests/instances/eth_runner/blocks/`).
-
-### Run Precompile Benchmarks
-
-```bash
-ZKSYNC_RISC_V_RUN=true \
-MARKER_PATH=$(pwd)/precompiles.bench \
-cargo test --release -j 3 \
-  --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native \
-  -p precompiles -- test_precompiles
-```
-
-### Compare Results
-
-```bash
-python3 bench_scripts/compare_bench.py \
-  '[("block_19299001", "base.bench", "head.bench", "process_block")]'
-```
-
-### Generate Flamegraph
-
-```bash
-ZKSYNC_RISC_V_RUN=true \
-cargo run --manifest-path tests/instances/eth_runner/Cargo.toml \
-  --release -j 3 \
-  --features rig/no_print,rig/cycle_marker,rig/unlimited_native \
-  -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 \
-  --flamegraph block_19299001.svg
-
-# Convert SVG to text summary (self-cost + call stacks)
-python3 bench_scripts/parse_flamegraph.py block_19299001.svg block_19299001.txt
-```
-
-### Parse Opcode Statistics
-
-```bash
-python3 bench_scripts/parse_opcodes.py result.out opcodes.csv opcodes.png
-```
-
-## CI Integration
-
-The CI workflow (`.github/workflows/bench.yml`) runs the full comparison automatically on every PR. It:
-1. Checks out the merge-base of the PR
-2. Builds RISC-V binaries and runs all block + precompile benchmarks
-3. Checks out the PR branch and repeats
-4. Posts a comparison table as a PR comment
-
-## Important Notes
-
-- Always rebuild the RISC-V binary (`dump_bin.sh`) after code changes — the binary is a static artifact. The `bench_scripts/bench.sh` script does this automatically.
-- `unlimited_native` must be enabled for benchmarking to prevent transactions from hitting native gas limits mid-block.
-- The `for-tests` binary type is for functional tests; `evm-replay-benchmarking` is for performance measurement.
-- Results are deterministic for the same binary + input. No need for multiple runs or statistical averaging.
-
-## Key Files
+## Key files
 
 | Path | Description |
 |------|-------------|
-| `bench_scripts/bench.sh` | Convenience script for running benchmarks |
-| `cycle_marker/src/lib.rs` | Cycle marker macros and effective cycle calculation |
-| `zksync_os/dump_bin.sh` | RISC-V binary build script with type selection |
-| `zksync_os_runner/src/lib.rs` | RISC-V simulator runner, returns effective cycles |
-| `tests/instances/eth_runner/` | Real Ethereum block replay binary |
-| `tests/instances/eth_runner/blocks/` | Benchmark block fixtures |
-| `tests/instances/precompiles/` | Precompile benchmark tests |
-| `bench_scripts/compare_bench.py` | Compares base vs head `.bench` files |
-| `bench_scripts/parse_flamegraph.py` | Converts flamegraph SVG to text summary with self-cost and call stacks |
-| `bench_scripts/parse_opcodes.py` | Parses opcode frequency from simulator output |
-| `.github/workflows/bench.yml` | CI benchmarking pipeline |
+| `cycle_marker/src/lib.rs` | Cycle marker macros, effective-cycle formula, per-execution dumps |
+| `zksync_os/dump_bin.sh` | RISC-V binary build script; `--type` selects feature combo |
+| `zksync_os_runner/src/lib.rs` | RISC-V simulator runner |
+| `bench_scripts/bench.sh` | Convenience wrapper for end-to-end runs |
+| `bench_scripts/compare_bench.py` | base/head `.bench` cycles diff |
+| `bench_scripts/compare_opcode_stats.py` | base/head opcode gas/native diff |
+| `bench_scripts/compare_opcode_cycles.py` | base/head opcode cycles + cycles/gas diff |
+| `bench_scripts/compare_precompile_stats.py` | base/head precompile gas/native diff |
+| `bench_scripts/cycles_per_native_report.py` | local-only `cycles/native` per-opcode + per-precompile ratio report (median / p95 / max) |
+| `bench_scripts/join_samples.py` | Per-opcode per-execution join |
+| `bench_scripts/join_precompile_samples.py` | Per-precompile per-execution join (effective-preferring) |
+| `bench_scripts/parse_flamegraph.py` | Flamegraph SVG → text summary |
+| `bench_scripts/visualize_opcode_stats.py` | Charts from joined per-execution data |
+| `forward_system/src/system/tracers/evm_opcode_stats.rs` | Per-opcode gas/native tracer |
+| `forward_system/src/system/tracers/precompile_stats.rs` | Per-precompile gas/native tracer |
+| `forward_system/src/system/tracers/pair.rs` | Combinator for running two tracers together |
+| `tests/instances/eth_runner/` | Block replay binary; consumes blocks from `blocks/` |
+| `tests/instances/precompiles/` | Precompile benchmark test crate |
+| `.github/workflows/bench.yml` | CI pipeline |

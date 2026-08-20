@@ -1,10 +1,8 @@
 use crate::bootloader::{
     errors::{InvalidTransaction, TxError},
+    rlp::apply_list_length_encoding,
     transaction::rlp_encoded::{
-        rlp::{
-            apply_list_concatenation_encoding_to_hash,
-            minimal_rlp_parser::{Rlp, RlpListDecode},
-        },
+        rlp::minimal_rlp_parser::{Rlp, RlpListDecode},
         transaction_types::EthereumTxType,
     },
 };
@@ -80,7 +78,7 @@ impl<'a, P: RlpListDecode<'a> + EthereumTxType> EIP2718PayloadParser<'a, P> {
 
         // Hash payload list header + payload bytes.
         // Caller already hashed the type byte.
-        apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
+        apply_list_length_encoding(inner_slice.len(), &mut hasher);
         hasher.update(inner_slice);
         let sig_hash = hasher.finalize().into();
 

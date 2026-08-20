@@ -24,6 +24,7 @@ pub fn zk_tx_into_revm_tx(
     force_revert: bool,
     block_gas_limit: u64,
     settlement_layer_chain_id: Option<U256>,
+    tx_gas_limit_cap: Option<u64>,
 ) -> anyhow::Result<ZKsyncTx<TxEnv>> {
     let mut blob_hashes = vec![];
     let mut max_fee_per_blob_gas = 0;
@@ -137,9 +138,36 @@ pub fn zk_tx_into_revm_tx(
                 }
             }
         }
+        ZKsyncTxEnvelope::FriProof(fri_proof_tx) => (
+            Some(fri_proof_tx.max_fee_per_gas),
+            Some(fri_proof_tx.max_priority_fee_per_gas),
+            Some(fri_proof_tx.value),
+            fri_proof_tx.input.clone(),
+            Some(fri_proof_tx.chain_id),
+            fri_proof_tx.access_list.clone(),
+            Default::default(),
+            None,
+            fri_proof_tx.signer,
+            fri_proof_tx.gas_limit,
+            fri_proof_tx.nonce,
+        ),
         ZKsyncTxEnvelope::Custom(_, _) => {
             bail!("Custom transactions are not supported by REVM runner");
         }
+    };
+
+    // Service transactions have no gas limit of their own and are assigned the full block
+    // gas limit above, which exceeds the EIP-7825 per-transaction cap. ZKsync OS does not
+    // subject service transactions to that cap, so clamp their replay gas limit to it to
+    // avoid REVM rejecting (TxGasLimitGreaterThanCap) a transaction that ZKsync OS accepted;
+    // their actual gas usage is far below the cap, so execution is unaffected. Other tx
+    // types carry their own gas limit and fee accounting and are left untouched: user (L2
+    // Ethereum) txs stay subject to the cap, and L1/Upgrade txs are exempted by REVM itself.
+    let gas_limit = match (tx, tx_gas_limit_cap) {
+        (ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::Service(_)), Some(cap)) => {
+            gas_limit.min(cap)
+        }
+        _ => gas_limit,
     };
 
     // Determine transaction kind (Call or Create)
@@ -241,7 +269,7 @@ mod tests {
     #[test]
     fn custom_tx_is_rejected() {
         let tx = ZKsyncTxEnvelope::new_custom_tx_type(TransactionRequest::default(), 0xff);
-        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None).unwrap_err();
+        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None, None).unwrap_err();
         assert!(err.to_string().contains("Custom transactions"));
     }
 
@@ -251,7 +279,7 @@ mod tests {
             gas_limit: (u64::MAX as u128) + 1,
             ..Default::default()
         });
-        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None).unwrap_err();
+        let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None, None).unwrap_err();
         assert!(err.to_string().contains("gas_limit"));
     }
 

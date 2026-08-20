@@ -229,10 +229,11 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
     );
 
     let run_config = Some(RunConfig {
-        profiler_config: None,
+        flamegraph: None,
         witness_output_file: None,
         app: None,
         do_riscv_run: false,
+        do_prover_input_run: false,
         update_state_after_block_execution: false,
         check_revm_consistency: false,
         revm_independent_gas: false,
@@ -242,7 +243,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
     let mut tracer = CallTracer::default();
     let mut validator = NopTxValidator;
 
-    let (block_output, _block_extra_stats, _proof_input) = chain
+    let (block_output, _block_extra_stats, _proof_input, _pubdata) = chain
         .run_block_with_extra_stats_with_oracle_factory(
             transactions,
             Some(block_context.clone()),
@@ -251,6 +252,8 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
             &mut tracer,
             &mut validator,
             &oracle_factory,
+            rig::InMemoryFriProofSidecarSource::default(),
+            None,
         )
         .map_err(|err| anyhow::anyhow!("block execution failed: {err:?}"))?;
 
@@ -418,7 +421,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
 
 fn apply_root_gas_used_from_block_output(
     mut traces: Vec<CallFrame>,
-    block_output: &rig::zksync_os_interface::types::BlockOutput,
+    block_output: &rig::BlockOutput,
 ) -> Vec<CallFrame> {
     if traces.len() != block_output.tx_results.len() {
         eprintln!(

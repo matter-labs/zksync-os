@@ -1,6 +1,5 @@
 use crate::test::case::transaction::encode_transaction;
 use alloy::primitives::*;
-use core::panic;
 use std::cmp::min;
 use std::str::FromStr;
 use zk_ee::utils::u256_to_u64_saturated;
@@ -12,13 +11,12 @@ use zksync_os_rig::chain::RunConfig;
 use zksync_os_rig::zksync_os_api::helpers;
 use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
 use zksync_os_rig::zksync_os_interface::traits::EncodedTx;
-use zksync_os_rig::zksync_os_interface::types::{BlockOutput, TxOutput};
+use zksync_os_rig::zksync_os_interface::types::TxOutput;
 use zksync_os_rig::BlockContext;
+use zksync_os_rig::BlockOutput;
 use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;
-
-use super::execution_result;
 
 // mod transaction;
 
@@ -56,6 +54,12 @@ pub struct ZKsyncOS {
     pub chain: Chain,
 }
 
+impl Default for ZKsyncOS {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZKsyncOS {
     pub fn new() -> Self {
         let chain = Chain::empty(Some(1));
@@ -71,7 +75,7 @@ impl ZKsyncOS {
         let encoded_txs: Vec<EncodedTx> = transactions
             .iter()
             .map(|transaction| encode_transaction(transaction, &system_context))
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let block_gas_limit: u64 = system_context
             .block_gas_limit
@@ -88,7 +92,7 @@ impl ZKsyncOS {
         let context = BlockContext {
             eip1559_basefee: ruint::Uint::from_str(&system_context.base_fee.to_string())
                 .expect("Invalid basefee"),
-            native_price: ruint::aliases::U256::from(1),
+            native_price: ruint::aliases::U256::from(0), // native resources will be unlimited
             pubdata_price: Default::default(),
             timestamp: system_context.block_timestamp as u64,
             gas_limit,
@@ -138,9 +142,10 @@ impl ZKsyncOS {
     ) -> anyhow::Result<ZKsyncOSTxExecutionResult, String> {
         match tx_result {
             Ok(tx_output) => {
-                let mut execution_result = ZKsyncOSTxExecutionResult::default();
-
-                execution_result.gas = U256::from(tx_output.gas_used);
+                let mut execution_result = ZKsyncOSTxExecutionResult {
+                    gas: U256::from(tx_output.gas_used),
+                    ..Default::default()
+                };
                 // TODO events
 
                 match &tx_output.execution_result {

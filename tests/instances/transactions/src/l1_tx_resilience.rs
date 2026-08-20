@@ -11,6 +11,7 @@
 //! to continue.
 //!
 
+use alloy_sol_types::{sol, SolCall};
 use rig::alloy::primitives::address;
 use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::U256;
@@ -19,7 +20,15 @@ use rig::utils::L1TxBuilder;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
 
-use super::common_target_address;
+use super::{
+    common_target_address, expected_priority_operations_hash, last_prover_input_batch_output,
+};
+
+sol! {
+    /// L1 messenger `sendToL1(bytes)` — emits the data as an L2→L1 message
+    /// (selector 0x62f84b24).
+    function sendToL1(bytes message) external returns (bytes32 hash);
+}
 
 /// Test that an L1 transaction with gas limit below intrinsic gas (21k) is
 /// processed gracefully instead of causing a validation error.
@@ -34,18 +43,17 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
 
     // Create an L1 transaction with gas limit below intrinsic gas (21000)
     // The intrinsic gas for L1 txs is L1_TX_INTRINSIC_L2_GAS = 21_000
-    let tx = L1TxBuilder::new()
+    let tx: rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope = L1TxBuilder::new()
         .from(from)
         .to(to)
         .gas_price(15_000)
         .gas_limit(20_000)
         .value(alloy::primitives::U256::from(100))
-        .build()
-        .into();
+        .build();
 
     // The block should complete without panicking (no internal error)
     let mut tester = TestingFramework::new().with_balance(from, U256::from(u64::MAX));
-    let result = tester.execute_block_no_panic(vec![tx]);
+    let result = tester.execute_block_no_panic(vec![tx.clone()]);
     assert!(
         result.is_ok(),
         "Block should complete without internal error, got: {:?}",
@@ -64,26 +72,32 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
     // The execution doesn't fail, as it doesn't consume non-intrinsic gas
     let tx_output = tx_result.as_ref().unwrap();
     assert!(tx_output.is_success(), "Transaction should succeed");
+
+    let pi_batch_output = last_prover_input_batch_output(&tester);
+    assert_eq!(pi_batch_output.number_of_layer_1_txs, U256::ONE);
+    assert_eq!(
+        pi_batch_output.priority_operations_hash,
+        expected_priority_operations_hash([tx]),
+    );
 }
 
-/// Test that an L1 transaction with a gas price that would overflow the
-/// native_per_gas calculation is processed gracefully.
+/// Test that an L1 transaction with an absurdly high gas price is processed
+/// gracefully.
 ///
-/// The calculation is: native_per_gas = gas_price.div_ceil(L1_TX_NATIVE_PRICE)
-/// where L1_TX_NATIVE_PRICE = 10. To overflow u64, gas_price needs to be
-/// > u64::MAX * 10.
-///
-/// Prior to the resilience changes, this would fail with
-/// InvalidTransaction::NativeResourcesAreTooExpensive. Now, u64::MAX is used
-/// via saturating arithmetic.
+/// `native_per_gas` for L1 txs is now a fixed constant
+/// (`L1_TX_NATIVE_PER_GAS`), independent of `gas_price`, so the historic
+/// overflow path (`gas_price.div_ceil(L1_TX_NATIVE_PRICE)` exceeding u64)
+/// no longer exists. The test still serves as a regression check that
+/// large `gas_price` values don't break L1 tx processing through other
+/// code paths (e.g. `tx_internal_cost = gas_price · gas_limit`).
 #[test]
 fn test_l1_tx_gas_price_overflow_native_per_gas() {
     let from = address!("1234000000000000000000000000000000000000");
     let to = common_target_address();
 
-    // L1_TX_NATIVE_PRICE = 10
-    // To overflow u64 in native_per_gas calculation: gas_price / 10 > u64::MAX
-    // So gas_price > u64::MAX * 10
+    // Historic threshold for overflowing `gas_price / L1_TX_NATIVE_PRICE`
+    // when L1_TX_NATIVE_PRICE was 10. Kept as a witness value for the
+    // regression scenario it covers.
     let overflow_gas_price = u128::from(u64::MAX) * 11;
 
     let tx = L1TxBuilder::new()
@@ -92,8 +106,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
         .gas_price(overflow_gas_price)
         .gas_limit(100_000)
         .value(alloy::primitives::U256::from(100))
-        .build()
-        .into();
+        .build();
 
     let mut tester =
         TestingFramework::new().with_balance(from, U256::from(1_000_000_000_000_000_u64));
@@ -129,9 +142,8 @@ fn test_l1_tx_intrinsic_gas_overflow() {
         .gas_price(1000)
         .gas_limit(200000) // Gas limit that should not be sufficient for the input data
         .value(alloy::primitives::U256::from(100))
-        .input(vec![0u8; 50_000].into()) // Very large input data to increase intrinsic cost
-        .build()
-        .into();
+        .input(vec![0u8; 50_000]) // Very large input data to increase intrinsic cost
+        .build();
 
     // Test L1 transaction - this triggers the overflow scenario
     let mut tester =
@@ -216,6 +228,85 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
     assert_eq!(
         gas_used_zero, gas_used_high,
         "L1->L2 tx gas_used must be independent of block base_fee"
+    );
+}
+
+/// Verify that an L1 transaction can consume close to its full
+/// gas-implied pubdata budget under production parameters, regardless of
+/// L1 `gas_price`.
+///
+/// Production values used here:
+/// - `gas_limit = 72_000_000` (PRIORITY_TX_MAX_GAS_LIMIT)
+/// - `gas_per_pubdata = 800`
+/// → theoretical pubdata budget = `72_000_000 / 800 = 90_000` bytes.
+///
+#[test]
+fn test_l1_tx_can_use_full_pubdata_budget() {
+    let from = address!("1234000000000000000000000000000000000000");
+    // L1 messenger system contract address (`sendToL1(bytes)` selector
+    // 0x62f84b24 emits the data as an L2→L1 message).
+    let l1_messenger = rig::alloy::primitives::Address::from_slice(
+        address!("0000000000000000000000000000000000008008").as_slice(),
+    );
+
+    // PRIORITY_TX_MAX_GAS_LIMIT — production cap for L1 priority txs.
+    let gas_limit: u64 = 72_000_000;
+    let gas_per_pubdata: u64 = 800;
+    // Theoretical pubdata budget (in bytes).
+    let theoretical_budget = gas_limit / gas_per_pubdata; // = 90_000
+
+    // There is also intrinsic pubdata and overhead for l2 -> l1 log
+    // Also computational part is really small, but still takes 1 byte of pubdata
+    let payload_len: usize = 89_500;
+    // Use zero bytes so calldata intrinsic is 4 gas/byte (vs 16 for non-zero).
+    let payload = vec![0u8; payload_len];
+
+    // ABI-encode `sendToL1(bytes)` with the zero-byte payload as its argument.
+    let calldata = sendToL1Call {
+        message: payload.into(),
+    }
+    .abi_encode();
+
+    let high_gas_price = 10u128.pow(15);
+
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(l1_messenger)
+        .gas_price(high_gas_price)
+        .gas_limit(gas_limit.into())
+        .gas_per_pubdata_byte_limit(gas_per_pubdata.into())
+        .input(calldata)
+        .build()
+        .into();
+
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, false)
+        .with_balance(from, U256::MAX);
+
+    let output = tester.execute_block(vec![tx]);
+    let tx_result = output.tx_results[0]
+        .as_ref()
+        .expect("L1 tx must be processed");
+
+    assert!(
+        tx_result.is_success(),
+        "L1 tx with large L2→L1 message must succeed; got: {:?}",
+        output.tx_results[0]
+    );
+
+    // Each L1 message data byte ≈ one pubdata byte (plus a fixed L2ToL1Log
+    // envelope), so the tx should report close to `payload_len` pubdata.
+    assert!(
+        tx_result.pubdata_used >= payload_len as u64,
+        "expected at least {payload_len} pubdata bytes, got {}",
+        tx_result.pubdata_used
+    );
+    // And we must stay within the gas-implied theoretical budget.
+    assert!(
+        tx_result.pubdata_used <= theoretical_budget,
+        "pubdata_used ({}) exceeds the theoretical budget \
+         ({theoretical_budget} = gas_limit / gas_per_pubdata)",
+        tx_result.pubdata_used,
     );
 }
 

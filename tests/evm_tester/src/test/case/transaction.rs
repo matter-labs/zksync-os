@@ -48,14 +48,14 @@ pub struct AccessListItem {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationListItem {
-    pub chain_id: web3::types::U256,
+    pub chain_id: U256,
     pub address: Address,
-    pub nonce: web3::types::U256,
-    pub v: Option<web3::types::U256>,
-    pub r: web3::types::U256,
-    pub s: web3::types::U256,
+    pub nonce: U256,
+    pub v: Option<U256>,
+    pub r: U256,
+    pub s: U256,
     pub signer: Option<Address>,
-    pub y_parity: web3::types::U256,
+    pub y_parity: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -154,7 +154,7 @@ pub fn transaction_from_tx_section(
 pub fn encode_transaction(
     transaction: &Transaction,
     system_context: &ZKsyncOSEVMContext,
-) -> EncodedTx {
+) -> Result<EncodedTx, String> {
     match transaction {
         Transaction::Request(tx) => {
             #[allow(deprecated)]
@@ -198,21 +198,16 @@ pub fn encode_transaction(
                              signer: _,
                              y_parity,
                          }| {
-                            let mut r_buf = [0u8; 32];
-                            r.to_big_endian(&mut r_buf);
-                            let mut s_buf = [0u8; 32];
-                            s.to_big_endian(&mut s_buf);
+                            let r_bytes: B256 = r.into();
+                            let s_bytes: B256 = s.into();
                             let y_parity = !y_parity.is_zero();
 
                             #[allow(deprecated)]
-                            let signature = Signature::from_scalars_and_parity(
-                                alloy::primitives::FixedBytes::from_slice(&r_buf),
-                                alloy::primitives::FixedBytes::from_slice(&s_buf),
-                                y_parity,
-                            );
+                            let signature =
+                                Signature::from_scalars_and_parity(r_bytes, s_bytes, y_parity);
                             alloy::eips::eip7702::Authorization {
-                                chain_id: chain_id.into(),
-                                nonce: nonce.as_u64(),
+                                chain_id,
+                                nonce: nonce.to::<u64>(),
                                 address: alloy::primitives::Address::from_slice(address.as_ref()),
                             }
                             .into_signed(signature)
@@ -262,18 +257,20 @@ pub fn encode_transaction(
                 tx.secret_key.as_slice(),
             )
             .unwrap();
-            helpers::sign_and_encode_transaction_request(request, &wallet)
+            Ok(helpers::sign_and_encode_transaction_request(
+                request, &wallet,
+            ))
         }
         Transaction::Signed(tx) => {
-            let env = to_alloy_envelope(tx, system_context.chain_id);
+            let env = to_alloy_envelope(tx, system_context.chain_id)?;
             let bytes = encode_envelope_2718(&env);
             let from = tx.common.sender.expect("Tx must have sender");
-            EncodedTx::Rlp(bytes, from)
+            Ok(EncodedTx::Rlp(bytes, from))
         }
     }
 }
 
-pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
+pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> Result<TxEnvelope, String> {
     let nonce = stx.common.nonce.try_into().unwrap();
     let gas_limit = stx.common.gas_limit.try_into().unwrap();
     let value = stx.common.value;
@@ -283,7 +280,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
     let r = FixedBytes::from(stx.r);
     let s = FixedBytes::from(stx.s);
 
-    match stx.ty {
+    let envelope = match stx.ty {
         0 => {
             let (chain_id_opt, parity) = match stx.v {
                 27 | 28 => (None, stx.v == 28),
@@ -292,7 +289,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
                     let p = ((v as u64 - 35) % 2) == 1;
                     (Some(cid), p)
                 }
-                _ => panic!("Invalid value for v in legacy"),
+                _ => return Err("Invalid value for v in legacy".to_string()),
             };
             let gas_price = stx.common.gas_price.unwrap_or_default().try_into().unwrap();
             let tx = TxLegacy {
@@ -354,7 +351,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
         3 => {
             let access_list = to_access_list(&stx.common.access_list);
             let to_addr = match &stx.common.to.0 {
-                None => panic!("4844 requires destination"),
+                None => return Err("EIP-4844 requires destination".to_string()),
                 Some(a) => *a,
             };
             let tx = TxEip4844 {
@@ -384,7 +381,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
             let access_list = to_access_list(&stx.common.access_list);
             let auth_list = to_auth_list(&stx.common.authorization_list);
             let to_addr = match &stx.common.to.0 {
-                None => panic!("7702 requires destination"),
+                None => return Err("EIP-7702 requires destination".to_string()),
                 Some(a) => *a,
             };
             let tx = TxEip7702 {
@@ -409,8 +406,9 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
             let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
             TxEnvelope::from(signed)
         }
-        _ => panic!("Unsupported tx type"),
-    }
+        _ => return Err(format!("Unsupported tx type: {}", stx.ty)),
+    };
+    Ok(envelope)
 }
 
 fn to_kind(to: &FieldTo) -> alloy::primitives::TxKind {
@@ -445,24 +443,45 @@ fn to_auth_list(src: &Option<Vec<AuthorizationListItem>>) -> Vec<SignedAuthoriza
     if let Some(list) = src {
         for a in list {
             let auth = AlloyAuthorization {
-                chain_id: w3_u256_to_alloy_u256(&a.chain_id),
+                chain_id: a.chain_id,
                 address: a.address,
-                nonce: a.nonce.as_u64(),
+                nonce: a.nonce.to::<u64>(),
             };
-            let y = (a.y_parity.as_u64() & 1) == 1;
-            let sig = Signature::from_scalars_and_parity(
-                FixedBytes::from(w3_u256_to_alloy_u256(&a.r)),
-                FixedBytes::from(w3_u256_to_alloy_u256(&a.s)),
-                y,
-            );
-            out.push(auth.into_signed(sig));
+            // Preserve the raw y_parity value to maintain correct RLP encoding
+            // for pre-signed transactions. Invalid values (not 0 or 1) will cause
+            // the auth entry to be silently skipped during recovery per EIP-7702.
+            let y_parity = a.y_parity.to::<u64>() as u8;
+            let r = a.r;
+            let s = a.s;
+            out.push(SignedAuthorization::new_unchecked(auth, y_parity, r, s));
         }
     }
     out
 }
 
-fn w3_u256_to_alloy_u256(x: &web3::types::U256) -> alloy::primitives::U256 {
-    let mut buf = [0u8; 32];
-    x.to_big_endian(&mut buf);
-    alloy::primitives::U256::from_be_bytes(buf)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_list_item_deserializes_from_hex() {
+        let json = r#"{
+            "chainId": "0x01",
+            "address": "0x0000000000000000000000000000000000000001",
+            "nonce": "0x00",
+            "yParity": "0x01",
+            "v": "0x01",
+            "r": "0xdead000000000000000000000000000000000000000000000000000000000000",
+            "s": "0xbeef000000000000000000000000000000000000000000000000000000000000"
+        }"#;
+
+        let item: AuthorizationListItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.chain_id, U256::from(1));
+        assert_eq!(item.nonce, U256::ZERO);
+        assert_eq!(item.y_parity, U256::from(1));
+        assert_eq!(item.nonce.to::<u64>(), 0u64);
+        assert_eq!(item.y_parity.to::<u64>(), 1u64);
+        assert!(item.r > U256::ZERO);
+        assert!(item.s > U256::ZERO);
+    }
 }

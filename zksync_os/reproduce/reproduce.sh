@@ -1,34 +1,38 @@
 #!/bin/bash
 
-# Make sure to run from the main zksync-os directory.
-
 set -euo pipefail
 
-# Set source date epoch for reproducible builds
-SDE="$(git log -1 --format=%ct || echo 1700000000)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ZKSYNC_OS_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(dirname "$ZKSYNC_OS_DIR")"
 
-# create a fresh docker
-docker build \
-  --build-arg SOURCE_DATE_EPOCH="$SDE" \
-  --platform linux/amd64 \
-  -t zksync-os-bin \
-  -f zksync_os/reproduce/Dockerfile .
+# `cargo airbender build --reproducible` passes `--locked` to cargo, so both
+# the workspace root and the guest crate need a Cargo.lock present.
+# The workspace root Cargo.lock is gitignored, so we generate it here.
+# The guest zksync_os/Cargo.lock is committed and used as-is.
+#
+# NOTE: the toolchain version must match rust-toolchain.toml.
+cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$REPO_ROOT/Cargo.toml"
 
-cid="$(docker create --platform=linux/amd64 zksync-os-bin)"
+cd "$ZKSYNC_OS_DIR"
 
-FILES=(
-    for_tests.bin
-    evm_replay.bin
-    singleblock_batch.bin
-    singleblock_batch_logging_enabled.bin
-    multiblock_batch.bin
-    multiblock_batch_logging_enabled.bin
+TYPES=(
+    for-tests
+    evm-replay
+    singleblock-batch
+    singleblock-batch-logging-enabled
+    multiblock-batch
+    multiblock-batch-logging-enabled
 )
 
-for FILE in "${FILES[@]}"; do
-    docker cp "$cid":/zksync_os/zksync_os/"$FILE" zksync_os/
-    md5sum "zksync_os/$FILE"
+for TYPE in "${TYPES[@]}"; do
+    ./dump_bin.sh --type "$TYPE" --reproducible
 done
 
-
-docker rm -f "$cid" >/dev/null
+# Copy dist/<app>/app.bin -> zksync_os/<app>.bin for backwards compatibility
+# with downstream consumers (release workflow, zksync-era, etc.).
+for TYPE in "${TYPES[@]}"; do
+    APP="${TYPE//-/_}"
+    cp -f "dist/${APP}/app.bin" "${APP}.bin"
+    md5sum "${APP}.bin"
+done

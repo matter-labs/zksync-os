@@ -40,6 +40,9 @@ impl ZKsyncOsEncodable for ZKsyncTxEnvelope {
                     }
                 }
             }
+            ZKsyncTxEnvelope::FriProof(fri_proof_tx) => {
+                encode_2718_tx_envelope(fri_proof_tx.clone(), fri_proof_tx.signer)
+            }
             ZKsyncTxEnvelope::Custom(custom_type, tx_req) => {
                 encode_special_tx_type(tx_req.clone(), custom_type)
             }

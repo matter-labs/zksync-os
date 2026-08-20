@@ -17,6 +17,7 @@ use zk_ee::system::Ergs;
 use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
 use zk_ee::system::Resource;
+use zk_ee::system::SystemFunctionsExt;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
 use zk_ee::system_log;
 use zk_ee::{internal_error, wrap_error};
@@ -218,14 +219,15 @@ fn compute_auth_message_signed_hash<S: EthereumLikeTypes>(
     let list_payload_len = rlp::estimate_number_encoding_len(&auth_chain_id.to_be_bytes::<32>())
         + rlp::ADDRESS_ENCODING_LEN
         + rlp::estimate_number_encoding_len(&auth_nonce.to_be_bytes());
-    let total_list_len = rlp::estimate_length_encoding_len(list_payload_len) + list_payload_len;
+    let total_list_len =
+        rlp::estimate_list_length_encoding_len(list_payload_len) + list_payload_len;
     let encoding_len = 1 + total_list_len;
     crate::bootloader::transaction::charge_keccak(encoding_len, resources)?;
     hasher.update([EIP7702_MAGIC]);
-    rlp::apply_list_length_encoding_to_hash(list_payload_len, hasher);
-    rlp::apply_number_encoding_to_hash(&auth_chain_id.to_be_bytes::<32>(), hasher);
-    rlp::apply_bytes_encoding_to_hash(delegation_address, hasher);
-    rlp::apply_number_encoding_to_hash(&auth_nonce.to_be_bytes(), hasher);
+    rlp::apply_list_length_encoding(list_payload_len, hasher);
+    rlp::apply_number_encoding(&auth_chain_id.to_be_bytes::<32>(), hasher);
+    rlp::apply_bytes_encoding(delegation_address, hasher);
+    rlp::apply_number_encoding(&auth_nonce.to_be_bytes(), hasher);
 
     Ok(hasher.finalize_reset())
 }
@@ -235,8 +237,10 @@ fn recover_authority<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     auth_sig_data: (u8, &[u8], &[u8]),
     msg: &[u8; 32],
-) -> Result<Option<B160>, TxError> {
-    use zk_ee::system::SystemFunctions;
+) -> Result<Option<B160>, TxError>
+where
+    S::IO: IOSubsystemExt,
+{
     let mut ecrecover_input = [0u8; 128];
     let (parity, r, s) = auth_sig_data;
     if parity > 1 {
@@ -247,14 +251,18 @@ fn recover_authority<S: EthereumLikeTypes>(
     ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
     ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
     let mut ecrecover_output = ArrayBuilder::default();
+    let mut logger = system.get_logger();
+    let allocator = system.get_allocator();
     // Recover is counted in intrinsic gas
     resources
         .with_infinite_ergs(|inf_ergs| {
-            S::SystemFunctions::secp256k1_ec_recover(
+            S::SystemFunctionsExt::secp256k1_ec_recover(
                 ecrecover_input.as_slice(),
                 &mut ecrecover_output,
                 inf_ergs,
-                system.get_allocator(),
+                system.io.oracle(),
+                &mut logger,
+                allocator,
             )
         })
         .map_err(SystemError::from)?;

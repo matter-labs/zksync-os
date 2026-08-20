@@ -1,7 +1,8 @@
-use alloy::primitives::{Bytes, Log, U256};
+use alloy::primitives::{Bytes, Log, B256, U256};
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use forward_system::run::convert_alloy::IntoAlloy;
+use forward_system::run::output::BlockOutput;
 use revm::{
     context::{ContextTr, TxEnv},
     context_interface::block::BlobExcessGasAndPrice,
@@ -11,7 +12,9 @@ use revm::{
     DatabaseRef,
 };
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
-use zksync_os_interface::types::{BlockContext, BlockOutput};
+use zk_ee::system::metadata::zk_metadata::BlockHashes;
+use zksync_os_interface::traits::AnyBlockContext;
+use zksync_os_revm::constants::HISTORY_STORAGE_ADDRESS;
 use zksync_os_revm::ZKsyncTx;
 use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -59,8 +62,14 @@ where
     spec: ZkSpecId,
     /// When true, REVM computes gas independently instead of using
     /// ZKsync OS's `gas_used` as an override. Best combined with
-    /// `unlimited_native` so that gas models are equivalent.
+    /// `native_price = 0` in the block metadata so that the ZKsync OS
+    /// native-correction is disabled and gas models are equivalent.
     independent_gas: bool,
+    /// Overrides REVM's per-transaction gas limit cap (`CfgEnv::tx_gas_limit_cap`).
+    /// `None` uses REVM's spec-derived default (EIP-7825: 2^24 on Osaka+, else u64::MAX).
+    /// A consistency checker must not reject a transaction that ZKsync OS accepted, so the
+    /// caller passes a cap matching the ZKsync OS build under test.
+    tx_gas_limit_cap: Option<u64>,
 }
 
 impl<State> RevmRunner<State>
@@ -70,8 +79,11 @@ where
     pub fn new(state: State) -> Self {
         Self {
             state,
-            spec: ZkSpecId::AtlasV3,
+            // Default spec tracks the latest ZKsync OS protocol version (v0.4.0 -> AtlasV4),
+            // which enables the Pectra precompiles (BLAKE2F, point eval, BLS12-381).
+            spec: ZkSpecId::default(),
             independent_gas: false,
+            tx_gas_limit_cap: None,
         }
     }
 
@@ -92,7 +104,14 @@ where
         self
     }
 
-    pub fn run(
+    /// Override REVM's per-transaction gas limit cap (EIP-7825). `None` keeps REVM's
+    /// spec-derived default; `Some(u64::MAX)` effectively disables the cap.
+    pub fn with_tx_gas_limit_cap(mut self, cap: Option<u64>) -> Self {
+        self.tx_gas_limit_cap = cap;
+        self
+    }
+
+    pub fn run<BlockContext: AnyBlockContext>(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
@@ -124,7 +143,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn run_with_call_traces(
+    pub fn run_with_call_traces<BlockContext: AnyBlockContext>(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
@@ -136,18 +155,18 @@ where
         Vec<TxComparisonMismatch>,
     )> {
         let blob_fee: u64 = block_context
-            .blob_fee
+            .blob_fee()
             .try_into()
             .context("Blob fee should fit into u64")?;
         let block_basefee: u64 = block_context
-            .eip1559_basefee
+            .eip1559_basefee()
             .try_into()
             .context("Block base fee should fit into u64")?;
 
         let state_provider = RevmStateProvider::new(
             self.state.clone(),
-            block_context.block_hashes,
-            block_context.block_number.saturating_sub(1),
+            BlockHashes(*block_context.block_hashes()),
+            block_context.block_number().saturating_sub(1),
         );
         let settlement_layer_chain_id = Self::read_settlement_layer_chain_id(self.state.clone())?;
 
@@ -162,26 +181,52 @@ where
         let mut evm = ZkContext::<EmptyDB>::default()
             .with_db(cache_db)
             .modify_cfg_chained(|cfg| {
-                cfg.chain_id = block_context.chain_id;
+                cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
+                cfg.tx_gas_limit_cap = self.tx_gas_limit_cap;
             })
             .modify_block_chained(|block| {
-                block.number = U256::from(block_context.block_number);
-                block.timestamp = U256::from(block_context.timestamp);
-                block.beneficiary = block_context.coinbase;
+                block.number = U256::from(block_context.block_number());
+                block.timestamp = U256::from(block_context.timestamp());
+                block.beneficiary = block_context.coinbase();
                 block.basefee = block_basefee;
-                block.gas_limit = block_context.gas_limit;
-                block.prevrandao = Some(block_context.mix_hash.into());
+                block.gas_limit = block_context.gas_limit();
+                block.prevrandao = Some(block_context.mix_hash().into());
                 block.blob_excess_gas_and_price = Some(blob_excess_gas_and_price);
             })
             .build_zk_with_inspector(TracingInspector::new(TracingInspectorConfig::default_geth()));
 
+        // ZKsync OS performs block-boundary system state transitions (EIP-2935
+        // historical block hash) in its pre-tx loop, before any transaction
+        // runs. The per-tx REVM replay below does not execute block-level system
+        // calls, so mirror them here via the shared helper before replaying.
+        //
+        // The helper owns the mechanics; eligibility is decided here from the
+        // ZKsync OS account model so we match `eip2935_system_part`'s gate
+        // (`is_contract` = has bytecode and not an EIP-7702 delegation), skipping
+        // the write for an absent, codeless, or delegated history account.
+        let history_eligible = self
+            .state
+            .clone()
+            .get_account(HISTORY_STORAGE_ADDRESS)
+            .context("Failed to read EIP-2935 history account")?
+            .is_some_and(|props| {
+                props.observable_bytecode_len > 0 && !props.versioning_data.is_delegated()
+            });
+        if history_eligible {
+            // The parent hash is the most recent entry of the 256-block window.
+            let parent_hash = B256::from(block_context.block_hashes()[255].to_be_bytes::<32>());
+            zksync_os_revm::apply_pre_block_system_calls(&mut evm, self.spec, parent_hash)
+                .map_err(|err| anyhow!("EIP-2935 pre-block system call failed: {err:?}"))?;
+        }
+
         let revm_txs = Self::build_revm_txs(
             &transactions,
             block_output.as_ref(),
-            block_context.gas_limit,
+            block_context.gas_limit(),
             settlement_layer_chain_id,
             self.independent_gas,
+            self.tx_gas_limit_cap,
         )?;
 
         let mut call_traces = Vec::with_capacity(transactions.len());
@@ -270,6 +315,7 @@ where
         block_gas_limit: u64,
         settlement_layer_chain_id: U256,
         independent_gas: bool,
+        tx_gas_limit_cap: Option<u64>,
     ) -> anyhow::Result<Vec<ReplayTx>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -306,6 +352,7 @@ where
                     force_fail,
                     block_gas_limit,
                     Some(settlement_layer_chain_id),
+                    tx_gas_limit_cap,
                 )
                 .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))?;
 
@@ -327,6 +374,7 @@ where
                         false,
                         block_gas_limit,
                         Some(settlement_layer_chain_id),
+                        tx_gas_limit_cap,
                     )
                     .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
                     .map(|tx| ReplayTx {

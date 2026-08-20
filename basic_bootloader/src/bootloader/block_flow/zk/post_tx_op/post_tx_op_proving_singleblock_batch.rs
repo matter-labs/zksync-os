@@ -13,7 +13,7 @@ use crypto::blake2s::Blake2s256;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, WarmStorageKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
-use zk_ee::oracle::basic_queries::ZKProofDataQuery;
+use zk_ee::oracle::basic_queries::{DisconnectOracleQuery, ZKProofDataQuery};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -46,8 +46,8 @@ where
     S::IO: IOSubsystemExt
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
-    type PostTxLoopOpResult = (O, Bytes32);
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
+    type PostTxLoopOpResult = (O, Bytes32, public_input::BatchOutput);
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher, S::Allocator>;
     type BatchDataKeeper = ();
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
 
@@ -59,11 +59,14 @@ where
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         let block_header = form_block_header(
             &system,
-            block_data.transaction_hashes_accumulator.finish().0,
+            block_data.transactions_root(),
+            block_data.receipts_root(),
             block_data.block_gas_used,
         )?;
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
+        result_keeper.record_block_native_used(block_data.block_computational_native_used);
+        result_keeper.record_block_pubdata_used(block_data.block_pubdata_used);
 
         let mut logger = system.get_logger();
         logger_log!(logger, "Basic header information was created\n");
@@ -86,13 +89,22 @@ where
         let mut da_commitment_generator =
             da_commitment_generator_from_scheme(io.da_commitment_scheme.unwrap(), A::default())
                 .unwrap();
-        write_pubdata(
-            da_commitment_generator.as_mut(),
-            result_keeper,
-            block_hash,
-            metadata.block_timestamp(),
-            &mut io,
-        );
+        // For keccak DA (`BlobsAndPubdataKeccak256`), `write_pubdata` streams
+        // bytes through `Keccak256CommitmentGenerator`, which absorbs them
+        // into the keccak state — this is where the bulk of keccak
+        // delegations fire on the DA-commit path. For blob DA
+        // (`BlobsZKsyncOS`) the same call just appends to a buffer (no
+        // hashing yet); the actual blob KZG work happens in `.finalize()`
+        // below and is already captured by the `blob_versioned_hash` marker.
+        cycle_marker::wrap!("da_commitment", {
+            write_pubdata(
+                da_commitment_generator.as_mut(),
+                result_keeper,
+                block_hash,
+                metadata.block_timestamp(),
+                &mut io,
+            );
+        });
 
         let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
 
@@ -150,8 +162,10 @@ where
             chain_state_commitment_before
         );
 
-        // update state commitment
-        cycle_marker::wrap!("verify_and_apply_batch", {
+        // update state commitment — this is the state-tree merkle commit
+        // (Blake-heavy). Distinct from `da_commitment` (keccak/blob over
+        // pubdata) and `blob_versioned_hash` (KZG per blob).
+        cycle_marker::wrap!("state_commitment_update", {
             IOTeardown::<_>::update_commitment(
                 &mut io,
                 Some(&mut state_commitment),
@@ -183,7 +197,6 @@ where
         let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let batch_output = BatchOutput {
-            chain_id: U256::from(metadata.chain_id()),
             first_block_timestamp: metadata.block_timestamp(),
             last_block_timestamp: metadata.block_timestamp(),
             da_commitment_scheme: io.da_commitment_scheme.unwrap(),
@@ -201,6 +214,7 @@ where
         let public_input = BatchPublicInput {
             state_before: chain_state_commitment_before.hash().into(),
             state_after: chain_state_commitment_after.hash().into(),
+            chain_config_hash: metadata.chain_config.hash().into(),
             batch_output: batch_output.hash().into(),
         };
         logger_log!(
@@ -237,9 +251,12 @@ where
                     state_diffs_hasher.update(value.current_value.as_u8_ref());
                 });
             let state_diffs_hash = state_diffs_hasher.finalize().into();
-            Ok((io.oracle, state_diffs_hash))
+
+            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            Ok((io.oracle, state_diffs_hash, batch_output))
         } else {
-            Ok((io.oracle, public_input_hash))
+            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            Ok((io.oracle, public_input_hash, batch_output))
         }
     }
 }

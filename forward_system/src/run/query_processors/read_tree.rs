@@ -38,7 +38,7 @@ impl<T: ReadStorageTree> ReadTreeResponder<T> {
     ];
 }
 
-impl<T: ReadStorageTree, M: MemorySource> OracleQueryProcessor<M> for ReadTreeResponder<T> {
+impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -51,7 +51,7 @@ impl<T: ReadStorageTree, M: MemorySource> OracleQueryProcessor<M> for ReadTreeRe
         &mut self,
         query_id: u32,
         query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn oracle_provider::RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 

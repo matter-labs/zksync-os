@@ -4,7 +4,8 @@ use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
-use zk_ee::system::Resource;
+use zk_ee::memory::stack_trait::Stack;
+use zk_ee::system::{IOTeardown, Resource};
 
 impl<
         S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
@@ -12,10 +13,10 @@ impl<
         BatchEA: TxHashesAccumulator,
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
-    S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
+    S::Metadata: ZkSpecificMetadata,
 {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<BlockEA, S::Allocator>;
     // we write only enforced tx hashes to the batch data, so it can be anything that implements tx hashes accumulator
     type BatchDataKeeper = BatchEA;
 
@@ -104,6 +105,28 @@ where
 
                     tracer.finish_tx();
 
+                    if system
+                        .io
+                        .transaction_cache_memory_limit_hit_for_current_tx()
+                    {
+                        system_log!(
+                            system,
+                            "Tx exhausted its preimage-cache memory budget (OON)\n",
+                        );
+                    }
+
+                    // Raw preimages are retained for the whole block and are
+                    // intentionally not part of frame rollback. If this tx
+                    // encountered their hard memory cap, treat it like any
+                    // other block limit before fees or tx effects can commit.
+                    if system.io.block_scoped_cache_limit_hit_for_current_tx() {
+                        system_log!(system, "Tx reached block-scoped cache limit\n",);
+                        system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
+                        result_keeper
+                            .tx_processed(Err(InvalidTransaction::BlockNativeLimitReached));
+                        continue;
+                    }
+
                     match tx_result {
                         Err(TxError::Internal(err)) => {
                             system_log!(system, "Tx execution result: Internal error = {err:?}\n",);
@@ -138,14 +161,26 @@ where
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =
                                 block_data.block_gas_used + tx_processing_result.gas_used;
-                            let next_block_computational_native_used = block_data
-                                .block_computational_native_used
-                                + tx_processing_result.computational_native_used;
                             let next_block_pubdata_used =
                                 block_data.block_pubdata_used + tx_processing_result.pubdata_used;
                             let block_logs_used = system.io.logs_len();
                             let next_block_blob_gas_used =
                                 block_data.block_blob_gas_used + tx_processing_result.blob_gas_used;
+                            let tx_status = matches!(
+                                &tx_processing_result.result,
+                                ExecutionResult::Success { .. }
+                            );
+                            let receipt_hash = compute_receipt_hash(
+                                tx_processing_result.tx_type,
+                                &tx_status,
+                                &next_block_gas_used,
+                                system.io.events_in_this_tx_iterator(),
+                            );
+                            let computational_native_used =
+                                tx_processing_result.computational_native_used;
+                            let next_block_computational_native_used = block_data
+                                .block_computational_native_used
+                                + computational_native_used;
 
                             // Check if the transaction made the block reach any of the limits
                             // for gas, native, pubdata or logs.
@@ -196,12 +231,16 @@ where
                                     };
 
                                 block_data
-                                    .transaction_hashes_accumulator
-                                    .add_tx_hash(&tx_processing_result.tx_hash);
+                                    .transaction_hashes
+                                    .push(tx_processing_result.tx_hash);
+                                block_data.receipt_hashes.push(receipt_hash);
                                 if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
                                         .add_tx_hash(&tx_processing_result.tx_hash);
+                                    // In the multiblock proving path the per-block enforced-tx
+                                    // accumulator may be a no-op, but batch_data still collects
+                                    // these hashes for the batch-level priority hash/count.
                                     batch_data.add_tx_hash(&tx_processing_result.tx_hash);
                                 }
                                 if tx_processing_result.is_upgrade_tx {
@@ -209,7 +248,12 @@ where
                                         .upgrade_tx_recorder
                                         .add_upgrade_tx_hash(&tx_processing_result.tx_hash);
                                 }
-                                block_data.current_transaction_number += 1;
+                                block_data.current_transaction_number = block_data
+                                    .current_transaction_number
+                                    .checked_add(1)
+                                    .ok_or_else(|| {
+                                        internal_error!("too many transactions in block")
+                                    })?;
 
                                 result_keeper.tx_processed(Ok(TxProcessingOutput {
                                     status,
@@ -217,8 +261,7 @@ where
                                     contract_address,
                                     gas_used: tx_processing_result.gas_used,
                                     gas_refunded: tx_processing_result.gas_refunded,
-                                    computational_native_used: tx_processing_result
-                                        .computational_native_used,
+                                    computational_native_used,
                                     native_used: tx_processing_result.native_used,
                                     pubdata_used: tx_processing_result.pubdata_used,
                                 }));

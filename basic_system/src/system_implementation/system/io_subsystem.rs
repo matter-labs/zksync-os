@@ -6,6 +6,7 @@ use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
 use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
 use cost_constants::NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST;
+use cost_constants::RECEIPT_LOG_RLP_OVERHEAD_BYTES;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use evm_interpreter::gas_constants::LOG;
@@ -19,7 +20,9 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
-use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
+use zk_ee::common_structs::new_settlement_layer_chain_id_storage::{
+    NewSettlementLayerChainIdSnapshotId, NewSettlementLayerChainIdStorage,
+};
 use zk_ee::common_structs::{
     GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef,
     L2_TO_L1_LOG_SERIALIZE_SIZE,
@@ -64,6 +67,7 @@ pub struct FullIOStateSnapshot<M: StorageModel> {
     messages: usize,
     events: usize,
     interop_roots: usize,
+    new_settlement_layer_chain_id: NewSettlementLayerChainIdSnapshotId,
 }
 
 impl<
@@ -170,10 +174,23 @@ impl<
                 Ergs(ergs)
             }
         };
+        // This log is also hashed into the block's receipt-root leaf (a blake2s
+        // over the receipt RLP; see `compute_receipt_hash`). Charge the tx for the
+        // blake2s rounds its encoded log contributes so that log-heavy txs pay
+        // for the induced prover work out of their own budget rather than only
+        // counting against the block native limit. The fixed receipt fields and
+        // enclosing list framing are precharged as intrinsic native.
+        let receipt_rlp_len_upper_bound = RECEIPT_LOG_RLP_OVERHEAD_BYTES
+            .saturating_add(33 * topics.len() as u64)
+            .saturating_add(data.len() as u64);
+        let receipt_hash_native = receipt_rlp_len_upper_bound
+            .div_ceil(crate::cost_constants::BLAKE2S_CHUNK_SIZE as u64)
+            .saturating_mul(crate::cost_constants::BLAKE2S_ROUND_NATIVE_COST);
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST
                 + EVENT_TOPIC_NATIVE_COST * (topics.len() as u64)
-                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64),
+                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64)
+                + receipt_hash_native,
         );
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
@@ -405,6 +422,8 @@ impl<
         let messages = self.logs_storage.start_frame();
         let events = self.events_storage.start_frame();
         let interop_roots = self.interop_root_storage.start_frame();
+        let new_settlement_layer_chain_id =
+            self.new_settlement_layer_chain_id_storage.start_frame();
 
         Ok(FullIOStateSnapshot {
             io,
@@ -412,6 +431,7 @@ impl<
             messages,
             events,
             interop_roots,
+            new_settlement_layer_chain_id,
         })
     }
 
@@ -428,6 +448,8 @@ impl<
             .finish_frame(rollback_handle.map(|x| x.events));
         self.interop_root_storage
             .finish_frame(rollback_handle.map(|x| x.interop_roots));
+        self.new_settlement_layer_chain_id_storage
+            .finish_frame(rollback_handle.map(|x| x.new_settlement_layer_chain_id));
 
         Ok(())
     }
@@ -493,7 +515,6 @@ impl<
             InteropRootStorage::<SF, N, A>::new_from_parts(allocator.clone());
         let new_settlement_layer_chain_id_storage =
             NewSettlementLayerChainIdStorage::<SF, N, A>::new_from_parts(allocator.clone());
-
         // we read da scheme during init as in future it should affect pubdata price
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -525,6 +546,15 @@ impl<
         self.transient_storage.begin_new_tx();
         self.logs_storage.begin_new_tx();
         self.events_storage.begin_new_tx();
+    }
+
+    fn block_scoped_cache_limit_hit_for_current_tx(&self) -> bool {
+        self.storage.block_scoped_cache_limit_hit_for_current_tx()
+    }
+
+    fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
+        self.storage
+            .transaction_cache_memory_limit_hit_for_current_tx()
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {

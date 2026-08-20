@@ -6,11 +6,13 @@ where
     S::IO: IOSubsystemExt,
 {
     fn post_init_op<Config: BasicBootloaderExecutionConfig>(
-        _system: &mut System<S>,
+        #[cfg_attr(feature = "disable_system_contracts", allow(unused_variables))]
+        system: &mut System<S>,
         system_functions: &mut HooksStorage<S, <S as SystemTypes>::Allocator>,
     ) -> Result<(), InternalError> {
         system_hooks::add_precompiles(system_functions)?;
 
+        // TODO: maybe rename
         #[cfg(not(feature = "disable_system_contracts"))]
         {
             system_hooks::add_l1_messenger(system_functions)?;
@@ -21,6 +23,11 @@ where
 
             // TODO(EVM-1191): temporary solution, should be removed before the release
             system_hooks::add_base_token_mint(system_functions)?;
+
+            // Gateway-only system hook
+            if system.get_chain_config().fri_proof_verification_enabled() {
+                system_hooks::add_fri_proof_verification_hook(system_functions)?;
+            }
         }
 
         Ok(())

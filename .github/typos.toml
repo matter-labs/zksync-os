@@ -11,4 +11,7 @@ wich = "wich"
 tre = "tre"
 Hom = "Hom"
 Cpy = "Cpy"
-
+Writeable = "Writeable"
+# `nd` is short for "non-determinism" — the `nd_source_std` module name
+# comes from the external `prover` crate (airbender).
+nd = "nd"

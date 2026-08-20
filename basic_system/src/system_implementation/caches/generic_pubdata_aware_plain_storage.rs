@@ -35,9 +35,20 @@ type AddressItem<'a, K, V, A> =
 
 #[derive(Default, Clone)]
 pub struct StorageElementMetadata {
-    /// Transaction where this account was last accessed.
-    /// Considered warm if equal to Some(current_tx)
+    /// Transaction where this slot was last accessed (read or write).
+    /// Considered warm if equal to Some(current_tx).
     pub last_touched_in_tx: Option<TransactionId>,
+    /// Transaction where cold write extra was last charged for this slot.
+    /// Used to distinguish "warm because previously written" (write paths paid)
+    /// from "warm because previously read" (only read paths paid).
+    pub write_extra_charged_in_tx: Option<TransactionId>,
+    /// Whether the cold NEW-slot read extra was already charged for this slot.
+    /// Kept in rollback-aware metadata rather than derived from cache presence:
+    /// entries materialized by a transaction that is later dropped from the
+    /// block stay in the cache, but their metadata updates are rolled back
+    /// together with the charge, so charging never depends on dropped
+    /// transactions (which the proving run doesn't re-execute).
+    pub new_read_extra_charged: bool,
 }
 
 impl StorageElementMetadata {
@@ -103,11 +114,14 @@ impl<
         self.cache.commit();
         self.evm_refunds_counter =
             NonEmptyHistoryCounter::new_with_initial(self.alloc.clone(), R::empty());
-    }
-
-    pub fn finish_tx(&mut self) {
+        // Advance the warmth id at the start of each tx (not at finish) so that
+        // block-level system operations, which run before the first `begin_new_tx`,
+        // keep tx id 0 and are never considered warm by user transactions
+        // (which start at id 1). Matches the account cache, which bumps on begin.
         self.current_tx_id.0 += 1;
     }
+
+    pub fn finish_tx(&mut self) {}
 
     #[track_caller]
     pub fn start_frame(&mut self) -> StorageSnapshotId {
@@ -151,22 +165,36 @@ impl<
     {
         resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
-        let mut initialized_element = false;
+        // Conservative pre-gate for a cold read: the slot IO in the insertion
+        // closure runs unmetered and the real cold charge only happens at warm-up,
+        // so without this a tx could force that (prover) work and then fail the
+        // charge, leaving it unpaid. So we check up front that the worst-case cold
+        // read is affordable. Charging a throwaway copy of the resources here is
+        // just a way to check we have enough — nothing is spent, the real charge
+        // still happens at warm-up. A new slot is the costliest cold read (an extra
+        // non-inclusion merkle path), so it upper-bounds the existing-slot case and
+        // the real warm-up charge below cannot fail. The bound is data-independent
+        // and warmth is rollback-aware, so the gate is identical across sequencer
+        // and proving and never depends on cache-entry presence.
+        let is_cold = match cache.get(key) {
+            Some(item) => !item.current().metadata().considered_warm(current_tx_id),
+            None => true,
+        };
+        if is_cold {
+            let mut probe = resources.clone();
+            resources_policy.charge_cold_storage_read_extra(ee_type, &mut probe, true)?;
+        }
 
         cache
             .get_or_insert(key, || {
-                // Element doesn't exist in cache yet, initialize it
-                initialized_element = true;
-
+                // Element doesn't exist in cache yet, initialize it.
+                // Cold access charging happens at warm-up below: the initial
+                // record persists even if the inserting transaction is dropped
+                // from the block, so anything charging-related must live in
+                // rollback-aware metadata.
                 let query_input = (*key).into();
                 let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
                     .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
-
-                resources_policy.charge_cold_storage_read_extra(
-                    ee_type,
-                    resources,
-                    data_from_oracle.is_new_storage_slot,
-                )?;
 
                 // We need to check that the initial value is default
                 if data_from_oracle.is_new_storage_slot {
@@ -188,19 +216,24 @@ impl<
                 // Warm up element according to EVM rules if needed
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
-                    if initialized_element == false {
-                        let is_new_storage_slot = x.element_properties().is_new_element();
-                        // Element exists in cache, but wasn't touched in current tx yet
-                        resources_policy.charge_cold_storage_read_extra(
-                            ee_type,
-                            resources,
-                            is_new_storage_slot,
-                        )?;
-                    }
+                    // The NEW read extra (tree non-inclusion check) is charged once
+                    // per slot per block; later cold accesses pay EXISTING. "Already
+                    // paid" is tracked in metadata so that it rolls back together
+                    // with the paying transaction if it's dropped from the block.
+                    let charge_as_new = x.element_properties().is_new_element()
+                        && !x.current().metadata().new_read_extra_charged;
+                    resources_policy.charge_cold_storage_read_extra(
+                        ee_type,
+                        resources,
+                        charge_as_new,
+                    )?;
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.last_touched_in_tx = Some(current_tx_id);
+                            if charge_as_new {
+                                m.new_read_extra_charged = true;
+                            }
                             Ok(())
                         })
                     })?;
@@ -240,7 +273,7 @@ impl<
         new_value: &V,
         oracle: &mut impl IOOracle,
         resources: &mut R,
-    ) -> Result<(V, V), SystemError>
+    ) -> Result<V, SystemError>
     where
         StorageAddress<EthereumIOTypesConfig>: From<K>,
     {
@@ -254,43 +287,63 @@ impl<
             oracle,
         )?;
 
+        let val_at_tx_start = addr_data.committed().value();
         let val_current = addr_data.current().value();
+        // Use NEW write-extra only for the first cold write to a truly new slot.
+        // Once the insertion cost has been paid, subsequent txs pay EXISTING.
+        let is_new_slot = addr_data.element_properties().is_new_element()
+            && addr_data
+                .current()
+                .metadata()
+                .write_extra_charged_in_tx
+                .is_none();
 
-        // Try to get initial value at the beginning of the tx.
-        let val_at_tx_start = addr_data.committed().value().clone();
+        // Two separate warmness flags:
+        // - is_warm_access: EIP-2929 access warmness (any prior SLOAD or SSTORE) — for ergs
+        // - is_cold_write_charged: cold write extra already paid this tx — for native
+        let is_warm_access = is_warm_read.0;
+        let is_cold_write_charged =
+            addr_data.current().metadata().write_extra_charged_in_tx == Some(self.current_tx_id);
 
-        let is_new_slot = addr_data.element_properties().is_new_element();
         self.resources_policy.charge_storage_write_extra(
             ee_type,
-            &val_at_tx_start,
+            val_at_tx_start,
             val_current,
             new_value,
             resources,
-            is_warm_read.0,
+            is_warm_access,
+            is_cold_write_charged,
             is_new_slot,
         )?;
 
-        let old_value = addr_data.current().value().clone();
-        addr_data.update(|cache_record| {
-            cache_record.update(|x, _| {
-                *x = new_value.clone();
-                Ok(())
-            })
-        })?;
-
-        // Add refund for storage
+        // Compute refund before mutating the cache, so val_at_tx_start and
+        // val_current can stay borrowed from addr_data.
         let mut refund_counter_value = self.evm_refunds_counter.value().clone();
         self.resources_policy.refund_for_storage_write(
             ee_type,
-            &val_at_tx_start,
-            &old_value,
+            val_at_tx_start,
+            val_current,
             new_value,
             resources,
             &mut refund_counter_value,
         )?;
+
+        // Detach owned old_value from addr_data's borrow before the update.
+        let old_value = val_current.clone();
+        let current_tx_id = self.current_tx_id;
+
+        addr_data.update(|cache_record| {
+            cache_record.update(|x, m| {
+                *x = new_value.clone();
+                if !is_cold_write_charged && new_value != &old_value {
+                    m.write_extra_charged_in_tx = Some(current_tx_id);
+                }
+                Ok(())
+            })
+        })?;
         self.evm_refunds_counter.update(refund_counter_value);
 
-        Ok((old_value, val_at_tx_start))
+        Ok(old_value)
     }
 
     /// Clear state at specified address

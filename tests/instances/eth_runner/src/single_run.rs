@@ -5,11 +5,17 @@ use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
+use rig::chain::BlockExtraStats;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer;
+use rig::forward_system::system::tracers::pair::Pair;
+use rig::forward_system::system::tracers::precompile_stats::PrecompileStatsTracer;
 use rig::log::info;
+use rig::BlockOutput;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
-use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::tracer::{NopTracer, Tracer};
 use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
 
@@ -18,15 +24,15 @@ fn run<const RANDOMIZED: bool>(
     mut chain: Chain<RANDOMIZED>,
     block_context: BlockContext,
     block_number: u64,
-    miner: alloy::primitives::Address,
+    _miner: alloy::primitives::Address,
     ps_trace: PrestateTrace,
     transactions: Vec<EncodedTx>,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
-    calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
     flamegraph: Option<String>,
+    opcode_stats: bool,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
 
@@ -34,44 +40,187 @@ fn run<const RANDOMIZED: bool>(
         chain.set_block_hashes(block_hashes.into_array(block_number))
     }
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &diff_trace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let profiler_config = flamegraph.map(|path| {
-        let mut pc = rig::ProfilerConfig::new(std::path::PathBuf::from(path));
-        pc.frequency_recip = 1;
-        pc
-    });
+    let flamegraph = flamegraph.map(|p| rig::FlamegraphOptions::new(p.into()));
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
-        profiler_config,
+        flamegraph,
         do_riscv_run: true,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,
         ..Default::default()
     };
-    let (output, stats, _) = chain
-        .run_block_with_extra_stats(
+
+    let dump_opcode_tracer = |tracer: &EvmOpcodeStatsTracer<ForwardRunningSystem>| {
+        tracer.print_stats();
+        if let Ok(path) = std::env::var("OPCODE_STATS_PATH") {
+            tracer
+                .write_csv(std::path::Path::new(&path))
+                .expect("Failed to write opcode stats CSV");
+            info!("Opcode stats written to {path}");
+        }
+        if let Ok(dir) = std::env::var("OPCODE_SAMPLES_DIR") {
+            tracer
+                .dump_samples(std::path::Path::new(&dir))
+                .expect("Failed to dump opcode samples");
+            info!("Opcode samples dumped to {dir}");
+        }
+    };
+
+    let dump_precompile_tracer = |tracer: &PrecompileStatsTracer<ForwardRunningSystem>| {
+        tracer.print_stats();
+        if let Ok(path) = std::env::var("PRECOMPILE_STATS_PATH") {
+            tracer
+                .write_csv(std::path::Path::new(&path))
+                .expect("Failed to write precompile stats CSV");
+            info!("Precompile stats written to {path}");
+        }
+        if let Ok(dir) = std::env::var("PRECOMPILE_SAMPLES_DIR") {
+            tracer
+                .dump_samples(std::path::Path::new(&dir))
+                .expect("Failed to dump precompile samples");
+            info!("Precompile samples dumped to {dir}");
+        }
+    };
+
+    let precompile_stats_enabled = std::env::var("PRECOMPILE_STATS_PATH").is_ok()
+        || std::env::var("PRECOMPILE_SAMPLES_DIR").is_ok();
+
+    let (output, stats, pubdata) = match (opcode_stats, precompile_stats_enabled) {
+        (true, true) => {
+            let mut composite = Pair::new(
+                EvmOpcodeStatsTracer::<ForwardRunningSystem>::default(),
+                PrecompileStatsTracer::<ForwardRunningSystem>::default(),
+            );
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut composite,
+            );
+            dump_opcode_tracer(&composite.a);
+            dump_precompile_tracer(&composite.b);
+            result
+        }
+        (true, false) => {
+            let mut tracer = EvmOpcodeStatsTracer::<ForwardRunningSystem>::default();
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut tracer,
+            );
+            dump_opcode_tracer(&tracer);
+            result
+        }
+        (false, true) => {
+            let mut p_tracer = PrecompileStatsTracer::<ForwardRunningSystem>::default();
+            let result = run_with_tracer(
+                &mut chain,
+                transactions,
+                block_context,
+                run_config,
+                &mut p_tracer,
+            );
+            dump_precompile_tracer(&p_tracer);
+            result
+        }
+        (false, false) => run_with_tracer(
+            &mut chain,
             transactions,
-            Some(block_context),
-            None,
-            Some(run_config),
+            block_context,
+            run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
-        )
-        .unwrap();
+        ),
+    };
 
     let _ratio = compute_ratio(stats);
 
-    post_check(output, receipts, diff_trace, prestate_cache).unwrap();
+    // Append the pubdata size to the cycle-marker bench file so
+    // `compare_pubdata.py` can A/B it across a PR. Best-effort: only fires
+    // when MARKER_PATH is set (i.e. the caller asked for bench output), and
+    // silently no-ops if the file isn't writable. Matches the parsing
+    // contract in `bench_scripts/compare_pubdata.py`.
+    if let Ok(path) = std::env::var("MARKER_PATH") {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "pubdata_bytes: {}", pubdata.len());
+        }
+    }
+
+    // No RPC endpoint here (fixtures run offline): the post-check falls back to
+    // the trace-derived reference for any code comparison. `None` parent hash
+    // means the EIP-2935 history-storage write is validated by address+slot only.
+    post_check(
+        output,
+        receipts,
+        diff_trace,
+        prestate_cache,
+        None,
+        block_number,
+        None,
+    )
+    .unwrap();
 
     Ok(())
 }
 
+fn run_with_tracer<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    transactions: Vec<EncodedTx>,
+    block_context: BlockContext,
+    run_config: rig::chain::RunConfig,
+    tracer: &mut impl Tracer<ForwardRunningSystem>,
+) -> (BlockOutput, BlockExtraStats, Vec<u8>) {
+    // Allow benchmarking to opt into a non-default DA commitment scheme. The
+    // bench currently runs two passes per block: the default `BlobsAndPubdataKeccak256`
+    // (which emits a placeholder zero-hash blob plus a keccak commitment over
+    // pubdata) and `BlobsZKsyncOS` (which actually exercises the
+    // `BlobCommitmentGenerator` and the `blob_versioned_hash` cycle marker).
+    // Falls back to the rig default when unset.
+    //
+    // NOTE: the literal string `BENCH_DA_SCHEME` is used as a `grep -q`
+    // fallback target by `.github/workflows/bench.yml` — if this env var
+    // name is renamed, update the workflow too.
+    let da_commitment_scheme = std::env::var("BENCH_DA_SCHEME").ok().map(|s| {
+        use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+        match s.as_str() {
+            "keccak" | "blobs_and_pubdata_keccak256" => {
+                DACommitmentScheme::BlobsAndPubdataKeccak256
+            }
+            "blobs_zksync_os" | "blobs" => DACommitmentScheme::BlobsZKsyncOS,
+            "empty_no_da" => DACommitmentScheme::EmptyNoDA,
+            other => panic!("Unknown BENCH_DA_SCHEME: {other}"),
+        }
+    });
+
+    let (output, stats, _, pubdata) = chain
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            da_commitment_scheme,
+            Some(run_config),
+            tracer,
+            &mut NopTxValidator,
+        )
+        .unwrap();
+
+    (output, stats, pubdata)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn single_run(
     block_dir: String,
     block_hashes: Option<String>,
@@ -80,6 +229,7 @@ pub fn single_run(
     chain_id: Option<u64>,
     single_tx: Option<u64>,
     flamegraph: Option<String>,
+    opcode_stats: bool,
 ) -> anyhow::Result<()> {
     use std::path::Path;
 
@@ -101,10 +251,13 @@ pub fn single_run(
     let diff_file = File::open(dir.join("difftrace.json"))?;
     let diff_reader = BufReader::new(diff_file);
     let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
-    let block_hashes: Option<BlockHashes> = block_hashes.map(|path| {
-        let hashes = fs::read_to_string(&path).expect("valid block hashes path");
-        serde_json::from_str(&hashes).expect("valid block hashes JSON")
-    });
+    // Prefer an explicit --block-hashes path; otherwise auto-load
+    // block_hashes.json from the block dir if present, so the BLOCKHASH opcode
+    // resolves against the real ancestor hashes instead of zero.
+    let block_hashes: Option<BlockHashes> = block_hashes
+        .map(|path| fs::read_to_string(&path).expect("valid block hashes path"))
+        .or_else(|| fs::read_to_string(dir.join("block_hashes.json")).ok())
+        .map(|hashes| serde_json::from_str(&hashes).expect("valid block hashes JSON"));
 
     let calltrace: CallTrace = serde_json::from_reader(calltrace_reader)?;
     let block: Block = serde_json::from_str(&block).expect("valid block JSON");
@@ -142,15 +295,6 @@ pub fn single_run(
             .collect(),
     };
 
-    let calltrace = CallTrace {
-        result: calltrace
-            .result
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-            .collect(),
-    };
-
     if randomized {
         let chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
         run(
@@ -162,10 +306,10 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,
+            opcode_stats,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -178,10 +322,10 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
-            calltrace,
             block_hashes,
             witness_output_dir,
             flamegraph,
+            opcode_stats,
         )
     }
 }

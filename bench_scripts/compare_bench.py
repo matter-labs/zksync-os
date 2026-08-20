@@ -1,9 +1,28 @@
+import os
 import sys
 import re
 import ast
 
-U256BIGINTOPS_RATIO = 4
-BLAKE2ROUNDEXTENDED_RATIO = 16
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from benchlib import (  # noqa: E402
+    BIGINT_DELEGATION_COEFF,
+    BIGINT_DELEGATION_ID,
+    BLAKE_DELEGATION_COEFF,
+    BLAKE_DELEGATION_ID,
+    KECCAK_DELEGATION_COEFF,
+    KECCAK_DELEGATION_ID,
+    pct as pct_change,  # historical name
+)
+
+# Unknown-delegation policy: when this parser computes effective from the
+# raw `.bench` text it adds +1 per occurrence (coefficient = 1) for any
+# delegation ID outside the weighted set (BLAKE/BIGINT/KECCAK). This is
+# compare_bench's deliberate choice — it keeps unfamiliar delegation IDs
+# visible in headline cycles without requiring script updates. The
+# Rust-side `effective_of` helper does NOT apply this fallback because it
+# operates on per-execution sample dumps restricted to the three weighted
+# IDs; that's why headline `block_effective` can differ slightly from
+# compare_bench.py's `Eff` column.
 
 def parse_cycle_markers(text):
     results = {}
@@ -16,13 +35,40 @@ def parse_cycle_markers(text):
             m = re.match(r"(\w+): net cycles: (\d+), net delegations: (\{.*\})", line.strip())
             if m:
                 name = m.group(1)
+                # Compatibility aliases for marker-name transitions. These
+                # let bench-base on older merge-bases match bench-head's
+                # current names so the PR-comment rows pair up correctly.
+                # TODO: drop each alias one PR cycle after the merge-base
+                # SHA on `draft-0.4.0` reliably contains the new name.
+                #
+                # Alias 1: `<base>_execution_environment` → `<base>`.
+                #   Introduced by feat(bench): mark user-EVM-EE keccak/ecrecover.
+                #   The outer cycles INCLUDE the inner ones, so collapsing
+                #   onto the base name + max-fold picks the larger value —
+                #   avoiding double rows in the PR comment.
+                # Alias 2: `verify_and_apply_batch` → `state_commitment_update`.
+                #   Introduced when the marker was renamed (the old name was
+                #   misleading — it always wrapped only the state-tree commit).
+                if name.endswith("_execution_environment"):
+                    name = name[: -len("_execution_environment")]
+                elif name == "verify_and_apply_batch":
+                    name = "state_commitment_update"
                 raw = int(m.group(2))
-                delegs = eval(m.group(3))
+                delegs = ast.literal_eval(m.group(3))
 
-                blake = delegs.get(1991, 0)
-                bigint = delegs.get(1994, 0)
-                weighted = blake * BLAKE2ROUNDEXTENDED_RATIO + bigint * U256BIGINTOPS_RATIO
-                weighted += sum(v for k, v in delegs.items() if k not in (1991, 1994))
+                blake = delegs.get(BLAKE_DELEGATION_ID, 0)
+                bigint = delegs.get(BIGINT_DELEGATION_ID, 0)
+                keccak = delegs.get(KECCAK_DELEGATION_ID, 0)
+                weighted = (
+                    blake * BLAKE_DELEGATION_COEFF
+                    + bigint * BIGINT_DELEGATION_COEFF
+                    + keccak * KECCAK_DELEGATION_COEFF
+                )
+                weighted += sum(
+                    v
+                    for k, v in delegs.items()
+                    if k not in (BLAKE_DELEGATION_ID, BIGINT_DELEGATION_ID, KECCAK_DELEGATION_ID)
+                )
 
                 eff = raw + weighted
                 prev = results.get(name)
@@ -31,22 +77,34 @@ def parse_cycle_markers(text):
                         'raw': raw,
                         'blake': blake,
                         'bigint': bigint,
+                        'keccak': keccak,
                         'effective': eff
                     }
     return results
 
-def pct_change(old, new):
-    if old == 0:
-        return float('inf') if new > 0 else 0.0
-    return (new - old) / old * 100
-
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python compare_bench.py '[...]'")
+    # `--no-title` lets the caller (e.g. bench.yml) provide its own section
+    # heading; useful when the same script is invoked multiple times to
+    # render different sub-tables under separate headings/spoilers.
+    # `--sort-by-symbol` groups rows by Symbol (then benchmark name) so
+    # all rows for the same marker line up — easier to scan when the
+    # table has many (benchmark × symbol) combinations like the
+    # block-level sub-phases view.
+    # `--aggregate` collapses all input entries sharing the same (name,
+    # symbol) into a single averaged row (counts averaged across the grouped
+    # entries, percentages recomputed on the means). Used to show one headline
+    # average across many block fixtures instead of one row per block.
+    cli_flags = {"--no-title", "--sort-by-symbol", "--aggregate"}
+    args = [a for a in sys.argv[1:] if a not in cli_flags]
+    emit_title = "--no-title" not in sys.argv[1:]
+    sort_by_symbol = "--sort-by-symbol" in sys.argv[1:]
+    aggregate = "--aggregate" in sys.argv[1:]
+    if len(args) != 1:
+        print("Usage: python compare_bench.py [--no-title] [--sort-by-symbol] [--aggregate] '[...]'")
         sys.exit(1)
 
     try:
-        benchmarks = ast.literal_eval(sys.argv[1])
+        benchmarks = ast.literal_eval(args[0])
     except Exception as e:
         print(f"Invalid input format: {e}")
         sys.exit(1)
@@ -81,12 +139,20 @@ def main():
             b = base.get(sym, {})
             h = head.get(sym, {})
 
+            # Skip symbols absent on both sides (e.g. an explicitly-requested
+            # block-level sub-phase that doesn't exist in this run's bench
+            # file would otherwise produce a noisy all-zero row).
+            if not b and not h:
+                continue
+
             b_raw = b.get('raw', 0)
             h_raw = h.get('raw', 0)
             b_blake = b.get('blake', 0)
             h_blake = h.get('blake', 0)
             b_bigint = b.get('bigint', 0)
             h_bigint = h.get('bigint', 0)
+            b_keccak = b.get('keccak', 0)
+            h_keccak = h.get('keccak', 0)
             b_eff = b.get('effective', 0)
             h_eff = h.get('effective', 0)
 
@@ -95,20 +161,63 @@ def main():
                 b_raw, h_raw, pct_change(b_raw, h_raw),
                 b_blake, h_blake, pct_change(b_blake, h_blake),
                 b_bigint, h_bigint, pct_change(b_bigint, h_bigint),
+                b_keccak, h_keccak, pct_change(b_keccak, h_keccak),
                 b_eff, h_eff, pct_change(b_eff, h_eff)
             ))
 
+    # Skip emitting anything when there are no rows so callers wrapping the
+    # output in `<details>` don't produce an empty section.
+    if not rows:
+        return
+
+    if aggregate:
+        # Average count columns within each (name, symbol) group (mean across
+        # the grouped entries, e.g. per-block), then recompute the percentage
+        # columns from the averaged base/head values. Count columns are the
+        # base/head pairs at these row indices; the percentage column that
+        # follows each pair is recomputed. Averaging (not summing) keeps the
+        # headline stable as the number of block fixtures changes.
+        from collections import OrderedDict
+
+        count_idx = (2, 3, 5, 6, 8, 9, 11, 12, 14, 15)
+        groups = OrderedDict()
+        sizes = {}
+        for r in rows:
+            key = (r[0], r[1])
+            acc = groups.get(key)
+            if acc is None:
+                acc = [r[0], r[1]] + [0] * (len(r) - 2)
+                groups[key] = acc
+            sizes[key] = sizes.get(key, 0) + 1
+            for i in count_idx:
+                acc[i] += r[i]
+        rows = []
+        for key, acc in groups.items():
+            n = sizes[key]
+            for i in count_idx:
+                acc[i] = round(acc[i] / n)
+            for base_i, head_i, pct_i in ((2, 3, 4), (5, 6, 7), (8, 9, 10), (11, 12, 13), (14, 15, 16)):
+                acc[pct_i] = pct_change(acc[base_i], acc[head_i])
+            rows.append(tuple(acc))
+
+    if sort_by_symbol:
+        # row[0] = benchmark name, row[1] = symbol. Stable sort on
+        # (symbol, name) groups all rows of the same marker together.
+        rows.sort(key=lambda r: (r[1], r[0]))
+
     # Markdown table
-    print("### Benchmark report\n")
-    print("| Benchmark | Symbol | Base Eff | Head Eff (%) | Base Raw | Head Raw (%) | Base Blake | Head Blake (%) | Base Bigint | Head Bigint (%) |")
-    print("|-----------|--------|-----------|----------------|-----------|----------------|-------------|------------------|---------------|--------------------|")
+    if emit_title:
+        print("### Benchmark report\n")
+    print("| Benchmark | Symbol | Base Eff | Head Eff (%) | Base Raw | Head Raw (%) | Base Blake | Head Blake (%) | Base Bigint | Head Bigint (%) | Base Keccak | Head Keccak (%) |")
+    print("|-----------|--------|-----------|----------------|-----------|----------------|-------------|------------------|---------------|--------------------|--------------|--------------------|")
 
     for r in rows:
         print(f"| `{r[0]}` | `{r[1]}` "
-              f"| {r[11]:,} | {r[12]:,} ({r[13]:+.2f}%) "
+              f"| {r[14]:,} | {r[15]:,} ({r[16]:+.2f}%) "
               f"| {r[2]:,} | {r[3]:,} ({r[4]:+.2f}%) "
               f"| {r[5]:,} | {r[6]:,} ({r[7]:+.2f}%) "
-              f"| {r[8]:,} | {r[9]:,} ({r[10]:+.2f}%)")
+              f"| {r[8]:,} | {r[9]:,} ({r[10]:+.2f}%) "
+              f"| {r[11]:,} | {r[12]:,} ({r[13]:+.2f}%)")
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,8 @@
 use crate::internal_error;
-use crate::storage_types::MAX_EVENT_TOPICS;
 use crate::system::errors::internal::InternalError;
 use crate::system::{
     errors::system::SystemError, CompletedExecution, ExternalCallRequest, System, SystemTypes,
+    MAX_EVENT_TOPICS,
 };
 use crate::types_config::SystemIOTypesConfig;
 use alloc::collections::BTreeMap;
@@ -23,6 +23,15 @@ pub struct SystemCallHook<S: SystemTypes>(
         &'a mut [MaybeUninit<u8>],
     ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>,
 );
+
+// Manual impls avoid adding `S: Copy/Clone` bounds, which are not required since the
+// inner field is a bare function pointer (always Copy regardless of S).
+impl<S: SystemTypes> Copy for SystemCallHook<S> {}
+impl<S: SystemTypes> Clone for SystemCallHook<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
 
 impl<S: SystemTypes> SystemCallHook<S> {
     pub fn new(
@@ -126,24 +135,18 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     }
 
     ///
-    /// Intercepts calls to low addresses (< 2^16) and executes hooks
-    /// stored under that address. If no hook is stored there, return `Ok(None)`.
-    /// Always return unused return_memory.
+    /// Executes the given call hook and returns the result.
+    /// Always returns unused return_memory.
     ///
-    pub fn try_intercept<'a>(
-        &mut self,
-        address_low: u16,
+    pub fn run_call_hook<'a>(
+        &self,
+        hook: SystemCallHook<S>,
         request: ExternalCallRequest<S>,
         caller_ee: u8,
         system: &mut System<S>,
         return_memory: &'a mut [MaybeUninit<u8>],
-    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), SystemError> {
-        let Some(hook) = self.call_hooks.get(&address_low) else {
-            return Ok((None, return_memory));
-        };
-        let (res, remaining_memory) = hook.0(request, caller_ee, system, return_memory)?;
-
-        Ok((Some(res), remaining_memory))
+    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError> {
+        hook.0(request, caller_ee, system, return_memory)
     }
 
     /// Intercepts events emitted from low addresses (< 2^32) and executes hooks
@@ -170,10 +173,10 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     }
 
     ///
-    /// Checks if there is a call hook stored for a given low address (<16 bits).
+    /// Returns the call hook stored for a given low address (<16 bits), or `None` if absent.
     ///
-    pub fn has_hook_for(&mut self, address_low: u16) -> bool {
-        self.call_hooks.contains_key(&address_low)
+    pub fn find_call_hook(&self, address_low: u16) -> Option<SystemCallHook<S>> {
+        self.call_hooks.get(&address_low).copied()
     }
 
     ///

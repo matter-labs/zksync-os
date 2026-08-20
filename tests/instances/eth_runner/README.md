@@ -24,7 +24,7 @@ The tool has two modes: `single-run` and `live-run`. The former takes as argumen
 From the root of the project, run:
 
 ```raw
-RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner/blocks/22244135 --randomized
+RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print -- single-run --block-dir tests/instances/eth_runner/blocks/22244135 --randomized
 ```
 
 This will run the example block committed to the repo (22244135). Some more example blocks can be found in https://github.com/antoniolocascio/ethereum-block-examples.
@@ -34,7 +34,7 @@ This will run the example block committed to the repo (22244135). Some more exam
 From the root of the projects, run:
 
 ```raw
-RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native  -- live-run --start-block 19299000 --end-block 19299005 --endpoint ENDPOINT --db ../db
+RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print  -- live-run --start-block 19299000 --end-block 19299005 --endpoint ENDPOINT --db ../db
 ```
 
 This command will fetch blocks in the range [19299000, 19299005] from the Ethereum archive node `ENDPOINT`. It creates a local database to cache some RPC information.

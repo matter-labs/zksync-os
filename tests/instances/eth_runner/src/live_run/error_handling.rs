@@ -1,4 +1,4 @@
-use super::block_execution::{run_block, GpuSharedState};
+use super::block_execution::run_block;
 use super::db::{BlockStatus, BlockTraces, Database};
 use super::prefetch::fetch_block_traces;
 use super::rpc;
@@ -41,6 +41,7 @@ fn format_block_failure_message(
 /// Updates total_block_time with backup execution time.
 ///
 /// Note: This function should only be called when primary execution has already failed.
+#[allow(clippy::too_many_arguments)]
 pub fn retry_block_with_backup_endpoint(
     block_number: u64,
     backup_endpoint: &str,
@@ -49,7 +50,7 @@ pub fn retry_block_with_backup_endpoint(
     persist_all: bool,
     chain_id: u64,
     single_tx: Option<u64>,
-    gpu_state: &mut Option<&mut GpuSharedState>,
+    prover: &dyn airbender_host::Prover,
     only_forward: bool,
     total_block_time: &mut std::time::Duration,
 ) -> Result<BlockStatus> {
@@ -90,7 +91,7 @@ pub fn retry_block_with_backup_endpoint(
                 persist_all,
                 chain_id,
                 single_tx,
-                gpu_state,
+                prover,
                 only_forward,
                 backup_traces,
             );

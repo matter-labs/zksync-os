@@ -7,8 +7,8 @@ use zk_ee::common_structs::{
     GenericEventContent, GenericEventContentWithTxRef, GenericLogContent,
     GenericLogContentWithTxRef, PreimageType,
 };
-use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::IOResultKeeper;
+use zk_ee::system::MAX_EVENT_TOPICS;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 
@@ -24,9 +24,9 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
         Result<TxProcessingOutputOwned, basic_bootloader::bootloader::errors::InvalidTransaction>,
     >,
     pub new_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
-    pub pubdata: Vec<u8>,
-
     pub tx_result_callback: TR,
+    pub block_computational_native_used: u64,
+    pub block_pubdata_used: u64,
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
@@ -38,8 +38,9 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             storage_writes: vec![],
             tx_results: vec![],
             new_preimages: vec![],
-            pubdata: vec![],
             tx_result_callback,
+            block_computational_native_used: 0,
+            block_pubdata_used: 0,
         }
     }
 }
@@ -84,10 +85,6 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
             .map(|(hash, preimage, preimage_type)| (*hash, preimage.to_vec(), preimage_type))
             .collect();
     }
-
-    fn pubdata(&mut self, value: &[u8]) {
-        self.pubdata.extend_from_slice(value);
-    }
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesConfig>
@@ -120,10 +117,115 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         self.block_header = Some(block_header);
     }
 
+    fn record_block_native_used(&mut self, native_used: u64) {
+        self.block_computational_native_used = native_used;
+    }
+
+    fn record_block_pubdata_used(&mut self, pubdata_used: u64) {
+        self.block_pubdata_used = pubdata_used;
+    }
+
     fn get_gas_used(&self) -> u64 {
         self.tx_results
             .iter()
             .map(|r| r.as_ref().map_or(0, |r| r.gas_used))
             .sum()
+    }
+}
+
+///
+///  Result keeper for prover input run.
+///  Adds pubdata to ForwardRunningResultKeeper
+///
+pub struct ProverInputResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
+    pub forward_running_rk: ForwardRunningResultKeeper<TR, T>,
+    pub pubdata: Vec<u8>,
+}
+
+impl<TR: TxResultCallback, T: 'static + Sized> ProverInputResultKeeper<TR, T> {
+    pub fn new(tx_result_callback: TR) -> Self {
+        Self {
+            forward_running_rk: ForwardRunningResultKeeper::new(tx_result_callback),
+            pubdata: vec![],
+        }
+    }
+}
+
+// Delegate to ForwardRunningResultKeeper, except for pubdata
+impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesConfig>
+    for ProverInputResultKeeper<TR, T>
+{
+    fn events<'a>(
+        &mut self,
+        iter: impl Iterator<
+            Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
+        >,
+    ) {
+        // TODO: delegating here causes an ICE. We reimplement this method.
+        self.forward_running_rk.events = iter
+            .map(|e| GenericEventContent {
+                tx_number: e.tx_number,
+                address: *e.address,
+                topics: e.topics.clone(),
+                data: UsizeAlignedByteBox::from_slice_in(e.data, Global),
+            })
+            .collect();
+    }
+
+    fn logs<'a>(
+        &mut self,
+        iter: impl Iterator<Item = GenericLogContentWithTxRef<'a, EthereumIOTypesConfig>>,
+    ) {
+        self.forward_running_rk.logs(iter)
+    }
+
+    fn storage_diffs(&mut self, iter: impl Iterator<Item = (B160, Bytes32, Bytes32)>) {
+        self.forward_running_rk.storage_diffs(iter)
+    }
+
+    fn new_preimages<'a>(
+        &mut self,
+        iter: impl Iterator<Item = (&'a Bytes32, &'a [u8], PreimageType)>,
+    ) {
+        self.forward_running_rk.new_preimages(iter)
+    }
+
+    fn pubdata(&mut self, value: &[u8]) {
+        self.pubdata.extend_from_slice(value);
+    }
+}
+
+// Delegate to ForwardRunningResultKeeper
+impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesConfig>
+    for ProverInputResultKeeper<TR, T>
+{
+    type BlockHeader = T;
+
+    fn tx_processed(
+        &mut self,
+        tx_result: Result<
+            TxProcessingOutput,
+            basic_bootloader::bootloader::errors::InvalidTransaction,
+        >,
+    ) {
+        self.forward_running_rk.tx_processed(tx_result)
+    }
+
+    fn block_sealed(&mut self, block_header: Self::BlockHeader) {
+        self.forward_running_rk.block_sealed(block_header)
+    }
+
+    fn record_block_native_used(&mut self, native_used: u64) {
+        self.forward_running_rk
+            .record_block_native_used(native_used)
+    }
+
+    fn record_block_pubdata_used(&mut self, pubdata_used: u64) {
+        self.forward_running_rk
+            .record_block_pubdata_used(pubdata_used)
+    }
+
+    fn get_gas_used(&self) -> u64 {
+        self.forward_running_rk.get_gas_used()
     }
 }

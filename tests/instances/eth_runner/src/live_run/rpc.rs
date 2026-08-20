@@ -4,7 +4,7 @@ use crate::{
     prestate::{DiffTrace, PrestateTrace},
     receipts::BlockReceipts,
 };
-use alloy::primitives::B256;
+use alloy::primitives::{Bytes, B256};
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use rig::log::{debug, warn};
@@ -218,6 +218,30 @@ pub fn get_chain_id(endpoint: &str) -> Result<u64> {
     Ok(id)
 }
 
+/// Fetches an account's code at a given block via `eth_getCode`.
+///
+/// This is the authoritative on-chain code (post-Pectra, a delegated EOA
+/// returns its `0xef0100‖address` designator; a cleared/undelegated account
+/// returns empty). The post-check uses it to resolve EIP-7702 delegation code
+/// that the per-tx prestate/diff trace cannot reconstruct unambiguously.
+pub fn get_code(endpoint: &str, address_hex: &str, block_number: u64) -> Result<Bytes> {
+    debug!("RPC: eth_getCode({address_hex}, {block_number})");
+
+    let body = json!({
+        "method": "eth_getCode",
+        "params": [address_hex, to_hex(block_number)],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let res: serde_json::Value = serde_json::from_str(&res)?;
+    let code_hex = res["result"]
+        .as_str()
+        .ok_or_else(|| anyhow!("No code found in eth_getCode response"))?;
+    let code = Bytes::from_str(code_hex)?;
+    Ok(code)
+}
+
 /// Decompresses response body based on Content-Encoding header.
 /// Handles zstd (manual), gzip (auto-decompressed by ureq), and uncompressed.
 fn decompress_response(
@@ -239,7 +263,7 @@ fn decompress_response(
             .context("Failed to decompress zstd response")?;
         let decompress_time = decompress_start.elapsed();
 
-        let space_saved = if decompressed.len() > 0 {
+        let space_saved = if !decompressed.is_empty() {
             (1.0 - compressed_size as f64 / decompressed.len() as f64) * 100.0
         } else {
             0.0
@@ -386,6 +410,7 @@ pub fn get_all_block_traces(
 ///
 /// Returns a HashMap mapping block_number -> (Block, PrestateTrace, DiffTrace, BlockReceipts, CallTrace).
 /// Only includes successfully fetched blocks in the result (failed blocks are skipped with a warning).
+#[allow(clippy::type_complexity)]
 pub fn get_all_block_traces_batch(
     endpoint: &str,
     block_numbers: &[u64],
@@ -412,7 +437,7 @@ pub fn get_all_block_traces_batch(
         batch.push(json!({
             "method": "eth_getBlockByNumber",
             "params": [block_hex.clone(), true],
-            "id": base_id + 0,
+            "id": base_id,
             "jsonrpc": "2.0"
         }));
 
@@ -495,8 +520,7 @@ pub fn get_all_block_traces_batch(
     let group_start = std::time::Instant::now();
     let mut results = std::collections::HashMap::new();
 
-    for block_idx in 0..block_numbers.len() {
-        let block_number = block_numbers[block_idx];
+    for (block_idx, &block_number) in block_numbers.iter().enumerate() {
         let base_id = block_idx * 5;
 
         // Extract results for this block

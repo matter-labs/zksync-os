@@ -227,6 +227,18 @@ pub trait StorageModel: Sized + SnapshottableIo {
     /// Get amount of pubdata needed to encode current tx diff in bytes.
     fn pubdata_used_by_tx(&self) -> u32;
 
+    /// Returns whether the current transaction attempted to grow a
+    /// block-scoped cache past its safe retained-memory limit.
+    fn block_scoped_cache_limit_hit_for_current_tx(&self) -> bool {
+        false
+    }
+
+    /// Returns whether the current transaction exhausted a transaction-local
+    /// cache memory budget.
+    fn transaction_cache_memory_limit_hit_for_current_tx(&self) -> bool {
+        false
+    }
+
     /// Get current counter of refunds
     fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
 

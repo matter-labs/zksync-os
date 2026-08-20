@@ -13,7 +13,7 @@ impl BlockMetadataResponder {
     const SUPPORTED_QUERY_IDS: &[u32] = &[BLOCK_METADATA_QUERY_ID];
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for BlockMetadataResponder {
+impl OracleQueryProcessor for BlockMetadataResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -26,7 +26,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlockMetadataResponder {
         &mut self,
         query_id: u32,
         _query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn oracle_provider::RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 

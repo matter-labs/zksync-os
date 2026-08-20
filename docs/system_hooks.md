@@ -13,7 +13,19 @@ System hooks have two distinct use cases:
   - ecadd
   - ecmul
   - ecpairing
+  - blake2f
+  - point evaluation (KZG, EIP-4844)
+  - BLS12-381 (EIP-2537):
+    - G1 addition
+    - G2 addition
+    - G1 multi-scalar multiplication
+    - G2 multi-scalar multiplication
+    - pairing check
+    - map field element to G1
+    - map field element to G2
   - P256
+- Implementing Gateway-only precompiles:
+  - FRI proof verification (`0x7003`, behind `fri_precompile`, disabled in default builds) — see the [FRI precompile design](./fri_precompile.md)
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook
@@ -69,3 +81,49 @@ We want to be able to perform upgrade with 1 tx, so we designed this method this
 It will be used only by protocol upgrade transactions, which are approved by governance.
 Bytecodes will be published separately with Ethereum calldata.
 Calls from unauthorized callers are treated as calls to an empty account: success with empty returndata, no writes, and no EVM gas burn.
+
+## FRI precompile (Gateway-only)
+
+The FRI precompile (at address `0x0000000000000000000000000000000000007003`)
+lets contracts ask whether a specific `statement_versioned_hash` is in the
+**current transaction's verified-statements list**, which is populated
+during `FriProofTx` validation.
+
+The precompile is a pure membership check on tx-scoped state. It does
+not itself run the FRI verifier and it does not re-derive any hash —
+the verification happens in the server and during sequencing, only transactions
+with valid FRI proofs are sequenced, so the precompile checks if the statement 
+versioned hash was supplied in the transaction.
+
+Support for this hook is compiled only when the default-off Cargo
+feature `fri_precompile` is enabled. Production and audit builds are
+expected to leave that feature disabled.
+
+### Registration
+
+- If `fri_precompile` is disabled, `add_fri_proof_verification_hook`
+  is a no-op and the address is unregistered.
+- If `fri_precompile` is enabled, the hook is registered only when
+  `system.get_chain_config().fri_proof_verification_enabled() == true`.
+- When unregistered, the address behaves like an empty account
+  (success with empty returndata, no side effects, no EVM gas burn).
+
+### Interface
+
+- **Calldata:** exactly **32 bytes** containing the
+  `statement_versioned_hash`.
+- **Value:** must be zero. A non-zero `value` returns failure.
+- **Bad length:** any calldata length other than 32 returns failure.
+- **Output:** 32-byte ABI-encoded `bool` — `0x00..01` if the hash is in
+  the current tx-scoped list, `0x00..00` if it is not. Missing sidecar
+  data or verifier rejection is handled before EVM execution in
+  admission and proving paths; those cases reject the tx rather than
+  making the precompile return `false`.
+
+### Lifecycle
+
+The verified-hash list is populated by the bootloader's `FriProofTx`
+validator before EVM execution begins and cleared at tx end. The
+precompile is the only way for EVM code to observe it.
+
+See [FRI precompile design](./fri_precompile.md) for the full flow.

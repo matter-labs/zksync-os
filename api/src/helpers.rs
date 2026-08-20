@@ -14,6 +14,7 @@ use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
+    L2TxIntrinsicNativeInput,
 };
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
@@ -397,6 +398,8 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     access_list_accounts: u64,
     access_list_storage_keys: u64,
     authorization_list_num: u64,
+    blob_versioned_hashes_num: u64,
+    statement_versioned_hashes_num: u64,
     max_fee_per_gas: U256,
     max_priority_fee_per_gas: U256,
 ) -> Result<(), ()> {
@@ -408,19 +411,19 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         return Err(());
     }
 
+    // Following the bootloader, native is unlimited either when base fee is 0
+    // or when the chain config sets native_price to 0.
+    if base_fee == 0 || native_price.is_zero() {
+        return Ok(());
+    }
+
     // Compute effective gas price
-    let gas_price = if base_fee == 0 {
-        // Following bootloader: if base fee is zero, then we ignore priority fee
-        U256::ZERO
-    } else {
+    let gas_price = {
         let priority_fee = min(max_priority_fee_per_gas, max_fee_per_gas - base_fee);
         base_fee + priority_fee
     };
 
     // native_per_gas = ceil(gas_price / native_price)
-    if native_price.is_zero() {
-        return Err(());
-    }
     let native_per_gas = u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(())?;
 
     // native_per_pubdata = pubdata_price / native_price
@@ -445,17 +448,49 @@ pub fn validate_l2_tx_intrinsic_native_resources(
     let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
 
     // Intrinsic computational native
-    let intrinsic_computational_native = calculate_l2_tx_intrinsic_computational_native_resources(
-        calldata_length,
-        access_list_accounts,
-        access_list_storage_keys,
-        authorization_list_num,
-        false,
-    );
+    let intrinsic_computational_native =
+        calculate_l2_tx_intrinsic_computational_native_resources(&L2TxIntrinsicNativeInput {
+            calldata_byte_length: calldata_length,
+            access_list_accounts,
+            access_list_storages: access_list_storage_keys,
+            authorization_list_num,
+            blob_versioned_hashes_num,
+            statement_versioned_hashes_num,
+            is_service: false,
+            // not free-native (base_fee == 0 returned early above)
+            free_native: false,
+        });
 
     native_limit
         .checked_sub(intrinsic_computational_native)
         .ok_or(())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_l2_tx_intrinsic_native_resources;
+    use ruint::aliases::U256;
+
+    #[test]
+    fn intrinsic_native_validation_allows_zero_native_price() {
+        assert_eq!(
+            validate_l2_tx_intrinsic_native_resources(
+                U256::from(1000u64),
+                U256::ZERO,
+                U256::from(1000u64),
+                21_000,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                U256::from(1000u64),
+                U256::from(0u64),
+            ),
+            Ok(())
+        );
+    }
 }

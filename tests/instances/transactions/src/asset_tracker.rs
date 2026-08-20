@@ -2,11 +2,12 @@
 //! Tests for the L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 calls
 //! that the bootloader makes during L1 transaction processing.
 //!
-//! When an L1 transaction deposits base tokens (total_deposited > 0), the
-//! bootloader calls handleFinalizeBaseTokenBridgingOnL2(uint256, uint256)
-//! on the real L2AssetTracker contract up to three times — once for the
-//! value mint, once for the operator fee, and once for the refund. If any
-//! of these amounts is zero the corresponding call is skipped.
+//! When an L1 transaction is processed, the bootloader calls
+//! handleFinalizeBaseTokenBridgingOnL2(uint256, uint256)
+//! on the real L2AssetTracker contract for the value mint and operator fee,
+//! even when either amount is zero, and once more for a non-zero refund. The
+//! unconditional pre-execution call admits the preimages needed by mandatory
+//! post-execution accounting before user execution begins.
 //!
 //! When the source chain matches `L1_CHAIN_ID` and the current settlement
 //! layer also matches `L1_CHAIN_ID`, the contract records the aggregate
@@ -16,19 +17,37 @@ use alloy_sol_types::sol;
 use alloy_sol_types::SolCall;
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
+use rig::basic_system::system_implementation::flat_storage_model::{
+    FlatStorageCommitment, TREE_HEIGHT,
+};
+use rig::chain::TestingOracleFactory;
 use rig::crypto::MiniDigest;
 use rig::evm_bytecode::BytecodeBuilder;
 use rig::forward_system::run::convert_alloy::IntoAlloy;
+use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
+use rig::forward_system::run::{
+    make_oracle_for_proofs_and_dumps_with_chain_config, FriVerifierArtifacts, PreimageSource,
+};
+use rig::fri::InMemoryFriProofSidecarSource;
+use rig::oracle_provider::ZkEENonDeterminismSource;
 use rig::predeployed_contracts::{
     DEFAULT_BASE_TOKEN_ASSET_ID, L2_ASSET_TRACKER_L1_CHAIN_ID_SLOT,
     SYSTEM_CONTEXT_SETTLEMENT_LAYER_CHAIN_ID_SLOT,
 };
 use rig::ruint::aliases::{B256, U256};
-use rig::system_hooks::addresses_constants::{L2_ASSET_TRACKER_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
+use rig::system_hooks::addresses_constants::{
+    L2_ASSET_TRACKER_ADDRESS, L2_CHAIN_ASSET_HANDLER_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+};
 use rig::testing_signer;
 use rig::utils::L1TxBuilder;
+use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+use rig::zk_ee::system::metadata::chain_config::ChainConfig;
+use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
+use rig::zk_ee::utils::Bytes32;
+use rig::zksync_os_interface::traits::TxListSource;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::TestingFramework;
+use std::sync::{Arc, Mutex};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 sol! {
@@ -37,6 +56,118 @@ sol! {
 
 const L2_ASSET_TRACKER_INTEROP_INFO_SLOT: u64 = 156;
 const INTEROP_INFO_TOTAL_SUCCESSFUL_DEPOSITS_OFFSET: u64 = 1;
+
+#[derive(Clone)]
+struct RecordingPreimageSource {
+    inner: InMemoryPreimageSource,
+    requested: Arc<Mutex<Vec<Bytes32>>>,
+}
+
+impl PreimageSource for RecordingPreimageSource {
+    fn get_preimage(&mut self, hash: Bytes32) -> Option<Vec<u8>> {
+        self.requested.lock().expect("lock poisoned").push(hash);
+        self.inner.get_preimage(hash)
+    }
+}
+
+struct RecordingPreimageFactory {
+    requested: Arc<Mutex<Vec<Bytes32>>>,
+}
+
+impl RecordingPreimageFactory {
+    #[allow(clippy::too_many_arguments)]
+    fn create_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        fri_sidecar: InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_uart: bool,
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
+        make_oracle_for_proofs_and_dumps_with_chain_config(
+            chain_config,
+            block_metadata,
+            state_tree,
+            RecordingPreimageSource {
+                inner: preimage_source,
+                requested: self.requested.clone(),
+            },
+            tx_source,
+            fri_sidecar,
+            fri_artifacts,
+            proof_data,
+            da_commitment_scheme,
+            add_uart,
+            use_native_callable_oracles,
+        )
+    }
+}
+
+impl TestingOracleFactory<false> for RecordingPreimageFactory {
+    fn create_forward_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        fri_sidecar: InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_uart: bool,
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
+        self.create_oracle(
+            block_metadata,
+            chain_config,
+            state_tree,
+            preimage_source,
+            tx_source,
+            fri_sidecar,
+            fri_artifacts,
+            proof_data,
+            da_commitment_scheme,
+            add_uart,
+            use_native_callable_oracles,
+        )
+    }
+
+    fn create_proof_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        fri_sidecar: InMemoryFriProofSidecarSource,
+        fri_artifacts: Option<Arc<FriVerifierArtifacts>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_uart: bool,
+        use_native_callable_oracles: bool,
+    ) -> ZkEENonDeterminismSource {
+        self.create_oracle(
+            block_metadata,
+            chain_config,
+            state_tree,
+            preimage_source,
+            tx_source,
+            fri_sidecar,
+            fri_artifacts,
+            proof_data,
+            da_commitment_scheme,
+            add_uart,
+            use_native_callable_oracles,
+        )
+    }
+}
 
 fn b160_to_address(b: rig::ruint::aliases::B160) -> rig::alloy::primitives::Address {
     b.into_alloy()
@@ -76,9 +207,59 @@ fn read_l1_chain_id_tx(nonce: u64) -> ZKsyncTxEnvelope {
     ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
 }
 
+#[test]
+fn test_preloop_unconditionally_loads_chain_asset_handler_implementation() {
+    let implementation = address!("0000000000000000000000000000000000020000");
+    // migrationNumber(uint256) returns 0.
+    let implementation_bytecode = [0x5f, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3];
+
+    // Minimal EIP-1967 delegatecall proxy: copy calldata, load the
+    // implementation address from storage, delegatecall, copy returndata,
+    // and return it.
+    let implementation_slot = [
+        0x36, 0x08, 0x94, 0xa1, 0x3b, 0xa1, 0xa3, 0x21, 0x06, 0x67, 0xc8, 0x28, 0x49, 0x2d, 0xb9,
+        0x8d, 0xca, 0x3e, 0x20, 0x76, 0xcc, 0x37, 0x35, 0xa9, 0x20, 0xa3, 0xca, 0x50, 0x5d, 0x38,
+        0x2b, 0xbc,
+    ];
+    let mut proxy_bytecode = vec![0x36, 0x5f, 0x5f, 0x37, 0x5f, 0x5f, 0x36, 0x5f, 0x7f];
+    proxy_bytecode.extend_from_slice(&implementation_slot);
+    proxy_bytecode.extend_from_slice(&[0x54, 0x5a, 0xf4, 0x3d, 0x5f, 0x5f, 0x3e, 0x3d, 0x5f, 0xf3]);
+
+    let requested = Arc::new(Mutex::new(Vec::new()));
+    let factory = RecordingPreimageFactory {
+        requested: requested.clone(),
+    };
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(
+            b160_to_address(L2_CHAIN_ASSET_HANDLER_ADDRESS),
+            &proxy_bytecode,
+        )
+        .with_storage_slot(
+            b160_to_address(L2_CHAIN_ASSET_HANDLER_ADDRESS),
+            U256::from_be_bytes(implementation_slot),
+            B256::from(U256::from_be_slice(implementation.as_slice())),
+        )
+        .with_evm_contract(implementation, &implementation_bytecode)
+        .with_custom_oracle_factory(factory);
+    let implementation_hash = tester.get_account_properties(&implementation).bytecode_hash;
+
+    // The default fixture has assetMigrationNumber = 1, so AssetTracker's
+    // state-dependent path skips L2ChainAssetHandler. The implementation can
+    // only be loaded by the unconditional block-level prewarm.
+    let output = tester.execute_block(vec![]);
+    assert!(output.tx_results.is_empty());
+    assert!(
+        requested
+            .lock()
+            .expect("lock poisoned")
+            .contains(&implementation_hash),
+        "chain asset handler implementation preimage must be loaded before the tx loop"
+    );
+}
+
 fn assert_reverted_deposit_asset_tracker(
     tester: &mut TestingFramework,
-    output: &rig::zksync_os_interface::types::BlockOutput,
+    output: &rig::BlockOutput,
     expected_total_deposited: rig::alloy::primitives::U256,
 ) {
     assert_eq!(output.tx_results.len(), 1);
@@ -195,9 +376,10 @@ fn test_asset_tracker_predeploy_is_usable_in_l1_flow() {
     }
 }
 
-/// Verify that no deposit is recorded when total_deposited == 0.
+/// Verify that neither the rolled-back pre-loop warm-up nor an unconditional
+/// zero-amount transaction notification records a deposit.
 #[test]
-fn test_asset_tracker_not_called_without_deposit() {
+fn test_asset_tracker_does_not_record_zero_deposit() {
     let from = address!("1234000000000000000000000000000000000000");
     let to = address!("abcd000000000000000000000000000000000000");
     let gas_price: u128 = 0;
@@ -224,7 +406,7 @@ fn test_asset_tracker_not_called_without_deposit() {
     assert_eq!(
         read_total_successful_deposits_from_l1(&mut tester),
         U256::ZERO,
-        "asset tracker should not record deposits when total_deposited == 0"
+        "asset tracker should not retain the synthetic warm-up or a zero deposit"
     );
 }
 

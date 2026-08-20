@@ -6,6 +6,8 @@ use transaction_types::service_tx::ServiceTx;
 use crate::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::Rlp;
+#[cfg(feature = "fri_precompile")]
+use crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::FriProofTx;
 use crate::bootloader::transaction::rlp_encoded::transaction_types::legacy_tx::{
     LegacyPayloadParser, LegacySignatureData, LegacyTXInner,
 };
@@ -40,6 +42,8 @@ pub(crate) enum RlpEncodedTxInner<'a> {
     EIP1559(EIP1559Tx<'a>, EIP2718SignatureData<'a>),
     EIP4844(EIP4844Tx<'a>, EIP2718SignatureData<'a>),
     EIP7702(EIP7702Tx<'a>, EIP2718SignatureData<'a>),
+    #[cfg(feature = "fri_precompile")]
+    FriProof(FriProofTx<'a>, EIP2718SignatureData<'a>),
     Service(ServiceTx<'a>),
 }
 
@@ -88,7 +92,6 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP4844(tx, sig_data), sig_hash))
                 }
-                #[cfg(feature = "eip-7702")]
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(
@@ -100,6 +103,17 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP7702(tx, sig_data), sig_hash))
                 }
+                #[cfg(feature = "fri_precompile")]
+                FriProofTx::TX_TYPE => {
+                    let (tx, sig_data, sig_hash) =
+                        EIP2718PayloadParser::<FriProofTx<'a>>::try_parse_and_hash_for_signature_verification(
+                            r.remaining()
+                        )?;
+                    if tx.chain_id != expected_chain_id {
+                        return Err(InvalidTransaction::InvalidChainId.into());
+                    }
+                    Ok((Self::FriProof(tx, sig_data), sig_hash))
+                }
                 ServiceTx::TX_TYPE => {
                     // Check that from provided by oracle is BOOTLOADER_FORMAL_ADDRESS
                     if from != &BOOTLOADER_FORMAL_ADDRESS {
@@ -110,7 +124,10 @@ impl<'a> RlpEncodedTxInner<'a> {
                         .into());
                     }
 
-                    let tx = ServiceTx::decode_list_from(&mut r)?;
+                    // Use the strict decoder: the transaction hash covers the
+                    // full raw buffer, so trailing bytes after the list would
+                    // make the same decoded payload hash to distinct values.
+                    let tx = ServiceTx::decode_list_full(r.remaining())?;
 
                     Ok((Self::Service(tx), Bytes32::ZERO))
                 }
@@ -236,12 +253,35 @@ mod test {
         )
     }
 
+    fn raw_service() -> Vec<u8> {
+        hex::decode("7df90324940000000000000000000000000000000000010008b9030bcca2f7bc000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f30f04f005f6f700f80f09fa0fb00fcf0d0fef0f000000100203000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f380").unwrap()
+    }
+
     #[test]
     fn test_on_random_service() {
-        let input = hex::decode("7df90324940000000000000000000000000000000000010008b9030bcca2f7bc000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f30f04f005f6f700f80f09fa0fb00fcf0d0fef0f000000100203000400050607000800090a00b000c00d00e00f010100110213010410051617001801091a01b001c10d01e10f020200120223020420052627002802092a02b002c20d02e20f030300130233030430053637003803093a03b003c30d03e30f040400140243040440054647004804094a04b004c40d04e40f050500150253050450055657005805095a05b005c50d05e50f060600160263060460056667006806096a06b006c60d06e60f070700170273070470057677007807097a07b007c70d07e70f080800180283080480058687008808098a08b008c80d08e80f090900190293090490059697009809099a09b009c90d09e90f0a0a001a02a30a04a005a6a700a80a09aa0ab00aca0d0aea0f0b0b001b02b30b04b005b6b700b80b09ba0bb00bcb0d0beb0f0c0c001c02c30c04c005c6c700c80c09ca0cb00ccc0d0cec0f0d0d001d02d30d04d005d6d700d80d09da0db00dcd0d0ded0f0e0e001e02e30e04e005e6e700e80e09ea0eb00ece0d0eee0f0f0f001f02f380").unwrap();
+        let input = raw_service();
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let _tx =
             RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS).unwrap();
+    }
+
+    /// A service transaction with data appended after the RLP list must be
+    /// rejected: the transaction hash covers the full raw buffer, so trailing
+    /// bytes would let the same decoded payload hash to distinct values.
+    #[test]
+    fn test_service_trailing_bytes_rejected() {
+        let mut input = raw_service();
+        // Append one valid RLP item (empty string) after the payload list.
+        input.push(0x80);
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS);
+        assert!(
+            matches!(
+                result,
+                Err(TxError::Validation(InvalidTransaction::InvalidStructure))
+            ),
+            "trailing bytes after service tx payload must be rejected, got: {result:?}"
+        );
     }
 
     #[test]

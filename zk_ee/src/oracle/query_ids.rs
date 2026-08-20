@@ -39,6 +39,19 @@ pub const ACCOUNT_AND_STORAGE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_03
 pub const STATE_AND_MERKLE_PATHS_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_04_00_00; // 0x40040000
 /// Computational advice queries (e.g. division/modexp advice)
 pub const ADVICE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_05_00_00; // 0x40050000
+
+// ========== Advice Subspace Queries ==========
+
+/// Query to get division hint (quotient, remainder) for U256 values.
+/// Guest sends pointers to dividend and divisor; host returns q and r.
+/// Guest verifies q * d + r == n and r < d using delegated arithmetic.
+pub const U256_DIV_REM_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x30; // 0x40050030
+
+/// Query to get wide div_rem hint (quotient) for a 512-bit dividend and 256-bit divisor.
+/// Guest sends pointers to dividend_lo, dividend_hi, and divisor; host returns q_lo and q_hi.
+/// Guest derives remainder r = dividend - q*divisor and verifies 0 <= r < divisor.
+pub const U256_WIDE_DIV_REM_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x31; // 0x40050031
+
 /// Transaction-related queries
 pub const TRANSACTION_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_06_00_00; // 0x40060000
 /// Block- (and batch-) related queries
@@ -58,6 +71,10 @@ pub const DISCONNECT_ORACLE_QUERY_ID: u32 = SYSTEM_SUBSPACE_MASK | 0; // 0x40000
 /// Query to retrieve preimage data for a given hash
 #[allow(clippy::identity_op)]
 pub const GENERIC_PREIMAGE_QUERY_ID: u32 = PREIMAGE_SUBSPACE_MASK | 0; // 0x40020000
+
+/// Query to retrieve FRI proof bytes (sidecar) for a given
+/// `statement_versioned_hash`.
+pub const FRI_PROOF_QUERY_ID: u32 = PREIMAGE_SUBSPACE_MASK | 1; // 0x40020001
 
 // ========== Account and Storage Subspace Queries ==========
 
@@ -98,3 +115,5 @@ pub const ZK_PROOF_DATA_INIT_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 1; // 0x40070
 pub const DA_COMMITMENT_SCHEME_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 2; // 0x40070002
 /// Query to get historical block hashes.
 pub const HISTORICAL_BLOCK_HASH_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 3; // 0x40070003
+/// Query to retrieve static chain-level execution configuration.
+pub const CHAIN_CONFIG_QUERY_ID: u32 = BLOCK_SUBSPACE_MASK | 4; // 0x40070004

@@ -1,4 +1,3 @@
-use super::db::BlockStatus;
 use rig::log::info;
 
 /// Statistics tracking for live run execution.
@@ -37,7 +36,7 @@ impl RunStatistics {
 pub fn log_run_statistics(
     start_block: u64,
     end_block: u64,
-    chain_id: u64,
+    _chain_id: u64,
     init_time: std::time::Duration,
     total_time: std::time::Duration,
     stats: &RunStatistics,

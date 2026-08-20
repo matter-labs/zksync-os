@@ -23,7 +23,7 @@ impl ZKProofDataResponder {
         &[ZKProofDataQuery::<EthereumIOTypesConfig, FlatStorageCommitment<TREE_HEIGHT>>::QUERY_ID];
 }
 
-impl<M: MemorySource> OracleQueryProcessor<M> for ZKProofDataResponder {
+impl OracleQueryProcessor for ZKProofDataResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -36,7 +36,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ZKProofDataResponder {
         &mut self,
         query_id: u32,
         _query: Vec<usize>,
-        _memory: &M,
+        _memory: &dyn oracle_provider::RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 

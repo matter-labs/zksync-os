@@ -16,18 +16,76 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack.push_zero()
     }
 
+    /// Specialized PUSH1 that avoids the bytereverse+shift overhead of the generic path.
+    /// For a single byte, bytereverse+shift is a no-op round-trip.
+    pub fn push1(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[1])?;
+        let start = self.instruction_pointer;
+
+        let byte_val = self.bytecode.get(start).copied().unwrap_or(0);
+
+        self.instruction_pointer += 1;
+        self.stack.push_u64(byte_val as u64)
+    }
+
+    /// Specialized PUSH2: assemble a u64 from up to 2 big-endian bytes and push directly,
+    /// skipping the generic path's U256 copy + bytereverse + shift. Missing bytes at the
+    /// end of the bytecode are treated as zero (matching the generic path's right-padding).
+    pub fn push2(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
+        let start = self.instruction_pointer;
+
+        let b0 = self.bytecode.get(start).copied().unwrap_or(0);
+        let b1 = self.bytecode.get(start + 1).copied().unwrap_or(0);
+        let val = ((b0 as u64) << 8) | (b1 as u64);
+
+        self.instruction_pointer += 2;
+        self.stack.push_u64(val)
+    }
+
+    /// Specialized PUSH<N> for `N` in `3..=8`: assemble a u64 from up to N big-endian
+    /// bytes and push it directly, skipping the generic path's U256 copy +
+    /// bytereverse + shift. Missing bytes at the end of the bytecode are treated as
+    /// zero (matching the generic path's right-padding).
+    pub fn push_small<const N: usize>(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
+        let start = self.instruction_pointer;
+
+        let val: u64 = if let Some(chunk) = self.bytecode.get(start..start + N) {
+            // Common case: all N bytes are in bounds. Place them in the high end of
+            // an 8-byte buffer so that from_be_bytes reads them as a big-endian
+            // integer with zero padding in the unused low slots.
+            let mut bytes = [0u8; 8];
+            bytes[8 - N..].copy_from_slice(chunk);
+            u64::from_be_bytes(bytes)
+        } else {
+            // Truncated bytecode: pad missing trailing bytes with zero.
+            let mut acc: u64 = 0;
+            for i in 0..N {
+                let b = self.bytecode.get(start + i).copied().unwrap_or(0);
+                acc = (acc << 8) | (b as u64);
+            }
+            acc
+        };
+
+        self.instruction_pointer += N;
+        self.stack.push_u64(val)
+    }
+
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
-        let mut value = U256::ZERO;
+        let mut value = U256::zero();
 
-        match self.bytecode.as_ref().get(start) {
+        match self.bytecode.get(start) {
             Some(src) => {
                 // we read is as LE, and then bytereverse
-                let to_copy =
-                    core::cmp::min(N, self.bytecode.as_ref().len() - self.instruction_pointer);
+                let to_copy = core::cmp::min(N, self.bytecode.len() - self.instruction_pointer);
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         src as *const u8,
@@ -36,7 +94,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                     );
                 }
                 crate::utils::bytereverse_u256(&mut value);
-                value >>= (32 - N) * 8;
+                value >>= ((32 - N) * 8) as u32;
             }
             None => {
                 // start is out of bounds of the bytecode buffer,

@@ -72,8 +72,8 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = BootloaderAllocator;
     type Logger = L;
     type Metadata = ZkMetadata;
@@ -83,7 +83,8 @@ impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemT
 
 #[cfg(not(any(feature = "multiblock-batch", feature = "state-diffs-pi")))]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher, Self::Allocator>;
     type BatchDataKeeper = ();
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;
@@ -95,7 +96,8 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 #[cfg(feature = "multiblock-batch")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::NopTxHashesAccumulator>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<block_flow::NopTxHashesAccumulator, Self::Allocator>;
     type BatchDataKeeper = block_flow::ZKBatchDataKeeper<Self::Allocator, O>;
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;
@@ -110,7 +112,8 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 #[cfg(feature = "state-diffs-pi")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher, Self::Allocator>;
     type BatchDataKeeper = ();
     type BlockHeader = BlockHeader;
     type MetadataOp = ZkMetadata;
@@ -144,8 +147,8 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for EthereumStorageSystemType
         >,
         true,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
     type Allocator = BootloaderAllocator;
     type Logger = L;
     type Metadata = EthereumBlockMetadata;

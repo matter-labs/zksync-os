@@ -9,7 +9,7 @@ pub const EMPTY_BYTE_CODE_HASH: B256 = B256::new([
 
 /// Compute internal ZKsync OS bytecode hash using the canonical API helper.
 pub fn calculate_bytecode_hash(evm_code: &Bytecode) -> B256 {
-    zksync_os_api::helpers::compute_evm_bytecode_hash(evm_code.original_byte_slice())
+    zksync_os_api::helpers::compute_evm_bytecode_hash(evm_code.original_bytes().as_ref())
 }
 
 #[cfg(test)]

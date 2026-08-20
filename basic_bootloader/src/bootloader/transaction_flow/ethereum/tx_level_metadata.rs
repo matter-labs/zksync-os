@@ -34,4 +34,7 @@ impl<const MAX_BLOBS: usize> BasicTransactionMetadata<EthereumIOTypesConfig>
     fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
         self.blobs.get(idx).copied()
     }
+    fn is_fri_statement_verified(&self, _statement_versioned_hash: &Bytes32) -> bool {
+        false
+    }
 }
