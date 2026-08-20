@@ -16,7 +16,7 @@ use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
-use zk_ee::common_structs::logs_storage::L2_TO_L1_LOG_SERIALIZE_SIZE;
+use zk_ee::common_structs::logs_storage::{L2_TO_L1_LOG_SERIALIZE_SIZE, L2_TO_L1_LOG_TREE_HEIGHT};
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
@@ -406,18 +406,26 @@ const MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST: u64 = PRE_OP_IMT_SNAPSHOT_NAT
 /// hashing one 32-byte dynamic-array slot.
 const MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST: u64 = 3 * keccak256_native_cost_u64(32);
 
+/// Each log pays for one internal 64-byte Merkle hash. A non-empty height-14
+/// tree needs at most 13 more: with one leaf finalization hashes once at every
+/// level (14 total), while the leaf's per-log charge already reserves one.
+const L2_TO_L1_LOG_TREE_FINALIZATION_RESIDUAL_HASHES: u64 = L2_TO_L1_LOG_TREE_HEIGHT as u64 - 1;
+const L2_TO_L1_LOG_TREE_FINALIZATION_NATIVE_COST: u64 =
+    L2_TO_L1_LOG_TREE_FINALIZATION_RESIDUAL_HASHES * keccak256_native_cost_u64(64);
+
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
 /// from block start. Covers fixed system work not retained in per-transaction
 /// resource usage: mandatory interop storage reads (performed with local
-/// `FORMAL_INFINITE` resources), slot hashes, the EIP-2935 historical block
-/// hash write, the direct L2ChainAssetHandler prewarm, and the rolled-back,
-/// non-zero L2AssetTracker notification that admits mandatory L1-finalization
-/// preimages. Conservatively charge each synthetic call as one cold
-/// AssetTracker notification.
+/// `FORMAL_INFINITE` resources), slot hashes, L2-to-L1 log-tree finalization,
+/// the EIP-2935 historical block hash write, the direct L2ChainAssetHandler
+/// prewarm, and the rolled-back, non-zero L2AssetTracker notification that
+/// admits mandatory L1-finalization preimages. Conservatively charge each
+/// synthetic call as one cold AssetTracker notification.
 pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE
     + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST
     + MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST
-    + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST;
+    + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST
+    + L2_TO_L1_LOG_TREE_FINALIZATION_NATIVE_COST;
 
 #[cfg(test)]
 mod tests {
@@ -479,6 +487,26 @@ mod tests {
                 + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST
                 + MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST
                 + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST
+                + L2_TO_L1_LOG_TREE_FINALIZATION_NATIVE_COST
         );
+    }
+
+    #[test]
+    fn log_tree_finalization_residual_bound_is_thirteen_hashes() {
+        let mut maximum_residual_hashes = 0;
+        for leaves in 1..=1usize << L2_TO_L1_LOG_TREE_HEIGHT {
+            let finalization_hashes: usize = (1..=L2_TO_L1_LOG_TREE_HEIGHT)
+                .map(|level| leaves.div_ceil(1usize << level))
+                .sum();
+            maximum_residual_hashes =
+                maximum_residual_hashes.max(finalization_hashes.saturating_sub(leaves));
+        }
+
+        assert_eq!(maximum_residual_hashes, 13);
+        assert_eq!(
+            L2_TO_L1_LOG_TREE_FINALIZATION_RESIDUAL_HASHES,
+            maximum_residual_hashes as u64
+        );
+        assert_eq!(L2_TO_L1_LOG_TREE_FINALIZATION_NATIVE_COST, 64_948);
     }
 }
