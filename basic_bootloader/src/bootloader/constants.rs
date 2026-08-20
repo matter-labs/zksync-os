@@ -1,7 +1,9 @@
 use basic_system::cost_constants::{
     blake2s_native_cost, ECRECOVER_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
-use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_u64;
+use basic_system::system_functions::keccak256::{
+    keccak256_native_cost_for_rounds_u64, keccak256_native_cost_u64,
+};
 use basic_system::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 use basic_system::system_implementation::flat_storage_model::cost_constants::{
     ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST, ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST,
@@ -380,18 +382,46 @@ pub const BLOCK_INTRINSIC_PUBDATA_BYTES: u64 =
 /// `write_pubdata`), so they are not charged.
 pub const LOGS_ONLY_BLOCK_INTRINSIC_PUBDATA_BYTES: u64 = 2 + 4;
 
+/// Full native cost of a cold read when the slot is not guaranteed to exist.
+/// The cold-read constant is only the extra over the warm-read base.
+const COLD_NEW_STORAGE_READ_TOTAL_NATIVE_COST: u64 =
+    WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST;
+
+/// Mandatory storage reads used to construct proving outputs for every block.
+///
+/// The pre-op IMT snapshot materializes its height and root slots cold, and the
+/// post-op snapshot reuses those block-scoped materializations. If a transaction
+/// changes the dynamic root slot, it materializes the replacement before post-op.
+/// The three batch-context slots are read only in post-op. The IMT can be absent
+/// or unseeded, and no invariant here guarantees that every batch-context slot
+/// exists, so all initially cold reads use the cold-new worst-case bound.
+const PRE_OP_IMT_SNAPSHOT_NATIVE_COST: u64 = 2 * COLD_NEW_STORAGE_READ_TOTAL_NATIVE_COST;
+const POST_OP_IMT_SNAPSHOT_NATIVE_COST: u64 = 2 * WARM_STORAGE_READ_NATIVE_COST;
+const BATCH_CONTEXT_STORAGE_READS_NATIVE_COST: u64 = 3 * COLD_NEW_STORAGE_READ_TOTAL_NATIVE_COST;
+const MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST: u64 = PRE_OP_IMT_SNAPSHOT_NATIVE_COST
+    + POST_OP_IMT_SNAPSHOT_NATIVE_COST
+    + BATCH_CONTEXT_STORAGE_READS_NATIVE_COST;
+
+/// Two IMT-root slot derivations and one multichain-root slot derivation, each
+/// hashing one 32-byte dynamic-array slot.
+const MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST: u64 = 3 * keccak256_native_cost_u64(32);
+
 /// Intrinsic per-block native overhead, applied to block-limit enforcement
-/// from block start. Covers fixed pre-tx-loop system work: the EIP-2935
-/// historical block hash write, the direct L2ChainAssetHandler prewarm, and
-/// the rolled-back, non-zero L2AssetTracker notification that admits mandatory
-/// L1-finalization preimages. Conservatively charge each synthetic call as one
-/// cold AssetTracker notification.
-pub const BLOCK_INTRINSIC_NATIVE: u64 =
-    EIP_2935_INTRINSIC_NATIVE + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST;
+/// from block start. Covers fixed system work not retained in per-transaction
+/// resource usage: mandatory interop storage reads (performed with local
+/// `FORMAL_INFINITE` resources), slot hashes, the EIP-2935 historical block
+/// hash write, the direct L2ChainAssetHandler prewarm, and the rolled-back,
+/// non-zero L2AssetTracker notification that admits mandatory L1-finalization
+/// preimages. Conservatively charge each synthetic call as one cold
+/// AssetTracker notification.
+pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE
+    + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST
+    + MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST
+    + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST;
 
 #[cfg(test)]
 mod tests {
-    use super::{L2_TX_AUTHORIZATION_MAX_RLP_BYTES, L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION};
+    use super::*;
 
     #[test]
     fn l2_authorization_max_rlp_length_matches_field_encoding() {
@@ -422,6 +452,33 @@ mod tests {
         assert_eq!(
             L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION,
             32 + 1 + 8 + 2 + 1 + 4 + DELEGATION_DESIGNATOR_LEN + 4
+        );
+    }
+
+    #[test]
+    fn block_intrinsic_accounts_for_mandatory_interop_work() {
+        assert_eq!(
+            PRE_OP_IMT_SNAPSHOT_NATIVE_COST,
+            2 * (WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST)
+        );
+        assert_eq!(
+            POST_OP_IMT_SNAPSHOT_NATIVE_COST,
+            2 * WARM_STORAGE_READ_NATIVE_COST
+        );
+        assert_eq!(
+            BATCH_CONTEXT_STORAGE_READS_NATIVE_COST,
+            3 * (WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST)
+        );
+        assert_eq!(
+            MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST,
+            3 * keccak256_native_cost_u64(32)
+        );
+        assert_eq!(
+            BLOCK_INTRINSIC_NATIVE,
+            EIP_2935_INTRINSIC_NATIVE
+                + 2 * L1_TX_ASSET_TRACKER_COLD_NOTIFICATION_NATIVE_COST
+                + MANDATORY_INTEROP_STORAGE_READS_NATIVE_COST
+                + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST
         );
     }
 }
