@@ -1,0 +1,73 @@
+# Automatically retries CI jobs that failed due to runner loss (e.g. GCP spot
+# preemption, OOM, network disconnect).  Detection heuristic: a job whose
+# overall conclusion is "failure" but where *no individual step* reported
+# conclusion "failure" — meaning the runner vanished before any step could
+# report a real error.
+
+name: "Retry lost-runner jobs"
+
+on:
+  workflow_run:
+    workflows:
+      # PR / push workflows on self-hosted runners:
+      - "Rust CI"
+      - "Compare performance to base branch"
+      # Nightly / scheduled workflows on self-hosted runners:
+      - "Nightly EVM Tester Proof Run"
+      - "Daily Fuzz Build"
+      - "Check dependencies for security issues"
+    types: [completed]
+
+permissions:
+  actions: write   # needed for gh run rerun
+
+jobs:
+  retry-on-lost-runner:
+    # Only act on failures, and cap at 2 automatic retries.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect runner-death failures
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          ATTEMPT="${{ github.event.workflow_run.run_attempt }}"
+          REPO="${{ github.repository }}"
+
+          echo "Inspecting run $RUN_ID attempt $ATTEMPT in $REPO"
+
+          # Fetch all jobs for this specific attempt (per_page=100 avoids pagination issues).
+          JOBS=$(gh api "/repos/${REPO}/actions/runs/${RUN_ID}/attempts/${ATTEMPT}/jobs?per_page=100")
+
+          # A job that failed because the runner vanished will have:
+          #   - conclusion == "failure"  (the job itself failed)
+          #   - zero steps with conclusion == "failure"  (no step reported an error)
+          # A legitimate failure always has at least one step with conclusion "failure".
+
+          LOST=$(echo "$JOBS" | jq '
+            [
+              .jobs[]
+              | select(.conclusion == "failure")
+              | select(
+                  [ (.steps // [])[]
+                    | select(.conclusion == "failure")
+                  ] | length == 0
+                )
+            ] | length
+          ')
+
+          echo "Jobs that look like runner-death: $LOST"
+          echo "lost=$LOST" >> "$GITHUB_OUTPUT"
+
+      - name: Rerun failed jobs
+        if: steps.detect.outputs.lost != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "Runner death detected — rerunning failed jobs for run $RUN_ID (attempt ${{ github.event.workflow_run.run_attempt }})"
+          gh run rerun "$RUN_ID" --failed --repo "${{ github.repository }}"

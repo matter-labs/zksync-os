@@ -634,7 +634,6 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         at_address: &B160,
         nominal_token_beneficiary: &B160,
         oracle: &mut impl IOOracle,
-        in_constructor: bool,
     ) -> Result<U256, DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
@@ -652,6 +651,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         // Note that the contract is only deployed after finalization of
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
+        // We identify if the call happens within a constructor by checking the bytecode.
+        // If it's empty, then the call must be in a constructor.
+        let in_constructor = account_data.current().value().has_empty_bytecode();
         let should_be_deconstructed =
             account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
