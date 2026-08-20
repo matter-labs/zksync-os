@@ -8,8 +8,9 @@
 use rig::alloy::primitives::address;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
-use rig::forward_system::system::tracers::call_tracer::{CallTracer, CallType};
+use rig::forward_system::system::tracers::call_tracer::{CallError, CallTracer, CallType};
 use rig::ruint::aliases::{B160, U256};
+use rig::zk_ee::system::evm::EvmError;
 use rig::zk_ee::system::tracer::Tracer;
 use rig::BlockContext;
 
@@ -303,4 +304,81 @@ fn test_call_tracer_preserves_multiple_top_level_frames() {
         "extra top-level frames must be preserved"
     );
     assert_eq!(root.calls[0].to, B160::from_limbs([0x1000f, 0, 0]));
+}
+
+#[test]
+fn test_call_tracer_insufficient_balance_error_on_child_frame() {
+    let contract_a_address = address!("1000000000000000000000000000000000000001");
+    let contract_b_address = address!("1000000000000000000000000000000000000002");
+
+    // Contract A: performs CALL to contract B with value = 1 ether.
+    // Contract A has no balance, so the CALL will fail with InsufficientBalance
+    // in before_reading_callee. The parent frame should NOT be marked as reverted;
+    // only the child (subcall) should carry the error.
+    //
+    // Bytecode layout:
+    //   PUSH1 0x00     (retLength)     -> 6000
+    //   PUSH1 0x00     (retOffset)     -> 6000
+    //   PUSH1 0x00     (argsLength)    -> 6000
+    //   PUSH1 0x00     (argsOffset)    -> 6000
+    //   PUSH32 <1eth>  (value)         -> 7f + 0000...0de0b6b3a7640000
+    //   PUSH20 <addr>  (to)            -> 73 + contract_b_address
+    //   PUSH2 0xFFFF   (gas)           -> 61ffff
+    //   CALL                           -> f1
+    //   STOP                           -> 00
+    let contract_a_bytecode = hex::decode(
+        "6000600060006000\
+         7f0000000000000000000000000000000000000000000000000de0b6b3a7640000\
+         731000000000000000000000000000000000000002\
+         61ffff\
+         f1\
+         00",
+    )
+    .unwrap();
+
+    // Contract B: simple STOP (never reached in this test)
+    let contract_b_bytecode = hex::decode("00").unwrap();
+
+    let mut tracer = CallTracer::default();
+    run_chain_with_tracer(
+        contract_a_address,
+        vec![
+            (contract_a_address, contract_a_bytecode),
+            (contract_b_address, contract_b_bytecode),
+        ],
+        &mut tracer,
+        None,
+    );
+
+    assert_eq!(
+        tracer.transactions.len(),
+        1,
+        "Should have one transaction recorded"
+    );
+
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
+
+    // Top-level call should succeed (the CALL failure inside is not a tx revert,
+    // it just pushes 0 on the stack)
+    assert!(!main_call.reverted, "Parent call should not be reverted");
+    assert!(
+        main_call.error.is_none(),
+        "Parent call should not have error"
+    );
+
+    // Should have exactly one subcall (the failed CALL with value)
+    assert_eq!(main_call.calls.len(), 1, "Should have one subcall");
+
+    let subcall = &main_call.calls[0];
+    assert!(subcall.reverted, "Subcall should be reverted");
+    assert!(
+        matches!(
+            subcall.error,
+            Some(CallError::EvmError(EvmError::InsufficientBalance))
+        ),
+        "Subcall should have InsufficientBalance error, got: {:?}",
+        subcall.error
+    );
 }

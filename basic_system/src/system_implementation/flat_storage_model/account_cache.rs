@@ -1261,7 +1261,6 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-        in_constructor: bool,
     ) -> Result<U256, DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_id;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
@@ -1289,6 +1288,9 @@ impl<
         // Note that the contract is only deployed after finalization of
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
+        // We identify if the call happens within a constructor by checking the bytecode
+        // length. If it's empty, then the call must be in a constructor.
+        let in_constructor = account_data.current().value().observable_bytecode_len == 0;
         let should_be_deconstructed = account_data.current().metadata().basic.deployed_in_tx
             == Some(cur_tx)
             || in_constructor;
