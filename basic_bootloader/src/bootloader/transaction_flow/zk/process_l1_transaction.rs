@@ -49,6 +49,13 @@ use system_hooks::addresses_constants::{
 use super::validation_impl::compute_calldata_tokens;
 use super::{ZkTransactionFlowOnlyEOA, ZkTxResult};
 
+const fn simulation_pubdata_extra(simulation: bool, pubdata_content: PubdataContent) -> u64 {
+    match (simulation, pubdata_content) {
+        (true, PubdataContent::FullPubdata) => ASSET_TRACKER_INTRINSIC_PUBDATA,
+        _ => 0,
+    }
+}
+
 pub(crate) fn process_l1_transaction<
     'a,
     S: EthereumLikeTypes + 'a,
@@ -94,15 +101,15 @@ where
     // L1_TX_INTRINSIC_PUBDATA (for the calls related to refunds), we need to
     // add an extra worst case when in simulation to ensure that simulation
     // never underestimates pubdata used.
-    let extra_pubdata_for_simulation = if Config::SIMULATION {
-        ASSET_TRACKER_INTRINSIC_PUBDATA
-    } else {
-        0
-    };
+    let pubdata_content = system.get_chain_config().pubdata_content();
+    // In LogsOnly mode, asset-tracker storage diffs are not published, so they
+    // cannot contribute any extra pubdata during simulation.
+    let extra_pubdata_for_simulation =
+        simulation_pubdata_extra(Config::SIMULATION, pubdata_content);
     // In Validium only the L1->L2 tx log record (88 bytes) is committed; the balance/asset-tracker
     // state diffs in `L1_TX_INTRINSIC_PUBDATA` (and the simulation extra, itself a state diff) are not
     // (see `PubdataContent` and `write_pubdata`).
-    let intrinsic_pubdata = match system.get_chain_config().pubdata_content() {
+    let intrinsic_pubdata = match pubdata_content {
         PubdataContent::FullPubdata => L1_TX_INTRINSIC_PUBDATA + extra_pubdata_for_simulation,
         PubdataContent::LogsOnly => LOGS_ONLY_L1_TX_INTRINSIC_PUBDATA,
     };
@@ -1128,8 +1135,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::intrinsic_native_used_for_l1_verification;
-    use crate::bootloader::constants::L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE;
+    use super::{intrinsic_native_used_for_l1_verification, simulation_pubdata_extra};
+    use crate::bootloader::constants::{
+        ASSET_TRACKER_INTRINSIC_PUBDATA, L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE,
+    };
+    use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 
     #[test]
     fn l1_intrinsic_native_verification_accounts_for_calldata_copy() {
@@ -1143,6 +1153,19 @@ mod tests {
             actual_used,
             inf_resources_used
                 + calldata_len * L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE
+        );
+    }
+
+    #[test]
+    fn logs_only_simulation_does_not_reserve_asset_tracker_pubdata() {
+        assert_eq!(simulation_pubdata_extra(true, PubdataContent::LogsOnly), 0);
+        assert_eq!(
+            simulation_pubdata_extra(true, PubdataContent::FullPubdata),
+            ASSET_TRACKER_INTRINSIC_PUBDATA
+        );
+        assert_eq!(
+            simulation_pubdata_extra(false, PubdataContent::FullPubdata),
+            0
         );
     }
 }

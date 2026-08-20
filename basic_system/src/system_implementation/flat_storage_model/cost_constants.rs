@@ -58,7 +58,7 @@ pub const EVENT_DATA_PER_BYTE_COST: u64 = 2;
 /// data and outer log-list headers.
 pub const RECEIPT_LOG_RLP_OVERHEAD_BYTES: u64 = 21 + 2 + 9 + 9;
 
-const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 3;
+const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 4;
 // Same costs as for events, as the same structure is used.
 pub const INTEROP_ROOT_STORAGE_NATIVE_COST: u64 =
     EVENT_STORAGE_BASE_NATIVE_COST + INTEROP_ROOT_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;
@@ -67,3 +67,17 @@ pub const INTEROP_ROOT_STORAGE_NATIVE_COST: u64 =
 pub const SL_CHAIN_ID_BYTE_LENGTH: u64 = 32;
 pub const NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST: u64 =
     EVENT_STORAGE_BASE_NATIVE_COST + SL_CHAIN_ID_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interop_root_storage_charges_four_words() {
+        assert_eq!(INTEROP_ROOT_BYTE_LENGTH, 4 * 32);
+        assert_eq!(
+            INTEROP_ROOT_STORAGE_NATIVE_COST,
+            EVENT_STORAGE_BASE_NATIVE_COST + 4 * 32 * EVENT_DATA_PER_BYTE_COST
+        );
+    }
+}
