@@ -1,6 +1,15 @@
 use super::*;
 use native_resource_constants::*;
 
+/// `true` when building for the RISC-V proving target. JUMP / JUMPI inline the
+/// JUMPDEST gas charge and skip its dispatch iteration only in this build, so
+/// the optimization is invisible to host-mode tracers (`EvmOpcodeStatsTracer`,
+/// `EvmOpcodesLogger`, etc.), which keep recording per-opcode JUMPDEST events
+/// with correct gas/native deltas. The proving target has no live tracer that
+/// keys on JUMPDEST, and `cycle_marker` measures the dispatch iteration as a
+/// whole, so dropping the iteration is the right thing there.
+const INLINE_JUMPDEST: bool = cfg!(target_arch = "riscv32");
+
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn jump(&mut self) -> InstructionResult {
         self.gas
@@ -8,7 +17,26 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let dest = self.stack.pop_1()?;
         let dest = Self::cast_to_usize(dest, EvmError::InvalidJump.into())?;
         if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
-            self.instruction_pointer = dest;
+            if INLINE_JUMPDEST {
+                // Charged separately from the JUMP base so an invalid
+                // destination doesn't pay JUMPDEST gas/native — preserves
+                // host parity on the OOG boundary for marginal-gas frames
+                // and on native resources returned after InvalidJump.
+                self.gas
+                    .spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
+                self.instruction_pointer = dest + 1;
+                // Synthetic cycle_marker pair so the proving-side marker
+                // count balances the host-side LABELS Vec, which still
+                // pushes a JUMPDEST entry from the (unoptimized) forward
+                // dispatch. Per-opcode cycle attribution between JUMP and
+                // JUMPDEST gets scrambled because this pair nests inside
+                // the dispatcher's JUMP bracket, but the block-level
+                // effective-cycle total is unaffected.
+                cycle_marker::opcode_start!();
+                cycle_marker::opcode_end!("JUMPDEST");
+            } else {
+                self.instruction_pointer = dest;
+            }
             Ok(())
         } else {
             Err(EvmError::InvalidJump.into())
@@ -22,7 +50,18 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if !value.is_zero() {
             let dest = Self::cast_to_usize(dest, EvmError::InvalidJump.into())?;
             if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
-                self.instruction_pointer = dest;
+                if INLINE_JUMPDEST {
+                    // Charged separately from the JUMPI base so the
+                    // not-taken path doesn't pay JUMPDEST gas (the OOG
+                    // boundary for marginal-gas frames must not shift).
+                    self.gas
+                        .spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
+                    self.instruction_pointer = dest + 1;
+                    cycle_marker::opcode_start!();
+                    cycle_marker::opcode_end!("JUMPDEST");
+                } else {
+                    self.instruction_pointer = dest;
+                }
             } else {
                 return Err(EvmError::InvalidJump.into());
             }
@@ -31,6 +70,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn jumpdest(&mut self) -> InstructionResult {
+        // On host builds this runs for every JUMP/JUMPI target. On RISC-V
+        // builds it only runs for fall-through cases (e.g. JUMPI condition
+        // false landing on a JUMPDEST byte).
         self.gas
             .spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
         Ok(())
