@@ -6,13 +6,17 @@ description: |
 inputs:
   rev:
     description: Git revision of airbender-platform to install cargo-airbender from
-    default: "72cce091"
+    default: "9e779f81"
 runs:
   using: composite
   steps:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ""
+    - shell: bash
+      run: |
+        git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> $GITHUB_ENV
     - shell: bash
       env:
         # cargo-airbender pulls in era_cudart_sys, whose build script panics
