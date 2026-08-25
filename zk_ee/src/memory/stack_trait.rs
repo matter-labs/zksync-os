@@ -107,7 +107,7 @@ impl StackCtor<VecStackCtor> for VecStackCtor {
     }
 }
 
-impl const StackCtorConst for VecStackCtor {
+const impl StackCtorConst for VecStackCtor {
     fn extra_const_param<T, A: Allocator>() -> usize {
         0
     }

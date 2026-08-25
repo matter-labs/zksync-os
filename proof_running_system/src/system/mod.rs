@@ -33,7 +33,7 @@ impl StackCtor<LVStackCtor> for LVStackCtor {
     }
 }
 
-impl const StackCtorConst for LVStackCtor {
+const impl StackCtorConst for LVStackCtor {
     fn extra_const_param<T, A: Allocator>() -> usize {
         num_elements_in_backing_node::<T, A>()
     }
