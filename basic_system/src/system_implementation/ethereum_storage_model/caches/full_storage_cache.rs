@@ -7,7 +7,7 @@ use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{
-    common_structs::{WarmStorageKey, WarmStorageValue},
+    common_structs::{StorageSlotKey, StorageSlotValue},
     system::{errors::system::SystemError, Resources},
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::Bytes32,
@@ -26,7 +26,7 @@ pub struct EthereumStorageCache<
     P: StorageAccessPolicy<R, Bytes32>,
 > {
     pub(crate) slot_values:
-        GenericPubdataAwarePlainStorage<WarmStorageKey, Bytes32, A, SF, N, R, P>,
+        GenericPubdataAwarePlainStorage<StorageSlotKey, Bytes32, A, SF, N, R, P>,
 }
 
 impl<
@@ -48,7 +48,7 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -68,7 +68,7 @@ impl<
         // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
 
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -87,7 +87,7 @@ impl<
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -162,7 +162,7 @@ impl<
 {
     pub(crate) fn iter_as_storage_types(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, N, R, P>
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone + use<'_, A, SF, N, R, P>
     {
         self.slot_values.cache.iter().map(|item| {
             let current_record = item.current();
@@ -171,14 +171,11 @@ impl<
             let initial_value_used = item.key_properties().is_value_observed();
             (
                 *item.key(),
-                // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
-                // not actually 'using' it.
-                WarmStorageValue {
+                StorageSlotValue {
                     current_value: *current_record.value(),
                     is_new_storage_slot,
                     initial_value: *initial_record.value(),
                     initial_value_used,
-                    ..Default::default()
                 },
             )
         })
@@ -190,7 +187,7 @@ impl<
     ///
     pub fn net_accesses_iter(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, N, R, P>
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone + use<'_, A, SF, N, R, P>
     {
         self.iter_as_storage_types()
     }
@@ -200,7 +197,7 @@ impl<
     ///
     pub fn net_diffs_iter(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + use<'_, A, SF, N, R, P> {
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + use<'_, A, SF, N, R, P> {
         self.iter_as_storage_types()
             .filter(|(_, v)| v.current_value != v.initial_value)
     }

@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use super::*;
 use crate::bootloader::block_flow::post_tx_loop_op::PostTxLoopOp;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
-use zk_ee::common_structs::WarmStorageKey;
+use zk_ee::common_structs::StorageSlotKey;
 
 // Blob count schedule. Default is base-Osaka (Prague counts); `fusaka-bpo-2`
 // selects the BPO2 schedule. TODO: move to fork params

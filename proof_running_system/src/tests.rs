@@ -4,79 +4,11 @@ use crate::talc::TalcWrapper;
 use alloc::vec;
 use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
-use ruint::aliases::B160;
 use std::time::Instant;
 use talc::ClaimOnOom;
 use talc::ErrOnOom;
 use talc::Span;
 use talc::Talc;
-use zk_ee::utils::Bytes32;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct WarmStorageKey {
-    pub address: B160,
-    pub key: Bytes32,
-}
-
-impl PartialOrd for WarmStorageKey {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for WarmStorageKey {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        match self.address.as_limbs().cmp(other.address.as_limbs()) {
-            core::cmp::Ordering::Equal => self.key.cmp(&other.key),
-            a => a,
-        }
-    }
-}
-
-const B: usize = 6;
-pub const CAPACITY: usize = 2 * B - 1;
-
-type BoxedNode<K, V> = core::ptr::NonNull<LeafNode<K, V>>;
-
-#[repr(C)]
-// gdb_providers.py uses this type name for introspection.
-struct InternalNode<K, V> {
-    data: LeafNode<K, V>,
-
-    /// The pointers to the children of this node. `len + 1` of these are considered
-    /// initialized and valid, except that near the end, while the tree is held
-    /// through borrow type `Dying`, some of these pointers are dangling.
-    edges: [core::mem::MaybeUninit<BoxedNode<K, V>>; 2 * B],
-}
-
-struct LeafNode<K, V> {
-    /// We want to be covariant in `K` and `V`.
-    parent: Option<core::ptr::NonNull<InternalNode<K, V>>>,
-
-    /// This node's index into the parent node's `edges` array.
-    /// `*node.parent.edges[node.parent_idx]` should be the same thing as `node`.
-    /// This is only guaranteed to be initialized when `parent` is non-null.
-    parent_idx: core::mem::MaybeUninit<u16>,
-
-    /// The number of keys and values this node stores.
-    len: u16,
-
-    /// The arrays storing the actual data of the node. Only the first `len` elements of each
-    /// array are initialized and valid.
-    keys: [core::mem::MaybeUninit<K>; CAPACITY],
-    vals: [core::mem::MaybeUninit<V>; CAPACITY],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct WarmStorageValue {
-    pub initial_value: Bytes32,
-    pub current_value: Bytes32,
-    pub changes_stack_depth: usize,
-    pub pubdata_diff_bytes_at_first_access: u8,
-    pub pubdata_diff_bytes: u8,
-    pub explicit_read_initial: bool,
-    pub is_new_storage_slot: bool,
-}
 
 #[test]
 fn test_talc_huge_allocation() {

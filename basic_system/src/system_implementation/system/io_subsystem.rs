@@ -50,7 +50,7 @@ pub struct FullIO<
     const PROOF_ENV: bool,
 > {
     pub storage: M,
-    pub transient_storage: GenericTransientStorage<WarmStorageKey, Bytes32, SF, N, A>,
+    pub transient_storage: GenericTransientStorage<StorageSlotKey, Bytes32, SF, N, A>,
     pub logs_storage: LogsStorage<SF, N, A>,
     pub events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, N, A>,
     pub interop_root_storage: InteropRootStorage<SF, N, A>,
@@ -100,7 +100,7 @@ impl<
             let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
-            let key = WarmStorageKey {
+            let key = StorageSlotKey {
                 address: *address,
                 key: *key,
             };
@@ -131,7 +131,7 @@ impl<
             let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
-            let key = WarmStorageKey {
+            let key = StorageSlotKey {
                 address: *address,
                 key: *key,
             };
@@ -505,7 +505,7 @@ impl<
         let storage = M::construct(P::default(), allocator.clone());
 
         let transient_storage =
-            GenericTransientStorage::<WarmStorageKey, Bytes32, SF, N, A>::new_from_parts(
+            GenericTransientStorage::<StorageSlotKey, Bytes32, SF, N, A>::new_from_parts(
                 allocator.clone(),
             );
         let logs_storage = LogsStorage::<SF, N, A>::new_from_parts(allocator.clone());
