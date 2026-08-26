@@ -12,7 +12,7 @@ REPO_ROOT="$(dirname "$ZKSYNC_OS_DIR")"
 # The guest zksync_os/Cargo.lock is committed and used as-is.
 #
 # NOTE: the toolchain version must match rust-toolchain.toml.
-cargo +nightly-2026-02-10 generate-lockfile --manifest-path "$REPO_ROOT/Cargo.toml"
+cargo +nightly-2026-08-09 generate-lockfile --manifest-path "$REPO_ROOT/Cargo.toml"
 
 cd "$ZKSYNC_OS_DIR"
 
