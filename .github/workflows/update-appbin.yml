@@ -31,6 +31,8 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: ./.github/actions/setup-toolchain
+        with:
+          release-token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Build fresh app bin
         run: zksync_os/reproduce/reproduce.sh

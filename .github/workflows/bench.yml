@@ -70,6 +70,8 @@ jobs:
           git checkout FETCH_HEAD -- bench_scripts/
           chmod +x bench_scripts/*.sh 2>/dev/null || true
       - uses: ./.github/actions/setup-toolchain
+        with:
+          release-token: ${{ secrets.RELEASE_TOKEN }}
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         # `for-tests-benchmarking-pectra` was introduced on the PR side of
@@ -130,6 +132,8 @@ jobs:
           fetch-depth: 1
           submodules: recursive
       - uses: ./.github/actions/setup-toolchain
+        with:
+          release-token: ${{ secrets.RELEASE_TOKEN }}
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         # `for-tests-benchmarking-pectra` was introduced on the PR side of

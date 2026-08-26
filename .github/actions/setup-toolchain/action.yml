@@ -7,16 +7,25 @@ inputs:
   rev:
     description: Git revision of airbender-platform to install cargo-airbender from
     default: "9e779f81"
+  release-token:
+    description: |
+      Token used to fetch private matter-labs git dependencies over HTTPS.
+      Composite actions cannot read the `secrets` context, so callers must
+      pass `secrets.RELEASE_TOKEN` explicitly.
+    default: ""
 runs:
   using: composite
   steps:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ""
-    - shell: bash
+    - if: inputs.release-token != ''
+      shell: bash
+      env:
+        RELEASE_TOKEN: ${{ inputs.release-token }}
       run: |
-        git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
-        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> $GITHUB_ENV
+        git config --global url."https://x-access-token:${RELEASE_TOKEN}@github.com/".insteadOf "https://github.com/"
+        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
     - shell: bash
       env:
         # cargo-airbender pulls in era_cudart_sys, whose build script panics
