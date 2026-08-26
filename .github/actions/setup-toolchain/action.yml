@@ -6,7 +6,7 @@ description: |
 inputs:
   rev:
     description: Git revision of airbender-platform to install cargo-airbender from
-    default: "9e779f81"
+    default: "92967107"
   release-token:
     description: |
       Token used to fetch private matter-labs git dependencies over HTTPS.
