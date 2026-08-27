@@ -98,7 +98,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
     pub fn statement_versioned_hashes(
         &self,
     ) -> Option<crate::bootloader::transaction::rlp_encoded::transaction_types::fri_proof_tx::StatementVersionedHashesList<'_>>
-    {
+{
         match &self.inner {
             RlpEncodedTxInner::FriProof(tx, _) => Some(tx.statement_versioned_hashes),
             _ => None,
