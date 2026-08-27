@@ -661,6 +661,7 @@ where
             &mut resources,
             &mut tracer,
             &mut validator,
+            true, // can_fail
         )
     })();
 
@@ -946,6 +947,7 @@ where
         resources,
         tracer,
         validator,
+        false, // can_fail
     )?;
 
     transfer_from_treasury::<S>(system, amount, to, resources, Config::SIMULATION)
@@ -1044,6 +1046,7 @@ fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
     resources: &mut S::Resources,
     tracer: &mut impl Tracer<S>,
     validator: &mut impl TxValidator<S>,
+    can_fail: bool,
 ) -> Result<(), BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -1096,10 +1099,14 @@ where
             "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 failed for amount {amount:?}\n"
         );
         // A revert here means the chain's token accounting would be inconsistent.
-        // Treated as a fatal system error — block processing cannot continue.
-        return Err(
-            internal_error!("L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted").into(),
-        );
+        // Treated as a fatal system error — block processing cannot continue, unless
+        // the call is the prewarming call, which is allowed to fail.
+        if !can_fail {
+            return Err(internal_error!(
+                "L2AssetTracker.handleFinalizeBaseTokenBridgingOnL2 reverted"
+            )
+            .into());
+        }
     }
     Ok(())
 }
