@@ -61,9 +61,14 @@ jobs:
               echo "⚠️  $FILE not found"
             fi
           done
+
+          # The prover requires the multiblock program's text section next to
+          # the binary.
+          cp dist/multiblock_batch/app.text ../release-artifacts/multiblock_batch.text
+          echo "✓ Copied multiblock_batch.text"
           cd ../release-artifacts
           # Create checksums
-          sha256sum *.bin > checksums.txt
+          sha256sum *.bin *.text > checksums.txt
           # List all files
           echo "Release artifacts:"
           ls -la
@@ -104,6 +109,7 @@ jobs:
         with:
           files: |
             release-artifacts/*.bin
+            release-artifacts/*.text
             release-artifacts/checksums.txt
           fail_on_unmatched_files: true
           tag_name: ${{ steps.meta.outputs.tag_name }}
