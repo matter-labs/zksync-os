@@ -90,6 +90,10 @@ struct TxDump {
     /// True when the native `tx_result` for this tx is `Err`: the tx was in
     /// the block's input list but was not executed (invalid / filtered).
     failed: bool,
+    /// True when the tx executed but its top-level execution reverted
+    /// (tx_result is `Ok` with `status == false`). Distinct from `failed`:
+    /// the tx is in the sealed block with its fee and nonce effects.
+    reverted: bool,
 }
 
 /// The block environment the STF ran under (mirrors the sealed header values).
@@ -331,6 +335,10 @@ pub(crate) fn write_block_dump(
             signed,
             gas_used: result.as_ref().map(|output| output.gas_used).unwrap_or(0),
             failed: result.is_err(),
+            reverted: result
+                .as_ref()
+                .map(|output| !output.is_success())
+                .unwrap_or(false),
         })
         .collect();
 
