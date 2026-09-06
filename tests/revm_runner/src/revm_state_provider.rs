@@ -180,10 +180,32 @@ where
                 let code = if props.bytecode_hash.is_zero() {
                     None
                 } else {
-                    let bytecode = self.code_by_hash_ref(props.bytecode_hash.into_alloy())?;
-                    let unpadded =
-                        zksync_os_api::helpers::get_unpadded_code(bytecode.bytes_slice(), &props);
-                    Some(Bytecode::new_legacy(Bytes::copy_from_slice(unpadded)))
+                    // Bytecode preimages are stored padded, with the true length kept in
+                    // `unpadded_code_len`, so the preimage has to be trimmed before REVM
+                    // validates it. Validating the padded bytes rejects a well-formed
+                    // 23-byte EIP-7702 delegation designator as malformed, and reports the
+                    // resulting failure as a divergence.
+                    //
+                    // Constructing the trimmed bytes with the checked constructor rather
+                    // than `Bytecode::new_legacy` also lets REVM recognise a designator as
+                    // a delegation; wrapping it as legacy code hides delegations entirely.
+                    let code_hash = props.bytecode_hash.into_alloy();
+                    let raw: Bytes = {
+                        let mut state_view = self.state_view()?;
+                        state_view
+                            .get_preimage(code_hash)
+                            .ok_or(RevmStateProviderError::MissingCodePreimage { code_hash })?
+                            .into()
+                    };
+                    let unpadded = zksync_os_api::helpers::get_unpadded_code(raw.as_ref(), &props);
+                    Some(
+                        Bytecode::new_raw_checked(Bytes::copy_from_slice(unpadded)).map_err(
+                            |err| RevmStateProviderError::MalformedCodePreimage {
+                                code_hash,
+                                reason: err.to_string(),
+                            },
+                        )?,
+                    )
                 };
 
                 Ok(AccountInfo {
