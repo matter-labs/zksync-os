@@ -1,0 +1,26 @@
+# Example declaring an explicit `block:` section.
+#
+# The bootloader requires the blob base fee to be exactly 1 when EIP-4844 is
+# disabled, which is the production configuration. Any scenario that reaches
+# `make_block_context` therefore depends on that field being set correctly, so
+# this example exercises the block override path end to end.
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000"
+
+block:
+  basefee: 1000
+  gas_limit: 30000000
+  timestamp: 1700000000
+
+steps:
+  - type: send_raw
+    to: Store
+    from: alice
+    data: "0x000000000000000000000000000000000000000000000000000000000000002a"
+    gas: 1000000
