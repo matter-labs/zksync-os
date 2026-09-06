@@ -105,10 +105,17 @@ where
             if !report.is_empty() {
                 log::warn!("State mismatch found after REVM replay");
                 report.log_tracing(100);
+                // Report the mismatching entries themselves: the counts alone do not say
+                // which account or which storage slot diverged, which leaves a reported
+                // divergence impossible to diagnose from the CLI output.
                 bail!(
-                    "REVM consistency mismatch: storage={} account={}",
+                    "REVM consistency mismatch: storage={} account={}
+                       storage_detail={:#?}
+  account_detail={:#?}",
                     report.storage.len(),
-                    report.accounts.len()
+                    report.accounts.len(),
+                    report.storage,
+                    report.accounts
                 );
             }
         }
