@@ -494,6 +494,10 @@ fn make_block_context(block: &BlockDef) -> rig::BlockContext {
         pubdata_limit: u64::MAX,
         coinbase: Default::default(),
         mix_hash: Default::default(),
-        blob_fee: Default::default(),
+        // The bootloader requires the blob base fee to be exactly 1 when EIP-4844 is
+        // disabled, which is the production configuration. Leaving this at zero makes
+        // every scenario that declares a `block:` section fail with an internal error
+        // before execution starts. `block_reexecutor` already uses `U256::ONE` here.
+        blob_fee: ruint::aliases::U256::ONE,
     }
 }

@@ -1,0 +1,35 @@
+# Example covering an account that carries an EIP-7702 delegation designator.
+#
+# EIP-7702 is enabled by the production feature set, so a delegated account is
+# part of the surface this tool is meant to compare. Such an account holds the
+# 23 byte designator 0xef0100 || address as its bytecode.
+#
+# Delegate bytecode: 602a5f5500
+#   PUSH1 0x2a, PUSH0, SSTORE, STOP   (stores 42 in the caller's slot 0)
+#
+# Probe bytecode: 5f5f5f5f5f610202620186a0f15f556102023b6001556102023f60025500
+#   CALL(gas=100000, 0x0202, value=0, no args, no return)
+#   slot 0 <- call success
+#   slot 1 <- EXTCODESIZE(0x0202)     expected 23, the designator length
+#   slot 2 <- EXTCODEHASH(0x0202)     expected keccak of the designator
+contracts:
+  Delegate:
+    bytecode: "0x602a5f5500"
+    address: "0x0000000000000000000000000000000000000303"
+  Delegator:
+    bytecode: "0xef01000000000000000000000000000000000000000303"
+    address: "0x0000000000000000000000000000000000000202"
+  Probe:
+    bytecode: "0x5f5f5f5f5f610202620186a0f15f556102023b6001556102023f60025500"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000000"
+
+steps:
+  - type: send_raw
+    to: Probe
+    from: alice
+    data: "0x"
+    gas: 8000000

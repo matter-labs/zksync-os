@@ -277,12 +277,11 @@ where
             } else {
                 match code.kind() {
                     BytecodeKind::LegacyAnalyzed => calculate_bytecode_hash(code),
-                    BytecodeKind::Eip7702 => {
-                        return Err(anyhow::anyhow!(
-                            "EIP-7702 bytecode is not supported on Consistency Checker (delegated_address={:?})",
-                            code.eip7702_address()
-                        ));
-                    }
+                    // A delegated account stores the 23-byte designator as its bytecode
+                    // and hashes it through the same path as any other EVM bytecode, so it
+                    // hashes here exactly like legacy code. Returning an error instead left
+                    // every scenario involving a delegated account uncomparable.
+                    BytecodeKind::Eip7702 => calculate_bytecode_hash(code),
                 }
             }
         } else {

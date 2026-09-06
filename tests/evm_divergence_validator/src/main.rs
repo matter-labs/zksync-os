@@ -13,6 +13,21 @@ use std::process;
 use anyhow::Context;
 
 fn main() {
+    // Both engines recurse natively once per EVM call frame. On the main thread's default
+    // stack, a scenario nesting more than a few hundred frames aborts the process before a
+    // report is produced, which makes the 1024 call-depth limit impossible to exercise.
+    // Run the work on a thread with a large stack instead.
+    let child = std::thread::Builder::new()
+        .stack_size(1024 * 1024 * 1024)
+        .spawn(real_main)
+        .expect("failed to spawn worker thread");
+    match child.join() {
+        Ok(()) => {}
+        Err(_) => process::exit(2),
+    }
+}
+
+fn real_main() {
     // rig::init_logger() is called by TestingFramework::new(), so we don't
     // initialize env_logger here to avoid double-init panics.
     // Users can still set RUST_LOG to control verbosity.
