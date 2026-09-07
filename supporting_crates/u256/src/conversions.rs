@@ -41,6 +41,18 @@ macro_rules! impl_conversions {
                 }
             }
 
+            /// Narrows to `u32` on every target, independently of the width of
+            /// `usize`. Used for EVM memory offsets and lengths.
+            #[inline(always)]
+            pub fn try_to_u32(&self) -> Option<u32> {
+                let limbs = self.as_limbs();
+                if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 || limbs[0] > u32::MAX as u64 {
+                    None
+                } else {
+                    Some(limbs[0] as u32)
+                }
+            }
+
             #[inline(always)]
             pub fn try_to_usize(&self) -> Option<usize> {
                 let limbs = self.as_limbs();

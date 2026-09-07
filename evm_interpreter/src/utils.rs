@@ -18,6 +18,15 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     result
 }
 
+/// Largest heap offset the interpreter can address.
+///
+/// Memory offsets and lengths are decided in `u32` on every target: the 4 GiB
+/// limit is far beyond what any transaction gas limit can pay for, and
+/// narrowing to `u32` before any heap growth is charged keeps the
+/// accept/reject decision independent of the width of `usize` (64 bits on the
+/// forward host, 32 on the proving target).
+pub(crate) const MEMORY_LIMIT: u32 = u32::MAX - 31;
+
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
@@ -37,19 +46,34 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         src.try_to_u64().ok_or(error_to_set)
     }
 
+    /// Casts a 256-bit value to `u32`, the width memory offsets and lengths
+    /// are decided in on every target. See [`MEMORY_LIMIT`].
+    #[inline]
+    pub(crate) fn cast_to_u32(src: &U256, error_to_set: ExitCode) -> Result<u32, ExitCode> {
+        src.try_to_u32().ok_or(error_to_set)
+    }
+
     /// Helper for casting memory offset and length.
     /// If len is zero, offset is ignored.
+    ///
+    /// The window is accepted or rejected here, in `u32`, before the caller
+    /// can charge for any heap growth. Deciding it after a `usize` narrowing
+    /// instead lets a caller that handles several windows charge for an
+    /// earlier one on the 64-bit forward host only, and the two runs then
+    /// spend different resources for the same input.
     pub(crate) fn cast_offset_and_len(
         offset: &U256,
         len: &U256,
         error_to_set: ExitCode,
     ) -> Result<(usize, usize), ExitCode> {
         if len.is_zero() {
-            Ok((0, 0))
-        } else {
-            let offset = Self::cast_to_usize(offset, error_to_set.clone())?;
-            let len = Self::cast_to_usize(len, error_to_set)?;
-            Ok((offset, len))
+            return Ok((0, 0));
+        }
+        let offset = Self::cast_to_u32(offset, error_to_set.clone())?;
+        let len = Self::cast_to_u32(len, error_to_set)?;
+        match offset.checked_add(len) {
+            Some(end) if end <= MEMORY_LIMIT => Ok((offset as usize, len as usize)),
+            _ => Err(ExitCode::EvmError(EvmError::MemoryLimitOOG)),
         }
     }
 
@@ -80,11 +104,16 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         offset: usize,
         len: usize,
     ) -> Result<(), ExitCode> {
-        let max_offset = offset.saturating_add(len);
-        let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
+        // `offset` and `len` already fit `u32` on the proving target but may
+        // not on the 64-bit host, so widen to `u64`, where the sum cannot
+        // overflow, and compare against the `u32` limit. Kept as plain
+        // arithmetic: this runs on every MLOAD/MSTORE and an `Option`
+        // combinator chain here costs a few cycles per execution.
+        let end = (offset as u64).saturating_add(len as u64);
+        let new_heap_size = if end > MEMORY_LIMIT as u64 {
             return Err(ExitCode::EvmError(EvmError::MemoryLimitOOG));
         } else {
-            max_offset.next_multiple_of(32)
+            (end as usize).next_multiple_of(32)
         };
         let current_heap_size = heap.len();
         if new_heap_size > current_heap_size {
