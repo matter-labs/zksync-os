@@ -1,0 +1,34 @@
+# Example driving the EVM call stack to its 1024 frame limit.
+#
+# The contract calls itself, carrying the current depth in 32 bytes of calldata
+# and stopping once that depth reaches the bound compiled into the bytecode. The
+# deepest frame that succeeds writes last, so slot 0 ends up holding the maximum
+# depth reached. A failing nested call does not revert its parent, so the write
+# survives and the depth limit itself becomes observable.
+#
+# Bytecode, with the bound 0x000400 = 1024 pushed at offset 6:
+#   PUSH0 CALLDATALOAD            d
+#   PUSH0 SSTORE                  slot 0 <- d
+#   PUSH0 CALLDATALOAD            d
+#   PUSH3 0x000400 GT             bound > d ?
+#   PUSH1 0x0f JUMPI              continue if so
+#   STOP
+#   JUMPDEST
+#   PUSH0 CALLDATALOAD PUSH1 1 ADD PUSH0 MSTORE
+#   CALL(gas=GAS, self, value=0, args=0..32, no return)
+#   POP STOP
+contracts:
+  Recur:
+    bytecode: "0x5f355f555f356200040011600f57005b5f356001015f525f5f60205f5f305af15000"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000000"
+
+steps:
+  - type: send_raw
+    to: Recur
+    from: alice
+    data: "0x0000000000000000000000000000000000000000000000000000000000000000"
+    gas: 100000000000000
