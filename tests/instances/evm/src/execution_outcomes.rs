@@ -264,3 +264,92 @@ fn oversized_returndatacopy_charges_native_consistently() {
         "the copy charge must remain gated by the available gas"
     );
 }
+
+/// Pins that the `CALL` family decides both of its memory windows before it
+/// charges for either of them. `CALL`, `CALLCODE`, `DELEGATECALL` and
+/// `STATICCALL` share `call_impl`, which resizes the input window before the
+/// output window has been accepted. A `usize` narrowing accepts an output
+/// length of 2^32 on the 64-bit forward host and rejects it on the 32-bit
+/// proving target, so only the forward host used to reach the input resize and
+/// charge its heap growth. The rig then reports a forward/proving storage-diff
+/// mismatch, which it checks when `ZKSYNC_RISC_V_RUN=true` or `CI` is set.
+#[test]
+fn oversized_call_output_window_charges_native_consistently() {
+    // 2^32 fits a 64-bit usize but not a 32-bit usize.
+    const OUT_LEN: u64 = 1 << 32;
+    // Input window whose heap growth must stay uncharged because the output
+    // window is out of range. Costs HEAP_EXPANSION_BASE_NATIVE_COST + IN_LEN
+    // native and 5,120 gas to grow.
+    const IN_LEN: u64 = 32 * 1024;
+    // Gas allowance of the inner frame. It covers the input window's heap
+    // growth, so the charge is not gated by gas, and it stays small enough for
+    // the refund `delta_gas` adjustment to raise `gas_used`.
+    const INNER_CALL_GAS: u64 = 30_000;
+    const TX_GAS_LIMIT: u64 = 2_000_000;
+
+    // The call target is never entered: the frame fails while the operands are
+    // still being processed, before the callee is accessed.
+    let callee_addr = address!("000000000000000000000000000000000000020b");
+    let inner_addr = address!("000000000000000000000000000000000000020c");
+    let outer_addr = address!("000000000000000000000000000000000000020d");
+    let signer = testing_signer(0);
+
+    // The inner contract issues a CALL whose output window is out of range and
+    // whose input window is not. CALL operands are pushed in reverse pop order:
+    // out_len, out_offset, in_len, in_offset, value, callee, gas. Both variants
+    // push a full 32-byte input length, so the two bytecodes have identical
+    // opcode costs and the input window's heap growth is the only difference
+    // they can produce.
+    let inner_bytecode = |in_len: u64| {
+        BytecodeBuilder::new()
+            .push_bytes(&U256::from(OUT_LEN).to_be_bytes::<32>())
+            .push0()
+            .push_bytes(&U256::from(in_len).to_be_bytes::<32>())
+            .push0()
+            .push0()
+            .push_address(callee_addr)
+            .push0()
+            .call()
+            .pop()
+            .return_empty()
+            .finish()
+    };
+
+    // The outer contract swallows the inner failure, so the transaction
+    // succeeds and commits a fee.
+    let outer_bytecode = BytecodeBuilder::new()
+        .push0_n(5)
+        .push_address(inner_addr)
+        .push_bytes(&INNER_CALL_GAS.to_be_bytes())
+        .call()
+        .pop()
+        .return_empty()
+        .finish();
+
+    let native_used = |in_len: u64| {
+        let mut tester = new_tester()
+            .with_balance(signer.address(), U256::from(DEFAULT_BALANCE))
+            .with_evm_contract(inner_addr, &inner_bytecode(in_len))
+            .with_evm_contract(outer_addr, &outer_bytecode)
+            // Price native so that the refund `delta_gas` adjustment carries
+            // the native spend into committed fee state. The optional RISC-V
+            // run then detects a forward/proving state-diff mismatch.
+            .with_block_context(BlockContext {
+                native_price: U256::from(200u64),
+                ..Default::default()
+            });
+
+        let output = tester.execute_block(vec![call_tx(signer.clone(), outer_addr, TX_GAS_LIMIT)]);
+        assert_tx_success!(output, 0);
+        output.tx_results[0]
+            .as_ref()
+            .expect("transaction should be processed")
+            .computational_native_used
+    };
+
+    assert_eq!(
+        native_used(IN_LEN),
+        native_used(0),
+        "CALL must not charge for its input window when its output window is out of range"
+    );
+}

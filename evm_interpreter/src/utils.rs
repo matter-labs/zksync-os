@@ -18,6 +18,11 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     result
 }
 
+/// Largest heap offset the interpreter can address. Offsets and lengths are
+/// checked against it before any heap growth is charged, so the check is
+/// independent of the width of `usize` on the current target.
+pub(crate) const MEMORY_LIMIT: u64 = (u32::MAX - 31) as u64;
+
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
@@ -39,17 +44,29 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     /// Helper for casting memory offset and length.
     /// If len is zero, offset is ignored.
+    ///
+    /// The accept/reject decision is taken in the width-independent `u64`
+    /// domain, so a window is rejected at the same point on the 64-bit forward
+    /// host and on the 32-bit proving target. Deciding it after the
+    /// [`Self::cast_to_usize`] narrowing instead lets a caller that handles
+    /// several windows charge for an earlier one on the forward host only, and
+    /// the two runs then spend different resources for the same input. See
+    /// [`Self::cast_to_u64`].
     pub(crate) fn cast_offset_and_len(
         offset: &U256,
         len: &U256,
         error_to_set: ExitCode,
     ) -> Result<(usize, usize), ExitCode> {
         if len.is_zero() {
-            Ok((0, 0))
-        } else {
-            let offset = Self::cast_to_usize(offset, error_to_set.clone())?;
-            let len = Self::cast_to_usize(len, error_to_set)?;
-            Ok((offset, len))
+            return Ok((0, 0));
+        }
+        let offset = Self::cast_to_u64(offset, error_to_set.clone())?;
+        let len = Self::cast_to_u64(len, error_to_set)?;
+        match offset.checked_add(len) {
+            // Both values are bounded by `MEMORY_LIMIT`, so the narrowing to
+            // `usize` is lossless on either target.
+            Some(max_offset) if max_offset <= MEMORY_LIMIT => Ok((offset as usize, len as usize)),
+            _ => Err(ExitCode::EvmError(EvmError::MemoryLimitOOG)),
         }
     }
 
@@ -80,11 +97,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         offset: usize,
         len: usize,
     ) -> Result<(), ExitCode> {
-        let max_offset = offset.saturating_add(len);
-        let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
+        let max_offset = (offset as u64).saturating_add(len as u64);
+        let new_heap_size = if max_offset > MEMORY_LIMIT {
             return Err(ExitCode::EvmError(EvmError::MemoryLimitOOG));
         } else {
-            max_offset.next_multiple_of(32)
+            (max_offset as usize).next_multiple_of(32)
         };
         let current_heap_size = heap.len();
         if new_heap_size > current_heap_size {
