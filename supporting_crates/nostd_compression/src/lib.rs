@@ -1,6 +1,11 @@
 // Based on https://github.com/Frommi/miniz_oxide/blob/f177ab233c9e38cec03f7b35b9e642246c893312/miniz_oxide/src/lib.rs
 
 #![cfg_attr(not(test), no_std)]
+// Ported code: the deflate core follows upstream miniz_oxide's structure so it
+// stays diffable against it. Restructuring it to satisfy style lints would make
+// future syncs harder than the lints are worth.
+#![allow(clippy::needless_late_init)]
+#![allow(clippy::explicit_counter_loop)]
 
 // We will largely follow miniz-oxide, but in different paradigm,
 // and will only implement compression

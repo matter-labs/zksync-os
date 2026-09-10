@@ -1,5 +1,4 @@
 #![allow(incomplete_features)]
-#![feature(allocator_api)]
 
 mod compiler;
 mod report;

@@ -107,7 +107,7 @@ where
 
     /// Clears the map while reusing history record allocations.
     pub fn clear(&mut self) {
-        for (_, ptr) in self.btree.iter_mut() {
+        for ptr in self.btree.values_mut() {
             // Safety: each pointer was produced by `elements_arena.push` and the
             // arena is still alive here. No pending-list user can race with this
             // (we hold `&mut self`).

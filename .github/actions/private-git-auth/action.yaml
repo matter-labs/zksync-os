@@ -1,0 +1,35 @@
+name: 'Configure private repo auth'
+
+description: >-
+  Rewrites github.com HTTPS URLs to use a token so Cargo can resolve git
+  dependencies that live in private matter-labs repositories, and forces Cargo
+  to fetch via the git CLI so the rewrite is honoured. No-op when no token is
+  supplied, which keeps public-only builds unchanged.
+
+inputs:
+  token:
+    description: >-
+      Token with read access to the private dependency repositories. Composite
+      actions cannot read the `secrets` context, so callers must pass
+      `secrets.RELEASE_TOKEN` explicitly. Leave empty to skip configuration.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git auth for private repos
+      shell: bash
+      env:
+        # Keep the token out of the command line and the expanded script.
+        PRIVATE_REPO_TOKEN: ${{ inputs.token }}
+      run: |
+        set -e
+        if [ -z "${PRIVATE_REPO_TOKEN}" ]; then
+          echo "No token supplied - skipping private repo git auth."
+          exit 0
+        fi
+        git config --global \
+          url."https://x-access-token:${PRIVATE_REPO_TOKEN}@github.com/".insteadOf \
+          "https://github.com/"
+        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"

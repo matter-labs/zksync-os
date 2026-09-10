@@ -54,7 +54,7 @@ impl OracleQueryProcessor for FieldOpsQuery {
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.src_ptr > 0);
         assert_eq!(arg.src_len_u32_words, 8);
-        let n = read_memory_as_u64(memory, arg.src_ptr as u32, arg.src_len_u32_words / 2).unwrap();
+        let n = read_memory_as_u64(memory, arg.src_ptr, arg.src_len_u32_words / 2).unwrap();
 
         let n = Bytes32::from_array(
             n.into_iter()

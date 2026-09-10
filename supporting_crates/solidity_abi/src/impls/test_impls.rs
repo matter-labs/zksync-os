@@ -1,4 +1,3 @@
-use crate::codable_trait::*;
 use crate::impls::codable_array::format_short_integer;
 use crate::impls::*;
 use ruint::aliases::U256;

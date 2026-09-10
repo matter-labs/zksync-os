@@ -316,8 +316,7 @@ pub fn generate_legacy_batch_proof_input(
             let mut blobs_data = Vec::with_capacity(total_pubdata_length + 31);
             blobs_data.extend_from_slice(&(total_pubdata_length as u64).to_be_bytes());
             blobs_data.extend_from_slice(&[0u8; 23]); // pad to 31
-            for (block_proof_input, block_pubdata) in
-                blocks_proof_inputs.iter().zip(blocks_pubdata.into_iter())
+            for (block_proof_input, block_pubdata) in blocks_proof_inputs.iter().zip(blocks_pubdata)
             {
                 blobs_data.extend_from_slice(block_pubdata);
                 let advice_words = (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;

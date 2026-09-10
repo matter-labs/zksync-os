@@ -1,4 +1,6 @@
 use super::super::*;
+#[allow(unused_imports)]
+use crate::bootloader::constants::MAX_TX_NATIVE_COMPUTATIONAL;
 use crate::bootloader::constants::{
     FRI_PROOF_INTRINSIC_NATIVE_COST_PER_PROOF, FRI_PROOF_TX_INTRINSIC_GAS,
     L1_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, L1_TX_INTRINSIC_NATIVE_COST,
@@ -18,17 +20,16 @@ use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::out_of_native_resources;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
+use zk_ee::system::Resource;
 use zk_ee::system::{Computational, Ergs, Resources};
-#[allow(unused_imports)]
-use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
 
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
     // Resources to run the transaction.
-    // These will be capped to MAX_NATIVE_COMPUTATIONAL, to prevent
+    // These will be capped to MAX_TX_NATIVE_COMPUTATIONAL, to prevent
     // transaction from using too many native computational resources.
     pub main_resources: S::Resources,
-    /// Resources in excess of MAX_NATIVE_COMPUTATIONAL.
+    /// Resources in excess of MAX_TX_NATIVE_COMPUTATIONAL.
     /// These resources can only be used for paying for pubdata.
     pub withheld: S::Resources,
 }
@@ -246,17 +247,18 @@ where
         }
     };
 
-    // Split: anything above MAX_NATIVE_COMPUTATIONAL goes into `withheld`
-    // (only spendable on pubdata at refund time).
-    let (native_limit, withheld) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
+    // Split: anything above MAX_TX_NATIVE_COMPUTATIONAL goes into `withheld`
+    // (only spendable on pubdata at refund time). See that constant for why the
+    // cap leaves room below the per-block ceiling.
+    let (native_limit, withheld) = if native_limit <= MAX_TX_NATIVE_COMPUTATIONAL {
         (native_limit, S::Resources::from_ergs(Ergs::empty()))
     } else {
         let withheld_native =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
-                native_limit - MAX_NATIVE_COMPUTATIONAL,
+                native_limit - MAX_TX_NATIVE_COMPUTATIONAL,
             );
         (
-            MAX_NATIVE_COMPUTATIONAL,
+            MAX_TX_NATIVE_COMPUTATIONAL,
             S::Resources::from_native(withheld_native),
         )
     };

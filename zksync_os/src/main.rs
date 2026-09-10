@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 #![allow(incomplete_features)]
-#![feature(allocator_api)]
 
 use proof_running_system::system::bootloader::{init_allocator, run_proving};
 
