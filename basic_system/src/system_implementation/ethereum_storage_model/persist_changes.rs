@@ -345,7 +345,7 @@ impl EthereumStoragePersister {
             let _ = logger.write_fmt(format_args!(
                 "Processing initial value for address 0x{:040x}, slot {:?}\n",
                 &addr.address.as_uint(),
-                &addr.key,
+                addr.key,
             ));
 
             let entry = account_cache
@@ -362,7 +362,7 @@ impl EthereumStoragePersister {
             let _ = logger.write_fmt(format_args!(
                 "Initial storage root for address 0x{:040x} is {:?}\n",
                 addr.address.as_uint(),
-                &initial_root,
+                initial_root,
             ));
 
             reusable_mpt = reusable_mpt.reinit_with_root(initial_root.as_u8_array());
@@ -378,14 +378,14 @@ impl EthereumStoragePersister {
                 assert!(
                     compare_bytes32_and_mpt_integer(&value.initial_value, initial_expected_value),
                     "failed to compare expected storage slot value {:?} vs RLP encoded {:?}\n",
-                    &value.initial_value,
-                    &initial_expected_value
+                    value.initial_value,
+                    initial_expected_value
                 );
             } else {
                 let _ = logger.write_fmt(format_args!(
                     "Value for address 0x{:040x}, slot {:?} is unobservable\n",
                     &addr.address.as_uint(),
-                    &addr.key,
+                    addr.key,
                 ));
             }
         } else {
@@ -402,7 +402,7 @@ impl EthereumStoragePersister {
                     let _ = logger.write_fmt(format_args!(
                         "Processing initial value for address 0x{:040x}, slot {:?}\n",
                         &addr.address.as_uint(),
-                        &addr.key,
+                        addr.key,
                     ));
 
                     if active_address == addr.address {
@@ -427,14 +427,14 @@ impl EthereumStoragePersister {
                                     initial_expected_value
                                 ),
                                 "failed to compare expected storage slot value {:?} vs RLP encoded {:?}\n",
-                                &value.initial_value,
-                                &initial_expected_value
+                                value.initial_value,
+                                initial_expected_value
                             );
                         } else {
                             let _ = logger.write_fmt(format_args!(
                                 "Value for address 0x{:040x}, slot {:?} is unobservable\n",
                                 &addr.address.as_uint(),
-                                &addr.key,
+                                addr.key,
                             ));
                         }
                     } else {
@@ -464,7 +464,7 @@ impl EthereumStoragePersister {
                     let _ = logger.write_fmt(format_args!(
                         "Processing potential updates for address 0x{:040x}, slot {:?}\n",
                         &addr.address.as_uint(),
-                        &addr.key,
+                        addr.key,
                     ));
 
                     if v.initial_value_used {
@@ -487,7 +487,7 @@ impl EthereumStoragePersister {
 
                                 let _ = logger.write_fmt(format_args!(
                                     "Will insert value {:?} at slot {:?}\n",
-                                    &v.current_value, &addr.key
+                                    v.current_value, addr.key
                                 ));
 
                                 // encode value
@@ -511,7 +511,7 @@ impl EthereumStoragePersister {
 
                                 let _ = logger.write_fmt(format_args!(
                                     "Will delete value {:?} at slot {:?}\n",
-                                    &v.initial_value, &addr.key
+                                    v.initial_value, addr.key
                                 ));
 
                                 reusable_mpt.delete(path).map_err(|_| {
@@ -522,7 +522,7 @@ impl EthereumStoragePersister {
 
                                 let _ = logger.write_fmt(format_args!(
                                     "Will update slot {:?} as {:?} -> {:?}\n",
-                                    &addr.key, &v.initial_value, &v.current_value
+                                    addr.key, v.initial_value, v.current_value
                                 ));
 
                                 // encode value
@@ -539,14 +539,14 @@ impl EthereumStoragePersister {
                             let _ = logger.write_fmt(format_args!(
                                 "Skipping updates for value for address 0x{:040x}, slot {:?} as there is no net update\n",
                                 &addr.address.as_uint(),
-                                &addr.key,
+                                addr.key,
                             ));
                         }
                     } else {
                         let _ = logger.write_fmt(format_args!(
                             "Skipping updates for value for address 0x{:040x}, slot {:?} as it was not observed\n",
                             &addr.address.as_uint(),
-                            &addr.key,
+                            addr.key,
                         ));
                     }
                 }
@@ -579,7 +579,7 @@ impl EthereumStoragePersister {
                     let _ = logger.write_fmt(format_args!(
                         "New storage root for address 0x{:040x} is {:?}\n",
                         active_address.as_uint(),
-                        &new_root,
+                        new_root,
                     ));
 
                     assert_ne!(new_root, e.current().value().storage_root);
@@ -643,14 +643,14 @@ impl EthereumStoragePersister {
                                 initial_expected_value
                             ),
                             "failed to compare expected initial storage root value {:?} vs RLP encoded {:?}\n",
-                            &value.initial_value,
-                            &initial_expected_value
+                            value.initial_value,
+                            initial_expected_value
                         );
                     } else {
                         let _ = logger.write_fmt(format_args!(
                             "Value for address 0x{:040x}, slot {:?} is unobservable\n",
                             &addr.address.as_uint(),
-                            &addr.key,
+                            addr.key,
                         ));
                     }
                 } else {
