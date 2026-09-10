@@ -63,6 +63,10 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+            - name: Configure private repo auth
+              uses: ./.github/actions/private-git-auth
+              with:
+                  token: ${{ secrets.RELEASE_TOKEN }}
             - name: Setup
               run: |
                   rustup toolchain install
@@ -150,6 +154,10 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   components: clippy
+            - name: Configure private repo auth
+              uses: ./.github/actions/private-git-auth
+              with:
+                  token: ${{ secrets.RELEASE_TOKEN }}
             - name: Run Clippy
               run: |
                   cargo clippy --workspace -- -D warnings
@@ -163,6 +171,10 @@ jobs:
               with:
                   components: clippy
                   rustflags: ""
+            - name: Configure private repo auth
+              uses: ./.github/actions/private-git-auth
+              with:
+                  token: ${{ secrets.RELEASE_TOKEN }}
             - name: Run Clippy
               working-directory: ./zksync_os
               run: |
@@ -186,6 +198,10 @@ jobs:
                   # `miri` needs `rust-src` to build a checked std.
                   components: miri, rust-src
                   rustflags: ""
+            - name: Configure private repo auth
+              uses: ./.github/actions/private-git-auth
+              with:
+                  token: ${{ secrets.RELEASE_TOKEN }}
             - name: Miri (Stacked Borrows)
               run: cargo miri test -p zk_ee -- history_map ptr_arena
             - name: Miri (Tree Borrows)
@@ -227,6 +243,10 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
+            - name: Configure private repo auth
+              uses: ./.github/actions/private-git-auth
+              with:
+                  token: ${{ secrets.RELEASE_TOKEN }}
             - name: Verify zksync_os/Cargo.lock is up to date
               run: |
                   if ! cargo metadata --locked --manifest-path zksync_os/Cargo.toml --format-version 1 > /dev/null 2>&1; then

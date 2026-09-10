@@ -19,13 +19,12 @@ runs:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ""
-    - if: inputs.release-token != ''
-      shell: bash
-      env:
-        RELEASE_TOKEN: ${{ inputs.release-token }}
-      run: |
-        git config --global url."https://x-access-token:${RELEASE_TOKEN}@github.com/".insteadOf "https://github.com/"
-        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+    # Shared with the jobs that need private dependencies but not the full
+    # toolchain setup, so there is one implementation of the URL rewrite.
+    - name: Configure private repo auth
+      uses: ./.github/actions/private-git-auth
+      with:
+        token: ${{ inputs.release-token }}
     - shell: bash
       env:
         # cargo-airbender pulls in era_cudart_sys, whose build script panics
