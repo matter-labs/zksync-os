@@ -11,6 +11,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_sol_types::sol;
 use alloy_sol_types::SolCall;
 use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
+use basic_bootloader::bootloader::constants::MAX_TX_NATIVE_COMPUTATIONAL;
 use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_bootloader::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
@@ -26,7 +27,6 @@ use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
-use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
 use zk_ee::utils::{u256_try_to_u64, Bytes32};
 use zksync_os_interface::traits::EncodedTx;
 
@@ -450,8 +450,10 @@ pub fn validate_l2_tx_intrinsic_native_resources(
         .checked_sub(intrinsic_pubdata_overhead)
         .ok_or(())?;
 
-    // Cap at MAX_NATIVE_COMPUTATIONAL (excess is withheld for pubdata only)
-    let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
+    // Cap at MAX_TX_NATIVE_COMPUTATIONAL (excess is withheld for pubdata only).
+    // Must match the bootloader's split, or this check admits transactions that
+    // validation then rejects.
+    let native_limit = native_limit.min(MAX_TX_NATIVE_COMPUTATIONAL);
 
     // Intrinsic computational native
     let intrinsic_computational_native =

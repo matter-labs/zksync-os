@@ -26,10 +26,10 @@ use zk_ee::system_log;
 
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
     // Resources to run the transaction.
-    // These will be capped to MAX_NATIVE_COMPUTATIONAL, to prevent
+    // These will be capped to MAX_TX_NATIVE_COMPUTATIONAL, to prevent
     // transaction from using too many native computational resources.
     pub main_resources: S::Resources,
-    /// Resources in excess of MAX_NATIVE_COMPUTATIONAL.
+    /// Resources in excess of MAX_TX_NATIVE_COMPUTATIONAL.
     /// These resources can only be used for paying for pubdata.
     pub withheld: S::Resources,
 }
@@ -248,9 +248,8 @@ where
     };
 
     // Split: anything above MAX_TX_NATIVE_COMPUTATIONAL goes into `withheld`
-    // (only spendable on pubdata at refund time). The cap is the per-block
-    // native ceiling minus BLOCK_INTRINSIC_NATIVE, so a transaction that spends
-    // its whole budget still fits an otherwise empty block.
+    // (only spendable on pubdata at refund time). See that constant for why the
+    // cap leaves room below the per-block ceiling.
     let (native_limit, withheld) = if native_limit <= MAX_TX_NATIVE_COMPUTATIONAL {
         (native_limit, S::Resources::from_ergs(Ergs::empty()))
     } else {
