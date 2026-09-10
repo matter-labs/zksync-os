@@ -13,6 +13,8 @@
 
 use alloy_sol_types::{sol, SolCall};
 use rig::alloy::primitives::address;
+use rig::basic_bootloader::bootloader::constants::MAX_TX_NATIVE_COMPUTATIONAL;
+use rig::basic_system::cost_constants::{BLAKE2F_BASE_NATIVE_COST, BLAKE2F_PER_ROUND_NATIVE_COST};
 use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::U256;
 use rig::tx_succeeded;
@@ -396,4 +398,86 @@ fn test_l1_tx_returndata_cleared_on_pubdata_revert() {
         }
         other => panic!("Expected revert result, got: {other:?}"),
     }
+}
+
+/// Regression test: an L1 transaction that exhausts its computational-native
+/// budget must still be included, as a failed priority operation, rather than
+/// rejected from the block.
+///
+/// A transaction's native budget is clamped, and an out-of-native failure
+/// reports the whole clamped budget as consumed. The block-limit check adds
+/// `BLOCK_INTRINSIC_NATIVE` on top of that before comparing against
+/// `MAX_NATIVE_COMPUTATIONAL`, so clamping the budget to the full ceiling made
+/// the sum exceed it unconditionally. Such a transaction was rejected from
+/// every block, including an empty one, and since L1 transactions are a FIFO
+/// the sequencer cannot skip, a rejected one leaves the priority queue unable
+/// to advance.
+///
+/// `blake2f` is the trigger: 1 gas per round against
+/// `BLAKE2F_PER_ROUND_NATIVE_COST` native per round, a ratio high enough to
+/// exhaust the native budget well inside `PRIORITY_TX_MAX_GAS_LIMIT`.
+#[test]
+fn test_l1_tx_exhausting_native_is_included_not_rejected() {
+    // PRIORITY_TX_MAX_GAS_LIMIT — production cap for L1 priority txs.
+    const GAS_LIMIT: u64 = 72_000_000;
+    // EIP-152 prices blake2f at one gas per round, so rounds == gas.
+    const BLAKE2F_GAS_PER_ROUND: u64 = 1;
+
+    // Fewest rounds whose native charge exceeds the per-transaction budget.
+    let rounds = MAX_TX_NATIVE_COMPUTATIONAL / BLAKE2F_PER_ROUND_NATIVE_COST + 1;
+    assert!(
+        BLAKE2F_BASE_NATIVE_COST + BLAKE2F_PER_ROUND_NATIVE_COST * rounds
+            > MAX_TX_NATIVE_COMPUTATIONAL,
+        "test premise: the chosen round count must exhaust the per-tx native budget"
+    );
+    assert!(
+        rounds <= u32::MAX as u64 && rounds * BLAKE2F_GAS_PER_ROUND + 100_000 < GAS_LIMIT,
+        "test premise: exhausting native must be reachable inside the priority gas cap; \
+         blake2f's native-per-gas ratio is no longer high enough to get there"
+    );
+
+    let from = address!("1234000000000000000000000000000000000000");
+    let blake2f = rig::alloy::primitives::Address::from_slice(
+        address!("0000000000000000000000000000000000000009").as_slice(),
+    );
+
+    // EIP-152 input layout: rounds(4) || h(64) || m(128) || t(16) || f(1).
+    let mut input = Vec::with_capacity(213);
+    input.extend_from_slice(&(rounds as u32).to_be_bytes());
+    input.extend_from_slice(&[0u8; 64 + 128 + 16]);
+    input.push(1u8);
+
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(blake2f)
+        .gas_price(10u128.pow(15))
+        .gas_limit(GAS_LIMIT.into())
+        .gas_per_pubdata_byte_limit(800u128)
+        .input(input)
+        .build()
+        .into();
+
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, false)
+        .with_balance(from, U256::MAX);
+
+    let output = tester.execute_block(vec![tx]);
+
+    let result = output.tx_results[0].as_ref().expect(
+        "an L1 tx that exhausts its native budget must be included as a failed priority \
+         operation; rejecting it leaves the priority queue unable to advance",
+    );
+    assert!(
+        !result.is_success(),
+        "the tx runs out of native, so it must be included as failed"
+    );
+    // The invariant the per-transaction cap restores: a transaction can never
+    // report more native than a block has room for once BLOCK_INTRINSIC_NATIVE
+    // is accounted for.
+    assert!(
+        result.computational_native_used <= MAX_TX_NATIVE_COMPUTATIONAL,
+        "reported native ({}) exceeds the per-tx cap ({MAX_TX_NATIVE_COMPUTATIONAL}), \
+         so the tx cannot fit an otherwise empty block",
+        result.computational_native_used,
+    );
 }

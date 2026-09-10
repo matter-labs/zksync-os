@@ -427,6 +427,28 @@ pub const BLOCK_INTRINSIC_NATIVE: u64 = EIP_2935_INTRINSIC_NATIVE
     + MANDATORY_INTEROP_SLOT_DERIVATION_NATIVE_COST
     + L2_TO_L1_LOG_TREE_FINALIZATION_NATIVE_COST;
 
+/// Largest computational native a single transaction may be charged.
+///
+/// The block-limit check compares `BLOCK_INTRINSIC_NATIVE + tx_native` against
+/// `MAX_NATIVE_COMPUTATIONAL`, so a transaction that spends its entire budget
+/// must leave room for the block intrinsic, or it cannot be included in any
+/// block however empty it is. This matters most for L1 transactions: they are
+/// a FIFO the sequencer cannot skip, so rejecting one halts the priority queue.
+///
+/// The cap is half the block ceiling rather than the exact remainder, so that
+/// two maximal transactions still fit one block. That keeps a single
+/// transaction from claiming the whole block budget and leaves slack for
+/// future block-level native charges, which is what broke the previous
+/// implicit invariant.
+pub const MAX_TX_NATIVE_COMPUTATIONAL: u64 =
+    zk_ee::system::MAX_NATIVE_COMPUTATIONAL / 2 - BLOCK_INTRINSIC_NATIVE;
+
+const _: () = assert!(
+    2 * MAX_TX_NATIVE_COMPUTATIONAL + BLOCK_INTRINSIC_NATIVE
+        <= zk_ee::system::MAX_NATIVE_COMPUTATIONAL,
+    "two transactions spending their whole native budget must fit one block"
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
