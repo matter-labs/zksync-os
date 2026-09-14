@@ -4,9 +4,15 @@
 //! If TxValidator returns Err(FilteredByValidator) for a transaction,
 //! that tx must NOT be included in the block
 //! while other txs must still be included.
+//!
+//! Priority (L1 -> L2) transactions only go through the validator when the
+//! chain opts in via `ChainConfig::l1_tx_filtering_enabled`, and a rejected one
+//! is force-reverted instead of dropped: included, body discarded, full gas
+//! limit charged, L1 result log with success = false. Upgrade transactions
+//! never go through the validator.
 
 use rig::alloy::consensus::TxLegacy;
-use rig::alloy::primitives::{address, TxKind};
+use rig::alloy::primitives::{address, TxKind, B256};
 use rig::chain::RunConfig;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
@@ -14,7 +20,9 @@ use rig::utils::L1TxBuilder;
 use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{BeginTxContext, TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::TestingFramework;
+use rig::zksync_os_interface::types::TxOutput;
+use rig::{BlockOutput, TestingFramework};
+use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Default)]
@@ -330,4 +338,145 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     // 3) Second tx must be included as the first tx in block => number 0
     let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
     assert_eq!(tx1_number_in_block, 0);
+}
+
+/// Gas limit of the L1 test txs below. A force-reverted priority tx is charged all of it.
+const L1_TX_GAS_LIMIT: u64 = 500_000;
+
+/// Runs a block of two priority withdrawal txs (nonces 0 and 1) from a fresh
+/// account on a chain with L1 tx filtering enabled, under `validator`.
+///
+/// Nothing is ever dropped from such a block, so the rig's forward vs
+/// prover-input equivalence check runs: the recorded decisions are replayed
+/// through the oracle validator.
+fn run_l1_pair_with_filtering(
+    validator: &mut impl TxValidator<ForwardRunningSystem>,
+) -> BlockOutput {
+    let mut tester = TestingFramework::new().with_l1_tx_filtering(true);
+    let from = tester.random_signer().address();
+    tester = tester.with_balance(from, U256::from(10_000_000));
+
+    let withdrawal_to = address!("000000000000000000000000000000000000800a");
+    let withdrawal_calldata =
+        hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+    let mk_l1_tx = |nonce: u128, value: u64| {
+        L1TxBuilder::new()
+            .from(from)
+            .to(withdrawal_to)
+            .gas_price(1000)
+            .gas_limit(L1_TX_GAS_LIMIT as u128)
+            .value(U256::from(value))
+            .input(withdrawal_calldata.clone())
+            .nonce(nonce)
+            .build()
+    };
+
+    tester.execute_block_with_tracing(
+        vec![mk_l1_tx(0, 10), mk_l1_tx(1, 11)],
+        &mut NopTracer::default(),
+        validator,
+    )
+}
+
+/// The priority tx at `idx` was force-reverted: included, failed, charged its
+/// full gas limit, and its only L2 -> L1 log is the L1 tx result log with
+/// `success = false` (the withdrawal message the body would send is gone).
+fn assert_l1_tx_force_reverted(tx_results: &[Result<TxOutput, InvalidTransaction>], idx: usize) {
+    let tx = tx_results[idx]
+        .as_ref()
+        .expect("force-reverted L1 tx must be included");
+    assert!(!tx.is_success(), "force-reverted L1 tx {idx} must fail");
+    assert_eq!(
+        tx.gas_used, L1_TX_GAS_LIMIT,
+        "L1 tx {idx} must be charged its full gas limit"
+    );
+    assert_eq!(
+        tx.l2_to_l1_logs.len(),
+        1,
+        "L1 tx {idx} must only emit its result log"
+    );
+    assert_eq!(
+        tx.l2_to_l1_logs[0].log.value,
+        B256::ZERO,
+        "L1 tx {idx} result log must be a failure"
+    );
+}
+
+/// The priority tx at `idx` succeeded and its L1 tx result log says so.
+fn assert_l1_tx_succeeded(tx_results: &[Result<TxOutput, InvalidTransaction>], idx: usize) {
+    let tx = tx_results[idx].as_ref().expect("L1 tx must be included");
+    assert!(tx.is_success(), "L1 tx {idx} should succeed, got {tx:?}");
+    let result_log = tx
+        .l2_to_l1_logs
+        .last()
+        .expect("successful L1 tx emits its result log");
+    assert_eq!(
+        result_log.log.value,
+        B256::with_last_byte(1),
+        "L1 tx {idx} result log must be a success"
+    );
+}
+
+#[test]
+fn test_l1_tx_rejected_before_execution_is_force_reverted() {
+    // Rejects the first begin_tx call only.
+    let mut validator = LoggingTxValidator::new(true, false);
+    let out = run_l1_pair_with_filtering(&mut validator);
+
+    // begin_tx for both txs; finish_tx only for tx1, whose body ran.
+    assert_eq!((validator.begin_calls, validator.finish_calls), (2, 1));
+    assert_l1_tx_force_reverted(&out.tx_results, 0);
+    assert_l1_tx_succeeded(&out.tx_results, 1);
+    // Both are included, in order.
+    assert_eq!(included_tx_number_in_block(&out.tx_results, 1), 1);
+}
+
+#[test]
+fn test_l1_tx_rejected_after_execution_is_force_reverted() {
+    // Rejects the first finish_tx call only.
+    let mut validator = LoggingTxValidator::new(false, true);
+    let out = run_l1_pair_with_filtering(&mut validator);
+
+    assert_eq!((validator.begin_calls, validator.finish_calls), (2, 2));
+    assert_l1_tx_force_reverted(&out.tx_results, 0);
+    assert_l1_tx_succeeded(&out.tx_results, 1);
+    assert_eq!(included_tx_number_in_block(&out.tx_results, 1), 1);
+}
+
+#[test]
+fn test_l1_tx_filtering_enabled_with_nop_validator_includes_all_l1_txs() {
+    use rig::zk_ee::system::validator::NopTxValidator;
+
+    let out = run_l1_pair_with_filtering(&mut NopTxValidator);
+
+    assert_l1_tx_succeeded(&out.tx_results, 0);
+    assert_l1_tx_succeeded(&out.tx_results, 1);
+    assert_eq!(included_tx_number_in_block(&out.tx_results, 1), 1);
+}
+
+#[test]
+fn test_upgrade_tx_is_not_filtered_when_l1_tx_filtering_enabled() {
+    // A contract that always succeeds: PUSH1 0, PUSH1 0, RETURN.
+    let contract_address = address!("0000000000000000000000000000000000010003");
+    let mut tester = TestingFramework::new()
+        .with_l1_tx_filtering(true)
+        .with_evm_contract(contract_address, &hex::decode("60006000f3").unwrap());
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: contract_address,
+        gas_limit: 100_000u128,
+        ..Default::default()
+    });
+    // Would reject the very first begin_tx call, if it were ever made.
+    let mut validator = LoggingTxValidator::new(true, false);
+
+    let out = tester.execute_block_with_tracing(
+        vec![upgrade_tx],
+        &mut NopTracer::default(),
+        &mut validator,
+    );
+
+    assert_eq!((validator.begin_calls, validator.finish_calls), (0, 0));
+    assert!(out.tx_results[0].as_ref().is_ok_and(|o| o.is_success()));
 }
