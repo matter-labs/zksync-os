@@ -8,6 +8,7 @@ use rig::alloy::primitives::address;
 use rig::alloy::primitives::keccak256;
 use rig::alloy::primitives::TxKind;
 use rig::chain::{get_zksync_os_dist_dir, RunConfig};
+use rig::forward_system::run::query_processors::L1TxOperatorDecisionResponder;
 use rig::forward_system::run::{
     generate_batch_proof_input, generate_legacy_batch_proof_input, BatchBlockInput,
 };
@@ -187,6 +188,7 @@ fn run_multiblock_batch_proof_run(
         vec![block1_batch_input, block2_batch_input],
         da_commitment_scheme,
         batch_tester.chain_config(),
+        L1TxOperatorDecisionResponder::default(),
     )
     .expect("batch prover input generation failed");
 
@@ -340,6 +342,7 @@ fn run_singleblock_batch_proof_run(
         vec![block_batch_input],
         da_commitment_scheme,
         batch_tester.chain_config(),
+        L1TxOperatorDecisionResponder::default(),
     )
     .expect("single-block batch prover input generation failed");
 
@@ -471,6 +474,7 @@ fn batch_helpers_reject_empty_batches() {
             empty_blocks,
             DACommitmentScheme::BlobsAndPubdataKeccak256,
             chain_config,
+            L1TxOperatorDecisionResponder::default(),
         );
     });
     assert!(

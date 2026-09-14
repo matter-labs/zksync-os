@@ -287,6 +287,20 @@ impl ReadWitnessSource {
         }
     }
 
+    /// Wraps `original_source` so that its reads are appended to an existing
+    /// read log, interleaved in program order with the reads of the source that
+    /// owns the log. Lets a second consumer (e.g. the `OracleTxValidator` of a
+    /// witness-generation run) contribute to the same witness.
+    pub fn with_shared_read_items(
+        original_source: ZkEENonDeterminismSource,
+        read_items: Rc<RefCell<Vec<u32>>>,
+    ) -> Self {
+        Self {
+            original_source,
+            read_items,
+        }
+    }
+
     pub fn get_read_items(&self) -> Rc<RefCell<Vec<u32>>> {
         self.read_items.clone()
     }

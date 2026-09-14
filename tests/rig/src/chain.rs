@@ -1249,6 +1249,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             None
         };
 
+        // The operator's decisions on priority txs (force-reverts) must be
+        // replayed at the same point by the prover-input run.
+        let l1_tx_operator_decisions = result_keeper.l1_tx_operator_decisions.clone();
         let block_output: BlockOutput = result_keeper.into();
 
         let prover_input = if do_prover_input_run {
@@ -1269,7 +1272,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             );
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
-            let mut validator = NopTxValidator;
+            // Replays the recorded operator decisions on priority txs,
+            // recording into the same witness.
+            let mut validator = l1_tx_operator_decisions.into_witness_validator(&copy_source);
             let (prover_input_forward, prover_input_batch_output) = {
                 // This run uses ProverInputSystem (proving STF) — its labels
                 // are exactly what RISC-V will fire markers for, so we keep
@@ -1304,8 +1309,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             if has_filtered_by_validator {
                 warn!(
                     "Skipping forward/prover-input output equivalence checks because the custom \
-                 validator filtered at least one transaction, and prover-input replay uses \
-                 NopTxValidator"
+                 validator filtered at least one L2 transaction, which the prover-input replay \
+                 never sees"
                 );
             } else {
                 assert_block_outputs_match(&block_output, &prover_input_block_output);
