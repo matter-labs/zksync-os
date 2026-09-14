@@ -143,6 +143,10 @@ During block processing on the settlement layer, we'll verify that processed cor
 L1 -> L2 txs validated and paid on the settlement layer, it's also possible to deposit base tokens using it.
 See [transaction processing](bootloader/transaction_processing.md) for more details.
 
+By default priority transactions bypass the sequencer's `TxValidator` hooks (`begin_tx`/`finish_tx`) that every L2 transaction goes through. A chain can opt in with `ChainConfig::l1_tx_filtering_enabled` (committed in `chain_config_hash`, since it grants the operator discretion over the state transition). Priority transactions are then subject to the same hooks, but a rejected one is not dropped: priority operations must be processed and proven, so it is *force-reverted* instead. Its body is not executed (rejection in `begin_tx`) or rolled back (rejection in `finish_tx`), the full gas limit is charged, the rest of the deposit is refunded, and the L1 tx result log reports failure. Upgrade transactions are never subject to filtering.
+
+The operator's validator only exists in the sequencing run. The sequencer records at which point each priority transaction was rejected (`L1TxOperatorDecision`), and the witness-generation and proving runs use `OracleTxValidator`, a `TxValidator` that replays that decision from the oracle (`L1_TX_OPERATOR_DECISION_QUERY_ID`), so the revert happens at exactly the same point in every run.
+
 ## Pubdata
 
 Pubdata is the data we should publish with the chain DA, for rollups it should be Ethereum calldata or blobs.

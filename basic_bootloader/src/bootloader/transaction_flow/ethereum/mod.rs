@@ -78,6 +78,7 @@ impl<'a> MinimalTransactionOutput<'a> for EthereumTxResult<'a> {
             computational_native_used: 0,
             pubdata_used: 0,
             native_used: 0,
+            l1_tx_operator_decision: None,
         }
     }
 }

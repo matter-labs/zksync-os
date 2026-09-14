@@ -8,6 +8,7 @@
 ///
 use crate::bootloader::errors::InvalidTransaction;
 use ruint::aliases::B160;
+use zk_ee::system::validator::L1TxOperatorDecision;
 use zk_ee::system::{IOResultKeeper, NopResultKeeper};
 use zk_ee::types_config::SystemIOTypesConfig;
 
@@ -21,6 +22,11 @@ pub struct TxProcessingOutput<'a> {
     pub computational_native_used: u64,
     pub native_used: u64,
     pub pubdata_used: u64,
+    /// For priority (L1 -> L2) transactions: whether and where the operator's
+    /// validator rejected it (`Accepted` when the chain does not filter L1
+    /// transactions). `None` for every other transaction type. The sequencer
+    /// records these so witness generation can replay them through the oracle.
+    pub l1_tx_operator_decision: Option<L1TxOperatorDecision>,
 }
 
 pub trait ResultKeeperExt<IOTypes: SystemIOTypesConfig>: IOResultKeeper<IOTypes> {
