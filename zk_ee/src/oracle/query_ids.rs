@@ -103,6 +103,13 @@ pub const TX_ENCODING_FORMAT_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 2; // 0
 /// Query to get sender address of the transaction.
 pub const TX_FROM_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 3; // 0x40060003
 
+/// Query issued by `OracleTxValidator` (witness generation and proving) to get
+/// the operator's recorded decision for the current priority (L1 -> L2)
+/// transaction (an `L1TxOperatorDecision`): once per priority transaction, in
+/// block order, only on chains with `ChainConfig::l1_tx_filtering_enabled`.
+/// Sequencing uses the operator's live `TxValidator` and never issues it.
+pub const L1_TX_OPERATOR_DECISION_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 4; // 0x40060004
+
 // ========== Block or batch Subspace Queries ==========
 
 /// Query to retrieve block metadata (timestamp, number, etc.) from the oracle

@@ -9,7 +9,7 @@ use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::tracer::NopTracer;
-use zk_ee::system::validator::NopTxValidator;
+use zk_ee::system::validator::OracleTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -174,6 +174,10 @@ pub fn run_proving_inner<
 
     let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
 
+    // Replays the operator's recorded decisions on priority txs. The CSR oracle
+    // is a stateless proxy, so a second handle reads the same stream.
+    let mut validator = OracleTxValidator::new(CsrBasedIOOracle::<I>::init());
+
     // Load all transactions from oracle and apply them.
     let (_oracle, public_input, _batch_output) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
@@ -181,7 +185,7 @@ pub fn run_proving_inner<
             &mut (),
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
-            &mut NopTxValidator,
+            &mut validator,
             chain_config,
         )
         .expect("Tried to prove a failing batch");
@@ -211,13 +215,16 @@ pub fn run_proving_inner<
     // responses are equal, then compacts them to match this read pattern.
     let chain_config = ChainConfig::read_from_oracle(&mut oracle).expect("must read chain config");
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
+    // Replays the operator's recorded decisions on priority txs. The CSR oracle
+    // is a stateless proxy, so a second handle reads the same stream.
+    let mut validator = OracleTxValidator::new(CsrBasedIOOracle::<I>::init());
     for _ in 0..count {
         oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut batch_data,
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
-            &mut NopTxValidator,
+            &mut validator,
             chain_config,
         )
         .expect("Tried to prove a failing batch");
