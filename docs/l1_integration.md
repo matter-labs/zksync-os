@@ -84,6 +84,8 @@ Where chain state commitments are the same `blake2s` hashes of the state before 
 - `chain_id`
 - `fri_proof_verification_enabled`
 - `max_tx_gas_limit`
+- `pubdata_content`
+- `l1_tx_filtering_enabled`
 
 The chain config is committed as a hash (rather than inlined) so the batch public input layout stays fixed as the `ChainConfig` field set evolves.
 

@@ -724,7 +724,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         )
         .unwrap()
         // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
-        .with_pubdata_content(self.chain_config.pubdata_content());
+        .with_pubdata_content(self.chain_config.pubdata_content())
+        // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
+        .with_l1_tx_filtering(self.chain_config.l1_tx_filtering_enabled());
     }
 
     pub fn block_hashes(&self) -> [U256; 256] {
@@ -765,7 +767,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         )
         .unwrap()
         // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
-        .with_pubdata_content(self.chain_config.pubdata_content());
+        .with_pubdata_content(self.chain_config.pubdata_content())
+        // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
+        .with_l1_tx_filtering(self.chain_config.l1_tx_filtering_enabled());
     }
 
     /// Build the batch pre-state passed to the batch prover-input runner.
@@ -2041,13 +2045,14 @@ mod tests {
     #[test]
     fn chain_config_mutators_preserve_pubdata_content() {
         // Regression: these mutators rebuild the config via `ChainConfig::new`,
-        // which defaults to `FullPubdata` — they must not silently drop a
-        // configured `LogsOnly` content.
+        // which defaults to `FullPubdata` and no L1 tx filtering — they must
+        // not silently drop a configured `LogsOnly` content or an enabled flag.
         let mut chain = Chain::<false>::empty(Some(37));
         chain.set_chain_config(
             ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
                 .unwrap()
-                .with_pubdata_content(PubdataContent::LogsOnly),
+                .with_pubdata_content(PubdataContent::LogsOnly)
+                .with_l1_tx_filtering(true),
         );
 
         chain.set_fri_proof_verification_enabled(true);
@@ -2055,6 +2060,7 @@ mod tests {
             chain.chain_config().pubdata_content(),
             PubdataContent::LogsOnly
         );
+        assert!(chain.chain_config().l1_tx_filtering_enabled());
         assert!(chain.chain_config().fri_proof_verification_enabled());
 
         chain.set_chain_id(42);
@@ -2062,6 +2068,7 @@ mod tests {
             chain.chain_config().pubdata_content(),
             PubdataContent::LogsOnly
         );
+        assert!(chain.chain_config().l1_tx_filtering_enabled());
         assert_eq!(chain.chain_config().chain_id(), 42);
     }
 

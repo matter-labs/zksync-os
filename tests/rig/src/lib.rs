@@ -334,8 +334,18 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             )
             .expect("max_tx_gas_limit below the EIP-7825 floor")
             // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
-            .with_pubdata_content(current.pubdata_content()),
+            .with_pubdata_content(current.pubdata_content())
+            // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
+            .with_l1_tx_filtering(current.l1_tx_filtering_enabled()),
         )
+    }
+
+    /// Builder: toggles whether priority (L1 -> L2) transactions go through the
+    /// `TxValidator` hooks (`ChainConfig::l1_tx_filtering_enabled`), keeping
+    /// the other chain-config fields.
+    pub fn with_l1_tx_filtering(self, enabled: bool) -> Self {
+        let current = self.chain_config();
+        self.with_chain_config(current.with_l1_tx_filtering(enabled))
     }
 
     /// Returns the chain-level execution config used for block execution.

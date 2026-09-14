@@ -40,6 +40,19 @@ pub struct ChainConfig {
     // field deserialize to the behavior-preserving choice.
     #[cfg_attr(feature = "serde", serde(default = "default_pubdata_content"))]
     pubdata_content: PubdataContent,
+    /// Whether the operator's [`TxValidator`](crate::system::validator::TxValidator)
+    /// may force-revert priority (L1 -> L2) transactions. When disabled (the
+    /// default), L1 transactions bypass the validator entirely. When enabled, a
+    /// priority transaction rejected by the validator is still included and
+    /// proven, but its body is discarded and its full gas limit is charged
+    /// (see [`L1TxOperatorDecision`](crate::system::validator::L1TxOperatorDecision)).
+    /// This grants the operator discretion over the state transition, so it is
+    /// committed to the public input like every other field. Upgrade
+    /// transactions are never subject to filtering.
+    // Defaults to `false` so that older dumps without this field deserialize
+    // to the behavior-preserving choice.
+    #[cfg_attr(feature = "serde", serde(default))]
+    l1_tx_filtering_enabled: bool,
 }
 
 #[cfg(feature = "serde")]
@@ -70,6 +83,7 @@ impl ChainConfig {
             fri_proof_verification_enabled,
             max_tx_gas_limit,
             pubdata_content: PubdataContent::FullPubdata,
+            l1_tx_filtering_enabled: false,
         };
         config.validate()?;
 
@@ -83,8 +97,18 @@ impl ChainConfig {
         self
     }
 
+    /// Returns the config with L1 transaction filtering set. Chained after
+    /// [`Self::new`] (which defaults to `false`) by chains whose operator may
+    /// force-revert priority transactions through the
+    /// [`TxValidator`](crate::system::validator::TxValidator).
+    pub const fn with_l1_tx_filtering(mut self, enabled: bool) -> Self {
+        self.l1_tx_filtering_enabled = enabled;
+        self
+    }
+
     /// Canonical default configuration: chain id `0`, FRI proof verification
-    /// off, and the per-tx gas cap at the EIP-7825 limit. This is the `const`
+    /// off, the per-tx gas cap at the EIP-7825 limit, full pubdata and L1
+    /// transaction filtering off. This is the `const`
     /// equivalent of [`Default::default`] (which forwards here) and is the
     /// default used by the forward-run entrypoints; callers that need specific
     /// values construct via [`ChainConfig::new`].
@@ -94,6 +118,7 @@ impl ChainConfig {
             fri_proof_verification_enabled: false,
             max_tx_gas_limit: DEFAULT_MAX_TX_GAS_LIMIT,
             pubdata_content: PubdataContent::FullPubdata,
+            l1_tx_filtering_enabled: false,
         }
     }
 
@@ -113,6 +138,12 @@ impl ChainConfig {
         self.pubdata_content
     }
 
+    /// Whether the operator may force-revert priority (L1 -> L2) transactions
+    /// through the `TxValidator` hooks. See the field documentation.
+    pub const fn l1_tx_filtering_enabled(&self) -> bool {
+        self.l1_tx_filtering_enabled
+    }
+
     /// Canonical keccak256 commitment to the chain config.
     ///
     /// Committed into the batch public input so that the public-input layout
@@ -122,6 +153,7 @@ impl ChainConfig {
     /// - `fri_proof_verification_enabled`: 32-byte word, last byte `0`/`1`
     /// - `max_tx_gas_limit`: uint64 big-endian, right-aligned in a 32-byte word
     /// - `pubdata_content`: 32-byte word, last byte the mode id (`FullPubdata=0`/`LogsOnly=1`)
+    /// - `l1_tx_filtering_enabled`: 32-byte word, last byte `0`/`1`
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(U256::from(self.chain_id).to_be_bytes::<32>());
@@ -134,6 +166,9 @@ impl ChainConfig {
         let mut pubdata_content_word = [0u8; 32];
         pubdata_content_word[31] = self.pubdata_content as u8;
         hasher.update(pubdata_content_word);
+        let mut l1_tx_filtering_word = [0u8; 32];
+        l1_tx_filtering_word[31] = u8::from(self.l1_tx_filtering_enabled);
+        hasher.update(l1_tx_filtering_word);
         hasher.finalize()
     }
 
@@ -162,7 +197,8 @@ impl UsizeSerializable for ChainConfig {
     const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
         + <bool as UsizeSerializable>::USIZE_LEN
         + <u64 as UsizeSerializable>::USIZE_LEN
-        + <PubdataContent as UsizeSerializable>::USIZE_LEN;
+        + <PubdataContent as UsizeSerializable>::USIZE_LEN
+        + <bool as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
@@ -171,7 +207,10 @@ impl UsizeSerializable for ChainConfig {
                 UsizeSerializable::iter(&self.fri_proof_verification_enabled),
                 ExactSizeChain::new(
                     UsizeSerializable::iter(&self.max_tx_gas_limit),
-                    UsizeSerializable::iter(&self.pubdata_content),
+                    ExactSizeChain::new(
+                        UsizeSerializable::iter(&self.pubdata_content),
+                        UsizeSerializable::iter(&self.l1_tx_filtering_enabled),
+                    ),
                 ),
             ),
         )
@@ -186,12 +225,14 @@ impl UsizeDeserializable for ChainConfig {
         let fri_proof_verification_enabled = UsizeDeserializable::from_iter(src)?;
         let max_tx_gas_limit = UsizeDeserializable::from_iter(src)?;
         let pubdata_content = UsizeDeserializable::from_iter(src)?;
+        let l1_tx_filtering_enabled = UsizeDeserializable::from_iter(src)?;
 
         Ok(Self {
             chain_id,
             fri_proof_verification_enabled,
             max_tx_gas_limit,
             pubdata_content,
+            l1_tx_filtering_enabled,
         })
     }
 }
@@ -225,6 +266,23 @@ mod tests {
         assert_eq!(config.max_tx_gas_limit(), DEFAULT_MAX_TX_GAS_LIMIT + 1);
         // `new` defaults to `FullPubdata`; `LogsOnly` is opted into via `with_pubdata_content`.
         assert_eq!(config.pubdata_content(), PubdataContent::FullPubdata);
+        // `new` defaults to no L1 tx filtering; it is opted into via `with_l1_tx_filtering`.
+        assert!(!config.l1_tx_filtering_enabled());
+    }
+
+    #[test]
+    fn chain_config_l1_tx_filtering_is_opt_in_committed_and_roundtrips() {
+        let disabled = ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        assert!(!disabled.l1_tx_filtering_enabled());
+        assert!(!ChainConfig::default_for_chain().l1_tx_filtering_enabled());
+
+        let enabled = disabled.with_l1_tx_filtering(true);
+        assert!(enabled.l1_tx_filtering_enabled());
+        assert_ne!(disabled.hash(), enabled.hash());
+
+        let serialized: Vec<usize> = enabled.iter().collect();
+        let mut iter = serialized.into_iter();
+        assert_eq!(ChainConfig::from_iter(&mut iter).unwrap(), enabled);
     }
 
     #[test]
@@ -262,8 +320,9 @@ mod tests {
         // deserialization, so a below-floor value parses successfully and is
         // only rejected by an explicit `validate()`.
         let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
-        // Field order is [chain_id, fri, max_tx_gas_limit, pubdata_content], one word each on
-        // the 64-bit test host; drop max_tx_gas_limit (index 2) below the floor.
+        // Field order is [chain_id, fri, max_tx_gas_limit, pubdata_content,
+        // l1_tx_filtering_enabled], one word each on the 64-bit test host; drop
+        // max_tx_gas_limit (index 2) below the floor.
         serialized[2] = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
         let mut iter = serialized.into_iter();
 

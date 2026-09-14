@@ -188,13 +188,14 @@ mod tests {
 
     #[test]
     fn chain_config_hash_golden_vector() {
-        // Pins the four-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit, pubdata_content)
-        // shared with era-contracts (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI
-        // disabled, the default max tx gas limit and pubdata content `FullPubdata` (0). Changing the encoding on
-        // either side must update both.
+        // Pins the five-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit,
+        // pubdata_content, l1_tx_filtering_enabled) shared with era-contracts
+        // (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI disabled, the default max tx
+        // gas limit, pubdata content `FullPubdata` (0) and L1 tx filtering disabled (0). Changing the
+        // encoding on either side must update both.
         assert_eq!(
             sample_chain_config().hash(),
-            hex!("9bba8b838beaad59a5dec253b49be1f496d47df8c2086b561298cae2cc232c0a")
+            hex!("d677601019863c835bb6fdfd10afdf0f7630c8046cc9de7aeee44931fa2b2f42")
         );
     }
 
@@ -206,7 +207,7 @@ mod tests {
         // same value; changing the public-input encoding on either side must update both.
         assert_eq!(
             sample_public_input(sample_chain_config()).hash(),
-            hex!("0a5143e28ed3fc1728ef4d96319f2306bb5a81bfccd908154e44029988ef9e7c")
+            hex!("df099e94dc933cb1e302ad66826a922df76c4759542b07311d99b0c5e9eb436d")
         );
     }
 
@@ -218,6 +219,17 @@ mod tests {
         assert_ne!(
             sample_public_input(full_pubdata).hash(),
             sample_public_input(logs_only).hash()
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_l1_tx_filtering() {
+        let disabled = sample_chain_config(); // `ChainConfig::new` defaults to L1 tx filtering off
+        let enabled = disabled.with_l1_tx_filtering(true);
+
+        assert_ne!(
+            sample_public_input(disabled).hash(),
+            sample_public_input(enabled).hash()
         );
     }
 
