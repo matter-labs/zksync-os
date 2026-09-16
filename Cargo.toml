@@ -108,22 +108,20 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { version = "0.1.3", default-features = false }
 zksync_os_interface = { version = "0.1.3" }
 
-# zksync-airbender deps pinned to the same commit airbender-platform
-# resolves `branch = "dev"` to at the time of pinning.
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5", default-features = false }
-cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "73d69b5" }
+# zksync-airbender deps: the GKR-based prover stack from the `av_gkr_compiler`
+# branch. The local airbender-platform checkout (path deps below) resolves the
+# same branch, so both sides see one copy of every airbender crate.
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", branch = "av_gkr_compiler" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "av_gkr_compiler", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", branch = "av_gkr_compiler", default-features = false }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", branch = "av_gkr_compiler", default-features = false }
 
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false }
+# airbender-platform: local checkout (branch `av_integrate_v3`), ported to the
+# `av_gkr_compiler` airbender.
+airbender-guest = { path = "../airbender-platform/crates/airbender-guest" }
+airbender-host = { path = "../airbender-platform/crates/airbender-host", default-features = false }
+airbender-sdk = { path = "../airbender-platform/crates/airbender-sdk" }
+crypto = { path = "../airbender-platform/crates/airbender-crypto", package = "airbender-crypto", default-features = false }
 
 seq-macro = { version = "0.3.6", default-features = false }
 

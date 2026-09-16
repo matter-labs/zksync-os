@@ -18,6 +18,10 @@ impl DecodingOptions for FullUnsignedMachineWithMopDecoderConfig {
         <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
     const SUPPORT_SUBWORD_MEM_ACCESS: bool =
         <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
+    const SUPPORT_SPECIAL_ROTATION: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SPECIAL_ROTATION;
+    const SUPPORT_SPECIAL_XOR_ROT_AND_TRI_ADD: bool =
+        <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SPECIAL_XOR_ROT_AND_TRI_ADD;
 }
 
 /// Default upper bound on RISC-V cycles used when the caller doesn't override it.

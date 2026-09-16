@@ -1,9 +1,10 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf} [--reproducible]"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|evm-replay-benchmarking-fusaka|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled|eth-stf|eth-stf-fusaka|eth-stf-fusaka-debug} [--reproducible]"
 TYPE=""
 REPRODUCIBLE=""
+EXTRA_CARGO_ARGS=""
 
 # Parse arguments
 while [ "$#" -gt 0 ]; do
@@ -66,6 +67,23 @@ case "$TYPE" in
     FEATURES="$FEATURES,eth_runner,eth_stf"
     APP_NAME="eth_stf"
     ;;
+  eth-stf-fusaka)
+    # `eth-stf` with the BPO2 blob-count schedule (`fusaka-bpo-2`), required to
+    # replay post-BPO2 mainnet blocks (the Ethproofs flow). The host side must be
+    # built with `--features rig/eth_stf,fusaka-bpo-2` to match.
+    FEATURES="$FEATURES,eth_runner,eth_stf,fusaka-bpo-2"
+    APP_NAME="eth_stf"
+    ;;
+  eth-stf-fusaka-debug)
+    # Same program as `eth-stf-fusaka`, but the release build keeps full DWARF
+    # debug info (for every crate) so `dist/eth_stf_debug/app.elf` can symbolize
+    # transpiler flamegraphs (`eth_runner ethproofs-flamegraph`). The raw
+    # `app.bin` / `app.text` are unaffected by debug info, but the dist is kept
+    # separate so profiling always uses a self-consistent bin + ELF pair.
+    FEATURES="$FEATURES,eth_runner,eth_stf,fusaka-bpo-2"
+    APP_NAME="eth_stf_debug"
+    EXTRA_CARGO_ARGS='--config debug_symbols.toml'
+    ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,eth_runner,benchmarking"
     APP_NAME="evm_replay"
@@ -102,7 +120,8 @@ DIST_DIR="dist/$APP_NAME"
 rm -rf "$DIST_DIR"
 
 # Build via cargo airbender — outputs go to dist/<APP_NAME>/app.{bin,elf,text} + manifest.toml
-cargo airbender build --app-name "$APP_NAME" --release $REPRODUCIBLE -- --features "$FEATURES"
+# shellcheck disable=SC2086 # EXTRA_CARGO_ARGS is intentionally word-split
+cargo airbender build --app-name "$APP_NAME" --release $REPRODUCIBLE -- --features "$FEATURES" $EXTRA_CARGO_ARGS
 
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"

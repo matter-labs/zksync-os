@@ -30,6 +30,8 @@ reqwest = { workspace = true, features = ["json", "blocking", "rustls-tls"] }
 zstd = "0.13"
 
 airbender-host = { workspace = true }
+zksync_os_runner = { path = "../../../zksync_os_runner" }
+base64 = "0.22"
 
 [features]
 proving = []

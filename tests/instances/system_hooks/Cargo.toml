@@ -19,8 +19,7 @@ alloy-sol-types = { workspace = true }
 # submitter side: decode the fixture, run the host-side verifier, and derive
 # `statement_versioned_hash`. The responder-side decode/flatten lives in
 # forward_system; these deps exist here only for the submitter simulation.
-execution_utils = { workspace = true, optional = true }
-full_statement_verifier = { workspace = true, optional = true, default-features = false, features = ["unified_verifier_only_security_100", "blake2_with_compression", "replace_csr"] }
+full_statement_verifier = { workspace = true, optional = true, default-features = false, features = ["unified_verifier_only", "blake2_with_compression"] }
 riscv_transpiler = { workspace = true, optional = true }
 cycle_marker = { path = "../../../cycle_marker", optional = true }
 flate2 = { version = "1", optional = true }
@@ -34,7 +33,6 @@ fri_precompile = [
     "rig/fri_precompile",
     "dep:bincode",
     "dep:cycle_marker",
-    "dep:execution_utils",
     "dep:flate2",
     "dep:full_statement_verifier",
     "dep:riscv_transpiler",

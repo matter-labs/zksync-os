@@ -1,0 +1,9 @@
+# Cargo config overlay used by `dump_bin.sh --type eth-stf-fusaka-debug`:
+# keep full DWARF debug info in the release build (for the app crate and every
+# dependency) so `app.elf` can symbolize transpiler flamegraphs. Debug info does
+# not change the generated code, only the non-loadable sections of the ELF.
+[profile.release]
+debug = true
+
+[profile.release.package."*"]
+debug = true

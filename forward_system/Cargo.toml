@@ -31,7 +31,6 @@ alloy = { workspace = true, features = ["consensus", "rpc-types-trace"] }
 hex = { workspace = true }
 bincode = "1.3"
 bincode_v2 = { package = "bincode", version = "2.0.1", features = ["serde"], optional = true }
-execution_utils = { workspace = true, optional = true }
 log = { workspace = true }
 strum_macros = { workspace = true }
 paste = { workspace = true }
@@ -45,7 +44,6 @@ fri_precompile = [
     "basic_bootloader/fri_precompile",
     "system_hooks/fri_precompile",
     "dep:bincode_v2",
-    "dep:execution_utils",
 ]
 
 # A feature for every specific use case

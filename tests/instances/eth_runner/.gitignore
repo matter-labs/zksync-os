@@ -1,1 +1,4 @@
 /target
+# Collected block fixtures (block.json + witness.json + prover input) and profiling output
+/blocks/
+/flamegraphs/

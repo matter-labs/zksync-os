@@ -2,9 +2,8 @@
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
 
-    use riscv_transpiler::ir::{
-        preprocess_bytecode, DecodingOptions, FullUnsignedMachineDecoderConfig, InstructionName,
-    };
+    use riscv_transpiler::ir::simple_instruction_set::{preprocess_bytecode, InstructionName};
+    use riscv_transpiler::ir::{DecodingOptions, FullUnsignedMachineDecoderConfig};
 
     /// Decoder config used to preprocess ZKsync OS binaries when
     /// checking them for unsupported opcodes.
@@ -18,6 +17,10 @@ mod tests {
             <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SIGNED_MUL_DIV;
         const SUPPORT_SUBWORD_MEM_ACCESS: bool =
             <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SUBWORD_MEM_ACCESS;
+        const SUPPORT_SPECIAL_ROTATION: bool =
+            <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SPECIAL_ROTATION;
+        const SUPPORT_SPECIAL_XOR_ROT_AND_TRI_ADD: bool =
+            <FullUnsignedMachineDecoderConfig as DecodingOptions>::SUPPORT_SPECIAL_XOR_ROT_AND_TRI_ADD;
     }
 
     fn read_text_section(app_dist_path: &str) -> Vec<u32> {
@@ -62,7 +65,7 @@ mod tests {
         //      encoding as the canonical UNIMP marker.
         const CANONICAL_UNIMP: u32 = 0xc0001073;
 
-        let instructions = preprocess_bytecode::<BinaryCheckerDecoderConfig>(&text_section);
+        let instructions = preprocess_bytecode::<BinaryCheckerDecoderConfig, true>(&text_section);
         let illegal: Vec<(usize, u32)> = instructions
             .iter()
             .enumerate()

@@ -5,6 +5,7 @@ use crate::{
     receipts::BlockReceipts,
 };
 use alloy::primitives::{Bytes, B256};
+use alloy_rpc_types_debug::ExecutionWitness;
 use anyhow::Result;
 use anyhow::{anyhow, Context};
 use rig::log::{debug, warn};
@@ -33,6 +34,95 @@ const INITIAL_RETRY_DELAY_MS: u64 = 100;
 /// Converts u64 to hex string with "0x" prefix.
 fn to_hex(n: u64) -> String {
     format!("0x{n:x}")
+}
+
+/// Generic `{"result": ...}` JSON-RPC envelope.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct JsonResponse<T> {
+    pub(crate) result: T,
+}
+
+/// Fetches the execution witness (`debug_executionWitness`) for a block.
+/// Requires a Reth node with the debug namespace enabled.
+pub fn get_witness(endpoint: &str, block_number: u64) -> Result<JsonResponse<ExecutionWitness>> {
+    debug!("RPC: get_witness({block_number})");
+    let body = json!({
+        "method": "debug_executionWitness",
+        "params": [to_hex(block_number)],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let mut de = Deserializer::from_str(&res);
+    de.disable_recursion_limit();
+    let witness = JsonResponse::<ExecutionWitness>::deserialize(&mut de).context(format!(
+        "Failed to parse execution witness for {block_number}"
+    ))?;
+    Ok(witness)
+}
+
+/// Fetches the full block data with transactions.
+pub fn get_block(endpoint: &str, block_number: u64) -> Result<Block> {
+    debug!("RPC: get_block({block_number})");
+    let body = json!({
+        "method": "eth_getBlockByNumber",
+        "params": [to_hex(block_number), true],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let block =
+        serde_json::from_str(&res).context(format!("Failed to parse block {block_number}"))?;
+    Ok(block)
+}
+
+/// Fetches the latest block number.
+pub fn get_block_number(endpoint: &str) -> Result<u64> {
+    debug!("RPC: eth_blockNumber");
+    let body = json!({
+        "method": "eth_blockNumber",
+        "id": 1,
+        "params": [],
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let res: serde_json::Value = serde_json::from_str(&res)?;
+    let number = res["result"]
+        .as_str()
+        .ok_or_else(|| anyhow!("No block number found in response"))?;
+    let number = u64::from_str_radix(number.trim_start_matches("0x"), 16)?;
+    Ok(number)
+}
+
+/// Payload of the Ethproofs `proofs/proved` endpoint.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EthProofPayload {
+    pub block_number: u64,
+    pub cluster_id: u64,
+    // in millis
+    pub proving_time: u64,
+    pub proving_cycles: u64,
+    pub proof: String,
+    pub verifier_id: String,
+}
+
+/// Submits a proof to the Ethproofs API.
+pub fn send_ethproofs(
+    endpoint: &str,
+    auth_token: String,
+    proof: EthProofPayload,
+) -> Result<String> {
+    let response = ureq::post(endpoint)
+        .header("Authorization", &format!("Bearer {}", auth_token))
+        .header("Content-Type", "application/json")
+        .send_json(&proof)?;
+
+    let mut out = String::new();
+    response
+        .into_body()
+        .into_reader()
+        .read_to_string(&mut out)?;
+    Ok(out)
 }
 
 /// Fetches the block hash.

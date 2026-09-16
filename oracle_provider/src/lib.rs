@@ -29,6 +29,17 @@ impl RamPeek for DummyMemorySource {
     }
 }
 
+/// Sized adapter so unsized peekers (`[u32]`, generic `R: ?Sized`) can be
+/// passed to the `&dyn RamPeek` based query processors.
+struct PeekRef<'a, R: RamPeek + ?Sized>(&'a R);
+
+impl<R: RamPeek + ?Sized> RamPeek for PeekRef<'_, R> {
+    #[inline(always)]
+    fn peek_word(&self, address: u32) -> u32 {
+        self.0.peek_word(address)
+    }
+}
+
 ///
 /// Structure that is responsible for buffering incoming queries till the end,
 /// and then dispatching them to various responders. When constructed it checks
@@ -263,9 +274,13 @@ impl NonDeterminismCSRSource for ZkEENonDeterminismSource {
         value
     }
 
-    fn write_with_memory_access<R: RamPeek>(&mut self, ram: &R, value: u32) {
+    fn write_with_memory_access<R: RamPeek + ?Sized>(&mut self, ram: &R, value: u32) {
         // println!("`NonDeterminismCSRSource` received 0x{:08x}", value);
-        self.write_impl(ram, value);
+        self.write_impl(&PeekRef(ram), value);
+    }
+
+    fn write_with_memory_access_raw(&mut self, ram: &[u32], value: u32) {
+        self.write_impl(&PeekRef(ram), value);
     }
 
     fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
@@ -300,8 +315,13 @@ impl NonDeterminismCSRSource for ReadWitnessSource {
         item
     }
 
-    fn write_with_memory_access<R: RamPeek>(&mut self, ram: &R, value: u32) {
+    fn write_with_memory_access<R: RamPeek + ?Sized>(&mut self, ram: &R, value: u32) {
         self.original_source.write_with_memory_access(ram, value);
+    }
+
+    fn write_with_memory_access_raw(&mut self, ram: &[u32], value: u32) {
+        self.original_source
+            .write_with_memory_access_raw(ram, value);
     }
 
     fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
