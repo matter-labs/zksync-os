@@ -15,6 +15,24 @@ use crate::cost_constants::{
 pub struct Keccak256Impl;
 
 impl<R: Resources> SystemFunction<R, Keccak256Errors> for Keccak256Impl {
+    type Output = [u8; 32];
+
+    /// Returns `OutOfGas` if not enough resources provided.
+    /// The hash is lent right from the state of the hasher.
+    fn execute_with_closure<FN: FnOnce(&Self::Output), A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        closure: FN,
+        resources: &mut R,
+        _allocator: A,
+    ) -> Result<(), SubsystemError<Keccak256Errors>> {
+        cycle_marker::wrap_with_resources!("keccak", resources, {
+            charge_for_keccak256(input.len(), resources)?;
+            keccak256_with_closure(input, closure);
+
+            Ok(())
+        })
+    }
+
     /// Returns `OutOfGas` if not enough resources provided.
     fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
@@ -51,19 +69,63 @@ fn keccak256_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Keccak256Errors>> {
-    let ergs_cost = evm_interpreter::keccak256_ergs_cost(src.len());
-    let native_cost = keccak256_native_cost::<R>(src.len());
-    resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
+    charge_for_keccak256(src.len(), resources)?;
 
-    use crypto::sha3::Keccak256;
-    use crypto::MiniDigest;
-    let mut hasher = Keccak256::new();
-    hasher.update(src);
-    let hash = hasher.finalize();
+    let hash = keccak256_digest(src);
 
     dst.try_extend(hash).map_err(|_| out_of_return_memory!())?;
 
     Ok(())
+}
+
+fn charge_for_keccak256<R: Resources>(
+    len: usize,
+    resources: &mut R,
+) -> Result<(), SubsystemError<Keccak256Errors>> {
+    let ergs_cost = evm_interpreter::keccak256_ergs_cost(len);
+    let native_cost = keccak256_native_cost::<R>(len);
+    resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
+
+    Ok(())
+}
+
+/// Hashes `src`, and lends the hash to the `closure`.
+///
+/// The hasher is 512 bytes (the state for the delegation is aligned to 256 bytes), and creating
+/// it on the stack, and then moving it into `finalize`, is a noticeable part of hashing of a short
+/// input. The proving target is single-threaded and the function is not reentrant (the closure
+/// should not hash by it either), so there the hasher is a static that is reset after every use.
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+pub(crate) fn keccak256_with_closure<FN: FnOnce(&[u8; 32])>(src: &[u8], closure: FN) {
+    use crypto::sha3::Keccak256;
+    use crypto::MiniDigest;
+
+    static mut HASHER: Keccak256 = Keccak256::const_new();
+
+    // SAFETY: single-threaded, not reentrant, and the reference does not outlive the function
+    let hasher = unsafe { &mut *core::ptr::addr_of_mut!(HASHER) };
+    hasher.update(src);
+    hasher.finalize_reset_with_closure(closure);
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+#[inline(always)]
+pub(crate) fn keccak256_with_closure<FN: FnOnce(&[u8; 32])>(src: &[u8], closure: FN) {
+    use crypto::sha3::Keccak256;
+    use crypto::MiniDigest;
+
+    let mut hasher = Keccak256::new();
+    hasher.update(src);
+    hasher.finalize_reset_with_closure(closure);
+}
+
+#[inline(always)]
+pub(crate) fn keccak256_digest(src: &[u8]) -> [u8; 32] {
+    let mut hash = [0u8; 32];
+    keccak256_with_closure(src, |output| hash = *output);
+
+    hash
 }
 
 #[cfg(test)]

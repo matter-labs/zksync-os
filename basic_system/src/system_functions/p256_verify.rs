@@ -16,6 +16,8 @@ use zk_ee::system::{
 pub struct P256VerifyImpl;
 
 impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(P256VerifyErrors);
+
     fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,

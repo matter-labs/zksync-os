@@ -21,6 +21,8 @@ use zk_ee::{interface_error, out_of_return_memory};
 pub struct Bn254PairingCheckImpl;
 
 impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCheckImpl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bn254PairingCheckErrors);
+
     /// Returns `OutOfGas` if not enough resources provided.
     /// Returns `InvalidInput` error if the input size is not divisible by 192
     /// or failed to create affine points from inputs

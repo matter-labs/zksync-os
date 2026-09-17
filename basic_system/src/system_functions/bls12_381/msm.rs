@@ -170,6 +170,8 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
 pub struct Bls12381G1MSMPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
@@ -252,6 +254,8 @@ fn bls12_381_g1_msm_as_system_function_inner<
 pub struct Bls12381G2MSMPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,

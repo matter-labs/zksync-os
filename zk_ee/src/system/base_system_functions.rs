@@ -91,6 +91,9 @@ define_subsystem!(MissingSystemFunction,
 /// System function implementation.
 ///
 pub trait SystemFunction<R: Resources, E: Subsystem> {
+    /// The output in the form the implementation naturally has it in, see `execute_with_closure`.
+    type Output: ?Sized = [u8];
+
     /// Writes result to the `output` and returns actual output slice length that was used.
     /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
     /// In practice only pairing can have invalid input(size) on charging stage.
@@ -100,6 +103,61 @@ pub trait SystemFunction<R: Resources, E: Subsystem> {
         resources: &mut R,
         allocator: A,
     ) -> Result<(), SubsystemError<E>>;
+
+    /// Same as `execute` (including the resources charged and the errors), but instead of writing
+    /// the output into a byte sink it lends it to the `closure`. It lets the implementation to
+    /// expose the output where it is, and the caller to consume it without a copy through the sink.
+    /// The closure is only called on success.
+    fn execute_with_closure<FN: FnOnce(&Self::Output), A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        closure: FN,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>>;
+}
+
+/// `SystemFunction::execute_with_closure` for the implementations that have nothing better
+/// than `execute`: runs it into a buffer, and lends the buffer.
+pub fn execute_with_closure_via_buffer<
+    R: Resources,
+    E: Subsystem,
+    F: SystemFunction<R, E> + ?Sized,
+    FN: FnOnce(&[u8]),
+    A: core::alloc::Allocator + Clone,
+>(
+    input: &[u8],
+    closure: FN,
+    resources: &mut R,
+    allocator: A,
+) -> Result<(), SubsystemError<E>> {
+    let mut buffer = alloc::vec::Vec::new_in(allocator.clone());
+    F::execute(input, &mut buffer, resources, allocator)?;
+    closure(&buffer);
+
+    Ok(())
+}
+
+/// Implements `SystemFunction::execute_with_closure` (for the default `Output = [u8]`)
+/// by `execute_with_closure_via_buffer`. To be used inside of the `impl` block, the argument is
+/// the error type of the implementation, and resources type should be named `R` there.
+#[macro_export]
+macro_rules! system_function_execute_with_closure_via_buffer {
+    ($errors:ty) => {
+        fn execute_with_closure<FN: FnOnce(&[u8]), A: core::alloc::Allocator + Clone>(
+            input: &[u8],
+            closure: FN,
+            resources: &mut R,
+            allocator: A,
+        ) -> Result<(), $crate::system::errors::subsystem::SubsystemError<$errors>> {
+            $crate::system::base_system_functions::execute_with_closure_via_buffer::<
+                R,
+                $errors,
+                Self,
+                FN,
+                A,
+            >(input, closure, resources, allocator)
+        }
+    };
 }
 
 ///
@@ -128,6 +186,8 @@ pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
 pub struct MissingSystemFunction;
 
 impl<R: Resources> SystemFunction<R, MissingSystemFunctionErrors> for MissingSystemFunction {
+    crate::system_function_execute_with_closure_via_buffer!(MissingSystemFunctionErrors);
+
     fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
@@ -140,6 +200,8 @@ impl<R: Resources> SystemFunction<R, MissingSystemFunctionErrors> for MissingSys
 
 // Additional implementations for missing projective curve operations
 impl<R: Resources> SystemFunction<R, Secp256k1AddProjectiveErrors> for MissingSystemFunction {
+    crate::system_function_execute_with_closure_via_buffer!(Secp256k1AddProjectiveErrors);
+
     fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
@@ -151,6 +213,8 @@ impl<R: Resources> SystemFunction<R, Secp256k1AddProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256k1MulProjectiveErrors> for MissingSystemFunction {
+    crate::system_function_execute_with_closure_via_buffer!(Secp256k1MulProjectiveErrors);
+
     fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
@@ -162,6 +226,8 @@ impl<R: Resources> SystemFunction<R, Secp256k1MulProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256r1AddProjectiveErrors> for MissingSystemFunction {
+    crate::system_function_execute_with_closure_via_buffer!(Secp256r1AddProjectiveErrors);
+
     fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
@@ -173,6 +239,8 @@ impl<R: Resources> SystemFunction<R, Secp256r1AddProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256r1MulProjectiveErrors> for MissingSystemFunction {
+    crate::system_function_execute_with_closure_via_buffer!(Secp256r1MulProjectiveErrors);
+
     fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
@@ -184,7 +252,7 @@ impl<R: Resources> SystemFunction<R, Secp256r1MulProjectiveErrors> for MissingSy
 }
 
 pub trait SystemFunctions<R: Resources> {
-    type Keccak256: SystemFunction<R, Keccak256Errors>;
+    type Keccak256: SystemFunction<R, Keccak256Errors, Output = [u8; 32]>;
     type Sha256: SystemFunction<R, Sha256Errors>;
     type Secp256k1AddProjective: SystemFunction<R, Secp256k1AddProjectiveErrors>;
     type Secp256k1MulProjective: SystemFunction<R, Secp256k1MulProjectiveErrors>;
@@ -212,6 +280,16 @@ pub trait SystemFunctions<R: Resources> {
         allocator: A,
     ) -> Result<(), SubsystemError<Keccak256Errors>> {
         Self::Keccak256::execute(input, output, resources, allocator)
+    }
+
+    /// Lends the hash to the `closure` instead of writing it into a sink
+    fn keccak256_with_closure<FN: FnOnce(&[u8; 32]), A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        closure: FN,
+        resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Keccak256Errors>> {
+        Self::Keccak256::execute_with_closure(input, closure, resources, allocator)
     }
 
     fn sha256<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(

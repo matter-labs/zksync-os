@@ -4,7 +4,6 @@ use crate::gas::gas_utils;
 
 use super::*;
 use native_resource_constants::*;
-use zk_ee::memory::U256Builder;
 use zk_ee::system::{EthereumLikeTypes, SystemFunctions};
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
@@ -29,43 +28,42 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         // SHA3 gas/native are already captured by `EvmOpcodeStatsTracer`, so
         // the per-call resource diff would be redundant.
         cycle_marker::wrap!("keccak_execution_environment", {
-            let (memory_offset, len) = self.stack.pop_2()?;
+            // `len` stays on the stack: that is the slot the hash goes to, so the opcode
+            // is "pop 2, push 1" without moving the hash through a value
+            let (memory_offset, len) = self.stack.pop_1_and_peek_mut()?;
             self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
-            let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
+            let len = Self::cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
 
-            // Eagerly cast `memory_offset` to an owned `usize` so the
-            // `&memory_offset` borrow on `self.stack` ends here and does not
-            // collide with the final `self.stack.push(&hash)` below.
+            // Eagerly cast `memory_offset` to an owned `usize` so the borrow on `self.stack`
+            // ends here and does not collide with `self.resize_heap` below.
             let memory_offset_usize: Option<usize> = if len > 0 {
                 Some(Self::cast_to_usize(
-                    &memory_offset,
+                    memory_offset,
                     EvmError::InvalidOperandOOG.into(),
                 )?)
             } else {
                 None
             };
 
-            let hash = match memory_offset_usize {
+            match memory_offset_usize {
                 None => {
                     self.gas.spend_gas(gas_constants::SHA3)?;
-                    Self::EMPTY_SLICE_SHA3
+                    *self.stack.top_mut()? = Self::EMPTY_SLICE_SHA3;
                 }
                 Some(memory_offset) => {
                     self.resize_heap(memory_offset, len)?;
 
                     let allocator = system.get_allocator();
                     let input = &self.heap[memory_offset..(memory_offset + len)];
+                    let dst = self.stack.top_mut()?;
 
-                    let mut dst = U256Builder::default();
-                    S::SystemFunctions::keccak256(
-                        &input,
-                        &mut dst,
+                    S::SystemFunctions::keccak256_with_closure(
+                        input,
+                        |hash| dst.assign_from_be_bytes(hash),
                         self.gas.resources_mut(),
                         allocator,
                     )
                     .map_err(SystemError::from)?;
-
-                    let hash_ruint = dst.build();
 
                     if Self::PRINT_OPCODES {
                         use core::fmt::Write;
@@ -76,15 +74,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                         let input_iter = input.iter().copied();
                         logger_log!(logger, " input: ",);
                         let _ = logger.log_data(input_iter);
-                        logger_log!(logger, " -> 0x{hash_ruint:0x}");
+                        let hash = self.stack.top_mut()?;
+                        logger_log!(logger, " -> 0x{hash:0x}");
                     }
-
-                    // Convert ruint::aliases::U256 to u256::U256
-                    U256::from(hash_ruint)
                 }
             };
 
-            self.stack.push(&hash)
+            Ok(())
         })
     }
 

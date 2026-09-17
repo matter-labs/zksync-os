@@ -416,6 +416,29 @@ mod tests {
     }
 
     #[test]
+    fn assign_from_be_bytes() {
+        proptest!(|(bytes: [u8; 32], garbage: [u64; 4])| {
+            let expected_1 = naive::U256::from_be_bytes(&bytes);
+            let expected_2 = risc_v::U256::from_be_bytes(&bytes);
+
+            // the input at every alignment, as the word-aligned one takes another path
+            let mut buffer = [0u8; 40];
+            for offset in 0..8 {
+                buffer[offset..][..32].copy_from_slice(&bytes);
+                let input: &[u8; 32] = buffer[offset..][..32].try_into().unwrap();
+
+                let (mut x1, mut x2) = from_limbs(garbage);
+                x1.assign_from_be_bytes(input);
+                x2.assign_from_be_bytes(input);
+
+                prop_assert_eq!(x1.as_limbs(), expected_1.as_limbs());
+                prop_assert_eq!(x2.as_limbs(), expected_2.as_limbs());
+                prop_assert_eq!(x1.as_limbs(), x2.as_limbs());
+            }
+        })
+    }
+
+    #[test]
     fn compare_bytes_constant() {
         assert_eq!(naive::U256::BYTES, risc_v::U256::BYTES);
     }

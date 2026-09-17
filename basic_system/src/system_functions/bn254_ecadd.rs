@@ -17,6 +17,8 @@ use zk_ee::{interface_error, out_of_return_memory};
 pub struct Bn254AddImpl;
 
 impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bn254AddErrors);
+
     /// Returns the size in bytes of output.
     ///
     /// If the input size is less than expected - it will be padded with zeroes.

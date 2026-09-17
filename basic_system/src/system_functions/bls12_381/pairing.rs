@@ -14,6 +14,8 @@ pub const BLS12_381_PAIR_LEN: usize = G1_SERIALIZATION_LEN + G2_SERIALIZATION_LE
 pub struct Bls12381PairingCheckPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381PairingCheckPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,

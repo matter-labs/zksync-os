@@ -234,6 +234,29 @@ impl U256 {
         Self(DelegatedU256::from_be_bytes(input))
     }
 
+    /// Overwrites `self` with the big-endian integer, in place (there is no value on the stack to
+    /// move from), and word by word: the most significant word of the input is the top word
+    /// of the little-endian limbs, byte-reversed.
+    #[inline(always)]
+    pub fn assign_from_be_bytes(&mut self, input: &[u8; 32]) {
+        let dst = self.as_limbs_mut().as_mut_ptr().cast::<u32>();
+        let (chunks, _) = input.as_chunks::<4>();
+        let src = chunks.as_ptr().cast::<u32>();
+        if src.is_aligned() {
+            // no unaligned loads of words on our machine, but e.g. a hash in the state of
+            // the hasher is aligned
+            for i in 0..8 {
+                // SAFETY: both are 8 words, and we are little-endian
+                unsafe { dst.add(7 - i).write(src.add(i).read().swap_bytes()) };
+            }
+        } else {
+            for (i, chunk) in chunks.iter().enumerate() {
+                // SAFETY: both are 8 words
+                unsafe { dst.add(7 - i).write(u32::from_be_bytes(*chunk)) };
+            }
+        }
+    }
+
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
         Self(DelegatedU256::from_le_bytes(input))
     }

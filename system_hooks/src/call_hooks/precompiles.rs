@@ -113,6 +113,8 @@ const ID_WORD_COST_ERGS: Ergs = Ergs(3 * ERGS_PER_GAS);
 const ID_BASE_NATIVE_COST: u64 = 20;
 const ID_BYTE_NATIVE_COST: u64 = 10;
 impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(IdentityPrecompileErrors);
+
     fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,

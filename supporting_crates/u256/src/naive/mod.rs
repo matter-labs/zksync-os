@@ -223,6 +223,12 @@ impl U256 {
         Self(ruint::aliases::U256::from_be_bytes::<32>(*input))
     }
 
+    /// Overwrites `self` with the big-endian integer
+    #[inline(always)]
+    pub fn assign_from_be_bytes(&mut self, input: &[u8; 32]) {
+        *self = Self::from_be_bytes(input);
+    }
+
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
         Self(ruint::aliases::U256::from_le_bytes::<32>(*input))
     }

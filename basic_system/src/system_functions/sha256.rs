@@ -14,6 +14,8 @@ use zk_ee::system::{Computational, Resources};
 pub struct Sha256Impl;
 
 impl<R: Resources> SystemFunction<R, Sha256Errors> for Sha256Impl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Sha256Errors);
+
     /// If output len less than needed(32) returns `InternalError`.
     /// Returns `OutOfGas` if not enough resources provided.
     fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(

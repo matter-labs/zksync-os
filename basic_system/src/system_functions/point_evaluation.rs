@@ -16,6 +16,8 @@ pub type KzgScalar = <crypto::bls12_381::Fr as PrimeField>::BigInt;
 pub struct PointEvaluationImpl;
 
 impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationImpl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(PointEvaluationErrors);
+
     /// Returns `OutOfGas` if not enough resources provided, resources may be not touched.
     ///
     /// Returns `InvalidInputSize` error if `input_len` != 192,

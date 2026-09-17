@@ -18,6 +18,8 @@ use zk_ee::{interface_error, out_of_return_memory};
 pub struct Bn254MulImpl;
 
 impl<R: Resources> SystemFunction<R, Bn254MulErrors> for Bn254MulImpl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bn254MulErrors);
+
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///

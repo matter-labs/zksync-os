@@ -95,9 +95,7 @@ fn ecrecover_as_system_function_inner<
     };
     let bytes_ref = recovered_pubkey_bytes.as_ref();
 
-    use crypto::sha3::Keccak256;
-    use crypto::MiniDigest;
-    let address_hash = Keccak256::digest(&bytes_ref[1..]);
+    let address_hash = super::keccak256::keccak256_digest(&bytes_ref[1..]);
 
     dst.try_extend(core::iter::repeat_n(0, 12).chain(address_hash.into_iter().skip(12)))
         .map_err(|_| out_of_return_memory!())?;

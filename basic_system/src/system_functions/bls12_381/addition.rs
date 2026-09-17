@@ -9,6 +9,8 @@ pub const BLS12_381_G2_ADDITION_GAS: u64 = 600;
 pub struct Bls12381G1AdditionPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1AdditionPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
@@ -63,6 +65,8 @@ fn bls12_381_g1_add_as_system_function_inner<
 pub struct Bls12381G2AdditionPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2AdditionPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,

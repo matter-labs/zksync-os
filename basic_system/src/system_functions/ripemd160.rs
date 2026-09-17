@@ -15,6 +15,8 @@ use zk_ee::system::Computational;
 ///
 pub struct RipeMd160Impl;
 impl<R: Resources> SystemFunction<R, RipeMd160Errors> for RipeMd160Impl {
+    zk_ee::system_function_execute_with_closure_via_buffer!(RipeMd160Errors);
+
     /// Returns `OutOfGas` if not enough resources provided.
     fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],

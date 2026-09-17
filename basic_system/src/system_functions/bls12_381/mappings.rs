@@ -8,6 +8,8 @@ pub const BLS12_381_FIELD_EXT_TO_G2_GAS: u64 = 23800;
 pub struct Bls12381G1MappingPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MappingPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
@@ -62,6 +64,8 @@ fn bls12_381_map_fp_to_g1_as_system_function_inner<
 pub struct Bls12381G2MappingPrecompile;
 
 impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MappingPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,

@@ -57,6 +57,8 @@ fn parse_blake2_state(
 pub struct Blake2FPrecompile;
 
 impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecompile {
+    zk_ee::system_function_execute_with_closure_via_buffer!(Blake2FPrecompileErrors);
+
     fn execute<
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,

@@ -42,8 +42,14 @@ EVM_CORE = "EVM: interpreter core (dispatch, stack, plain opcodes)"
 
 # Level-1 categories, checked outermost-first; first pattern that matches a
 # frame wins.
+# Witness verification comes first: zksync-os reads and hashes contract code and trie nodes
+# lazily (inside the EVM call path or the commitment update, wherever they are first needed),
+# zilkworm does all of it upfront, so only a dedicated category compares like with like.
+WITNESS = "witness verification (read + keccak of code and trie node preimages)"
+
 LEVEL1 = {
     "zksync-os": [
+        (WITNESS, r"BytecodeKeccakPreimagesStorage.*expose_preimage|consult_cache_or_oracle"),
         ("tx validation + sender recovery", r"validate_and_compute_fee_for_transaction"),
         ("state commitment (MPT root update)", r"update_commitment|persist_changes|EthereumStoragePersister"),
         (EVM, r"run_till_completion"),
@@ -52,6 +58,7 @@ LEVEL1 = {
         ("block bookkeeping (header/body validation, receipts vector)", r"generic_loop_op|run_prepared"),
     ],
     "zilkworm": [
+        (WITNESS, r"DirectState::sanitize"),
         ("tx validation + sender recovery", r"silkworm::protocol::validate_transaction|Transaction::sender"),
         ("state commitment (MPT root update)", r"StateTransition::check_root|calc_root_from_updates|GridMPT|apply_state_diff"),
         (EVM, r"evmone::state::transition"),
@@ -116,6 +123,60 @@ CROSSCUT = {
         (EVM_CORE, r"evmone::baseline::execute|dispatch_cgoto|evmone::instr::"),
     ],
 }
+
+
+# Keccak by purpose: frames of the hash function itself, and what the enclosing code is doing
+# (priority order, any ancestor matches). zilkworm verifies code and trie nodes in one upfront
+# pass over the witness, so there they can not be told apart.
+KECCAK_FRAME = {
+    "zksync-os": r"^<?airbender_crypto::sha3::",
+    "zilkworm": r"^ethash_keccak|^ethash::keccak|^silkworm::keccak256|^zilkworm::keccak_|^keccak$",
+}
+KECCAK_WITNESS_NODES = "MPT: witness trie node verification"
+KECCAK_CODE = "bytecode hashing (code hash verification, deployment)"
+KECCAK_CONTEXT = {
+    "zksync-os": [
+        (KECCAK_WITNESS_NODES, r"consult_cache_or_oracle"),
+        (KECCAK_CODE, r"BytecodeKeccakPreimagesStorage|expose_preimage|set_bytecode|deploy_code|deployed_code"),
+        ("EVM: SHA3 opcode", r"Interpreter>::sha3"),
+        ("EVM: other (CREATE2 address, ...)", r"Interpreter>::"),
+        ("MPT: node hashing for the new root", r"ethereum_storage_model::mpt|EthereumMPT|update_commitment|persist_changes|mpt_leaf"),
+        ("block: logs bloom, tx/receipt roots, header", r"logs_bloom|EthereumPostOp|receipts|block_data|block_header"),
+        ("tx: signed hash, tx hash, sender address", r"validate_and_compute_fee|ecrecover|rlp_encoded|transaction::"),
+    ],
+    "zilkworm": [
+        (KECCAK_WITNESS_NODES + " + " + KECCAK_CODE + " (one upfront pass)", r"DirectState::sanitize"),
+        ("EVM: SHA3 opcode", r"evmone::instr::core::keccak256"),
+        ("EVM: other (CREATE2 address, ...)", r"evmone::"),
+        ("MPT: node hashing for the new root", r"GridMPT|calc_root_from_updates|check_root"),
+        ("tx: signed hash, tx hash, sender address", r"Transaction::sender|validate_transaction|Transaction::hash"),
+        ("block: logs bloom, tx/receipt roots, header", r"logs_bloom|m3_2048|HashBuilder|root_hash|BlockHeader"),
+    ],
+}
+
+
+def keccak_by_purpose(path, project):
+    """Samples under the outermost keccak frame, by what the enclosing code does."""
+    _total, frames = fg.parse_svg(path)
+    roots = fg.build_tree(frames)
+    is_keccak = re.compile(KECCAK_FRAME[project])
+    contexts = compile_rules(KECCAK_CONTEXT[project])
+    counts = collections.Counter()
+
+    def walk(frame, names):
+        name = fg.strip_name(frame["name"])
+        if is_keccak.search(name):
+            purpose, _ = first_match(contexts, names)
+            counts[purpose or "other"] += frame["samples"]
+            return
+        names.append(name)
+        for c in frame["children"]:
+            walk(c, names)
+        names.pop()
+
+    for r in roots:
+        walk(r, [])
+    return counts
 
 
 def compile_rules(rules):
@@ -238,6 +299,7 @@ def main():
 
     totals = {name_a: collections.Counter(), name_b: collections.Counter()}
     unattributed = {name_a: 0, name_b: 0}
+    keccak = {name_a: collections.Counter(), name_b: collections.Counter()}
     sum_cycles = {name_a: 0, name_b: 0}
     sum_gas = 0
     print(f"{'block':>9} {'gas':>11} | {name_a+' cycles':>18} {'c/gas':>6} | {name_b+' cycles':>18} {'c/gas':>6} | ratio")
@@ -253,6 +315,8 @@ def main():
             missing = max(0, cycles - total_samples * SAMPLING_RATE)
             totals[name][UNATTRIBUTED] += missing
             unattributed[name] += missing
+            for purpose, samples in keccak_by_purpose(os.path.join(d, f"{b}.svg"), name).items():
+                keccak[name][purpose] += samples * SAMPLING_RATE
             if args.debug and name == args.debug_side:
                 debug_paths(os.path.join(d, f"{b}.svg"), name, args.debug, debug_acc)
             sum_cycles[name] += cycles
@@ -280,6 +344,13 @@ def main():
             flag = "<<" if ratio < 1 else ">>"
             flagged.append((cat, va, vb, pa, pb, ratio))
         print(f"{cat:<58} {va/1e6:>15,.0f} {pa:>6.1f} {vb/1e6:>15,.0f} {pb:>6.1f} {ratio:>6.2f}  {flag}")
+    print()
+    print("Keccak by purpose (inclusive cycles of the hash function, already counted in the categories above):")
+    for name, total in ((name_a, ca), (name_b, cb)):
+        all_keccak = sum(keccak[name].values())
+        print(f"  {name}: {all_keccak/1e6:,.0f} Mcyc ({all_keccak/total*100:.1f}% of cycles)")
+        for purpose, v in keccak[name].most_common():
+            print(f"    {purpose:<96} {v/1e6:>8,.1f} {v/total*100:>6.2f}%")
     if args.debug:
         print()
         print(f"Top stack paths in category {args.debug!r} on {args.debug_side} (samples):")
