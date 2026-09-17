@@ -90,6 +90,11 @@ cargo run -p eth_runner --release --features rig/eth_stf,fusaka-bpo-2 -- ethproo
 python3 tests/instances/eth_runner/scripts/analyze_flamegraphs.py --top 30 tests/instances/eth_runner/flamegraphs/*.svg
 ```
 
+The profiler replays the oracle responses recorded by the native run, so it only works while
+the guest asks for exactly the same hints. A guest that does not (e.g. a build where ecrecover
+ends up inverting another `z`) fails the hint check; pass `--live-oracle` to answer its
+queries with the real oracle instead, and `--app` to pick its distribution.
+
 `ethproofs-compare-oracles` runs the same block twice on the transpiler, first with the
 real oracle (`ZkEENonDeterminismSource`, which parses the execution witness and answers
 every guest query on the fly) and then with a replay source that serves the recorded word

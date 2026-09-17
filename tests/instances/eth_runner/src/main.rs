@@ -206,6 +206,11 @@ enum Command {
         /// Reverse stack order (bottom-up graph: leaf functions at the root).
         #[arg(long, action = clap::ArgAction::SetTrue)]
         inverse: bool,
+        /// Answer the guest's queries with the witness-parsing oracle instead of
+        /// replaying the recorded responses. Needed when the guest asks for other
+        /// hints than the natively recorded run did (e.g. an experimental build).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        live_oracle: bool,
     },
     /// Run a collected block with the witness-parsing oracle and with a replay
     /// source, and report the runtime difference.
@@ -360,6 +365,7 @@ fn main() -> anyhow::Result<()> {
             app,
             sampling_rate,
             inverse,
+            live_oracle,
         } => ethproofs::ethproofs_flamegraph(
             std::path::Path::new(&block_dir),
             &ethproofs::FlamegraphOptions {
@@ -367,6 +373,7 @@ fn main() -> anyhow::Result<()> {
                 output: output.into(),
                 sampling_rate,
                 inverse,
+                live_oracle,
             },
         )
         .map(|_| ()),

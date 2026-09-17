@@ -5,7 +5,6 @@ version = 4
 [[package]]
 name = "add_sub_lui_auipc_mop"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -118,6 +117,7 @@ dependencies = [
  "airbender-core",
  "field",
  "prover_pipeline",
+ "riscv_common",
  "riscv_transpiler",
  "serde",
  "sha2 0.10.9",
@@ -2194,7 +2194,6 @@ dependencies = [
 [[package]]
 name = "bigint_with_control"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -2315,7 +2314,6 @@ dependencies = [
 [[package]]
 name = "blake2_g_function"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -2326,7 +2324,6 @@ dependencies = [
 [[package]]
 name = "blake2_with_compression"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -2337,7 +2334,6 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "unroll",
@@ -2557,7 +2553,6 @@ dependencies = [
 [[package]]
 name = "circuit_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "cs",
@@ -2686,7 +2681,6 @@ dependencies = [
 [[package]]
 name = "common_constants"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "seq-macro",
  "serde",
@@ -2959,7 +2953,6 @@ dependencies = [
 [[package]]
 name = "cs"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "arrayvec",
  "bincode 1.3.3",
@@ -3601,7 +3594,6 @@ dependencies = [
 [[package]]
 name = "fft"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "field",
  "seq-macro",
@@ -3613,7 +3605,6 @@ dependencies = [
 [[package]]
 name = "field"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "proc-macro2",
@@ -3768,7 +3759,6 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 [[package]]
 name = "full_statement_verifier"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "serde",
@@ -3977,7 +3967,6 @@ dependencies = [
 [[package]]
 name = "gkr_eval_ir"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cs",
  "field",
@@ -3993,7 +3982,6 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 [[package]]
 name = "gpu_circuit_prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "cs",
@@ -4014,7 +4002,6 @@ dependencies = [
 [[package]]
 name = "gpu_core"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cc",
  "cs",
@@ -4030,7 +4017,6 @@ dependencies = [
 [[package]]
 name = "gpu_execution_prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "crossbeam-channel",
@@ -4060,7 +4046,6 @@ dependencies = [
 [[package]]
 name = "gpu_gkr"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cs",
  "era_cudart",
@@ -4081,7 +4066,6 @@ dependencies = [
 [[package]]
 name = "gpu_gkr_compiler"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cs",
  "field",
@@ -4093,7 +4077,6 @@ dependencies = [
 [[package]]
 name = "gpu_gkr_model"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cs",
  "field",
@@ -4102,7 +4085,6 @@ dependencies = [
 [[package]]
 name = "gpu_hash"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "era_cudart",
  "era_cudart_sys",
@@ -4113,7 +4095,6 @@ dependencies = [
 [[package]]
 name = "gpu_native_build"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "cmake",
  "era_cudart_sys",
@@ -4122,7 +4103,6 @@ dependencies = [
 [[package]]
 name = "gpu_ntt"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "era_cudart",
  "era_cudart_sys",
@@ -4135,7 +4115,6 @@ dependencies = [
 [[package]]
 name = "gpu_ops"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "era_cudart",
  "era_cudart_sys",
@@ -4146,7 +4125,6 @@ dependencies = [
 [[package]]
 name = "gpu_program_prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "full_statement_verifier",
@@ -4166,7 +4144,6 @@ dependencies = [
 [[package]]
 name = "gpu_prover_context"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "era_cudart",
  "era_cudart_sys",
@@ -4178,7 +4155,6 @@ dependencies = [
 [[package]]
 name = "gpu_trace"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "circuit_common",
@@ -4203,7 +4179,6 @@ dependencies = [
 [[package]]
 name = "gpu_whir"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "era_cudart",
  "era_cudart_sys",
@@ -4735,7 +4710,6 @@ dependencies = [
 [[package]]
 name = "inits_and_teardowns"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "prover",
@@ -4946,7 +4920,6 @@ dependencies = [
 [[package]]
 name = "jump_branch_slt"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -5000,7 +4973,6 @@ dependencies = [
 [[package]]
 name = "keccak_special5"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -5086,7 +5058,6 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "load_store_subword_only"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -5097,7 +5068,6 @@ dependencies = [
 [[package]]
 name = "load_store_word_only"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -5314,7 +5284,6 @@ dependencies = [
 [[package]]
 name = "mul_div_unsigned"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -5364,7 +5333,6 @@ dependencies = [
 [[package]]
 name = "non_determinism_source"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "field",
@@ -6060,7 +6028,6 @@ dependencies = [
 [[package]]
 name = "program_prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "bincode 1.3.3",
  "circuit_common",
@@ -6190,7 +6157,6 @@ dependencies = [
 [[package]]
 name = "prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "cfg-if",
@@ -6218,7 +6184,6 @@ dependencies = [
 [[package]]
 name = "prover_pipeline"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "clap 4.6.1",
  "full_statement_verifier",
@@ -7280,7 +7245,6 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "seq-macro",
@@ -7289,7 +7253,6 @@ dependencies = [
 [[package]]
 name = "riscv_transpiler"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "addr2line",
  "blake2s_u32",
@@ -7835,7 +7798,6 @@ dependencies = [
 [[package]]
 name = "setups"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "add_sub_lui_auipc_mop",
  "bigint_with_control",
@@ -7951,7 +7913,6 @@ dependencies = [
 [[package]]
 name = "shift_binary"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -8719,7 +8680,6 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "trace_and_split"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "prover",
@@ -8809,7 +8769,6 @@ dependencies = [
 [[package]]
 name = "transcript"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "field",
@@ -8995,7 +8954,6 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 [[package]]
 name = "unified_reduced_machine"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "circuit_common",
  "common_constants",
@@ -9152,7 +9110,6 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "verifier_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "cs",
@@ -9722,7 +9679,6 @@ dependencies = [
 [[package]]
 name = "witness_eval_generator"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "bincode 1.3.3",
  "cs",
@@ -9736,7 +9692,6 @@ dependencies = [
 [[package]]
 name = "worker"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "libc",
  "num_cpus",

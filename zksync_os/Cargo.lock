@@ -320,7 +320,6 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "unroll",
@@ -348,7 +347,6 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "common_constants"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "seq-macro",
  "serde",
@@ -428,7 +426,6 @@ dependencies = [
 [[package]]
 name = "cs"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "field",
@@ -575,7 +572,6 @@ dependencies = [
 [[package]]
 name = "field"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "rand 0.9.4",
@@ -592,7 +588,6 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 [[package]]
 name = "full_statement_verifier"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "serde",
@@ -742,7 +737,6 @@ version = "0.1.0"
 [[package]]
 name = "non_determinism_source"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "field",
@@ -861,7 +855,6 @@ dependencies = [
 [[package]]
 name = "prover"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "common_constants",
@@ -965,7 +958,6 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "common_constants",
  "seq-macro",
@@ -1176,7 +1168,6 @@ dependencies = [
 [[package]]
 name = "transcript"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "field",
@@ -1236,7 +1227,6 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 [[package]]
 name = "verifier_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?branch=av_gkr_compiler#21ba28446787661715473ac57c6737e3cefaec4f"
 dependencies = [
  "blake2s_u32",
  "cs",

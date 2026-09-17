@@ -320,6 +320,10 @@ pub struct FlamegraphOptions {
     pub sampling_rate: usize,
     /// Reverse the stack order (leaf functions at the root, i.e. a bottom-up graph).
     pub inverse: bool,
+    /// Serve the guest with the witness-parsing oracle instead of the recorded
+    /// responses. The replay only works while the guest asks for exactly the
+    /// hints of the natively recorded run.
+    pub live_oracle: bool,
 }
 
 /// Runs a block fixture on the transpiler with the stack profiler enabled and
@@ -343,9 +347,19 @@ pub fn ethproofs_flamegraph(block_dir: &Path, options: &FlamegraphOptions) -> an
         .build()
         .context("failed to build transpiler runner")?;
     let start = Instant::now();
-    let execution = runner
-        .run(&words)
-        .context("transpiler execution with profiling failed")?;
+    let execution = if options.live_oracle {
+        // see `ethproofs_compare_oracles` on why it is not the "native" oracle
+        let oracle = Chain::<false>::make_eth_block_oracle(
+            inputs.transactions.clone(),
+            inputs.witness.clone(),
+            inputs.header.clone(),
+            inputs.withdrawals_encoding.clone(),
+        );
+        runner.run_with_source(oracle)
+    } else {
+        runner.run(&words)
+    }
+    .context("transpiler execution with profiling failed")?;
     anyhow::ensure!(execution.reached_end, "program did not reach the end");
     anyhow::ensure!(
         execution.receipt.output.iter().any(|word| *word != 0),
