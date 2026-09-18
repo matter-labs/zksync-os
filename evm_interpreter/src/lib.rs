@@ -60,6 +60,7 @@ pub mod opcodes;
 pub mod precompile_addresses;
 pub mod u256_helpers;
 pub mod utils;
+pub mod v2;
 
 pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentType::EVM;
 
@@ -99,7 +100,7 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub calldata: &'a [u8],
     /// returndata is available from here if it exists
     pub returndata: &'a [u8],
-    /// Heap that belongs to this interpreter, can be resided
+    /// Heap that belongs to this interpreter, can be resized
     pub heap: SliceVec<'a, u8>,
     /// returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
@@ -118,8 +119,6 @@ pub struct Interpreter<'a, S: SystemTypes> {
     /// Why the last `run` stopped: stored by the instruction that stopped it, so the loop
     /// only passes a word around
     pub exit_code: Option<ExitCode>,
-    /// The error behind `ExitCode::FatalError`, stored by the handler that hit it
-    pub fatal_error: Option<EvmSubsystemError>,
 }
 
 /// Wrapper to provide external access to EVM frame state
@@ -308,7 +307,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
 
     /// usize words in the underlying bitmap.
     #[inline(always)]
-    fn bitmap_words(&self) -> &[usize] {
+    pub(crate) fn bitmap_words(&self) -> &[usize] {
         match &self.jumpdest_bitmap {
             Either::Left(b) => b.as_words(),
             Either::Right(b) => b.as_words(),
@@ -468,9 +467,8 @@ pub type InstructionResult = Result<(), ExitCode>;
 ///
 /// Expected exit reasons from the EVM interpreter.
 ///
-/// Kept small (a few bytes on the proving target) so that every `Result<_, ExitCode>` of the
-/// instruction helpers is returned in registers: a fatal error is stored in the interpreter
-/// (`Interpreter::fatal_error`) by the handler that hit it, and only signalled here.
+/// Kept small (4 bytes on the proving target, where `EvmSubsystemError` is 3) so that every
+/// `Result<_, ExitCode>` of the instruction helpers is returned in registers.
 ///
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -488,8 +486,8 @@ pub enum ExitCode {
     // Fatal runtime error (out of native resources, out of return memory)
     FatalRuntime(FatalRuntimeError),
 
-    // Fatal internal error, stored in `Interpreter::fatal_error` (or `Gas::defect`)
-    FatalError,
+    // Fatal internal error of the interpreter or a subsystem it called
+    FatalError(EvmSubsystemError),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -505,21 +503,16 @@ impl From<EvmError> for ExitCode {
 }
 
 impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
-    /// Store a fatal error and return the exit code that signals it. Takes the slot rather than
-    /// the interpreter, so a handler can map an error while it still borrows the stack.
+    /// The exit code of a fatal error
     #[cold]
     #[inline(never)]
-    pub(crate) fn fatal(
-        slot: &mut Option<EvmSubsystemError>,
-        e: impl Into<EvmSubsystemError>,
-    ) -> ExitCode {
-        *slot = Some(e.into());
-        ExitCode::FatalError
+    pub(crate) fn fatal(e: impl Into<EvmSubsystemError>) -> ExitCode {
+        ExitCode::FatalError(e.into())
     }
 
     /// Exit code for an error of a system call made by an instruction
     #[inline(always)]
-    pub(crate) fn system_error(slot: &mut Option<EvmSubsystemError>, e: SystemError) -> ExitCode {
+    pub(crate) fn system_error(e: SystemError) -> ExitCode {
         match e {
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                 ExitCode::EvmError(EvmError::OutOfGas)
@@ -527,16 +520,13 @@ impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
             SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(f)) => {
                 ExitCode::FatalRuntime(f)
             }
-            SystemError::LeafDefect(e) => Self::fatal(slot, e),
+            SystemError::LeafDefect(e) => Self::fatal(e),
         }
     }
 
     /// Exit code for an error of the EVM subsystem itself (deployment, address derivation)
     #[inline(always)]
-    pub(crate) fn subsystem_error(
-        slot: &mut Option<EvmSubsystemError>,
-        e: EvmSubsystemError,
-    ) -> ExitCode {
+    pub(crate) fn subsystem_error(e: EvmSubsystemError) -> ExitCode {
         match e.root_cause() {
             RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
                 ExitCode::EvmError(EvmError::OutOfGas)
@@ -544,19 +534,8 @@ impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
             RootCause::Runtime(RuntimeError::FatalRuntimeError(f)) => {
                 ExitCode::FatalRuntime(f.clone())
             }
-            _ => Self::fatal(slot, e),
+            _ => Self::fatal(e),
         }
-    }
-
-    /// The fatal error behind `ExitCode::FatalError`
-    pub(crate) fn take_fatal_error(&mut self) -> EvmSubsystemError {
-        if let Some(e) = self.fatal_error.take() {
-            return e;
-        }
-        if let Some(e) = self.gas.defect.take() {
-            return e.into();
-        }
-        internal_error!("fatal exit code without a stored error").into()
     }
 }
 
@@ -571,6 +550,55 @@ pub fn keccak256_gas_cost(len: usize) -> u64 {
 #[cfg(test)]
 mod jumpdest_analysis_tests {
     use super::*;
+
+    /// A plain index-based scan, as a reference for the pointer-walking one.
+    fn analyze_reference(code: &[u8], bitmap: &mut [usize]) {
+        let mut i = 0;
+        while i < code.len() {
+            let op = code[i];
+            if op == opcodes::JUMPDEST {
+                bitmap[i / usize::BITS as usize] |= 1usize << (i % usize::BITS as usize);
+                i += 1;
+            } else if (opcodes::PUSH1..=opcodes::PUSH32).contains(&op) {
+                i += 1 + (op - opcodes::PUSH1 + 1) as usize;
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn scan_matches_reference() {
+        // deterministic LCG so the test needs no dependencies
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as u32
+        };
+        for case in 0..2000usize {
+            let len = (next() % 300) as usize;
+            let mut buf = alloc::vec![0u8; len + 8];
+            for b in buf.iter_mut() {
+                // bias towards the interesting opcodes and towards plain runs
+                *b = match next() % 8 {
+                    0 => opcodes::JUMPDEST,
+                    1 | 2 => opcodes::PUSH1 + (next() % 32) as u8,
+                    3 => 0x5c + (next() % 4) as u8,
+                    _ => (next() % 0x5b) as u8,
+                };
+            }
+            let offset = case % 5;
+            let code = &buf[offset..offset + len];
+            let words = artifacts_byte_len(code.len()) / core::mem::size_of::<usize>();
+            let mut expected = alloc::vec![0usize; words];
+            let mut actual = alloc::vec![0usize; words];
+            analyze_reference(code, &mut expected);
+            analyze_into(code, &mut actual);
+            assert_eq!(expected, actual, "case {case}, len {len}, offset {offset}");
+        }
+    }
 
     /// Straightforward analysis by indexes
     fn reference(code: &[u8]) -> alloc::vec::Vec<bool> {

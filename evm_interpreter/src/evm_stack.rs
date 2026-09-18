@@ -19,6 +19,32 @@ pub struct EvmStack<A: Allocator> {
 }
 
 impl<A: Allocator> EvmStack<A> {
+    /// First slot of the stack buffer. The slots `..depth()` are initialized.
+    #[inline(always)]
+    pub(crate) fn base_ptr(&mut self) -> *mut U256 {
+        self.buffer.as_mut_ptr().cast::<U256>()
+    }
+
+    /// First slot of the stack buffer, for reading
+    #[inline(always)]
+    pub(crate) fn as_ptr(&self) -> *const U256 {
+        self.buffer.as_ptr().cast::<U256>()
+    }
+
+    /// Number of values on the stack
+    #[inline(always)]
+    pub(crate) fn depth(&self) -> usize {
+        self.len
+    }
+
+    /// # Safety
+    /// The first `depth` slots of the buffer must be initialized, and `depth <= STACK_SIZE`.
+    #[inline(always)]
+    pub(crate) unsafe fn set_depth(&mut self, depth: usize) {
+        debug_assert!(depth <= STACK_SIZE);
+        self.len = depth;
+    }
+
     pub(crate) fn new_in(allocator: A) -> Self {
         Self {
             buffer: Box::new_in([const { MaybeUninit::uninit() }; STACK_SIZE], allocator),

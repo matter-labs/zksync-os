@@ -65,7 +65,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                         allocator,
                     )
                     .map_err(SystemError::from)
-                    .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+                    .map_err(|e| Self::system_error(e))?;
 
                     if Self::PRINT_OPCODES {
                         use core::fmt::Write;

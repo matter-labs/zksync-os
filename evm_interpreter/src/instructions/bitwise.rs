@@ -2,7 +2,7 @@ use super::*;
 use native_resource_constants::*;
 
 #[inline(always)]
-fn apply_sar(shift: &U256, value: &mut U256) {
+pub(crate) fn apply_sar(shift: &U256, value: &mut U256) {
     match shift.try_to_usize() {
         None => value.arithmetic_shr_assign(256),
         Some(shift) => {

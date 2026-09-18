@@ -138,8 +138,8 @@ KECCAK_CONTEXT = {
     "zksync-os": [
         (KECCAK_WITNESS_NODES, r"consult_cache_or_oracle|resolve_child"),
         (KECCAK_CODE, r"BytecodeKeccakPreimagesStorage|expose_preimage|set_bytecode|deploy_code|deployed_code"),
-        ("EVM: SHA3 opcode", r"Interpreter>::sha3"),
-        ("EVM: other (CREATE2 address, ...)", r"Interpreter>::"),
+        ("EVM: SHA3 opcode", r"(Interpreter|Hot)>::sha3"),
+        ("EVM: other (CREATE2 address, ...)", r"(Interpreter|Hot)>::"),
         ("MPT: node hashing for the new root", r"ethereum_storage_model::mpt|EthereumMPT|update_commitment|persist_changes|mpt_leaf"),
         ("block: logs bloom, tx/receipt roots, header", r"logs_bloom|EthereumPostOp|receipts|block_data|block_header"),
         ("tx: signed hash, tx hash, sender address", r"validate_and_compute_fee|ecrecover|rlp_encoded|transaction::"),

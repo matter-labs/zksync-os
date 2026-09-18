@@ -15,7 +15,7 @@ use crate::{
     },
     ExitCode,
 };
-use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 
 /// Wraps underlying system resources and implements gas accounting on top of it
 pub struct Gas<S: SystemTypes> {
@@ -23,9 +23,6 @@ pub struct Gas<S: SystemTypes> {
     pub resources: S::Resources,
     /// Keep track of gas spent on heap resizes
     pub gas_paid_for_heap_growth: u64,
-    /// Internal error of a charge (not expected from any resource implementation), kept
-    /// here as the charge has no access to the interpreter
-    pub defect: Option<InternalError>,
 }
 
 impl<S: EthereumLikeTypes> Gas<S> {
@@ -33,7 +30,6 @@ impl<S: EthereumLikeTypes> Gas<S> {
         Self {
             resources: S::Resources::empty(),
             gas_paid_for_heap_growth: 0,
-            defect: None,
         }
     }
 
@@ -103,7 +99,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
     #[cold]
     #[inline(never)]
-    fn charge_error(&mut self, e: SystemError) -> ExitCode {
+    pub(crate) fn charge_error(&mut self, e: SystemError) -> ExitCode {
         match e {
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                 ExitCode::EvmError(EvmError::OutOfGas)
@@ -111,10 +107,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
             SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(f)) => {
                 ExitCode::FatalRuntime(f)
             }
-            SystemError::LeafDefect(e) => {
-                self.defect = Some(e);
-                ExitCode::FatalError
-            }
+            SystemError::LeafDefect(e) => ExitCode::FatalError(e.into()),
         }
     }
 

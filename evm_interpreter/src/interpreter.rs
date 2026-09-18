@@ -34,7 +34,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let exit_code = self.run(system, hooks, &mut external_call, tracer)?;
 
         match exit_code {
-            ExitCode::FatalError => return Err(self.take_fatal_error()),
+            ExitCode::FatalError(e) => return Err(e),
             ExitCode::FatalRuntime(f) => return Err(RuntimeError::FatalRuntimeError(f).into()),
             _ => {}
         }
@@ -416,7 +416,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 return_values.returndata = &self.heap[self.returndata_location.clone()];
             }
             ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
-            ExitCode::ExternalCall | ExitCode::FatalError | ExitCode::FatalRuntime(_) => {
+            ExitCode::ExternalCall | ExitCode::FatalError(_) | ExitCode::FatalRuntime(_) => {
                 return Err(internal_error!("Invalid exit code passed").into())
             }
         };

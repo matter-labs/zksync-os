@@ -38,7 +38,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let value = U256::from_be_bytes(
             system
                 .get_mix_hash()
-                .map_err(|e| Self::fatal(&mut self.fatal_error, e))?
+                .map_err(|e| Self::fatal(e))?
                 .as_u8_array_ref(),
         );
         self.stack.push(&value)?;
@@ -94,7 +94,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let block_hash = U256::from_be_bytes(
             system
                 .get_blockhash(block_number)
-                .map_err(|e| Self::fatal(&mut self.fatal_error, e))?
+                .map_err(|e| Self::fatal(e))?
                 .as_u8_array_ref(),
         );
         self.stack.push(&block_hash)?;

@@ -109,6 +109,7 @@ impl<Native: Resource, const GAS_TO_ERGS_FACTOR: u64> Resource
         self.ergs.has_enough(&to_spend.ergs) && self.native.has_enough(&to_spend.native)
     }
 
+    #[inline(always)]
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
         if let Err(e) = self.ergs.charge(&to_charge.ergs) {
             // This method pre-charges for computation, both in ergs and native.
@@ -158,6 +159,7 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
     type Native = Native;
     type Ergs = Ergs<GAS_TO_ERGS_FACTOR>;
 
+    #[inline(always)]
     fn from_ergs(ergs: Self::Ergs) -> Self {
         Self {
             ergs,
@@ -165,6 +167,7 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
         }
     }
 
+    #[inline(always)]
     fn from_native(native: Native) -> Self {
         Self {
             ergs: Ergs::empty(),
@@ -172,22 +175,27 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
         }
     }
 
+    #[inline(always)]
     fn from_ergs_and_native(ergs: Self::Ergs, native: Native) -> Self {
         Self { ergs, native }
     }
 
+    #[inline(always)]
     fn add_ergs(&mut self, to_add: Self::Ergs) {
         self.ergs.0 += to_add.0;
     }
 
+    #[inline(always)]
     fn ergs(&self) -> Self::Ergs {
         self.ergs
     }
 
+    #[inline(always)]
     fn native(&self) -> Native {
         self.native.clone()
     }
 
+    #[inline(always)]
     fn exhaust_ergs(&mut self) {
         self.ergs = Ergs::empty()
     }
@@ -197,6 +205,7 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
         other.native = n;
     }
 
+    #[inline(always)]
     fn take(&mut self) -> Self {
         core::mem::replace(self, Self::empty())
     }

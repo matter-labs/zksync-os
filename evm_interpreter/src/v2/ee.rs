@@ -1,20 +1,234 @@
-use super::*;
-use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
-use crate::gas::gas_utils;
-use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
+//! The frame API of the interpreter: `ExecutionEnvironment` and the run around the loop.
+
 use core::fmt::Write;
 use core::mem;
+
+use u256::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::CalleeAccountProperties;
+use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::system::SystemError;
+use zk_ee::system::evm::EvmError;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::{interface_error, internal_error, wrap_error};
+
+use super::ops_cold::copy_returndata_to_heap;
+use super::{ColdFrameParts, Env, HotFrameParts, Interpreter};
+use crate::ee_trait_impl::{
+    check_depth_and_balance, constructor_pre_checks, emit_pre_frame_call_error,
+};
+use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
+use crate::evm_stack::EvmStack;
+use crate::gas::gas_utils;
+use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
+use crate::{
+    BytecodePreprocessingData, ExitCode, PendingOsRequest, ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+    ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE, DEFAULT_CODE_VERSION_BYTE, MAX_CODE_SIZE,
+    THIS_EE_TYPE,
+};
+
+#[cfg(not(target_arch = "riscv32"))]
+use super::FrameView;
+
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
+    /// Runs the loop and returns why it stopped
+    pub fn run(
+        &mut self,
+        system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ExitCode, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let mut env = Env::new(system, hooks, tracer);
+        self.exit_code = None;
+        self.run_loop(&mut env);
+        let result = self
+            .exit_code
+            .take()
+            .ok_or(internal_error!("interpreter stopped without an exit code"))?;
+        #[cfg(not(target_arch = "riscv32"))]
+        system_log!(
+            env.system,
+            "Instructions executed = {}\nFinal instruction result = {:?}\n",
+            env.cycles,
+            &result
+        );
+        Ok(result)
+    }
+
+    /// Keeps executing instructions until a yield point: an error, a return, or a request
+    /// to call or create a contract.
+    pub fn execute_till_yield_point<'a>(
+        &'a mut self,
+        system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let exit_code = self.run(system, hooks, tracer)?;
+
+        match exit_code {
+            ExitCode::FatalError(e) => return Err(e),
+            ExitCode::FatalRuntime(f) => return Err(RuntimeError::FatalRuntimeError(f).into()),
+            _ => {}
+        }
+
+        if let Some(call) = self.cold.pending_call.take() {
+            assert!(exit_code == ExitCode::ExternalCall);
+            let (current_heap, next_heap) = self.cold.heap.freeze();
+            let request = ExternalCallRequest {
+                available_resources: call.full_caller_resources,
+                ergs_to_pass: call.ergs_to_pass,
+                caller: self.cold.address,
+                callee: call.destination_address,
+                callers_caller: self.cold.caller,
+                modifier: call.modifier,
+                input: &current_heap[call.input_data],
+                nominal_token_value: call.call_value,
+                call_scratch_space: None,
+            };
+            return Ok(ExecutionEnvironmentPreemptionPoint::CallRequest {
+                heap: next_heap,
+                request,
+            });
+        }
+
+        self.create_immediate_return_state(system, exit_code, tracer)
+    }
+
+    pub(crate) fn create_immediate_return_state<'a>(
+        &'a mut self,
+        system: &mut System<S>,
+        exit_code: ExitCode,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        #[cfg(target_arch = "riscv32")]
+        let _ = &tracer;
+        let mut return_values = ReturnValues::empty();
+        match exit_code {
+            ExitCode::Return | ExitCode::EvmError(EvmError::Revert) => {
+                return_values.returndata = &self.cold.heap[self.cold.returndata_location.clone()];
+            }
+            ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
+            ExitCode::ExternalCall | ExitCode::FatalError(_) | ExitCode::FatalRuntime(_) => {
+                return Err(internal_error!("Invalid exit code passed").into())
+            }
+        };
+
+        if let ExitCode::EvmError(evm_error) = exit_code {
+            if evm_error != EvmError::Revert {
+                // an EVM error consumes all remaining gas and returns nothing
+                self.hot.resources.exhaust_ergs();
+                return_values.returndata = &[];
+            }
+            #[cfg(not(target_arch = "riscv32"))]
+            tracer.evm_tracer().on_opcode_error(
+                &evm_error,
+                &FrameView::from_parts(&self.hot, &self.cold, &*system),
+            );
+            return Ok(ExecutionEnvironmentPreemptionPoint::End(
+                CompletedExecution {
+                    resources_returned: self.hot.resources.take(),
+                    result: CallResult::Failed { return_values },
+                },
+            ));
+        };
+
+        let result = if self.cold.is_constructor {
+            let deployed_code = return_values.returndata;
+            let mut error_after_constructor = None;
+            if deployed_code.len() > MAX_CODE_SIZE {
+                // EIP-170
+                error_after_constructor = Some(EvmError::CreateContractSizeLimit)
+            } else if !deployed_code.is_empty() && deployed_code[0] == 0xEF {
+                // EIP-3541
+                error_after_constructor = Some(EvmError::CreateContractStartingWithEF);
+            } else {
+                match system.deploy_bytecode(
+                    THIS_EE_TYPE,
+                    &mut self.hot.resources,
+                    &self.cold.address,
+                    deployed_code,
+                ) {
+                    Ok((
+                        actual_deployed_bytecode,
+                        internal_bytecode_hash,
+                        observable_bytecode_len,
+                    )) => {
+                        system_log!(
+                            system,
+                            "Successfully deployed contract at {:?} \n",
+                            self.cold.address
+                        );
+                        #[cfg(not(target_arch = "riscv32"))]
+                        tracer.on_bytecode_change(
+                            THIS_EE_TYPE,
+                            self.cold.address,
+                            Some(actual_deployed_bytecode),
+                            internal_bytecode_hash,
+                            observable_bytecode_len,
+                        );
+                        #[cfg(target_arch = "riscv32")]
+                        let _ = (
+                            actual_deployed_bytecode,
+                            internal_bytecode_hash,
+                            observable_bytecode_len,
+                        );
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                        error_after_constructor = Some(EvmError::CodeStoreOutOfGas);
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e))) => {
+                        return Err(RuntimeError::FatalRuntimeError(e).into())
+                    }
+                    Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+                }
+            }
+
+            if let Some(error) = error_after_constructor {
+                self.hot.resources.exhaust_ergs();
+                #[cfg(not(target_arch = "riscv32"))]
+                tracer.evm_tracer().on_opcode_error(
+                    &error,
+                    &FrameView::from_parts(&self.hot, &self.cold, &*system),
+                );
+                #[cfg(target_arch = "riscv32")]
+                let _ = error;
+                CallResult::Failed {
+                    return_values: ReturnValues::empty(),
+                }
+            } else {
+                CallResult::Successful {
+                    return_values: ReturnValues::empty(),
+                }
+            }
+        } else {
+            CallResult::Successful { return_values }
+        };
+
+        Ok(ExecutionEnvironmentPreemptionPoint::End(
+            CompletedExecution {
+                resources_returned: self.hot.resources.take(),
+                result,
+            },
+        ))
+    }
+}
 
 impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Interpreter<'ee, S> {
     const NEEDS_SCRATCH_SPACE: bool = false;
@@ -25,15 +239,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     type SubsystemError = EvmSubsystemError;
 
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError> {
-        let gas = Gas::new();
-        let stack_space = EvmStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
-        let empty_preprocessing = BytecodePreprocessingData::empty();
-
-        Ok(Self {
-            instruction_pointer: 0,
-            gas,
-            stack: stack_space,
+        let mut cold = ColdFrameParts {
             returndata: &[],
             is_static: false,
             caller: empty_address,
@@ -42,10 +249,22 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             heap: SliceVec::new(&mut []),
             returndata_location: 0..0,
             bytecode: &[],
-            bytecode_preprocessing: empty_preprocessing,
+            bytecode_preprocessing: BytecodePreprocessingData::empty(),
+            jumpdest_words: core::ptr::null(),
             call_value: U256::zero(),
             is_constructor: false,
+            gas_paid_for_heap_growth: 0,
             pending_os_request: None,
+            pending_call: None,
+        };
+        cold.set_code(&[], BytecodePreprocessingData::empty());
+        Ok(Self {
+            hot: HotFrameParts {
+                instruction_pointer: 0,
+                stack: EvmStack::new_in(system.get_allocator()),
+                resources: S::Resources::empty(),
+            },
+            cold,
             exit_code: None,
         })
     }
@@ -86,46 +305,38 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         let mut is_static = false;
         let mut is_constructor = false;
-
         let mut caller_address = caller;
         let mut this_address = callee;
 
-        // Set bytecode
         if modifier == CallModifier::Constructor {
-            // Code to execute is in calldata
-            let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+            // the code to execute is in the calldata
+            let preprocessing = BytecodePreprocessingData::create_artifacts(
                 system.get_allocator(),
                 calldata,
                 &mut available_resources,
             )?;
-            self.bytecode = calldata;
-            self.bytecode_preprocessing = bytecode_preprocessing;
+            self.cold.set_code(calldata, preprocessing);
         } else {
-            // Execute actual decommited bytecode provided by OS
             let bytecode = callee_account_properties.bytecode;
             let unpadded_code_len = callee_account_properties.unpadded_code_len;
             let artifacts_len = callee_account_properties.artifacts_len;
-            let code_version = callee_account_properties.code_version;
-
-            match code_version {
+            match callee_account_properties.code_version {
                 DEFAULT_CODE_VERSION_BYTE => {
                     assert_eq!(artifacts_len, 0);
-                    let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+                    let preprocessing = BytecodePreprocessingData::create_artifacts(
                         system.get_allocator(),
                         bytecode,
                         &mut available_resources,
                     )?;
-                    self.bytecode = bytecode;
-                    self.bytecode_preprocessing = bytecode_preprocessing;
+                    self.cold.set_code(bytecode, preprocessing);
                 }
                 ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
-                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                    let (code, preprocessing) = BytecodePreprocessingData::parse_bytecode(
                         bytecode,
                         unpadded_code_len as usize,
                         artifacts_len as usize,
                     )?;
-                    self.bytecode = code;
-                    self.bytecode_preprocessing = bytecode_preprocessing;
+                    self.cold.set_code(code, preprocessing);
                 }
                 ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE => {
                     // charged as `DEFAULT_CODE_VERSION_BYTE` is
@@ -133,13 +344,12 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         unpadded_code_len as usize,
                         &mut available_resources,
                     )?;
-                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                    let (code, preprocessing) = BytecodePreprocessingData::parse_bytecode(
                         bytecode,
                         unpadded_code_len as usize,
                         artifacts_len as usize,
                     )?;
-                    self.bytecode = code;
-                    self.bytecode_preprocessing = bytecode_preprocessing;
+                    self.cold.set_code(code, preprocessing);
                 }
                 _ => return Err(internal_error!("Unknown code version").into()),
             }
@@ -158,10 +368,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 is_static = true;
             }
             CallModifier::Constructor => {
-                // EIP-161: contracts should be initialized with nonce 1
-                // Note: this has to be done before we actually deploy the bytecode,
-                // as constructor execution should see the deployed_address as having
-                // nonce = 1
+                // EIP-161: the constructor sees the deployed address with nonce 1
                 available_resources
                     .with_infinite_ergs(|inf_resources| {
                         system
@@ -176,18 +383,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                             _ => internal_error!("Failed to set deployed nonce to 1").into(),
                         }
                     })?;
-
                 is_constructor = true;
                 calldata = &[];
             }
             CallModifier::EVMCallcode => {
-                // This strange modifier doesn't preserve caller and value,
-                // but we still need to substitute "this" to the caller
                 this_address = caller;
             }
             CallModifier::EVMCallcodeStatic => {
-                // This strange modifier doesn't preserve caller and value,
-                // but we still need to substitute "this" to the caller
                 this_address = caller;
                 is_static = true;
             }
@@ -199,21 +401,19 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         }
 
         assert!(
-            *self.gas.resources_mut() == S::Resources::empty(),
+            self.hot.resources == S::Resources::empty(),
             "for a fresh call resources of initial frame must be empty",
         );
 
-        // We need to set address of self and caller, static state
-        // and calldata
-
-        *self.gas.resources_mut() = available_resources;
-        self.address = this_address;
-        self.caller = caller_address;
-        self.is_static = is_static;
-        self.is_constructor = is_constructor;
-        self.calldata = calldata;
-        self.heap = heap;
-        self.call_value = U256::from(nominal_token_value);
+        self.hot.resources = available_resources;
+        self.hot.instruction_pointer = 0;
+        self.cold.address = this_address;
+        self.cold.caller = caller_address;
+        self.cold.is_static = is_static;
+        self.cold.is_constructor = is_constructor;
+        self.cold.calldata = calldata;
+        self.cold.heap = heap;
+        self.cold.call_value = U256::from(nominal_token_value);
 
         self.execute_till_yield_point(system, hooks, tracer)
     }
@@ -230,7 +430,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     where
         S::IO: IOSubsystemExt,
     {
-        let preemption_reason = match mem::take(&mut self.pending_os_request) {
+        let preemption_reason = match mem::take(&mut self.cold.pending_os_request) {
             Some(x) => x,
             None => {
                 return Err(interface_error!(
@@ -242,65 +442,61 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         if call_request_result.has_scratch_space() {
             return Err(internal_error!("Unexpected scratch space").into());
         }
-        if self.gas.native() != 0 {
+        if self.hot.resources.native().as_u64() != 0 {
             return Err(internal_error!("Invalid initial native resources").into());
         }
 
-        self.gas.reclaim_resources(returned_resources);
+        self.hot.resources.reclaim(returned_resources);
 
         match call_request_result {
             CallResult::PreparationStepFailed => {
                 system_log!(system, "Call failed, out of gas\n");
-                // we fail because it's caller's failure
+                // the caller's failure
                 let exit_code = EvmError::OutOfGas.into();
                 return self.create_immediate_return_state(system, exit_code, tracer);
             }
             CallResult::Failed { return_values } => {
                 match preemption_reason {
                     PendingOsRequest::Call => {
-                        // NOTE: EE is ALLOWED to spend resources from caller's frame before
-                        // passing a desired part of them to the callee, If particular EE wants to
-                        // follow some not-true resource policy, it can make adjustments here before
-                        // continuing the execution
-                        if let Err(exit_code) =
-                            self.copy_returndata_to_heap(return_values.returndata)
-                        {
+                        if let Err(exit_code) = copy_returndata_to_heap(
+                            &mut self.cold,
+                            &mut self.hot.resources,
+                            return_values.returndata,
+                        ) {
                             return self.create_immediate_return_state(system, exit_code, tracer);
                         }
                     }
                     PendingOsRequest::Create(_) => {
-                        // NOTE: failed deployments may have non-empty returndata
-                        assert!(self.returndata_location.is_empty());
+                        // failed deployments may have non-empty returndata
+                        assert!(self.cold.returndata_location.is_empty());
                         assert!(return_values.return_scratch_space.is_none());
-
-                        self.returndata = return_values.returndata;
+                        self.cold.returndata = return_values.returndata;
                     }
                 }
-
-                self.stack.push_zero().expect("must have enough space");
+                self.hot.stack.push_zero().expect("must have enough space");
             }
-            CallResult::Successful { return_values } => {
-                match preemption_reason {
-                    PendingOsRequest::Call => {
-                        if let Err(exit_code) =
-                            self.copy_returndata_to_heap(return_values.returndata)
-                        {
-                            return self.create_immediate_return_state(system, exit_code, tracer);
-                        }
-                        self.stack.push_one().expect("must have enough space");
+            CallResult::Successful { return_values } => match preemption_reason {
+                PendingOsRequest::Call => {
+                    if let Err(exit_code) = copy_returndata_to_heap(
+                        &mut self.cold,
+                        &mut self.hot.resources,
+                        return_values.returndata,
+                    ) {
+                        return self.create_immediate_return_state(system, exit_code, tracer);
                     }
-                    PendingOsRequest::Create(deployed_at) => {
-                        assert!(return_values.return_scratch_space.is_none());
-                        // NOTE: successful deployments have empty returndata
-                        assert!(return_values.returndata.is_empty());
-                        self.returndata = return_values.returndata;
-                        // we need to push address to stack
-                        self.stack
-                            .push(&U256::from_b160(deployed_at))
-                            .expect("must have enough space");
-                    }
+                    self.hot.stack.push_one().expect("must have enough space");
                 }
-            }
+                PendingOsRequest::Create(deployed_at) => {
+                    assert!(return_values.return_scratch_space.is_none());
+                    // successful deployments have empty returndata
+                    assert!(return_values.returndata.is_empty());
+                    self.cold.returndata = return_values.returndata;
+                    self.hot
+                        .stack
+                        .push(&U256::from_b160(deployed_at))
+                        .expect("must have enough space");
+                }
+            },
         }
 
         self.execute_till_yield_point(system, hooks, tracer)
@@ -313,14 +509,12 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     ) -> Result<S::Resources, Self::SubsystemError> {
         let mut stipend = None;
 
-        // Additional cost for non-zero value for general calls
         if call_request.modifier != CallModifier::Constructor {
-            // Gas stipend calculation
             let is_delegate = call_request.is_delegate();
             let is_callcode = call_request.is_callcode();
             let is_callcode_or_delegate = is_callcode || is_delegate;
 
-            // Positive value cost and stipend
+            // positive value cost and stipend
             stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
                 resources_available_in_caller_frame.charge_legacy_gas(CALLVALUE)?;
                 Some(<S::Resources as Resources>::Ergs::from_legacy_gas_saturating(CALL_STIPEND))
@@ -328,7 +522,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 None
             };
 
-            // Account creation cost
+            // account creation cost
             let callee_is_empty = callee_parameters.nonce == 0
                 && callee_parameters.unpadded_code_len == 0
                 && callee_parameters.nominal_token_balance.is_zero();
@@ -340,25 +534,18 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        // we just need to apply 63/64 rule, as System/IO is responsible for the rest
-
+        // 63/64 rule; the system is responsible for the rest
         let max_passable_ergs =
             gas_utils::apply_63_64_rule(resources_available_in_caller_frame.ergs());
         let ergs_to_pass = core::cmp::min(call_request.ergs_to_pass, max_passable_ergs);
-
-        // Charge caller frame
         let mut resources_to_pass = S::Resources::from_ergs(ergs_to_pass);
-
-        // This never panics because max_passable_ergs <= resources_available_in_caller_frame
+        // never fails: max_passable_ergs <= resources_available_in_caller_frame
         resources_available_in_caller_frame
             .charge(&resources_to_pass)
             .unwrap();
-
-        // Add stipend
         if let Some(stipend) = stipend {
             resources_to_pass.add_ergs(stipend);
         }
-
         Ok(resources_to_pass)
     }
 
@@ -371,21 +558,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     where
         S::IO: IOSubsystemExt,
     {
-        // On EVM, CREATE(2) should fail before warming up the callee if:
-        // 1. Callstack depth limit is reached
-        // 2. Caller has insufficient balance
-        // 3. Caller's nonce would overflow
-        // However, if conditions 1 or 2 happens during a CALL, the callee
-        // is warmed up.
-        // TODO(EVM-1365): some checks are duplicated here and in [before_executing_frame],
-        // we should refactor to avoid such duplication.
+        // CREATE(2) fails before warming up the callee on depth, balance or nonce overflow;
+        // a CALL still warms it up in the first two cases.
         if call_request.modifier == CallModifier::Constructor {
             if let Some(error) = constructor_pre_checks(system, call_request, callstack_depth)? {
                 emit_pre_frame_call_error(call_request, callstack_depth, tracer, &error);
                 return Ok(false);
             }
         }
-
         Ok(true)
     }
 
@@ -407,7 +587,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         }
 
         if frame_state.external_call.modifier == CallModifier::Constructor {
-            // Increase nonce. Ignore, if we are in the root frame - caller's nonce already incremented before.
+            // the root frame's nonce was incremented before
             if frame_state.environment_parameters.callstack_depth > 0 {
                 match frame_state
                     .external_call
@@ -440,12 +620,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .environment_parameters
                 .callee_account_properties
                 .nonce;
-
-            // Check there's no contract already deployed at this address.
-            // NB: EVM also specifies that the address should have empty storage,
-            // but we cannot perform such a check for now.
-            // We need to check this here (not when we actually deploy the code)
-            // because if this check fails the constructor shouldn't be executed.
+            // No contract may already be deployed at the address; checked here because the
+            // constructor must not run then.
             if deployee_code_len != 0 || deployee_nonce != 0 {
                 system_log!(system, "Deployment on existing account\n",);
                 frame_state
@@ -454,139 +630,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     .charge(&S::Resources::from_ergs(
                         frame_state.external_call.available_resources.ergs(),
                     ))
-                    .expect("Should succeed"); // Burn all gas
-
+                    .expect("Should succeed"); // burn all gas
                 tracer
                     .evm_tracer()
                     .on_call_error(&EvmError::CreateCollision);
                 return Ok(false);
             }
         }
-
         Ok(true)
     }
-}
-
-/// Checks call depth limit and caller balance.
-/// Used by both `before_reading_callee` and `before_executing_frame`.
-pub(crate) fn check_depth_and_balance<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    call_request: &mut ExternalCallRequest<S>,
-    callstack_depth: usize,
-) -> Result<Option<EvmError>, SubsystemError<EvmErrors>>
-where
-    S::IO: IOSubsystemExt,
-{
-    if callstack_depth > 1024 {
-        system_log!(system, "Callstack is too deep\n",);
-        return Ok(Some(EvmError::CallTooDeep));
-    }
-
-    // Check caller has enough balance for token transfer
-    if !call_request.nominal_token_value.is_zero() && !call_request.is_delegate() {
-        let caller_balance = call_request
-            .available_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    THIS_EE_TYPE,
-                    inf_resources,
-                    &call_request.caller,
-                    AccountDataRequest::empty().with_nominal_token_balance(),
-                )
-            })?
-            .nominal_token_balance
-            .0;
-
-        if caller_balance < call_request.nominal_token_value {
-            system_log!(system, "Not enough balance for transfer\n",);
-            return Ok(Some(EvmError::InsufficientBalance));
-        }
-    }
-
-    Ok(None)
-}
-
-/// Checks that must pass before a CREATE/CREATE2 callee is read:
-/// depth, balance, and nonce overflow (read-only check).
-pub(crate) fn constructor_pre_checks<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    call_request: &mut ExternalCallRequest<S>,
-    callstack_depth: usize,
-) -> Result<Option<EvmError>, SubsystemError<EvmErrors>>
-where
-    S::IO: IOSubsystemExt,
-{
-    if let Some(error) = check_depth_and_balance(system, call_request, callstack_depth)? {
-        return Ok(Some(error));
-    }
-
-    // Read-only nonce overflow check (actual increment happens in before_executing_frame)
-    if callstack_depth > 0 {
-        let caller_nonce = call_request
-            .available_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    THIS_EE_TYPE,
-                    inf_resources,
-                    &call_request.caller,
-                    AccountDataRequest::empty().with_nonce(),
-                )
-            })?
-            .nonce
-            .0;
-        if caller_nonce == u64::MAX {
-            return Ok(Some(EvmError::NonceOverflow));
-        }
-    }
-
-    Ok(None)
-}
-
-/// Wraps a pre-frame call error in a synthetic pseudo-frame open/close sequence.
-///
-/// Errors detected in `before_reading_callee` occur before `on_new_execution_frame` has been
-/// called for the child frame. Without wrapping, the tracer attributes these errors to the
-/// parent frame. This helper emits `on_new_execution_frame` / `on_call_error` /
-/// `after_execution_frame_completed` so the tracer sees a complete child frame, matching
-/// Geth's `captureBegin`/`captureEnd` bracketing for pre-check failures.
-pub(crate) fn emit_pre_frame_call_error<S: EthereumLikeTypes>(
-    call_request: &ExternalCallRequest<S>,
-    callstack_depth: usize,
-    tracer: &mut impl Tracer<S>,
-    error: &EvmError,
-) {
-    let launch_params = ExecutionEnvironmentLaunchParams {
-        external_call: ExternalCallRequest {
-            available_resources: S::Resources::empty(),
-            ergs_to_pass: call_request.ergs_to_pass,
-            caller: call_request.caller,
-            callee: call_request.callee,
-            callers_caller: call_request.callers_caller,
-            modifier: call_request.modifier,
-            input: call_request.input,
-            nominal_token_value: call_request.nominal_token_value,
-            call_scratch_space: None,
-        },
-        environment_parameters: EnvironmentParameters {
-            scratch_space_len: 0,
-            callstack_depth,
-            callee_account_properties: CalleeAccountProperties {
-                ee_type: 0,
-                nonce: 0,
-                nominal_token_balance: U256::ZERO.into(),
-                bytecode: &[],
-                code_version: 0,
-                unpadded_code_len: 0,
-                artifacts_len: 0,
-            },
-        },
-    };
-
-    tracer.on_new_execution_frame(&launch_params);
-    tracer.evm_tracer().on_call_error(error);
-    let resources = S::Resources::empty();
-    let result = CallResult::Failed {
-        return_values: ReturnValues::empty(),
-    };
-    tracer.after_execution_frame_completed(Some((&resources, &result)));
 }

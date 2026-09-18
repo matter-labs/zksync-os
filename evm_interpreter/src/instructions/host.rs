@@ -20,7 +20,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_nominal_token_balance(THIS_EE_TYPE, self.gas.resources_mut(), &address)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
         // value is NominalTokenValue = ruint::aliases::U256, convert to u256::U256
         *stack_top = U256::from(value);
         Ok(())
@@ -32,7 +32,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
         // value is NominalTokenValue = ruint::aliases::U256, convert to u256::U256
         let value = U256::from(value);
         self.stack.push(&value)
@@ -46,7 +46,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_observable_bytecode_size(THIS_EE_TYPE, self.gas.resources_mut(), &address)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
         *stack_top = U256::from(value as u64);
         Ok(())
     }
@@ -59,7 +59,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_observable_bytecode_hash(THIS_EE_TYPE, self.gas.resources_mut(), &address)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         *stack_top = U256::from_be_bytes(value.as_u8_array_ref());
         Ok(())
@@ -78,7 +78,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let bytecode = system
             .io
             .get_observable_bytecode(THIS_EE_TYPE, self.gas.resources_mut(), &address)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         // now follow logic of calldatacopy
         let source = &source_offset
@@ -118,7 +118,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .storage_read::<false>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
 
@@ -140,7 +140,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .storage_read::<true>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
 
@@ -178,7 +178,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &index,
                 &value,
             )
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
 
@@ -223,7 +223,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &index,
                 &value,
             )
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
 
@@ -269,7 +269,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &topics,
                 data,
             )
-            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::system_error(e))?;
 
         Ok(())
     }
@@ -297,7 +297,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &beneficiary,
             )
             .map_err(wrap_error!())
-            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?;
+            .map_err(|e| Self::subsystem_error(e))?;
 
         tracer.evm_tracer().on_selfdestruct(
             beneficiary,
@@ -363,7 +363,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &self.address,
                 &self.heap[deployment_code.clone()],
             )
-            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?
+            .map_err(|e| Self::subsystem_error(e))?
         } else {
             let deployer_nonce = self
                 .gas
@@ -373,14 +373,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         .io
                         .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
                 })
-                .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
+                .map_err(|e| Self::system_error(e))?;
 
             Self::derive_address_for_deployment_create(
                 self.gas.resources_mut(),
                 &self.address,
                 deployer_nonce,
             )
-            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?
+            .map_err(|e| Self::subsystem_error(e))?
         };
 
         // at this preemption point we give all resources to the system

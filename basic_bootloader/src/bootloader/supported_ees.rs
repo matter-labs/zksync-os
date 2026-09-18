@@ -10,7 +10,8 @@ use zk_ee::{
 };
 
 #[allow(type_alias_bounds)]
-pub type SystemBoundEVMInterpreter<'a, S: EthereumLikeTypes> = evm_interpreter::Interpreter<'a, S>;
+pub type SystemBoundEVMInterpreter<'a, S: EthereumLikeTypes> =
+    evm_interpreter::v2::Interpreter<'a, S>;
 
 #[repr(u8)]
 pub enum SupportedEEVMState<'a, S: EthereumLikeTypes> {
@@ -158,7 +159,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn give_back_ergs(&mut self, resources: S::Resources) {
         assert!(resources.native().as_u64() == 0);
         match self {
-            Self::EVM(evm_frame) => evm_frame.gas.reclaim_resources(resources),
+            Self::EVM(evm_frame) => evm_frame.reclaim_resources(resources),
         }
     }
 }

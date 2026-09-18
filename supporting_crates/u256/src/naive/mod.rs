@@ -58,6 +58,16 @@ impl U256 {
         }
     }
 
+    /// Same as `write_into_ptr`; the source location does not matter on this backend.
+    ///
+    /// # Safety
+    /// `dst` must be valid for a write of `Self`.
+    pub unsafe fn write_into_ptr_unchecked(dst: *mut Self, source: &Self) {
+        unsafe {
+            dst.write(Self(source.0));
+        }
+    }
+
     /// # Safety
     /// `a` and `b` must be valid, properly aligned pointers to initialized `Self` values.
     pub unsafe fn swap_in_place(a: *mut Self, b: *mut Self) {

@@ -192,7 +192,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 /// A single carry-aware add reduces, with a final normalization step that maps
 /// `2^256 - 1 ≡ 0`.
 #[inline]
-fn reduce_mod_max(product_lo: &mut U256, product_hi: &U256, out: &mut U256) {
+pub(crate) fn reduce_mod_max(product_lo: &mut U256, product_hi: &U256, out: &mut U256) {
     let carry = product_lo.overflowing_add_assign(product_hi);
     if carry {
         // The wrapped 2^256 ≡ 1 (mod 2^256 - 1), so account for it by adding 1.
