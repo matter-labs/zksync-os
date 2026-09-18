@@ -367,7 +367,7 @@ impl<
             self.preimages_cache
                 .storage
                 .iter()
-                .map(|(k, v)| (k, v.as_slice(), PreimageType::Bytecode)),
+                .map(|(k, v)| (k, v.code(), PreimageType::Bytecode)),
         );
     }
 

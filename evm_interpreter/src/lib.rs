@@ -69,6 +69,12 @@ pub const DEFAULT_CODE_VERSION_BYTE: u8 = 0u8;
 /// Artifacts cached
 pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
 
+/// Artifacts are not a part of the deployed bytecode (as for `DEFAULT_CODE_VERSION_BYTE`), but the
+/// storage model computed them when it loaded the code, and keeps them next to it for the rest
+/// of the block. Same layout as for `ARTIFACTS_CACHING_CODE_VERSION_BYTE`, but every frame is
+/// charged as if it computed them, so resources do not depend on who computes the artifacts.
+pub const ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE: u8 = 2u8;
+
 /// An internal flag used to indicate that EE is waiting for the result of some preemption from OS (call or create request).
 /// Is public for testing purposes.
 pub enum PendingOsRequest<S: SystemTypes> {
@@ -260,10 +266,21 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         deployed_code: &[u8],
         resources: &mut R,
     ) -> Result<Self, SystemError> {
+        Self::charge_for_artifacts(deployed_code.len(), resources)?;
+        Ok(Self::create_artifacts_inner(allocator, deployed_code))
+    }
+
+    ///
+    /// Charge of `create_artifacts`
+    ///
+    pub fn charge_for_artifacts<R: Resources>(
+        deployed_code_len: usize,
+        resources: &mut R,
+    ) -> Result<(), SystemError> {
         use crate::native_resource_constants::BYTECODE_PREPROCESSING_BYTE_NATIVE_COST;
         use zk_ee::system::Computational;
         let native_cost = R::Native::from_computational(
-            BYTECODE_PREPROCESSING_BYTE_NATIVE_COST.saturating_mul(deployed_code.len() as u64),
+            BYTECODE_PREPROCESSING_BYTE_NATIVE_COST.saturating_mul(deployed_code_len as u64),
         );
         resources
             .charge(&R::from_native(native_cost))
@@ -275,8 +292,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
                     }
                     e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => e,
                 }
-            })?;
-        Ok(Self::create_artifacts_inner(allocator, deployed_code))
+            })
     }
 
     /// Useful to expose for tests.
@@ -353,14 +369,6 @@ impl<A: Allocator> BitMapOwned<A> {
     }
 
     /// # Safety
-    /// pos must be within the bounds of the bitmap.
-    pub(crate) unsafe fn set_bit_on_unchecked(&mut self, pos: usize) {
-        let (word_idx, bit_idx) = (pos / usize::BITS as usize, pos % usize::BITS as usize);
-        let dst = unsafe { self.inner.get_unchecked_mut(word_idx) };
-        *dst |= 1usize << bit_idx;
-    }
-
-    /// # Safety
     /// [pos] must be within the bounds of the bitmap.
     pub(crate) unsafe fn get_bit_unchecked(&self, pos: usize) -> bool {
         let (word_idx, bit_idx) = (pos / (usize::BITS as usize), pos % (usize::BITS as usize));
@@ -370,26 +378,45 @@ impl<A: Allocator> BitMapOwned<A> {
 
 /// Analyzes bytecode to build a jump map.
 fn analyze<A: Allocator>(code: &[u8], allocator: A) -> BitMapOwned<A> {
-    use self::opcodes as opcode;
-
-    let code_len = code.len();
-    let mut jumps = BitMapOwned::<A>::allocate_for_bit_capacity(code_len, allocator);
-
-    let mut i = 0;
-    while i < code_len {
-        let op = code[i];
-        if op == opcode::JUMPDEST {
-            // SAFETY: `i` is always < code_len
-            unsafe { jumps.set_bit_on_unchecked(i) };
-            i += 1;
-        } else if (opcode::PUSH1..=opcode::PUSH32).contains(&op) {
-            i += 1 + (op - opcode::PUSH1 + 1) as usize;
-        } else {
-            i += 1;
-        }
-    }
+    let mut jumps = BitMapOwned::<A>::allocate_for_bit_capacity(code.len(), allocator);
+    analyze_into(code, &mut jumps.inner);
 
     jumps
+}
+
+/// Length of the jumpdest artifacts (the bitmap, as bytes) for the code of the given length
+pub const fn artifacts_byte_len(code_len: usize) -> usize {
+    code_len.div_ceil(u64::BITS as usize) * core::mem::size_of::<u64>()
+}
+
+/// Marks valid jump destinations of the `code` in the zeroed `bitmap`, that should be
+/// `artifacts_byte_len(code.len())` bytes long.
+pub fn analyze_into(code: &[u8], bitmap: &mut [usize]) {
+    use self::opcodes as opcode;
+
+    assert!(core::mem::size_of_val(bitmap) >= artifacts_byte_len(code.len()));
+
+    // The loop runs over every opcode of every contract that gets executed, so it walks the code
+    // by a pointer: an iteration is a load, the checks for JUMPDEST and PUSH, and the increment.
+    let start = code.as_ptr();
+    let end = start.wrapping_add(code.len());
+    let mut position = start;
+    while position < end {
+        // SAFETY: `position` is in the bounds of the `code`
+        let op = unsafe { position.read() };
+        if op == opcode::JUMPDEST {
+            let pos = position.addr() - start.addr();
+            let (word_idx, bit_idx) = (pos / usize::BITS as usize, pos % usize::BITS as usize);
+            // SAFETY: the length of the bitmap is checked above
+            unsafe { *bitmap.get_unchecked_mut(word_idx) |= 1usize << bit_idx };
+            position = position.wrapping_add(1);
+        } else if (opcode::PUSH1..=opcode::PUSH32).contains(&op) {
+            // the immediate can go beyond the end of the code
+            position = position.wrapping_add(1 + (op - opcode::PUSH1 + 1) as usize);
+        } else {
+            position = position.wrapping_add(1);
+        }
+    }
 }
 
 ///
@@ -511,4 +538,80 @@ pub fn keccak256_ergs_cost(len: usize) -> Ergs {
     let words = len.div_ceil(32);
     let gas_cost = SHA3.saturating_add(SHA3WORD.saturating_mul(words as u64));
     Ergs(gas_cost.saturating_mul(ERGS_PER_GAS))
+}
+
+#[cfg(test)]
+mod jumpdest_analysis_tests {
+    use super::*;
+
+    /// Straightforward analysis by indexes
+    fn reference(code: &[u8]) -> alloc::vec::Vec<bool> {
+        let mut result = alloc::vec![false; code.len()];
+        let mut i = 0;
+        while i < code.len() {
+            let op = code[i];
+            if op == opcodes::JUMPDEST {
+                result[i] = true;
+            }
+            i += 1;
+            if (opcodes::PUSH1..=opcodes::PUSH32).contains(&op) {
+                i += (op - opcodes::PUSH1 + 1) as usize;
+            }
+        }
+        result
+    }
+
+    fn check(code: &[u8]) {
+        let expected = reference(code);
+        let artifacts =
+            BytecodePreprocessingData::create_artifacts_inner(alloc::alloc::Global, code);
+        assert_eq!(artifacts.as_slice().len(), artifacts_byte_len(code.len()));
+        for (i, expected) in expected.iter().enumerate() {
+            assert_eq!(artifacts.is_valid_jumpdest(i), *expected, "position {i}");
+        }
+        assert!(!artifacts.is_valid_jumpdest(code.len()));
+        assert!(!artifacts.is_valid_jumpdest(usize::MAX));
+    }
+
+    #[test]
+    fn jumpdest_in_push_data_and_truncated_push() {
+        let jd = opcodes::JUMPDEST;
+        check(&[]);
+        check(&[jd]);
+        // JUMPDEST inside of the immediate is not a destination, the one after it is
+        check(&[opcodes::PUSH1, jd, jd]);
+        check(&[opcodes::PUSH2, jd, jd, jd, opcodes::PUSH32]);
+        // PUSH with the immediate that goes beyond the end of the code
+        check(&[jd, opcodes::PUSH32, jd, jd]);
+        check(&[opcodes::PUSH32]);
+        // boundaries of the words of the bitmap
+        let mut code = alloc::vec![0u8; 300];
+        for i in [0, 31, 32, 63, 64, 65, 127, 128, 255, 256, 299] {
+            code[i] = jd;
+        }
+        check(&code);
+    }
+
+    #[test]
+    fn pseudo_random_code() {
+        // xorshift, biased to PUSHes and JUMPDESTs
+        let mut state = 0x9E3779B97F4A7C15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..200 {
+            let len = (next() % 700) as usize;
+            let code: alloc::vec::Vec<u8> = (0..len)
+                .map(|_| match next() % 4 {
+                    0 => opcodes::JUMPDEST,
+                    1 => opcodes::PUSH1 + (next() % 32) as u8,
+                    _ => next() as u8,
+                })
+                .collect();
+            check(&code);
+        }
+    }
 }

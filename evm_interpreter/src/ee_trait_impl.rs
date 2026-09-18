@@ -126,6 +126,20 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     self.bytecode = code;
                     self.bytecode_preprocessing = bytecode_preprocessing;
                 }
+                ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE => {
+                    // charged as `DEFAULT_CODE_VERSION_BYTE` is
+                    BytecodePreprocessingData::<S::Allocator>::charge_for_artifacts(
+                        unpadded_code_len as usize,
+                        &mut available_resources,
+                    )?;
+                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                        bytecode,
+                        unpadded_code_len as usize,
+                        artifacts_len as usize,
+                    )?;
+                    self.bytecode = code;
+                    self.bytecode_preprocessing = bytecode_preprocessing;
+                }
                 _ => return Err(internal_error!("Unknown code version").into()),
             }
         };

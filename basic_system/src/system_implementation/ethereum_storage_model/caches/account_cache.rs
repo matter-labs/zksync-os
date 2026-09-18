@@ -410,7 +410,8 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             || ArtifactsLen::IS_MATERIAL
             || Bytecode::IS_MATERIAL
             || IsDelegated::IS_MATERIAL;
-        let bytecode = if needs_preimage {
+        // (bytecode in the form for execution, length of the code itself, length of the artifacts)
+        let (bytecode, code_length, artifacts_len) = if needs_preimage {
             // NOTE: deconstruction happens at the end of the TX, so even deconstructed accounts would NOT
             // respond with empty bytecode (well, WTF)
 
@@ -419,29 +420,36 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 
                 let res: &'static [u8] = &[];
 
-                res
+                (res, 0, 0)
             } else if full_data.bytecode_hash == EMPTY_STRING_KECCAK_HASH {
                 let res: &'static [u8] = &[];
 
-                res
+                (res, 0, 0)
             } else {
-                // can try to get preimage
-                let preimage_type = PreimageRequestForUnknownLength {
-                    hash: full_data.bytecode_hash,
-                    preimage_type: PreimageType::Bytecode,
-                };
-                preimages_cache.get_preimage::<PROOF_ENV>(
+                // can try to get preimage. It comes with the jumpdest artifacts, that are made
+                // once per code, and not once per call frame
+                let executable = preimages_cache.get_executable_bytecode::<PROOF_ENV>(
                     ee_type,
-                    &preimage_type,
+                    &full_data.bytecode_hash,
                     resources,
                     oracle,
-                )?
+                )?;
+                (
+                    executable.bytecode,
+                    executable.code_len,
+                    executable.artifacts_len,
+                )
             }
         } else {
-            &[]
+            (&[][..], 0, 0)
         };
 
-        let code_length = bytecode.len() as u32;
+        // artifacts are there only if the code is
+        let code_version = if artifacts_len > 0 {
+            evm_interpreter::ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE
+        } else {
+            evm_interpreter::DEFAULT_CODE_VERSION_BYTE
+        };
 
         let is_delegated = if code_length == 3 + 20 {
             bytecode[..3] == zk_ee::system::EIP7702_DELEGATION_MARKER
@@ -456,10 +464,10 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             nonce: Maybe::construct(|| full_data.nonce),
             bytecode_hash: Maybe::construct(|| full_data.bytecode_hash),
             unpadded_code_len: Maybe::construct(|| code_length),
-            artifacts_len: Maybe::construct(|| 0),
+            artifacts_len: Maybe::construct(|| artifacts_len),
             nominal_token_balance: Maybe::construct(|| full_data.balance),
             bytecode: Maybe::construct(|| bytecode),
-            code_version: Maybe::construct(|| 0),
+            code_version: Maybe::construct(|| code_version),
             is_delegated: Maybe::construct(|| is_delegated),
         })
     }
