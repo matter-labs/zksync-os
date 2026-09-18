@@ -323,9 +323,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
             // Positive value cost and stipend
             stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
-                let positive_value_cost = S::Resources::from_ergs(Ergs(CALLVALUE * ERGS_PER_GAS));
-                resources_available_in_caller_frame.charge(&positive_value_cost)?;
-                Some(Ergs(CALL_STIPEND * ERGS_PER_GAS))
+                resources_available_in_caller_frame.charge_legacy_gas(CALLVALUE)?;
+                Some(<S::Resources as Resources>::Ergs::from_legacy_gas_saturating(CALL_STIPEND))
             } else {
                 None
             };
@@ -338,8 +337,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 && !call_request.nominal_token_value.is_zero()
                 && callee_is_empty
             {
-                let callee_creation_cost = S::Resources::from_ergs(Ergs(NEWACCOUNT * ERGS_PER_GAS));
-                resources_available_in_caller_frame.charge(&callee_creation_cost)?
+                resources_available_in_caller_frame.charge_legacy_gas(NEWACCOUNT)?
             }
         }
 

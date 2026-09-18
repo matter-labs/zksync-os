@@ -432,7 +432,7 @@ mod tests {
             let mut hasher = Blake2s256::new();
             hasher.update(prev.as_u8_ref());
             hasher.update(prev.as_u8_ref());
-            prev = Bytes32::from_array(*hasher.finalize());
+            prev = Bytes32::from_array(hasher.finalize());
         }
     }
 

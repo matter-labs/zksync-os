@@ -31,7 +31,7 @@ use stack_trait::StackFactory;
 use zk_ee::common_structs::skip_list_quasi_vec::ListVec;
 use zk_ee::memory::*;
 use zk_ee::oracle::IOOracle;
-use zk_ee::reference_implementations::BaseResources;
+use zk_ee::reference_implementations::{BaseResources, GasOnlyResources};
 use zk_ee::system::metadata::zk_metadata::ZkMetadata;
 use zk_ee::system::{logger::Logger, EthereumLikeTypes, SystemTypes};
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -129,7 +129,7 @@ pub struct EthereumStorageSystemTypesWithPostOps<O, L>(O, L);
 
 impl<O: IOOracle, L: Logger + Default> SystemTypes for EthereumStorageSystemTypesWithPostOps<O, L> {
     type IOTypes = EthereumIOTypesConfig;
-    type Resources = BaseResources<Native>;
+    type Resources = GasOnlyResources;
     type IO = FullIO<
         Self::Allocator,
         Self::Resources,

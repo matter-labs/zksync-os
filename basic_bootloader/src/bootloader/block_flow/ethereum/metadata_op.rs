@@ -4,8 +4,7 @@ use zk_ee::{
     oracle::IOOracle,
     system::{
         errors::internal::InternalError, metadata::chain_config::ChainConfig,
-        metadata::system_metadata::SystemMetadata, SystemTypes, MAX_BLOBS_PER_TX,
-        MAX_BLOCK_GAS_LIMIT,
+        metadata::system_metadata::SystemMetadata, Resources, SystemTypes, MAX_BLOBS_PER_TX,
     },
     types_config::EthereumIOTypesConfig,
 };
@@ -40,7 +39,7 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
         // - excess blob gas is one coming from the parent
         // - potentially EIP-1559 params
 
-        if header.block_gas_limit() > MAX_BLOCK_GAS_LIMIT {
+        if header.block_gas_limit() > <S::Resources as Resources>::MAX_LEGACY_GAS {
             return Err(internal_error!("block gas limit is too high"));
         }
 

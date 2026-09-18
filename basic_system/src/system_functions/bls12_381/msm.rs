@@ -1,7 +1,7 @@
 use super::*;
 use alloc::vec::Vec;
 use crypto::ark_ec::CurveGroup;
-use zk_ee::system::{Ergs, Resources, SystemFunction};
+use zk_ee::system::{Resources, SystemFunction};
 
 pub const BLS12_381_G1_MSM_PER_POINT_GAS: u64 = 12000;
 pub const BLS12_381_G2_MSM_PER_POINT_GAS: u64 = 22500;
@@ -209,17 +209,14 @@ fn bls12_381_g1_msm_as_system_function_inner<
         BLS12_381_G1_MSM_PER_POINT_GAS,
         &DISCOUNT_TABLE_G1_MSM,
     );
-    let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+    let cost_gas = cost;
     let cost_native = compute_cost(
         input.len(),
         G1_MSM_PAIR_LEN,
         crate::cost_constants::BLS12_381_G1MSM_PER_POINT_NATIVE_COST,
         &DISCOUNT_TABLE_G1_MSM,
     );
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let num_pairs = input.len() / G1_MSM_PAIR_LEN;
     let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
@@ -293,17 +290,14 @@ fn bls12_381_g2_msm_as_system_function_inner<
         BLS12_381_G2_MSM_PER_POINT_GAS,
         &DISCOUNT_TABLE_G2_MSM,
     );
-    let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+    let cost_gas = cost;
     let cost_native = compute_cost(
         input.len(),
         G2_MSM_PAIR_LEN,
         crate::cost_constants::BLS12_381_G2MSM_PER_POINT_NATIVE_COST,
         &DISCOUNT_TABLE_G2_MSM,
     );
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let num_pairs = input.len() / G2_MSM_PAIR_LEN;
 

@@ -505,7 +505,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let all_resources = self.gas.take_resources();
 
         *external_call_dest = Some(EVMCallRequest {
-            ergs_to_pass: Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS)),
+            ergs_to_pass: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
+                *gas_to_pass,
+            ),
             call_value: value,
             destination_address: to,
             input_data: calldata,

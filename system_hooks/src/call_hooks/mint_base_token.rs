@@ -72,11 +72,8 @@ where
     let mut resources = available_resources;
 
     // Charge EVM gas for the mint operation. This hook should be used during upgrades only, so we don't care about EVM compatibility
-    evm_interpreter::charge_native_and_ergs::<S::Resources>(
-        &mut resources,
-        HOOK_BASE_NATIVE_COST,
-        Ergs(0), // Do not charge EVM gas here, it is already charged in the system contract
-    )?;
+    // Do not charge EVM gas here, it is already charged in the system contract
+    resources.charge_native(HOOK_BASE_NATIVE_COST)?;
     // Calldata length shouldn't be able to overflow u32, due to gas
     // limitations.
     let calldata_len: u32 = calldata

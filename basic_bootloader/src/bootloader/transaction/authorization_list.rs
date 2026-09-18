@@ -6,17 +6,14 @@ use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::BootloaderSubsystemError;
 use core::fmt::Write;
 use crypto::MiniDigest;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::system::SystemError;
-use zk_ee::system::Ergs;
 use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
-use zk_ee::system::Resource;
 use zk_ee::system::SystemFunctionsExt;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
 use zk_ee::system_log;
@@ -98,12 +95,10 @@ where
     let chain_id = system.get_chain_id();
 
     // 0. Pre-charge intrinsic gas
-    resources.charge(&S::Resources::from_ergs_and_native(
-        Ergs(evm_interpreter::gas_constants::NEWACCOUNT * ERGS_PER_GAS),
-        <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(
-            crate::bootloader::constants::PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD,
-        ),
-    ))?;
+    resources.charge_legacy_gas_and_native(
+        evm_interpreter::gas_constants::NEWACCOUNT,
+        crate::bootloader::constants::PER_AUTH_NATIVE_COMPUTATIONAL_OVERHEAD,
+    )?;
 
     // 1. Check chain id
     if !auth_chain_id.is_zero() && auth_chain_id != &U256::from(chain_id) {
@@ -164,14 +159,11 @@ where
         && account_properties.nominal_token_balance.0.is_zero();
 
     if !is_empty {
-        let ergs = Ergs(
-            (evm_interpreter::gas_constants::NEWACCOUNT
-                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST)
-                * ERGS_PER_GAS,
-        );
+        let refund_gas = evm_interpreter::gas_constants::NEWACCOUNT
+            - evm_interpreter::gas_constants::PER_AUTH_BASE_COST;
         system
             .io
-            .add_to_refund_counter(S::Resources::from_ergs(ergs))?
+            .add_to_refund_counter(S::Resources::from_legacy_gas_saturating(refund_gas))?
     }
 
     let delegation_address = B160::from_be_bytes(*delegation_address);

@@ -1,5 +1,4 @@
 use core::fmt::Write;
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::system::{
     errors::internal::InternalError, Computational, EthereumLikeTypes, IOSubsystem, Resource,
     Resources, System,
@@ -29,7 +28,7 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
     resources.charge_unchecked(&to_charge_for_pubdata);
 
     let mut gas_used = gas_limit
-        .checked_sub(resources.ergs().0.div_floor(ERGS_PER_GAS))
+        .checked_sub(resources.legacy_gas())
         .ok_or(internal_error!("gas remaining > gas limit"))?;
     resources.exhaust_ergs();
 
@@ -37,8 +36,7 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
 
     // Following EIP-3529, refunds are capped to 1/5 of the gas used
     let evm_refund = {
-        let full_refund_ergs = system.io.get_refund_counter().ergs();
-        let full_refund_gas = full_refund_ergs.0.div_floor(ERGS_PER_GAS);
+        let full_refund_gas = system.io.get_refund_counter().legacy_gas();
         let max_refund = gas_used / 5;
         core::cmp::min(full_refund_gas, max_refund)
     };

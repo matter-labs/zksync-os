@@ -21,7 +21,7 @@ use basic_system::system_implementation::system::FullIO;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
 use zk_ee::oracle::IOOracle;
-use zk_ee::reference_implementations::BaseResources;
+use zk_ee::reference_implementations::{BaseResources, GasOnlyResources};
 use zk_ee::system::{EthereumLikeTypes, SystemTypes};
 use zk_ee::types_config::EthereumIOTypesConfig;
 

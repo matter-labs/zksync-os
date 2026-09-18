@@ -205,12 +205,12 @@ macro_rules! wrap_with_resources {
             use zk_ee::system::resources::Resource;
 
             let spent_resources = resources_before.diff($resources.clone());
+            use zk_ee::system::Computational;
             cycle_marker::log_marker(&format!(
                 "Spent ergs for [{}]: {:?}\n",
                 $label,
-                spent_resources.ergs().0
+                spent_resources.ergs().as_u64()
             ));
-            use zk_ee::system::Computational;
             cycle_marker::log_marker(&format!(
                 "Spent native for [{}]: {}\n",
                 $label,

@@ -1,7 +1,6 @@
 use super::*;
 
 use alloc::vec::Vec;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK;
@@ -14,12 +13,12 @@ use zk_ee::{
     system::{
         base_system_functions::ModExpErrors,
         errors::{subsystem::SubsystemError, system::SystemError},
-        Computational, Ergs, ModExpInterfaceError, Resource,
+        Computational, ErgsResource, ModExpInterfaceError, Resource,
     },
 };
 
 use crate::cost_constants::{
-    MODEXP_BASE_NATIVE_COST, MODEXP_MINIMAL_COST_ERGS, MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST,
+    MODEXP_BASE_NATIVE_COST, MODEXP_MINIMAL_COST_GAS, MODEXP_PER_OP_DIGIT_SQ_NATIVE_COST,
     MODEXP_PER_OP_OVERHEAD_NATIVE_COST,
 };
 
@@ -220,7 +219,7 @@ fn modexp_as_system_function_inner<
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
     let minimal_native = <R::Native as Computational>::from_computational(MODEXP_BASE_NATIVE_COST);
-    if !resources.ergs().has_enough(&MODEXP_MINIMAL_COST_ERGS) {
+    if resources.legacy_gas() < MODEXP_MINIMAL_COST_GAS {
         return Err(out_of_ergs_error!().into());
     }
     if !resources.native().has_enough(&minimal_native) {
@@ -311,7 +310,8 @@ fn modexp_as_system_function_inner<
     // an input declaring large lengths with a minimal payload from forcing
     // large allocations / zero-fills before any commensurate charge (relevant
     // when the EIP-7823 length cap is not enabled).
-    let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    let gas = gas_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
+    let ergs = <R::Ergs as ErgsResource>::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
     let conservative_native =
         native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     if !resources.ergs().has_enough(&ergs) {
@@ -387,14 +387,14 @@ fn modexp_as_system_function_inner<
     Ok(())
 }
 
-/// Computes the ergs cost for modexp (Fusaka repricing, EIP-7883).
+/// Computes the gas cost for modexp (Fusaka repricing, EIP-7883).
 /// Returns an OOG error if there's an arithmetic overflow.
-pub fn ergs_cost(
+pub fn gas_cost(
     base_size: u64,
     exp_size: u64,
     mod_size: u64,
     exp_highp: &U256,
-) -> Result<Ergs, SystemError> {
+) -> Result<u64, SystemError> {
     let multiplication_complexity = {
         let max_length = core::cmp::max(base_size, mod_size);
         if max_length <= 32 {
@@ -425,9 +425,7 @@ pub fn ergs_cost(
     let computed_gas = multiplication_complexity
         .checked_mul(iteration_count)
         .ok_or(out_of_ergs_error!())?;
-    let gas = core::cmp::max(500, computed_gas);
-    let ergs = gas.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
-    Ok(Ergs(ergs))
+    Ok(core::cmp::max(500, computed_gas))
 }
 
 /// Computes the native cost for modexp by scanning the exponent.
@@ -517,7 +515,7 @@ mod tests {
             runtime::{FatalRuntimeError, RuntimeError},
             subsystem::SubsystemError,
         },
-        NullLogger, Resources,
+        Ergs, NullLogger, Resources,
     };
 
     type TestResources = BaseResources<DecreasingNative>;
@@ -590,7 +588,7 @@ mod tests {
         let input = modexp_input(&[2], &[1], &[3]);
         let mut output = Vec::new();
         let mut resources = TestResources::from_ergs_and_native(
-            MODEXP_MINIMAL_COST_ERGS,
+            Ergs::from_legacy_gas_saturating(MODEXP_MINIMAL_COST_GAS),
             DecreasingNative::from_computational(MODEXP_BASE_NATIVE_COST - 1),
         );
 

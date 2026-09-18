@@ -18,7 +18,6 @@ use crate::system_implementation::flat_storage_model::BitsOrd160;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::errors::EvmSubsystemError;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
 use storage_models::common_structs::PreimageCacheModel;
@@ -39,14 +38,13 @@ use zk_ee::system::Computational;
 use zk_ee::system::DeconstructionSubsystemError;
 use zk_ee::system::NonceError;
 use zk_ee::system::NonceSubsystemError;
-use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
 use zk_ee::wrap_error;
 use zk_ee::{
     system::{
         errors::{internal::InternalError, system::SystemError},
-        AccountData, AccountDataRequest, Ergs, Maybe, Resources,
+        AccountData, AccountDataRequest, Maybe, Resources,
     },
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
@@ -99,20 +97,19 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         is_selfdestruct: bool,
         observe: bool,
     ) -> Result<AddressItem<'_, A>, SystemError> {
-        let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+        let gas = match ee_type {
+            ExecutionEnvironmentType::NoEE => 0,
             ExecutionEnvironmentType::EVM =>
             // For selfdestruct, there's no warm access cost
             {
                 if is_selfdestruct {
-                    Ergs::empty()
+                    0
                 } else {
-                    WARM_PROPERTIES_ACCESS_COST_ERGS
+                    WARM_PROPERTIES_ACCESS_COST_GAS
                 }
             }
         };
-        let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
-        resources.charge(&R::from_ergs_and_native(ergs, native))?;
+        resources.charge_legacy_gas_and_native(gas, WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST)?;
 
         let mut initialized_element = false;
 
@@ -128,12 +125,12 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                         let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
                             R::empty() // We've charged the access already.
                         } else {
-                            R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS)
+                            R::from_legacy_gas_saturating(COLD_PROPERTIES_ACCESS_EXTRA_COST_GAS)
                         };
                         if is_selfdestruct {
                             // Selfdestruct doesn't charge for warm, but it
                             // includes the warm cost for cold access
-                            cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                            cost.add_legacy_gas(WARM_PROPERTIES_ACCESS_COST_GAS)
                         };
                         resources.charge(&cost)?;
                     }
@@ -166,12 +163,14 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                                 {
                                     R::empty() // We've charged the access already.
                                 } else {
-                                    R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS)
+                                    R::from_legacy_gas_saturating(
+                                        COLD_PROPERTIES_ACCESS_EXTRA_COST_GAS,
+                                    )
                                 };
                                 if is_selfdestruct {
                                     // Selfdestruct doesn't charge for warm, but it
                                     // includes the warm cost for cold access
-                                    cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                                    cost.add_legacy_gas(WARM_PROPERTIES_ACCESS_COST_GAS)
                                 };
                                 resources.charge(&cost)?;
                             }
@@ -316,7 +315,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         match ee_type {
             ExecutionEnvironmentType::NoEE => (),
             ExecutionEnvironmentType::EVM => {
-                resources.charge(&R::from_ergs(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_ERGS))?
+                resources.charge_legacy_gas(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_GAS)?
             }
         }
 
@@ -571,8 +570,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             ExecutionEnvironmentType::EVM => {
                 use evm_interpreter::gas_constants::CODEDEPOSIT;
                 let code_deposit_cost = CODEDEPOSIT.saturating_mul(deployed_code.len() as u64);
-                let ergs_to_spend = Ergs(code_deposit_cost.saturating_mul(ERGS_PER_GAS));
-                resources.charge(&R::from_ergs(ergs_to_spend))?;
+                resources.charge_legacy_gas(code_deposit_cost)?;
             }
         }
 
@@ -717,8 +715,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                         && beneficiary_properties.balance == transfer_amount;
                     if beneficiary_is_empty {
                         use evm_interpreter::gas_constants::NEWACCOUNT;
-                        let ergs_to_spend = Ergs(NEWACCOUNT * ERGS_PER_GAS);
-                        resources.charge(&R::from_ergs(ergs_to_spend))?;
+                        resources.charge_legacy_gas(NEWACCOUNT)?;
                     }
                 }
             }

@@ -32,11 +32,11 @@ pub use self::result_keeper::*;
 pub const MAX_GLOBAL_CALLS_STACK_DEPTH: usize = 1024; // even though we do not have to formally limit it,
                                                       // for all practical purposes (63/64) ^ 1024 is 10^-7, and it's unlikely that one can create any new frame
                                                       // with such remaining resources
-/// TODO: this constant belongs to EVM EE
-const ERGS_PER_GAS: u64 = 256;
-
-/// Maximum value of EVM gas that can be represented as ergs in a u64.
-pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
+/// Maximum value of EVM gas that can be represented as ergs in a u64
+/// with the default gas to ergs factor. Where a system type is available,
+/// prefer `<S::Resources as Resources>::MAX_LEGACY_GAS`; every valid factor
+/// (see [Ergs]) admits at least this limit.
+pub const MAX_BLOCK_GAS_LIMIT: u64 = <Ergs as ErgsResource>::MAX_LEGACY_GAS;
 // Currently we don't have a separate individual tx gas limit,
 // so the maximum tx gas limit is the same as the block gas limit.
 pub const MAX_TX_GAS_LIMIT: u64 = MAX_BLOCK_GAS_LIMIT;

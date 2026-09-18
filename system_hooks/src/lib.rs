@@ -37,7 +37,6 @@ use call_hooks::precompiles::{
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use evm_interpreter::precompile_addresses::*;
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::internal_error;
@@ -477,5 +476,5 @@ fn make_return_state_from_returndata_region<S: SystemTypes>(
 /// Base cost for calling into a system hook
 const HOOK_BASE_NATIVE_COST: u64 = 1000;
 
-/// Ergs cost per byte of bytecode for force deployments.
-const SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE: Ergs = Ergs(50 * ERGS_PER_GAS);
+/// Gas cost per byte of bytecode for force deployments.
+const SET_BYTECODE_DETAILS_EXTRA_GAS_PER_BYTE: u64 = 50;

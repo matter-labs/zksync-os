@@ -112,7 +112,7 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     pub tx_hash: Bytes32,
     pub fee_to_prepay: U256,
     pub gas_price: U256,
-    pub minimal_ergs_to_charge: Ergs,
+    pub minimal_ergs_to_charge: <S::Resources as Resources>::Ergs,
     pub originator_nonce_to_use: u64,
     pub native_per_pubdata: u64,
     pub native_per_gas: u64,
@@ -399,8 +399,6 @@ where
         pubdata_info: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), BootloaderSubsystemError> {
-        use evm_interpreter::ERGS_PER_GAS;
-
         // Just used for computing native used
         context.resources_before_refund = context.resources.main_resources.clone();
 
@@ -443,7 +441,7 @@ where
                 )
             }
         };
-        let min_gas_used = context.minimal_ergs_to_charge.0 / ERGS_PER_GAS;
+        let min_gas_used = context.minimal_ergs_to_charge.as_legacy_gas();
         let refund_info = compute_gas_refund(
             system,
             to_charge_for_pubdata,
@@ -587,7 +585,8 @@ where
         cycle_marker::log_marker(
             format!(
                 "Spent ergs for [process_transaction]: {}",
-                context.gas_used * evm_interpreter::ERGS_PER_GAS
+                context.gas_used
+                    * <<S::Resources as Resources>::Ergs as ErgsResource>::GAS_TO_ERGS_FACTOR
             )
             .as_str(),
         );

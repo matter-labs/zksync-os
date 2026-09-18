@@ -1,12 +1,12 @@
 use crate::cost_constants::{
-    SHA256_BASE_NATIVE_COST, SHA256_CHUNK_SIZE, SHA256_PER_WORD_COST_ERGS,
-    SHA256_ROUND_NATIVE_COST, SHA256_STATIC_COST_ERGS,
+    SHA256_BASE_NATIVE_COST, SHA256_CHUNK_SIZE, SHA256_PER_WORD_COST_GAS, SHA256_ROUND_NATIVE_COST,
+    SHA256_STATIC_COST_GAS,
 };
 use zk_ee::common_traits::TryExtend;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{Sha256Errors, SystemFunction};
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
-use zk_ee::system::{Computational, Resources};
+use zk_ee::system::Resources;
 
 ///
 /// SHA-256 system function implementation.
@@ -47,12 +47,9 @@ fn sha256_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     resources: &mut R,
 ) -> Result<(), SystemError> {
     let word_size = src.len().div_ceil(32);
-    let ergs_cost = SHA256_STATIC_COST_ERGS + SHA256_PER_WORD_COST_ERGS.times(word_size as u64);
+    let gas_cost = SHA256_STATIC_COST_GAS + SHA256_PER_WORD_COST_GAS * word_size as u64;
     let native_cost = SHA256_BASE_NATIVE_COST + nb_rounds(src.len()) * SHA256_ROUND_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        ergs_cost,
-        <R::Native as Computational>::from_computational(native_cost),
-    ))?;
+    resources.charge_legacy_gas_and_native(gas_cost, native_cost)?;
 
     use crypto::sha256::*;
     let mut hasher = Sha256::new();

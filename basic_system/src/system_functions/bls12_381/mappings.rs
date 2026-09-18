@@ -1,4 +1,4 @@
-use zk_ee::system::{Ergs, Resources, SystemFunction};
+use zk_ee::system::{Resources, SystemFunction};
 
 use super::*;
 
@@ -39,12 +39,9 @@ fn bls12_381_map_fp_to_g1_as_system_function_inner<
         ));
     }
 
-    let cost_ergs = Ergs(BLS12_381_FIELD_TO_G1_GAS * ERGS_PER_GAS);
+    let cost_gas = BLS12_381_FIELD_TO_G1_GAS;
     let cost_native = crate::cost_constants::BLS12_381_MAP_FP_TO_G1_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let field_element = crypto::bls12_381::eip2537::parse_fq_bytes(input.try_into().unwrap())
         .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement))?;
@@ -95,12 +92,9 @@ fn bls12_381_map_fp2_to_g2_as_system_function_inner<
         ));
     }
 
-    let cost_ergs = Ergs(BLS12_381_FIELD_EXT_TO_G2_GAS * ERGS_PER_GAS);
+    let cost_gas = BLS12_381_FIELD_EXT_TO_G2_GAS;
     let cost_native = crate::cost_constants::BLS12_381_MAP_FP2_TO_G2_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let field_element = crypto::bls12_381::eip2537::parse_fq2_bytes(input.try_into().unwrap())
         .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement))?;

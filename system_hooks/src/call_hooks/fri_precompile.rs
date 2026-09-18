@@ -46,11 +46,7 @@ where
     }
 
     let mut resources = available_resources;
-    evm_interpreter::charge_native_and_ergs::<S::Resources>(
-        &mut resources,
-        HOOK_BASE_NATIVE_COST,
-        Ergs(0),
-    )?;
+    resources.charge_native(HOOK_BASE_NATIVE_COST)?;
 
     let mut statement_versioned_hash_bytes = [0u8; 32];
     statement_versioned_hash_bytes.copy_from_slice(calldata);

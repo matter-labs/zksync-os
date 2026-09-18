@@ -2,7 +2,7 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::Path;
 
-use evm_interpreter::{opcodes, opcodes::OPCODE_JUMPMAP, ERGS_PER_GAS};
+use evm_interpreter::{opcodes, opcodes::OPCODE_JUMPMAP};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -229,7 +229,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
         _opcode: u8,
         frame_state: &impl EvmFrameInterface<S>,
     ) {
-        self.gas_before = frame_state.resources().ergs().0 / ERGS_PER_GAS;
+        self.gas_before = frame_state.resources().legacy_gas();
         self.native_before = frame_state.resources().native().as_u64();
     }
 
@@ -248,7 +248,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
             return;
         }
 
-        let gas_after = frame_state.resources().ergs().0 / ERGS_PER_GAS;
+        let gas_after = frame_state.resources().legacy_gas();
         let native_after = frame_state.resources().native().as_u64();
 
         let gas_used = self.gas_before.saturating_sub(gas_after);

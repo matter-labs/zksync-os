@@ -2,7 +2,7 @@ use super::*;
 use crate::cost_constants::BN254_ECMUL_NATIVE_COST;
 use crate::system_functions::bytereverse;
 use crate::{
-    cost_constants::BN254_ECMUL_COST_ERGS, system_functions::bn254_ecadd::serialize_projective,
+    cost_constants::BN254_ECMUL_COST_GAS, system_functions::bn254_ecadd::serialize_projective,
 };
 use crypto::ark_serialize::Valid;
 use zk_ee::common_traits::TryExtend;
@@ -46,10 +46,7 @@ fn bn254_ecmul_as_system_function_inner<
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Bn254MulErrors>> {
-    resources.charge(&R::from_ergs_and_native(
-        BN254_ECMUL_COST_ERGS,
-        <R::Native as zk_ee::system::Computational>::from_computational(BN254_ECMUL_NATIVE_COST),
-    ))?;
+    resources.charge_legacy_gas_and_native(BN254_ECMUL_COST_GAS, BN254_ECMUL_NATIVE_COST)?;
 
     let mut buffer = [0u8; 96];
     for (dst, src) in buffer.iter_mut().zip(src.iter()) {

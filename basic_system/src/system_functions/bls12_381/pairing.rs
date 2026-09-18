@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use crypto::{ark_ec::pairing::Pairing, bls12_381::curves::Bls12_381};
 use zk_ee::{
     out_of_return_memory,
-    system::{Ergs, Resources, SystemFunction},
+    system::{Resources, SystemFunction},
 };
 
 pub const BLS12_381_PAIRING_FIXED_GAS: u64 = 37700;
@@ -48,17 +48,12 @@ fn bls12_381_pairing_as_system_function_inner<
     }
 
     let num_pairs = input.len() / BLS12_381_PAIR_LEN;
-    let cost_ergs = Ergs(
-        ((num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS)
-            * ERGS_PER_GAS,
-    );
+    let cost_gas =
+        (num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS;
     let cost_native = crate::cost_constants::BLS12_381_PAIRING_NATIVE_COST
         + crate::cost_constants::BLS12_381_PAIRING_PER_PAIR_NATIVE_COST
             .saturating_mul(num_pairs as u64);
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let mut g1_points = Vec::with_capacity_in(num_pairs, allocator.clone());
     let mut g2_points = Vec::with_capacity_in(num_pairs, allocator.clone());

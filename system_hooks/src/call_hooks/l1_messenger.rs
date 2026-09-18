@@ -114,11 +114,8 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
 ) -> Result<Result<(), &'static str>, SystemError>
 where
 {
-    evm_interpreter::charge_native_and_ergs::<S::Resources>(
-        resources,
-        HOOK_BASE_NATIVE_COST,
-        Ergs(0), // Do not charge EVM gas here, it is already charged in L1Messenger smart contract
-    )?;
+    // Do not charge EVM gas here, it is already charged in L1Messenger smart contract
+    resources.charge_native(HOOK_BASE_NATIVE_COST)?;
 
     // Should never happen
     if is_static {

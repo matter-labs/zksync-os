@@ -28,7 +28,6 @@ use zk_ee::common_structs::{
     L2_TO_L1_LOG_SERIALIZE_SIZE,
 };
 use zk_ee::interface_error;
-use zk_ee::out_of_ergs_error;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
     system::{
@@ -93,12 +92,11 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         if TRANSIENT {
-            let ergs = match ee_type {
-                ExecutionEnvironmentType::NoEE => Ergs::empty(),
-                ExecutionEnvironmentType::EVM => Ergs(TLOAD * ERGS_PER_GAS),
+            let gas = match ee_type {
+                ExecutionEnvironmentType::NoEE => 0,
+                ExecutionEnvironmentType::EVM => TLOAD,
             };
-            let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
-            resources.charge(&R::from_ergs_and_native(ergs, native))?;
+            resources.charge_legacy_gas_and_native(gas, WARM_TSTORAGE_READ_NATIVE_COST)?;
 
             let key = WarmStorageKey {
                 address: *address,
@@ -124,12 +122,11 @@ impl<
         value_to_write: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
     ) -> Result<(), SystemError> {
         if TRANSIENT {
-            let ergs = match ee_type {
-                ExecutionEnvironmentType::NoEE => Ergs::empty(),
-                ExecutionEnvironmentType::EVM => Ergs(TSTORE * ERGS_PER_GAS),
+            let gas = match ee_type {
+                ExecutionEnvironmentType::NoEE => 0,
+                ExecutionEnvironmentType::EVM => TSTORE,
             };
-            let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
-            resources.charge(&R::from_ergs_and_native(ergs, native))?;
+            resources.charge_legacy_gas_and_native(gas, WARM_TSTORAGE_WRITE_NATIVE_COST)?;
 
             let key = WarmStorageKey {
                 address: *address,
@@ -163,15 +160,13 @@ impl<
         data: &[u8],
     ) -> Result<(), SystemError> {
         // Charge resources
-        let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+        let gas = match ee_type {
+            ExecutionEnvironmentType::NoEE => 0,
             ExecutionEnvironmentType::EVM => {
                 let static_cost = LOG;
                 let topic_cost = LOGTOPIC * (topics.len() as u64);
                 let len_cost = (data.len() as u64) * LOGDATA;
-                let cost = static_cost + topic_cost + len_cost;
-                let ergs = cost.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
-                Ergs(ergs)
+                static_cost + topic_cost + len_cost
             }
         };
         // This log is also hashed into the block's receipt-root leaf (a blake2s
@@ -186,13 +181,11 @@ impl<
         let receipt_hash_native = receipt_rlp_len_upper_bound
             .div_ceil(crate::cost_constants::BLAKE2S_CHUNK_SIZE as u64)
             .saturating_mul(crate::cost_constants::BLAKE2S_ROUND_NATIVE_COST);
-        let native = R::Native::from_computational(
-            EVENT_STORAGE_BASE_NATIVE_COST
-                + EVENT_TOPIC_NATIVE_COST * (topics.len() as u64)
-                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64)
-                + receipt_hash_native,
-        );
-        resources.charge(&R::from_ergs_and_native(ergs, native))?;
+        let native = EVENT_STORAGE_BASE_NATIVE_COST
+            + EVENT_TOPIC_NATIVE_COST * (topics.len() as u64)
+            + EVENT_DATA_PER_BYTE_COST * (data.len() as u64)
+            + receipt_hash_native;
+        resources.charge_legacy_gas_and_native(gas, native)?;
 
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.events_storage

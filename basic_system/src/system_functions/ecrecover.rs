@@ -1,12 +1,12 @@
 use super::*;
-use crate::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
+use crate::cost_constants::{ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST};
 use field_ops::Secp256k1HooksWithOracle;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::Secp256k1ECRecoverErrors;
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
-use zk_ee::system::{Computational, SystemFunctionExt};
+use zk_ee::system::SystemFunctionExt;
 
 ///
 /// ecrecover system function implementation.
@@ -57,10 +57,7 @@ fn ecrecover_as_system_function_inner<
     resources: &mut R,
     oracle: Option<&mut O>,
 ) -> Result<(), SystemError> {
-    resources.charge(&R::from_ergs_and_native(
-        ECRECOVER_COST_ERGS,
-        R::Native::from_computational(ECRECOVER_NATIVE_COST),
-    ))?;
+    resources.charge_legacy_gas_and_native(ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST)?;
     // digest, v, r, s in ABI
     let mut buffer = [0u8; 128];
     for (dst, src) in buffer.iter_mut().zip(src.iter()) {

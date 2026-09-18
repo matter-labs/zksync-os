@@ -7,7 +7,6 @@ use crate::bootloader::transaction_flow::BasicTransactionFlow;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::interface::InterfaceError;
-use evm_interpreter::ERGS_PER_GAS;
 use refund_calculation::compute_gas_refund;
 use ruint::aliases::U256;
 use tx_level_metadata::EthereumTransactionMetadata;
@@ -91,7 +90,7 @@ pub struct ResourcesForEthereumTx<S: EthereumLikeTypes> {
 impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForEthereumTx<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ResourcesForEthereumTx")
-            .field("gas", &(self.main_resources.ergs().0 / ERGS_PER_GAS))
+            .field("gas", &self.main_resources.legacy_gas())
             .field("main_resources", &self.main_resources)
             .finish()
     }

@@ -8,7 +8,7 @@ use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
+use evm_interpreter::MAX_INITCODE_SIZE;
 use ruint::aliases::{B160, U256};
 use tx_level_metadata::EthereumTransactionMetadata;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -49,12 +49,13 @@ fn create_resources_for_tx<S: EthereumLikeTypes>(
         ))
     } else {
         let gas_limit_for_tx = gas_limit - intrinsic_overhead;
-        let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS); // we checked at the very start that gas_limit * ERGS_PER_GAS doesn't overflow
+        // we checked at the very start that the gas limit fits into ergs
+        let ergs = <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx);
         let native_limit =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
                 u64::MAX,
             );
-        let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+        let main_resources = S::Resources::from_ergs_and_native(ergs, native_limit);
 
         Ok(ResourcesForEthereumTx { main_resources })
     }
@@ -115,7 +116,8 @@ where
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
     require!(
-        tx_gas_limit.saturating_mul(ERGS_PER_GAS) < u64::MAX,
+        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(tx_gas_limit).as_u64()
+            < u64::MAX,
         internal_error!("TX gas limit overflows ergs counter"),
         system
     )?;

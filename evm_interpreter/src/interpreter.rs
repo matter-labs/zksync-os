@@ -8,7 +8,6 @@ use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::Ergs;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
@@ -331,7 +330,7 @@ where
 }
 
 pub struct EVMCallRequest<S: EthereumLikeTypes> {
-    pub ergs_to_pass: Ergs,
+    pub ergs_to_pass: <S::Resources as Resources>::Ergs,
     pub call_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub input_data: Range<usize>,

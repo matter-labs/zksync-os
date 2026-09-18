@@ -1,12 +1,11 @@
 use super::*;
 
-use crate::cost_constants::{P256_NATIVE_COST, P256_VERIFY_COST_ERGS};
+use crate::cost_constants::{P256_NATIVE_COST, P256_VERIFY_COST_GAS};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::{
     base_system_functions::{P256VerifyErrors, SystemFunction},
     errors::subsystem::SubsystemError,
-    Computational,
 };
 
 ///
@@ -58,8 +57,7 @@ fn p256_verify_as_system_function_inner<
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<P256VerifyErrors>> {
-    let native = <R as Resources>::Native::from_computational(P256_NATIVE_COST);
-    resources.charge(&R::from_ergs_and_native(P256_VERIFY_COST_ERGS, native))?;
+    resources.charge_legacy_gas_and_native(P256_VERIFY_COST_GAS, P256_NATIVE_COST)?;
 
     if src.len() != 160 {
         // Empty returndata indicates failure.

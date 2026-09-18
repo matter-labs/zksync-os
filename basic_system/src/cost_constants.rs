@@ -1,23 +1,21 @@
-use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::{native_with_delegations, system::Ergs};
+use zk_ee::native_with_delegations;
 
-#[allow(clippy::identity_op)]
-pub const BLAKE2S256_PER_ROUND_COST_ERGS: Ergs = Ergs(1 * ERGS_PER_GAS);
+// Legacy (EVM) gas costs. They are converted to ergs by the resources implementation.
+pub const BLAKE2S256_PER_ROUND_COST_GAS: u64 = 1;
 
-pub const SHA256_STATIC_COST_ERGS: Ergs = Ergs(60 * ERGS_PER_GAS);
-pub const SHA256_PER_WORD_COST_ERGS: Ergs = Ergs(12 * ERGS_PER_GAS);
+pub const SHA256_STATIC_COST_GAS: u64 = 60;
+pub const SHA256_PER_WORD_COST_GAS: u64 = 12;
 
-pub const RIPEMD_160_STATIC_COST_ERGS: Ergs = Ergs(600 * ERGS_PER_GAS);
-pub const RIPEMD_160_PER_WORD_COST_ERGS: Ergs = Ergs(120 * ERGS_PER_GAS);
-pub const MODEXP_MINIMAL_COST_ERGS: Ergs = Ergs(500 * ERGS_PER_GAS);
-pub const P256_VERIFY_COST_ERGS: Ergs = Ergs(6900 * ERGS_PER_GAS);
-pub const ECRECOVER_COST_ERGS: Ergs = Ergs(3000 * ERGS_PER_GAS);
-pub const BN254_ECADD_COST_ERGS: Ergs = Ergs(150 * ERGS_PER_GAS);
-pub const BN254_ECMUL_COST_ERGS: Ergs = Ergs(6000 * ERGS_PER_GAS);
-pub const BN254_PAIRING_STATIC_COST_ERGS: Ergs = Ergs(45000 * ERGS_PER_GAS);
-pub const BN254_PAIRING_COST_PER_PAIR_ERGS: Ergs = Ergs(34000 * ERGS_PER_GAS);
-pub const POINT_EVALUATION_COST_ERGS: Ergs = Ergs(50_000 * ERGS_PER_GAS);
-pub const EVM_BYTECODE_MAX_ROUNDS_TO_DECOMMIT: Ergs = Ergs(180);
+pub const RIPEMD_160_STATIC_COST_GAS: u64 = 600;
+pub const RIPEMD_160_PER_WORD_COST_GAS: u64 = 120;
+pub const MODEXP_MINIMAL_COST_GAS: u64 = 500;
+pub const P256_VERIFY_COST_GAS: u64 = 6900;
+pub const ECRECOVER_COST_GAS: u64 = 3000;
+pub const BN254_ECADD_COST_GAS: u64 = 150;
+pub const BN254_ECMUL_COST_GAS: u64 = 6000;
+pub const BN254_PAIRING_STATIC_COST_GAS: u64 = 45000;
+pub const BN254_PAIRING_COST_PER_PAIR_GAS: u64 = 34000;
+pub const POINT_EVALUATION_COST_GAS: u64 = 50_000;
 
 pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(240_000, 32_000, 0);
 /// Native costs for keccak256 hashing.

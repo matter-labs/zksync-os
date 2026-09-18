@@ -76,7 +76,7 @@ mod tests {
         rwb.encode(&mut rlp);
         let mut hasher = Blake2s256::new();
         hasher.update(&rlp);
-        Bytes32::from_array(*hasher.finalize())
+        Bytes32::from_array(hasher.finalize())
     }
 
     #[test]

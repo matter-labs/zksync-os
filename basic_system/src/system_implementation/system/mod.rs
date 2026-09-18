@@ -7,7 +7,6 @@ use evm_interpreter::gas_constants::COLD_SLOAD_COST;
 use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
 use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::WarmStorageKey;
@@ -33,14 +32,14 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
     ) -> Result<(), SystemError> {
-        let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
-            ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
+        let gas = match ee_type {
+            ExecutionEnvironmentType::NoEE => 0,
+            ExecutionEnvironmentType::EVM => WARM_STORAGE_READ_COST,
         };
-        let native = R::Native::from_computational(
+        resources.charge_legacy_gas_and_native(
+            gas,
             crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
-        );
-        resources.charge(&R::from_ergs_and_native(ergs, native))
+        )
     }
 
     fn charge_cold_storage_read_extra(
@@ -49,21 +48,16 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         resources: &mut R,
         is_new_slot: bool,
     ) -> Result<(), SystemError> {
-        let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
-            ExecutionEnvironmentType::EVM => {
-                Ergs((COLD_SLOAD_COST - WARM_STORAGE_READ_COST) * ERGS_PER_GAS)
-            }
+        let gas = match ee_type {
+            ExecutionEnvironmentType::NoEE => 0,
+            ExecutionEnvironmentType::EVM => COLD_SLOAD_COST - WARM_STORAGE_READ_COST,
         };
         let native = if is_new_slot {
-            R::Native::from_computational(
-                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST,
-            )
+            crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST
         } else {
-            R::Native::from_computational(
-            crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST,)
+            crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST
         };
-        resources.charge(&R::from_ergs_and_native(ergs, native))
+        resources.charge_legacy_gas_and_native(gas, native)
     }
 
     fn charge_storage_write_extra(
@@ -77,8 +71,8 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         is_cold_write_charged: bool,
         is_new_slot: bool,
     ) -> Result<(), SystemError> {
-        let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+        let gas = match ee_type {
+            ExecutionEnvironmentType::NoEE => 0,
             ExecutionEnvironmentType::EVM => {
                 let total_cost = if new_value == current_value {
                     0
@@ -93,14 +87,14 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                     0
                 };
 
-                let total_cost =
-                    // In EVM spec there's a discrepancy for cold read and cold write costs. Cold
-                    // writes add another 100 from thin air.
-                    // Uses access warmness (EIP-2929): warm after any SLOAD or SSTORE.
-                    if is_warm_access == false { total_cost + 100 }
-                    else { total_cost };
-
-                Ergs(total_cost * ERGS_PER_GAS)
+                // In EVM spec there's a discrepancy for cold read and cold write costs. Cold
+                // writes add another 100 from thin air.
+                // Uses access warmness (EIP-2929): warm after any SLOAD or SSTORE.
+                if is_warm_access == false {
+                    total_cost + 100
+                } else {
+                    total_cost
+                }
             }
         };
         // A write has two independent native components:
@@ -119,10 +113,10 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         } else {
             cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST
         };
-        let native = R::Native::from_computational(
+        resources.charge_legacy_gas_and_native(
+            gas,
             cost_constants::WARM_STORAGE_WRITE_EXTRA_NATIVE_COST + merkle_extra,
-        );
-        resources.charge(&R::from_ergs_and_native(ergs, native))
+        )
     }
 
     /// Refund some resources if needed
@@ -142,21 +136,21 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 if current_value != new_value {
                     if current_value == value_at_tx_start {
                         if !value_at_tx_start.is_zero() && new_value.is_zero() {
-                            refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
+                            refund_counter.add_legacy_gas(4800);
                         }
                     } else {
                         if !value_at_tx_start.is_zero() {
                             if current_value.is_zero() {
-                                refund_counter.charge(&R::from_ergs(Ergs(4800 * ERGS_PER_GAS)))?;
+                                refund_counter.charge_legacy_gas(4800)?;
                             } else if new_value.is_zero() {
-                                refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
+                                refund_counter.add_legacy_gas(4800);
                             }
                         }
                         if new_value == value_at_tx_start {
                             if value_at_tx_start.is_zero() {
-                                refund_counter.add_ergs(Ergs((20000 - 100) * ERGS_PER_GAS));
+                                refund_counter.add_legacy_gas(20000 - 100);
                             } else {
-                                refund_counter.add_ergs(Ergs((5000 - 2100 - 100) * ERGS_PER_GAS));
+                                refund_counter.add_legacy_gas(5000 - 2100 - 100);
                             }
                         }
                     }

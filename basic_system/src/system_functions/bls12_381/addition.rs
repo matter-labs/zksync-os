@@ -1,5 +1,5 @@
 use crypto::ark_ec::CurveGroup;
-use zk_ee::system::{Ergs, Resources, SystemFunction};
+use zk_ee::system::{Resources, SystemFunction};
 
 use super::*;
 
@@ -40,12 +40,9 @@ fn bls12_381_g1_add_as_system_function_inner<
         ));
     }
 
-    let cost_ergs = Ergs(BLS12_381_G1_ADDITION_GAS * ERGS_PER_GAS);
+    let cost_gas = BLS12_381_G1_ADDITION_GAS;
     let cost_native = crate::cost_constants::BLS12_381_G1ADD_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let p0 = parse_g1(input[0..G1_SERIALIZATION_LEN].try_into().unwrap())?;
     let p1 = parse_g1(
@@ -96,12 +93,9 @@ fn bls12_381_g2_add_as_system_function_inner<
         ));
     }
 
-    let cost_ergs = Ergs(BLS12_381_G2_ADDITION_GAS * ERGS_PER_GAS);
+    let cost_gas = BLS12_381_G2_ADDITION_GAS;
     let cost_native = crate::cost_constants::BLS12_381_G2ADD_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        cost_ergs,
-        <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-    ))?;
+    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
     let p0 = parse_g2(input[0..G2_SERIALIZATION_LEN].try_into().unwrap())?;
     let p1 = parse_g2(

@@ -5,8 +5,6 @@ use zk_ee::system::base_system_functions::{
     Bls12PrecompileErrors, Bls12PrecompileInterfaceError, Bls12PrecompileSubsystemError,
 };
 
-use evm_interpreter::ERGS_PER_GAS;
-
 use crypto::ark_ff::PrimeField;
 use crypto::bls12_381::*;
 

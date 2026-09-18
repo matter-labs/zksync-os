@@ -15,7 +15,6 @@ use alloy::primitives::{Address, Bytes, B256};
 use alloy::rpc::types::trace::geth::{
     CallFrame as AlloyCallFrame, CallLogFrame as AlloyCallLogFrame,
 };
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
     evm::{EvmError, EvmFrameInterface},
@@ -301,7 +300,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                 from: initial_state.external_call.caller,
                 to: initial_state.external_call.callee,
                 value: initial_state.external_call.nominal_token_value,
-                gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
+                gas: initial_state.external_call.available_resources.legacy_gas(),
                 gas_used: 0, // will be populated later
                 input: initial_state.external_call.input.to_vec(),
                 output: vec![],  // will be populated later
@@ -326,9 +325,8 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
 
             match result {
                 Some(result) => {
-                    finished_call.gas_used = finished_call
-                        .gas
-                        .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
+                    finished_call.gas_used =
+                        finished_call.gas.saturating_sub(result.0.legacy_gas());
 
                     match &result.1 {
                         zk_ee::system::CallResult::PreparationStepFailed => {

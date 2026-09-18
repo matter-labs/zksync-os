@@ -5,13 +5,15 @@
 //! As a result, there is an element of double accounting.
 
 use zk_ee::system::evm::EvmError;
-use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources, SystemTypes};
+use zk_ee::system::{
+    Computational, ErgsResource, EthereumLikeTypes, Resource, Resources, SystemTypes,
+};
 
 use crate::{
     native_resource_constants::{
         HEAP_EXPANSION_BASE_NATIVE_COST, HEAP_EXPANSION_PER_BYTE_NATIVE_COST, STEP_NATIVE_COST,
     },
-    ExitCode, ERGS_PER_GAS,
+    ExitCode,
 };
 use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 
@@ -44,7 +46,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     #[inline(always)]
     /// Returns remaining EVM gas
     pub(crate) fn gas_left(&self) -> u64 {
-        self.resources.ergs().0 / ERGS_PER_GAS
+        self.resources.legacy_gas()
     }
 
     #[inline(always)]
@@ -70,22 +72,21 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
     #[inline(always)]
     pub(crate) fn spend_gas(&mut self, to_spend: u64) -> Result<(), ExitCode> {
-        let Some(ergs_cost) = to_spend.checked_mul(ERGS_PER_GAS) else {
+        let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(to_spend) else {
             return Err(EvmError::OutOfGas.into());
         };
-        let resource_cost = S::Resources::from_ergs(Ergs(ergs_cost));
+        let resource_cost = S::Resources::from_ergs(ergs_cost);
         self.charge(&resource_cost)
     }
 
     #[inline(always)]
     /// Spend gas and "native" (proving) resource. This double accounting approach is used to keep track of actual proving cost
     pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
-        use zk_ee::system::Computational;
-        let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
+        let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(gas) else {
             return Err(EvmError::OutOfGas.into());
         };
         let resource_cost = S::Resources::from_ergs_and_native(
-            Ergs(ergs_cost),
+            ergs_cost,
             Computational::from_computational(native),
         );
         self.charge(&resource_cost)
@@ -120,9 +121,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     #[inline(always)]
     /// Charge only the "native" (proving) resource
     pub(crate) fn spend_native(&mut self, native: u64) -> Result<(), ExitCode> {
-        use zk_ee::system::Computational;
-        let resource_cost =
-            S::Resources::from_ergs_and_native(Ergs(0), Computational::from_computational(native));
+        let resource_cost = S::Resources::from_native(Computational::from_computational(native));
         self.charge(&resource_cost)
     }
 
@@ -136,13 +135,12 @@ impl<S: EthereumLikeTypes> Gas<S> {
         gas: u64,
         native: u64,
     ) -> Result<(), ExitCode> {
-        use zk_ee::system::Computational;
-        let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
+        let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(gas) else {
             self.spend_native(STEP_NATIVE_COST)?;
             return Err(EvmError::OutOfGas.into());
         };
         let resource_cost = S::Resources::from_ergs_and_native(
-            Ergs(ergs_cost),
+            ergs_cost,
             Computational::from_computational(native + STEP_NATIVE_COST),
         );
         match self.resources.charge(&resource_cost) {
@@ -186,9 +184,9 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
 pub mod gas_utils {
     use zk_ee::system::evm::EvmError;
-    use zk_ee::system::Ergs;
+    use zk_ee::system::ErgsResource;
 
-    use crate::{ExitCode, ERGS_PER_GAS};
+    use crate::ExitCode;
 
     #[inline]
     /// Returns gas and natve cost of copying 'len' bytes
@@ -218,9 +216,10 @@ pub mod gas_utils {
     /// Returns the result of subtracting 1/64th of EVM gas.
     /// Note: it works with ergs, making conversions inside.
     #[inline(always)]
-    pub(crate) fn apply_63_64_rule(ergs: Ergs) -> Ergs {
+    pub(crate) fn apply_63_64_rule<E: ErgsResource>(ergs: E) -> E {
         // We need to apply the rule over gas, not ergs
-        let gas = ergs.0 / ERGS_PER_GAS;
-        Ergs(ergs.0 - (gas / 64) * ERGS_PER_GAS)
+        let gas = ergs.as_legacy_gas();
+        // `(gas / 64) * factor <= ergs`, so the subtraction can't underflow
+        E::from_computational(ergs.as_u64() - E::from_legacy_gas_saturating(gas / 64).as_u64())
     }
 }

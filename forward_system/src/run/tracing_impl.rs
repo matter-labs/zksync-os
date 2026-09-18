@@ -86,7 +86,7 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
             };
             (
                 EvmResources {
-                    ergs: resources.ergs().0,
+                    ergs: resources.ergs().as_u64(),
                     native: resources.native().as_u64(),
                 },
                 call_result,
@@ -228,7 +228,7 @@ impl<'a, 'b, S: EthereumLikeTypes> EvmRequest
     fn resources(&self) -> EvmResources {
         let resources = &self.0.external_call.available_resources;
         EvmResources {
-            ergs: resources.ergs().0,
+            ergs: resources.ergs().as_u64(),
             native: resources.native().as_u64(),
         }
     }
@@ -280,7 +280,7 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
     fn resources(&self) -> EvmResources {
         let resources = self.inner.resources();
         EvmResources {
-            ergs: resources.ergs().0,
+            ergs: resources.ergs().as_u64(),
             native: resources.native().as_u64(),
         }
     }

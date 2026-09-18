@@ -39,7 +39,7 @@ use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::{FatalRuntimeError, RuntimeError};
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
 use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
-use zk_ee::system::{Ergs, EthereumLikeTypes, Resource, Resources, System, SystemTypes};
+use zk_ee::system::{ErgsResource, EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
 use zk_ee::utils::*;
@@ -190,16 +190,13 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
     fn refund_counter(&self) -> u32 {
         use zk_ee::system::IOSubsystem;
         let refund = self.system.io.get_refund_counter();
-        refund.ergs().0.div_ceil(ERGS_PER_GAS) as u32
+        refund.ergs().as_legacy_gas_ceil() as u32
     }
 }
 
 pub const STACK_SIZE: usize = 1024;
 pub const MAX_CODE_SIZE: usize = 0x6000;
 pub const MAX_INITCODE_SIZE: usize = MAX_CODE_SIZE * 2;
-pub const ERGS_PER_GAS: u64 = 256;
-pub const ERGS_PER_GAS_U256: ruint::aliases::U256 =
-    ruint::aliases::U256::from_limbs([ERGS_PER_GAS, 0, 0, 0]);
 pub const BYTECODE_ALIGNMENT: usize = core::mem::size_of::<u64>();
 
 #[derive(Debug)]
@@ -564,24 +561,11 @@ impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
 }
 
 ///
-/// Charge native and ergs.
-pub fn charge_native_and_ergs<R: Resources>(
-    resources: &mut R,
-    native: u64,
-    ergs: Ergs,
-) -> Result<(), SystemError> {
-    use zk_ee::system::Computational;
-    let to_charge = R::from_ergs_and_native(ergs, R::Native::from_computational(native));
-    resources.charge(&to_charge)
-}
-
+/// Gas cost for keccak on a given input size.
 ///
-/// Ergs cost for keccak on a given input size.
-///
-pub fn keccak256_ergs_cost(len: usize) -> Ergs {
+pub fn keccak256_gas_cost(len: usize) -> u64 {
     let words = len.div_ceil(32);
-    let gas_cost = SHA3.saturating_add(SHA3WORD.saturating_mul(words as u64));
-    Ergs(gas_cost.saturating_mul(ERGS_PER_GAS))
+    SHA3.saturating_add(SHA3WORD.saturating_mul(words as u64))
 }
 
 #[cfg(test)]

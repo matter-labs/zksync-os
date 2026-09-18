@@ -2,13 +2,12 @@ use super::*;
 
 use crate::cost_constants::{
     RIPEMD160_BASE_NATIVE_COST, RIPEMD160_CHUNK_SIZE, RIPEMD160_ROUND_NATIVE_COST,
-    RIPEMD_160_PER_WORD_COST_ERGS, RIPEMD_160_STATIC_COST_ERGS,
+    RIPEMD_160_PER_WORD_COST_GAS, RIPEMD_160_STATIC_COST_GAS,
 };
 use zk_ee::common_traits::TryExtend;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{RipeMd160Errors, SystemFunction};
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
-use zk_ee::system::Computational;
 
 ///
 /// ripemd-160 system function implementation.
@@ -47,13 +46,10 @@ fn ripemd160_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     resources: &mut R,
 ) -> Result<(), SystemError> {
     let word_size = (input.len() as u64).div_ceil(32);
-    let ergs_cost = RIPEMD_160_STATIC_COST_ERGS + RIPEMD_160_PER_WORD_COST_ERGS.times(word_size);
+    let gas_cost = RIPEMD_160_STATIC_COST_GAS + RIPEMD_160_PER_WORD_COST_GAS * word_size;
     let native_cost =
         RIPEMD160_BASE_NATIVE_COST + nb_rounds(input.len()) * RIPEMD160_ROUND_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        ergs_cost,
-        <R::Native as Computational>::from_computational(native_cost),
-    ))?;
+    resources.charge_legacy_gas_and_native(gas_cost, native_cost)?;
 
     use crypto::ripemd160::*;
     let mut hasher = Ripemd160::new();

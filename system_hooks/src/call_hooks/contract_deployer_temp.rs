@@ -123,11 +123,7 @@ fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    evm_interpreter::charge_native_and_ergs::<S::Resources>(
-        resources,
-        HOOK_BASE_NATIVE_COST,
-        Ergs::empty(),
-    )?;
+    resources.charge_native(HOOK_BASE_NATIVE_COST)?;
 
     if calldata.len() < 4 {
         return Ok(Err(
@@ -193,9 +189,8 @@ where
             }
             // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
 
-            // Charge extra ergs for `set_bytecode_details`
-            let ergs = set_bytecode_details_extra_ergs(bytecode_length);
-            resources.charge(&S::Resources::from_ergs(ergs))?;
+            // Charge extra gas for `set_bytecode_details`
+            resources.charge_legacy_gas(set_bytecode_details_extra_gas(bytecode_length))?;
 
             system.set_bytecode_details(
                 resources,
@@ -228,6 +223,6 @@ where
 /// Note: the native resources still protect us from DoS in case this
 /// approximation is too low.
 ///
-fn set_bytecode_details_extra_ergs(bytecode_len: u32) -> Ergs {
-    SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE.times(bytecode_len as u64)
+fn set_bytecode_details_extra_gas(bytecode_len: u32) -> u64 {
+    SET_BYTECODE_DETAILS_EXTRA_GAS_PER_BYTE * bytecode_len as u64
 }

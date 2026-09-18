@@ -9,7 +9,7 @@ pub struct EthereumStorageSystemTypes<O>(O);
 
 impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypes<O> {
     type IOTypes = EthereumIOTypesConfig;
-    type Resources = BaseResources<Native>;
+    type Resources = GasOnlyResources;
     type IO = FullIO<
         Self::Allocator,
         Self::Resources,
@@ -53,7 +53,7 @@ pub struct EthereumStorageSystemTypesWithPostOps<O>(O);
 
 impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
     type IOTypes = EthereumIOTypesConfig;
-    type Resources = BaseResources<Native>;
+    type Resources = GasOnlyResources;
     type IO = FullIO<
         Self::Allocator,
         Self::Resources,

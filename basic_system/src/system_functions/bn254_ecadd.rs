@@ -1,5 +1,5 @@
 use super::*;
-use crate::cost_constants::{BN254_ECADD_COST_ERGS, BN254_ECADD_NATIVE_COST};
+use crate::cost_constants::{BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST};
 use crate::system_functions::bytereverse;
 use crypto::ark_ec::CurveGroup;
 use crypto::ark_ff::PrimeField;
@@ -48,10 +48,7 @@ fn bn254_ecadd_as_system_function_inner<
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Bn254AddErrors>> {
-    resources.charge(&R::from_ergs_and_native(
-        BN254_ECADD_COST_ERGS,
-        <R::Native as zk_ee::system::Computational>::from_computational(BN254_ECADD_NATIVE_COST),
-    ))?;
+    resources.charge_legacy_gas_and_native(BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST)?;
 
     let mut buffer = [0u8; 128];
     for (dst, src) in buffer.iter_mut().zip(src.iter()) {

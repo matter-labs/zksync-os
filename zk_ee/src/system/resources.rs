@@ -1,11 +1,15 @@
 //! Resources for system and EE work.
 //! We track two resources:
-//! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
+//! - EE resource: measured in ergs. Includes legacy EVM gas, converted as
+//!   1 gas = `GAS_TO_ERGS_FACTOR` ergs, where the factor is a parameter of the ergs type.
 //! - Native resource: model for prover complexity.
 
 use crate::out_of_ergs_error;
 
 use super::errors::system::SystemError;
+
+/// Legacy (EVM) gas to ergs conversion factor used by the default ergs type.
+pub const DEFAULT_GAS_TO_ERGS_FACTOR: u64 = 256;
 
 ///
 /// Single resource, both resources will implement this, as well as
@@ -55,28 +59,187 @@ pub trait Computational: 'static + Sized + Clone + core::fmt::Debug + PartialEq 
 }
 
 ///
-/// Ergs, the resource for EEs.
+/// A resource that is not tracked at all: every charge succeeds and nothing is
+/// ever consumed. Used as the native resource by systems that only meter ergs.
+///
+impl Resource for () {
+    const FORMAL_INFINITE: Self = ();
+
+    #[inline(always)]
+    fn empty() -> Self {}
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn charge(&mut self, _to_charge: &Self) -> Result<(), SystemError> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn charge_unchecked(&mut self, _to_charge: &Self) {}
+
+    #[inline(always)]
+    fn has_enough(&self, _to_spend: &Self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn reclaim(&mut self, _to_reclaim: Self) {}
+
+    #[inline(always)]
+    fn reclaim_withheld(&mut self, _to_reclaim: Self) {}
+
+    #[inline(always)]
+    fn diff(&self, _other: Self) -> Self {}
+
+    #[inline(always)]
+    fn remaining(&self) -> Self {}
+}
+
+impl Computational for () {
+    #[inline(always)]
+    fn from_computational(_value: u64) -> Self {}
+
+    #[inline(always)]
+    fn as_u64(&self) -> u64 {
+        0
+    }
+}
+
+///
+/// Ergs, the resource for EEs. `GAS_TO_ERGS_FACTOR` is the number of ergs in one
+/// unit of legacy (EVM) gas. It must be in `1..=DEFAULT_GAS_TO_ERGS_FACTOR`, so
+/// that gas limits derived from the default factor ([crate::system::MAX_BLOCK_GAS_LIMIT])
+/// stay representable for every instantiation; the range is checked at compile time
+/// when the type is used.
 ///
 #[derive(Clone, Copy, core::fmt::Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Ergs(pub u64);
+pub struct Ergs<const GAS_TO_ERGS_FACTOR: u64 = DEFAULT_GAS_TO_ERGS_FACTOR>(pub u64);
 
-impl core::ops::Add for Ergs {
+impl<const GAS_TO_ERGS_FACTOR: u64> Ergs<GAS_TO_ERGS_FACTOR> {
+    /// Evaluated at monomorphization (no runtime cost): rejects factors outside
+    /// `1..=DEFAULT_GAS_TO_ERGS_FACTOR`.
+    const FACTOR_IN_RANGE: () = assert!(
+        GAS_TO_ERGS_FACTOR > 0 && GAS_TO_ERGS_FACTOR <= DEFAULT_GAS_TO_ERGS_FACTOR,
+        "GAS_TO_ERGS_FACTOR must be in 1..=DEFAULT_GAS_TO_ERGS_FACTOR"
+    );
+}
+
+impl<const GAS_TO_ERGS_FACTOR: u64> core::ops::Add for Ergs<GAS_TO_ERGS_FACTOR> {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
     }
 }
 
-impl Ergs {
-    pub fn times(self, coeff: u64) -> Self {
+///
+/// The EE resource of a system: ergs with a fixed legacy (EVM) gas conversion.
+/// Callers express EVM costs in gas and convert through this trait, so the
+/// conversion factor stays private to the resource type.
+///
+pub trait ErgsResource:
+    Resource + Computational + Copy + Default + Ord + core::ops::Add<Output = Self>
+{
+    /// Number of ergs in one unit of legacy gas.
+    const GAS_TO_ERGS_FACTOR: u64;
+
+    /// Largest amount of legacy gas representable as ergs.
+    const MAX_LEGACY_GAS: u64 = u64::MAX / Self::GAS_TO_ERGS_FACTOR;
+
+    /// Converts legacy gas to ergs, `None` if it doesn't fit.
+    fn from_legacy_gas(gas: u64) -> Option<Self>;
+
+    /// Converts legacy gas to ergs, saturating if it doesn't fit.
+    fn from_legacy_gas_saturating(gas: u64) -> Self;
+
+    /// Converts ergs to legacy gas, rounding down.
+    fn as_legacy_gas(&self) -> u64;
+
+    /// Converts ergs to legacy gas, rounding up.
+    fn as_legacy_gas_ceil(&self) -> u64;
+
+    /// Multiplies by a (non-negative) coefficient.
+    fn times(self, coeff: u64) -> Self;
+}
+
+// The `GAS_TO_ERGS_FACTOR == 1` branches below are resolved at monomorphization:
+// with a unit factor the conversions are plain moves, without a checked
+// multiplication or a division on the path.
+impl<const GAS_TO_ERGS_FACTOR: u64> ErgsResource for Ergs<GAS_TO_ERGS_FACTOR> {
+    const GAS_TO_ERGS_FACTOR: u64 = {
+        let () = Self::FACTOR_IN_RANGE;
+        GAS_TO_ERGS_FACTOR
+    };
+
+    #[inline(always)]
+    fn from_legacy_gas(gas: u64) -> Option<Self> {
+        let () = Self::FACTOR_IN_RANGE;
+        if GAS_TO_ERGS_FACTOR == 1 {
+            Some(Self(gas))
+        } else {
+            gas.checked_mul(GAS_TO_ERGS_FACTOR).map(Self)
+        }
+    }
+
+    #[inline(always)]
+    fn from_legacy_gas_saturating(gas: u64) -> Self {
+        let () = Self::FACTOR_IN_RANGE;
+        if GAS_TO_ERGS_FACTOR == 1 {
+            Self(gas)
+        } else {
+            Self(gas.saturating_mul(GAS_TO_ERGS_FACTOR))
+        }
+    }
+
+    #[inline(always)]
+    fn as_legacy_gas(&self) -> u64 {
+        let () = Self::FACTOR_IN_RANGE;
+        if GAS_TO_ERGS_FACTOR == 1 {
+            self.0
+        } else {
+            self.0 / GAS_TO_ERGS_FACTOR
+        }
+    }
+
+    #[inline(always)]
+    fn as_legacy_gas_ceil(&self) -> u64 {
+        let () = Self::FACTOR_IN_RANGE;
+        if GAS_TO_ERGS_FACTOR == 1 {
+            self.0
+        } else {
+            self.0.div_ceil(GAS_TO_ERGS_FACTOR)
+        }
+    }
+
+    #[inline(always)]
+    fn times(self, coeff: u64) -> Self {
         Self(self.0 * coeff)
     }
 }
 
-impl Resource for Ergs {
-    const FORMAL_INFINITE: Self = Ergs(u64::MAX);
+impl<const GAS_TO_ERGS_FACTOR: u64> Computational for Ergs<GAS_TO_ERGS_FACTOR> {
+    #[inline(always)]
+    fn from_computational(value: u64) -> Self {
+        Self(value)
+    }
+
+    #[inline(always)]
+    fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
+impl<const GAS_TO_ERGS_FACTOR: u64> Resource for Ergs<GAS_TO_ERGS_FACTOR> {
+    const FORMAL_INFINITE: Self = {
+        let () = Self::FACTOR_IN_RANGE;
+        Self(u64::MAX)
+    };
 
     fn empty() -> Self {
+        let () = Self::FACTOR_IN_RANGE;
         Self(0)
     }
 
@@ -125,26 +288,36 @@ impl Resource for Ergs {
 /// from each kind of resource. It also provides some special operations that
 /// should only be applied to the EE resource.
 ///
+/// Legacy (EVM) gas is never converted by callers: the `*_legacy_gas*` helpers
+/// convert it through [Resources::Ergs].
+///
 pub trait Resources:
     'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq + Resource
 {
     /// Type of native computational resource.
     type Native: Resource + Computational;
 
+    /// Type of the EE resource.
+    type Ergs: ErgsResource;
+
+    /// Largest amount of legacy gas representable by [Resources::Ergs]. Block and
+    /// transaction gas limits of a system are bounded by it.
+    const MAX_LEGACY_GAS: u64 = <Self::Ergs as ErgsResource>::MAX_LEGACY_GAS;
+
     /// Constructor from EE resource, all other resources are set to empty.
-    fn from_ergs(ergs: Ergs) -> Self;
+    fn from_ergs(ergs: Self::Ergs) -> Self;
 
     /// Constructor from native resource, all other resources are set to empty.
     fn from_native(native: Self::Native) -> Self;
 
     /// Constructor from all sub-resources.
-    fn from_ergs_and_native(ergs: Ergs, native: Self::Native) -> Self;
+    fn from_ergs_and_native(ergs: Self::Ergs, native: Self::Native) -> Self;
 
     /// Increments the EE resource.
-    fn add_ergs(&mut self, to_add: Ergs);
+    fn add_ergs(&mut self, to_add: Self::Ergs);
 
     /// Gets the available ergs (EE resource).
-    fn ergs(&self) -> Ergs;
+    fn ergs(&self) -> Self::Ergs;
 
     /// Gets the available native.
     fn native(&self) -> Self::Native;
@@ -169,4 +342,96 @@ pub trait Resources:
     ///   system.do_something(inf_resources,...)
     /// )
     fn with_infinite_ergs<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R;
+
+    /// Constructor from legacy gas, `None` if it doesn't fit into ergs.
+    #[inline(always)]
+    fn from_legacy_gas(gas: u64) -> Option<Self> {
+        Self::Ergs::from_legacy_gas(gas).map(Self::from_ergs)
+    }
+
+    /// Constructor from legacy gas, saturating if it doesn't fit into ergs.
+    #[inline(always)]
+    fn from_legacy_gas_saturating(gas: u64) -> Self {
+        Self::from_ergs(Self::Ergs::from_legacy_gas_saturating(gas))
+    }
+
+    /// Available ergs expressed as legacy gas, rounded down.
+    #[inline(always)]
+    fn legacy_gas(&self) -> u64 {
+        self.ergs().as_legacy_gas()
+    }
+
+    /// Increments the EE resource by an amount of legacy gas (saturating).
+    #[inline(always)]
+    fn add_legacy_gas(&mut self, gas: u64) {
+        self.add_ergs(Self::Ergs::from_legacy_gas_saturating(gas))
+    }
+
+    /// Charges an amount of legacy gas. Fails with out of ergs if the amount
+    /// doesn't fit into ergs.
+    #[inline(always)]
+    fn charge_legacy_gas(&mut self, gas: u64) -> Result<(), SystemError> {
+        let ergs = Self::Ergs::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
+        self.charge(&Self::from_ergs(ergs))
+    }
+
+    /// Charges an amount of legacy gas and native resources. Fails with out of
+    /// ergs if the gas amount doesn't fit into ergs.
+    #[inline(always)]
+    fn charge_legacy_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), SystemError> {
+        let ergs = Self::Ergs::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
+        self.charge(&Self::from_ergs_and_native(
+            ergs,
+            Self::Native::from_computational(native),
+        ))
+    }
+
+    /// Charges only native resources.
+    #[inline(always)]
+    fn charge_native(&mut self, native: u64) -> Result<(), SystemError> {
+        self.charge(&Self::from_native(Self::Native::from_computational(native)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_gas_conversions() {
+        let ergs = Ergs::<256>::from_legacy_gas(10).unwrap();
+        assert_eq!(ergs.as_u64(), 2560);
+        assert_eq!(ergs.as_legacy_gas(), 10);
+        assert_eq!(Ergs::<256>(2561).as_legacy_gas(), 10);
+        assert_eq!(Ergs::<256>(2561).as_legacy_gas_ceil(), 11);
+        assert!(Ergs::<256>::from_legacy_gas(u64::MAX / 256 + 1).is_none());
+        assert_eq!(
+            Ergs::<256>::from_legacy_gas_saturating(u64::MAX / 256 + 1).as_u64(),
+            u64::MAX
+        );
+        assert_eq!(<Ergs<256> as ErgsResource>::MAX_LEGACY_GAS, u64::MAX / 256);
+
+        let unit = Ergs::<1>::from_legacy_gas(u64::MAX).unwrap();
+        assert_eq!(unit.as_u64(), u64::MAX);
+        assert_eq!(unit.as_legacy_gas(), u64::MAX);
+        assert_eq!(unit.as_legacy_gas_ceil(), u64::MAX);
+        assert_eq!(<Ergs<1> as ErgsResource>::MAX_LEGACY_GAS, u64::MAX);
+        assert_eq!(
+            <crate::reference_implementations::GasOnlyResources as Resources>::MAX_LEGACY_GAS,
+            u64::MAX
+        );
+        assert_eq!(
+            <crate::reference_implementations::BaseResources<()> as Resources>::MAX_LEGACY_GAS,
+            u64::MAX / 256
+        );
+    }
+
+    #[test]
+    fn unit_native_is_free() {
+        let mut native = ();
+        assert!(native.charge(&()).is_ok());
+        assert!(native.has_enough(&()));
+        assert!(native.is_empty());
+        assert_eq!(<() as Computational>::as_u64(&native), 0);
+    }
 }

@@ -13,12 +13,11 @@ use crate::bootloader::constants::{
 };
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 use zk_ee::out_of_native_resources;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
-use zk_ee::system::{Computational, Ergs, Resources};
+use zk_ee::system::{Computational, ErgsResource, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
@@ -36,7 +35,7 @@ pub struct ResourcesForTx<S: EthereumLikeTypes> {
 impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ResourcesForTx")
-            .field("gas", &(self.main_resources.ergs().0 / ERGS_PER_GAS))
+            .field("gas", &self.main_resources.legacy_gas())
             .field("main_resources", &self.main_resources)
             .field("withheld", &self.withheld)
             .finish()
@@ -249,7 +248,7 @@ where
     // Split: anything above MAX_NATIVE_COMPUTATIONAL goes into `withheld`
     // (only spendable on pubdata at refund time).
     let (native_limit, withheld) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
-        (native_limit, S::Resources::from_ergs(Ergs::empty()))
+        (native_limit, S::Resources::empty())
     } else {
         let withheld_native =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
@@ -282,9 +281,9 @@ where
             0
         }
     };
-    let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS);
+    let ergs = <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx);
 
-    let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+    let main_resources = S::Resources::from_ergs_and_native(ergs, native_limit);
     (
         ResourcesForTx {
             main_resources,

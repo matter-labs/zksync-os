@@ -82,9 +82,9 @@ fn charge_for_keccak256<R: Resources>(
     len: usize,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Keccak256Errors>> {
-    let ergs_cost = evm_interpreter::keccak256_ergs_cost(len);
-    let native_cost = keccak256_native_cost::<R>(len);
-    resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
+    let gas_cost = evm_interpreter::keccak256_gas_cost(len);
+    let native_cost = keccak256_native_cost_u64(len);
+    resources.charge_legacy_gas_and_native(gas_cost, native_cost)?;
 
     Ok(())
 }

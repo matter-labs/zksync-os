@@ -14,7 +14,6 @@
 //!
 use super::super::*;
 use core::fmt::Write;
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::system_log;
 use zk_ee::{
     define_subsystem, internal_error, out_of_return_memory,
@@ -108,8 +107,8 @@ where
 define_subsystem!(IdentityPrecompile);
 
 pub struct IdentityPrecompile;
-const ID_STATIC_COST_ERGS: Ergs = Ergs(15 * ERGS_PER_GAS);
-const ID_WORD_COST_ERGS: Ergs = Ergs(3 * ERGS_PER_GAS);
+const ID_STATIC_COST_GAS: u64 = 15;
+const ID_WORD_COST_GAS: u64 = 3;
 const ID_BASE_NATIVE_COST: u64 = 20;
 const ID_BYTE_NATIVE_COST: u64 = 10;
 impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPrecompile {
@@ -122,13 +121,9 @@ impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPreco
         _: A,
     ) -> Result<(), SubsystemError<IdentityPrecompileErrors>> {
         cycle_marker::wrap_with_resources!("id", resources, {
-            let cost_ergs =
-                ID_STATIC_COST_ERGS + ID_WORD_COST_ERGS.times((src.len() as u64).div_ceil(32));
+            let cost_gas = ID_STATIC_COST_GAS + ID_WORD_COST_GAS * (src.len() as u64).div_ceil(32);
             let cost_native = ID_BASE_NATIVE_COST + ID_BYTE_NATIVE_COST * (src.len() as u64);
-            resources.charge(&R::from_ergs_and_native(
-                cost_ergs,
-                <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
-            ))?;
+            resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
             dst.try_extend(src.iter().cloned())
                 .map_err(|_| out_of_return_memory!())?;
             Ok(())

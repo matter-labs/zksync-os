@@ -1,12 +1,15 @@
 //! Reference implementations.
 //! For now, only for resources.
 //! We track two resources:
-//! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
+//! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = GAS_TO_ERGS_FACTOR ergs.
 //! - Native resource: model for prover complexity.
 
 use crate::{
     out_of_native_resources,
-    system::{errors::system::SystemError, Computational, Ergs, Resource, Resources},
+    system::{
+        errors::system::SystemError, Computational, Ergs, Resource, Resources,
+        DEFAULT_GAS_TO_ERGS_FACTOR,
+    },
 };
 
 /// Native resource that counts down, as done for ergs.
@@ -70,13 +73,22 @@ impl Computational for DecreasingNative {
     }
 }
 
+/// Resources of a system that meters only legacy gas: ergs are gas 1:1 and
+/// the native resource is not tracked.
+pub type GasOnlyResources = BaseResources<(), 1>;
+
 #[derive(Clone, core::fmt::Debug, PartialEq, Eq, Default)]
-pub struct BaseResources<Native: Resource> {
-    ergs: Ergs,
+pub struct BaseResources<
+    Native: Resource,
+    const GAS_TO_ERGS_FACTOR: u64 = DEFAULT_GAS_TO_ERGS_FACTOR,
+> {
+    ergs: Ergs<GAS_TO_ERGS_FACTOR>,
     native: Native,
 }
 
-impl<Native: Resource> Resource for BaseResources<Native> {
+impl<Native: Resource, const GAS_TO_ERGS_FACTOR: u64> Resource
+    for BaseResources<Native, GAS_TO_ERGS_FACTOR>
+{
     const FORMAL_INFINITE: Self = Self {
         ergs: Ergs::FORMAL_INFINITE,
         native: Native::FORMAL_INFINITE,
@@ -140,10 +152,13 @@ impl<Native: Resource> Resource for BaseResources<Native> {
     }
 }
 
-impl<Native: Resource + Computational> Resources for BaseResources<Native> {
+impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
+    for BaseResources<Native, GAS_TO_ERGS_FACTOR>
+{
     type Native = Native;
+    type Ergs = Ergs<GAS_TO_ERGS_FACTOR>;
 
-    fn from_ergs(ergs: Ergs) -> Self {
+    fn from_ergs(ergs: Self::Ergs) -> Self {
         Self {
             ergs,
             native: Native::empty(),
@@ -157,15 +172,15 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
         }
     }
 
-    fn from_ergs_and_native(ergs: Ergs, native: Native) -> Self {
+    fn from_ergs_and_native(ergs: Self::Ergs, native: Native) -> Self {
         Self { ergs, native }
     }
 
-    fn add_ergs(&mut self, to_add: Ergs) {
+    fn add_ergs(&mut self, to_add: Self::Ergs) {
         self.ergs.0 += to_add.0;
     }
 
-    fn ergs(&self) -> Ergs {
+    fn ergs(&self) -> Self::Ergs {
         self.ergs
     }
 
@@ -188,7 +203,7 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
 
     fn with_infinite_ergs<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let old_ergs = self.ergs;
-        self.ergs = Ergs(u64::MAX);
+        self.ergs = Ergs::FORMAL_INFINITE;
         let o = f(self);
         self.ergs = old_ergs;
         o
@@ -203,7 +218,10 @@ mod tests {
 
     #[test]
     fn test_oog_does_not_charge_native() {
-        let mut resources = BaseResources::from_ergs_and_native(Ergs(10), DecreasingNative(100));
+        let mut resources = BaseResources::<DecreasingNative>::from_ergs_and_native(
+            Ergs(10),
+            DecreasingNative(100),
+        );
         let r = resources.charge(&BaseResources {
             ergs: Ergs(11),
             native: DecreasingNative(101),

@@ -14,7 +14,6 @@ use basic_system::system_implementation::flat_storage_model::cost_constants::{
 };
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
-use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use zk_ee::common_structs::logs_storage::{L2_TO_L1_LOG_SERIALIZE_SIZE, L2_TO_L1_LOG_TREE_HEIGHT};
 
@@ -52,7 +51,7 @@ pub const MAX_CALLSTACK_DEPTH: usize = 1025;
 pub const TX_CALLDATA_OFFSET: usize = 0x60;
 
 /// Maximum value of gas that can be represented as ergs in an u64.
-pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
+pub const MAX_BLOCK_GAS_LIMIT: u64 = zk_ee::system::MAX_BLOCK_GAS_LIMIT;
 
 /// Transaction intrinsic gas cost.
 pub const TX_INTRINSIC_GAS: u64 = 21_000;

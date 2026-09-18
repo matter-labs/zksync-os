@@ -13,7 +13,7 @@
 
 use std::{collections::HashMap, marker::PhantomData};
 
-use evm_interpreter::{opcodes::OpCode, ERGS_PER_GAS};
+use evm_interpreter::opcodes::OpCode;
 use ruint::aliases::U256;
 use zk_ee::{
     system::{
@@ -199,13 +199,13 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
             None
         };
 
-        self.last_known_gas_left = interpreter_state.resources().ergs().0 / ERGS_PER_GAS;
+        self.last_known_gas_left = interpreter_state.resources().legacy_gas();
 
         tx_log.steps.push(EvmExecutionStep {
             pc: interpreter_state.instruction_pointer(),
             opcode_raw: opcode,
             opcode: opcode_decoded,
-            gas: interpreter_state.resources().ergs().0 / ERGS_PER_GAS,
+            gas: interpreter_state.resources().legacy_gas(),
             gas_used: None, // will be populated later
             memory,
             mem_size: interpreter_state.heap().len(),
@@ -231,7 +231,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
                 .expect("Should exist");
 
             let gas_used = last_known_gas
-                - interpreter_state.resources().ergs().0 / ERGS_PER_GAS
+                - interpreter_state.resources().legacy_gas()
                 - self.gas_used_by_last_call;
             opcode_log.gas_used = Some(gas_used);
         }
@@ -246,7 +246,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
     ) {
         let gas_used = self
             .last_known_gas_left
-            .checked_sub(interpreter_state.resources().ergs().0 / ERGS_PER_GAS)
+            .checked_sub(interpreter_state.resources().legacy_gas())
             .expect("Unexpected gas value");
 
         let tx_log = self.transaction_logs.last_mut().expect("Should exist");
@@ -314,7 +314,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         }
 
         self.gas_used_by_calls
-            .push(request.external_call.available_resources.ergs().0 / ERGS_PER_GAS);
+            .push(request.external_call.available_resources.legacy_gas());
         // Save passed amount of gas
     }
 
@@ -323,8 +323,8 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
 
         if let Some(call_result) = result {
             let last_call_gas_record = self.gas_used_by_calls.pop().expect("Should exist");
-            self.gas_used_by_last_call =
-                last_call_gas_record - call_result.0.ergs().0 / ERGS_PER_GAS; // Save gas used by call
+            self.gas_used_by_last_call = last_call_gas_record - call_result.0.legacy_gas();
+        // Save gas used by call
         } else {
             // Something terrible happened (fatal error)
         }

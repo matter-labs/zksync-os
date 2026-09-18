@@ -16,7 +16,7 @@ use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
-use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
+use evm_interpreter::MAX_INITCODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
@@ -29,7 +29,7 @@ use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
 use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
-use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
+use zk_ee::system::{ErgsResource, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
 use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_TX};
@@ -66,7 +66,8 @@ where
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
     require!(
-        tx_gas_limit.saturating_mul(ERGS_PER_GAS) < u64::MAX,
+        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(tx_gas_limit).as_u64()
+            < u64::MAX,
         InvalidTransaction::CallerGasLimitTooHigh,
         system
     )?;
@@ -515,7 +516,9 @@ where
         resources: tx_resources,
         fee_to_prepay,
         gas_price,
-        minimal_ergs_to_charge: Ergs(minimal_gas_used.saturating_mul(ERGS_PER_GAS)),
+        minimal_ergs_to_charge: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
+            minimal_gas_used,
+        ),
         originator_nonce_to_use: old_nonce,
         tx_hash,
         native_per_pubdata,

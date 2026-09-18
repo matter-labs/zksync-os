@@ -1,8 +1,6 @@
 use evm_interpreter::gas_constants::SELFBALANCE;
 use evm_interpreter::gas_constants::{ADDRESS_ACCESS_COST_COLD, ADDRESS_ACCESS_COST_WARM};
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::native_with_delegations;
-use zk_ee::system::Ergs;
 
 /// Native cost for querying the preimage cache
 pub const PREIMAGE_CACHE_GET_NATIVE_COST: u64 = 500;
@@ -31,11 +29,11 @@ pub const ACCOUNT_PERSIST_EXISTING_WRITE_NATIVE_COST: u64 =
 // New account: 3 merkle paths write extra.
 pub const ACCOUNT_PERSIST_NEW_WRITE_NATIVE_COST: u64 = COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST;
 
-pub const COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS: Ergs =
-    Ergs((ADDRESS_ACCESS_COST_COLD - ADDRESS_ACCESS_COST_WARM) * ERGS_PER_GAS);
-pub const WARM_PROPERTIES_ACCESS_COST_ERGS: Ergs = Ergs(ADDRESS_ACCESS_COST_WARM * ERGS_PER_GAS);
+pub const COLD_PROPERTIES_ACCESS_EXTRA_COST_GAS: u64 =
+    ADDRESS_ACCESS_COST_COLD - ADDRESS_ACCESS_COST_WARM;
+pub const WARM_PROPERTIES_ACCESS_COST_GAS: u64 = ADDRESS_ACCESS_COST_WARM;
 // Taken from EVM's SELFBALANCE
-pub const KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_ERGS: Ergs = Ergs(SELFBALANCE * ERGS_PER_GAS);
+pub const KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_GAS: u64 = SELFBALANCE;
 
 // Avg is ~10x smaller, maybe we can reduce it, but it depends on cache state.
 pub const WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST: u64 = 4000;

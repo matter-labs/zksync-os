@@ -3,7 +3,7 @@ use core::fmt::Debug;
 use crate::{
     common_structs::CalleeAccountProperties,
     memory::slice_vec::SliceVec,
-    system::{system::SystemTypes, CallModifier, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
+    system::{system::SystemTypes, CallModifier, Resources, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
 
@@ -25,7 +25,7 @@ pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
 
 pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub available_resources: S::Resources,
-    pub ergs_to_pass: Ergs,
+    pub ergs_to_pass: <S::Resources as Resources>::Ergs,
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callee: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address,
@@ -44,7 +44,7 @@ where
     fn default() -> Self {
         Self {
             available_resources: S::Resources::default(),
-            ergs_to_pass: Ergs::default(),
+            ergs_to_pass: Default::default(),
             caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
             callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
             callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),

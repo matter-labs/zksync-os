@@ -1,4 +1,4 @@
-use crate::cost_constants::{POINT_EVALUATION_COST_ERGS, POINT_EVALUATION_NATIVE_COST};
+use crate::cost_constants::{POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST};
 use crypto::ark_ec::pairing::Pairing;
 use crypto::ark_ec::{AffineRepr, CurveGroup};
 use crypto::ark_ff::{Field, PrimeField};
@@ -108,12 +108,8 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
-    resources.charge(&R::from_ergs_and_native(
-        POINT_EVALUATION_COST_ERGS,
-        <R::Native as zk_ee::system::Computational>::from_computational(
-            POINT_EVALUATION_NATIVE_COST,
-        ),
-    ))?;
+    resources
+        .charge_legacy_gas_and_native(POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST)?;
 
     if input.len() != 192 {
         return Err(interface_error!(
@@ -171,7 +167,6 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evm_interpreter::ERGS_PER_GAS;
     use std::alloc::Global;
     use zk_ee::reference_implementations::BaseResources;
     use zk_ee::reference_implementations::DecreasingNative;
@@ -208,12 +203,12 @@ mod tests {
 
         let mut output = Vec::new();
         let mut resources = infinite_resources();
-        let gas_before = resources.ergs().0 / ERGS_PER_GAS;
+        let gas_before = resources.legacy_gas();
 
         let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
         assert!(result.is_ok(), "Result: {:?}", result);
 
-        let gas_used = gas_before - resources.ergs().0 / ERGS_PER_GAS;
+        let gas_used = gas_before - resources.legacy_gas();
 
         assert_eq!(gas_used, gas);
         assert_eq!(output[..], expected_output);

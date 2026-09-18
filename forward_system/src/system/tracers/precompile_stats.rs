@@ -11,7 +11,6 @@ use std::marker::PhantomData;
 use std::path::Path;
 
 use evm_interpreter::precompile_addresses::PRECOMPILE_ADDRESSES_LOWS;
-use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -293,7 +292,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for PrecompileStatsTracer<S> {
         let addr = &request.external_call.callee;
         let bytes: [u8; 20] = addr.to_be_bytes::<{ ruint::aliases::B160::BYTES }>();
         if let Some(id) = precompile_id_from_address(&bytes) {
-            let ergs_in = request.external_call.available_resources.ergs().0 / ERGS_PER_GAS;
+            let ergs_in = request.external_call.available_resources.legacy_gas();
             let native_in = request.external_call.available_resources.native().as_u64();
             self.pending = Some(PendingFrame {
                 precompile_id: id,
@@ -312,9 +311,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for PrecompileStatsTracer<S> {
         let Some((post, _)) = result else {
             return;
         };
-        // `post.ergs().0` unwraps the inner u64 of the Ergs newtype (not a
-        // tuple index). Equivalent: `post.ergs().to_u64()` if available.
-        let ergs_out = post.ergs().0 / ERGS_PER_GAS;
+        let ergs_out = post.legacy_gas();
         let native_out = post.native().as_u64();
         let gas_used = pending.ergs_in.saturating_sub(ergs_out);
         let native_used = pending.native_in.saturating_sub(native_out);
