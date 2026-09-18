@@ -5,7 +5,9 @@ rustflags = [
   "-C", "link-arg=-Tmemory.x",
   "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=--save-temps",
-  "-C", "force-frame-pointers",
+  # leaf functions skip the frame setup; the sampler still finds the callers through the chain
+  "-C", "force-frame-pointers=non-leaf",
+  "-Z", "unstable-options",
   "-C", "passes=lower-atomic",
   "--cfg", "getrandom_backend=\"custom\"",
 ]

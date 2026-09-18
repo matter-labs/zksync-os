@@ -9,10 +9,11 @@ use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources,
 
 use crate::{
     native_resource_constants::{
-        HEAP_EXPANSION_BASE_NATIVE_COST, HEAP_EXPANSION_PER_BYTE_NATIVE_COST,
+        HEAP_EXPANSION_BASE_NATIVE_COST, HEAP_EXPANSION_PER_BYTE_NATIVE_COST, STEP_NATIVE_COST,
     },
     ExitCode, ERGS_PER_GAS,
 };
+use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 
 /// Wraps underlying system resources and implements gas accounting on top of it
 pub struct Gas<S: SystemTypes> {
@@ -20,6 +21,9 @@ pub struct Gas<S: SystemTypes> {
     pub resources: S::Resources,
     /// Keep track of gas spent on heap resizes
     pub gas_paid_for_heap_growth: u64,
+    /// Internal error of a charge (not expected from any resource implementation), kept
+    /// here as the charge has no access to the interpreter
+    pub defect: Option<InternalError>,
 }
 
 impl<S: EthereumLikeTypes> Gas<S> {
@@ -27,6 +31,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
         Self {
             resources: S::Resources::empty(),
             gas_paid_for_heap_growth: 0,
+            defect: None,
         }
     }
 
@@ -69,8 +74,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
             return Err(EvmError::OutOfGas.into());
         };
         let resource_cost = S::Resources::from_ergs(Ergs(ergs_cost));
-        self.resources.charge(&resource_cost)?;
-        Ok(())
+        self.charge(&resource_cost)
     }
 
     #[inline(always)]
@@ -84,8 +88,73 @@ impl<S: EthereumLikeTypes> Gas<S> {
             Ergs(ergs_cost),
             Computational::from_computational(native),
         );
-        self.resources.charge(&resource_cost)?;
-        Ok(())
+        self.charge(&resource_cost)
+    }
+
+    /// Charge, mapping the error to the (small) exit code
+    #[inline(always)]
+    fn charge(&mut self, to_charge: &S::Resources) -> Result<(), ExitCode> {
+        match self.resources.charge(to_charge) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(self.charge_error(e)),
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn charge_error(&mut self, e: SystemError) -> ExitCode {
+        match e {
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                ExitCode::EvmError(EvmError::OutOfGas)
+            }
+            SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(f)) => {
+                ExitCode::FatalRuntime(f)
+            }
+            SystemError::LeafDefect(e) => {
+                self.defect = Some(e);
+                ExitCode::FatalError
+            }
+        }
+    }
+
+    #[inline(always)]
+    /// Charge only the "native" (proving) resource
+    pub(crate) fn spend_native(&mut self, native: u64) -> Result<(), ExitCode> {
+        use zk_ee::system::Computational;
+        let resource_cost =
+            S::Resources::from_ergs_and_native(Ergs(0), Computational::from_computational(native));
+        self.charge(&resource_cost)
+    }
+
+    #[inline(always)]
+    /// The first charge of an instruction: same as `spend_gas_and_native`, plus the per-step
+    /// native cost of the dispatch. Charging both at once instead of a separate step charge
+    /// before the instruction saves a resource check per instruction; the accounting is the
+    /// same, including out of gas, where the step is still paid as it used to be charged first.
+    pub(crate) fn spend_step_gas_and_native(
+        &mut self,
+        gas: u64,
+        native: u64,
+    ) -> Result<(), ExitCode> {
+        use zk_ee::system::Computational;
+        let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
+            self.spend_native(STEP_NATIVE_COST)?;
+            return Err(EvmError::OutOfGas.into());
+        };
+        let resource_cost = S::Resources::from_ergs_and_native(
+            Ergs(ergs_cost),
+            Computational::from_computational(native + STEP_NATIVE_COST),
+        );
+        match self.resources.charge(&resource_cost) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if let SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) = &e {
+                    // ergs are checked first and nothing is charged then
+                    self.spend_native(STEP_NATIVE_COST)?;
+                }
+                Err(self.charge_error(e))
+            }
+        }
     }
 
     #[inline(always)]

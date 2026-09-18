@@ -135,7 +135,7 @@ fn interop_root_mapping_slot(chain_id: U256, block_or_batch_number: U256) -> U25
     let mut hasher = rig::crypto::sha3::Keccak256::new();
     hasher.update(block_or_batch_number.to_be_bytes::<32>());
     hasher.update(chain_mapping_slot);
-    U256::from_be_bytes(hasher.finalize())
+    U256::from_be_bytes(*hasher.finalize())
 }
 
 fn read_interop_root_slot(

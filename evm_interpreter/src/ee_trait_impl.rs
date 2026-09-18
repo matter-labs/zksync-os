@@ -46,6 +46,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             call_value: U256::zero(),
             is_constructor: false,
             pending_os_request: None,
+            exit_code: None,
+            fatal_error: None,
         })
     }
 

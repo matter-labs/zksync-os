@@ -181,7 +181,7 @@ fn interop_info_mapping_slot(asset_id: B256) -> U256 {
     let mut hasher = rig::crypto::sha3::Keccak256::new();
     hasher.update(asset_id.to_be_bytes::<32>());
     hasher.update(U256::from(L2_ASSET_TRACKER_INTEROP_INFO_SLOT).to_be_bytes::<32>());
-    U256::from_be_bytes(hasher.finalize())
+    U256::from_be_bytes(*hasher.finalize())
 }
 
 fn read_total_successful_deposits_from_l1(tester: &mut TestingFramework) -> U256 {

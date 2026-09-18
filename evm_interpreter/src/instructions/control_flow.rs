@@ -35,7 +35,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn jump(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::MID, JUMP_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::MID, JUMP_NATIVE_COST)?;
         let dest = self.stack.pop_1()?;
         let dest = Self::cast_to_usize(dest, EvmError::InvalidJump.into())?;
         if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
@@ -47,7 +47,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn jumpi(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
         let (dest, value) = self.stack.pop_2()?;
         if !value.is_zero() {
             let dest = Self::cast_to_usize(dest, EvmError::InvalidJump.into())?;
@@ -64,19 +64,19 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         // On host builds this runs for every JUMP/JUMPI target. On RISC-V builds it only runs
         // for fall-through cases (e.g. JUMPI condition false landing on a JUMPDEST byte).
         self.gas
-            .spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
         Ok(())
     }
 
     pub fn pc(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::BASE, PC_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::BASE, PC_NATIVE_COST)?;
         self.stack.push_u64((self.instruction_pointer - 1) as u64)?;
         Ok(())
     }
 
     pub fn ret(&mut self) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, RETURN_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, RETURN_NATIVE_COST)?;
         let (offset, len) = self.stack.pop_2()?;
         let len = Self::cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
         if len == 0 {
@@ -94,7 +94,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn revert(&mut self) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, REVERT_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, REVERT_NATIVE_COST)?;
         let (offset, len) = self.stack.pop_2()?;
         let len = Self::cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
         if len == 0 {

@@ -8,7 +8,7 @@ use zk_ee::system::System;
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let index = Self::cast_to_usize(stack_top, EvmError::InvalidOperandOOG.into())?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
@@ -32,7 +32,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let mut le_value = value.clone();
         let index = Self::cast_to_usize(index, EvmError::InvalidOperandOOG.into())?;
@@ -57,7 +57,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let index = Self::cast_to_usize(&index, EvmError::InvalidOperandOOG.into())?;
         let value = value.byte(0);
@@ -76,7 +76,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn msize(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
         self.stack.push_u64(len as u64)
@@ -88,7 +88,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let len_u64 = Self::cast_to_u64(&len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         self.gas
-            .spend_gas_and_native(gas_cost, native_cost + MCOPY_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_cost, native_cost + MCOPY_NATIVE_COST)?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
 
         if len == 0 {

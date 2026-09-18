@@ -4,7 +4,7 @@ use native_resource_constants::*;
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn pop(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
         self.stack.pop_and_ignore()
     }
 
@@ -12,7 +12,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn push0(&mut self) -> InstructionResult {
         // EIP-3855: PUSH0 instruction
         self.gas
-            .spend_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
         self.stack.push_zero()
     }
 
@@ -20,7 +20,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     /// For a single byte, bytereverse+shift is a no-op round-trip.
     pub fn push1(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[1])?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[1])?;
         let start = self.instruction_pointer;
 
         let byte_val = self.bytecode.get(start).copied().unwrap_or(0);
@@ -34,7 +34,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     /// end of the bytecode are treated as zero (matching the generic path's right-padding).
     pub fn push2(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
         let start = self.instruction_pointer;
 
         let b0 = self.bytecode.get(start).copied().unwrap_or(0);
@@ -51,7 +51,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     /// zero (matching the generic path's right-padding).
     pub fn push_small<const N: usize>(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
         let val: u64 = if let Some(chunk) = self.bytecode.get(start..start + N) {
@@ -77,7 +77,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
         let mut value = U256::zero();
@@ -108,13 +108,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn dup<const N: usize>(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
         self.stack.dup(N)
     }
 
     pub fn swap<const N: usize>(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
         self.stack.swap(N)
     }
 }

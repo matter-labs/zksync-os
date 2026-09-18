@@ -36,7 +36,7 @@ use u256::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
-use zk_ee::system::errors::runtime::RuntimeError;
+use zk_ee::system::errors::runtime::{FatalRuntimeError, RuntimeError};
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
 use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{Ergs, EthereumLikeTypes, Resource, Resources, System, SystemTypes};
@@ -115,6 +115,11 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub is_constructor: bool,
     /// Indicating that EE is waiting for the result of some operation from the OS. `continue_after_preemption` will panic if this is None
     pub pending_os_request: Option<PendingOsRequest<S>>,
+    /// Why the last `run` stopped: stored by the instruction that stopped it, so the loop
+    /// only passes a word around
+    pub exit_code: Option<ExitCode>,
+    /// The error behind `ExitCode::FatalError`, stored by the handler that hit it
+    pub fatal_error: Option<EvmSubsystemError>,
 }
 
 /// Wrapper to provide external access to EVM frame state
@@ -466,9 +471,12 @@ pub type InstructionResult = Result<(), ExitCode>;
 ///
 /// Expected exit reasons from the EVM interpreter.
 ///
+/// Kept small (a few bytes on the proving target) so that every `Result<_, ExitCode>` of the
+/// instruction helpers is returned in registers: a fatal error is stored in the interpreter
+/// (`Interpreter::fatal_error`) by the handler that hit it, and only signalled here.
+///
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-// #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitCode {
     //success codes
     Stop = 0x01,
@@ -480,9 +488,18 @@ pub enum ExitCode {
     // EVM-defined error
     EvmError(EvmError),
 
-    // Fatal internal error
-    FatalError(EvmSubsystemError),
+    // Fatal runtime error (out of native resources, out of return memory)
+    FatalRuntime(FatalRuntimeError),
+
+    // Fatal internal error, stored in `Interpreter::fatal_error` (or `Gas::defect`)
+    FatalError,
 }
+
+#[cfg(target_arch = "riscv32")]
+const _: () = {
+    // the helpers return `Result<&U256, ExitCode>` in two registers
+    assert!(core::mem::size_of::<ExitCode>() <= 4);
+};
 
 impl From<EvmError> for ExitCode {
     fn from(e: EvmError) -> Self {
@@ -490,32 +507,59 @@ impl From<EvmError> for ExitCode {
     }
 }
 
-impl From<SystemError> for ExitCode {
-    fn from(e: SystemError) -> Self {
+impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
+    /// Store a fatal error and return the exit code that signals it. Takes the slot rather than
+    /// the interpreter, so a handler can map an error while it still borrows the stack.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn fatal(
+        slot: &mut Option<EvmSubsystemError>,
+        e: impl Into<EvmSubsystemError>,
+    ) -> ExitCode {
+        *slot = Some(e.into());
+        ExitCode::FatalError
+    }
+
+    /// Exit code for an error of a system call made by an instruction
+    #[inline(always)]
+    pub(crate) fn system_error(slot: &mut Option<EvmSubsystemError>, e: SystemError) -> ExitCode {
         match e {
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
-                Self::EvmError(EvmError::OutOfGas)
+                ExitCode::EvmError(EvmError::OutOfGas)
             }
-            e => Self::FatalError(e.into()),
+            SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(f)) => {
+                ExitCode::FatalRuntime(f)
+            }
+            SystemError::LeafDefect(e) => Self::fatal(slot, e),
         }
     }
-}
 
-/// TODO this is a workaround. We need to contain ExitCode better inside EVM
-/// interpreter but it requires a bit of untangling.
-impl From<EvmSubsystemError> for ExitCode {
-    fn from(e: EvmSubsystemError) -> Self {
-        if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = e.root_cause() {
-            Self::EvmError(EvmError::OutOfGas)
-        } else {
-            Self::FatalError(e)
+    /// Exit code for an error of the EVM subsystem itself (deployment, address derivation)
+    #[inline(always)]
+    pub(crate) fn subsystem_error(
+        slot: &mut Option<EvmSubsystemError>,
+        e: EvmSubsystemError,
+    ) -> ExitCode {
+        match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                ExitCode::EvmError(EvmError::OutOfGas)
+            }
+            RootCause::Runtime(RuntimeError::FatalRuntimeError(f)) => {
+                ExitCode::FatalRuntime(f.clone())
+            }
+            _ => Self::fatal(slot, e),
         }
     }
-}
 
-impl From<InternalError> for ExitCode {
-    fn from(e: InternalError) -> Self {
-        ExitCode::FatalError(e.into())
+    /// The fatal error behind `ExitCode::FatalError`
+    pub(crate) fn take_fatal_error(&mut self) -> EvmSubsystemError {
+        if let Some(e) = self.fatal_error.take() {
+            return e;
+        }
+        if let Some(e) = self.gas.defect.take() {
+            return e.into();
+        }
+        internal_error!("fatal exit code without a stored error").into()
     }
 }
 

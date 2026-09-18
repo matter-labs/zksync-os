@@ -14,52 +14,52 @@ use super::*;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
-        let value = system.io.get_nominal_token_balance(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &address,
-        )?;
+        let value = system
+            .io
+            .get_nominal_token_balance(THIS_EE_TYPE, self.gas.resources_mut(), &address)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
         // value is NominalTokenValue = ruint::aliases::U256, convert to u256::U256
         *stack_top = U256::from(value);
         Ok(())
     }
 
     pub fn selfbalance(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, SELFBALANCE_NATIVE_COST)?;
-        let value =
-            system
-                .io
-                .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
+        self.gas
+            .spend_step_gas_and_native(0, SELFBALANCE_NATIVE_COST)?;
+        let value = system
+            .io
+            .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
         // value is NominalTokenValue = ruint::aliases::U256, convert to u256::U256
         let value = U256::from(value);
         self.stack.push(&value)
     }
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
+        self.gas
+            .spend_step_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
-        let value = system.io.get_observable_bytecode_size(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &address,
-        )?;
+        let value = system
+            .io
+            .get_observable_bytecode_size(THIS_EE_TYPE, self.gas.resources_mut(), &address)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
         *stack_top = U256::from(value as u64);
         Ok(())
     }
 
     pub fn extcodehash(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, EXTCODEHASH_NATIVE_COST)?;
+        self.gas
+            .spend_step_gas_and_native(0, EXTCODEHASH_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
-        let value = system.io.get_observable_bytecode_hash(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &address,
-        )?;
+        let value = system
+            .io
+            .get_observable_bytecode_hash(THIS_EE_TYPE, self.gas.resources_mut(), &address)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         *stack_top = U256::from_be_bytes(value.as_u8_array_ref());
         Ok(())
@@ -75,10 +75,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // resize memory to account for the destination memory required
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
 
-        let bytecode =
-            system
-                .io
-                .get_observable_bytecode(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
+        let bytecode = system
+            .io
+            .get_observable_bytecode(THIS_EE_TYPE, self.gas.resources_mut(), &address)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         // now follow logic of calldatacopy
         let source = &source_offset
@@ -89,7 +89,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // Charge for copy cost
         let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
         self.gas
-            .spend_gas_and_native(gas_cost, native_cost + EXTCODECOPY_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_cost, native_cost + EXTCODECOPY_NATIVE_COST)?;
 
         copy_and_zeropad_nonoverlapping(source, &mut self.heap[memory_offset..memory_offset + len]);
 
@@ -110,17 +110,15 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, SLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
         let mut key_buf = [0u8; 32];
         stack_head.write_be_bytes_into(&mut key_buf);
         let key = Bytes32::from_array(key_buf);
-        let value = system.io.storage_read::<false>(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &key,
-        )?;
+        let value = system
+            .io
+            .storage_read::<false>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
 
@@ -134,17 +132,15 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, TLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
         let mut key_buf = [0u8; 32];
         stack_head.write_be_bytes_into(&mut key_buf);
         let key = Bytes32::from_array(key_buf);
-        let value = system.io.storage_read::<true>(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &key,
-        )?;
+        let value = system
+            .io
+            .storage_read::<true>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
 
@@ -158,7 +154,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, SSTORE_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, SSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
@@ -173,13 +169,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         value.write_be_bytes_into(&mut value_buf);
         let value = Bytes32::from_array(value_buf);
 
-        system.io.storage_write::<false>(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &index,
-            &value,
-        )?;
+        system
+            .io
+            .storage_write::<false>(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                &index,
+                &value,
+            )
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
 
@@ -204,7 +203,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
-        self.gas.spend_gas_and_native(0, TSTORE_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, TSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
@@ -215,13 +214,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let mut value_buf = [0u8; 32];
         value.write_be_bytes_into(&mut value_buf);
         let value = Bytes32::from_array(value_buf);
-        system.io.storage_write::<true>(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &index,
-            &value,
-        )?;
+        system
+            .io
+            .storage_write::<true>(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                &index,
+                &value,
+            )
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
 
@@ -235,7 +237,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
         assert!(N <= MAX_EVENT_TOPICS);
-        self.gas.spend_gas_and_native(0, LOG_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(0, LOG_NATIVE_COST)?;
 
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
@@ -258,14 +260,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
-        system.emit_event(
-            hooks,
-            ExecutionEnvironmentType::EVM,
-            self.gas.resources_mut(),
-            &self.address,
-            &topics,
-            data,
-        )?;
+        system
+            .emit_event(
+                hooks,
+                ExecutionEnvironmentType::EVM,
+                self.gas.resources_mut(),
+                &self.address,
+                &topics,
+                data,
+            )
+            .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
         Ok(())
     }
@@ -276,7 +280,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::SELFDESTRUCT, SELFDESTRUCT_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::SELFDESTRUCT, SELFDESTRUCT_NATIVE_COST)?;
 
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
@@ -292,7 +296,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 &self.address,
                 &beneficiary,
             )
-            .map_err(wrap_error!())?;
+            .map_err(wrap_error!())
+            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?;
 
         tracer.evm_tracer().on_selfdestruct(
             beneficiary,
@@ -309,7 +314,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
-        self.gas.spend_gas_and_native(
+        self.gas.spend_step_gas_and_native(
             gas_constants::CREATE,
             if IS_CREATE2 {
                 native_resource_constants::CREATE2_NATIVE_COST
@@ -357,19 +362,25 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 salt,
                 &self.address,
                 &self.heap[deployment_code.clone()],
-            )?
+            )
+            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?
         } else {
-            let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
-                system
-                    .io
-                    .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
-            })?;
+            let deployer_nonce = self
+                .gas
+                .resources
+                .with_infinite_ergs(|inf_resources| {
+                    system
+                        .io
+                        .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
+                })
+                .map_err(|e| Self::system_error(&mut self.fatal_error, e))?;
 
             Self::derive_address_for_deployment_create(
                 self.gas.resources_mut(),
                 &self.address,
                 deployer_nonce,
-            )?
+            )
+            .map_err(|e| Self::subsystem_error(&mut self.fatal_error, e))?
         };
 
         // at this preemption point we give all resources to the system
@@ -425,7 +436,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
+            .spend_step_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
         // TODO optimize stack operations
         let (gas_to_pass, to) = self.stack.pop_2()?;

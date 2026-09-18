@@ -6,7 +6,7 @@ use zk_ee::system::{IOSubsystemExt, System, SystemFunctionsExt};
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn wrapped_add(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::AddAssign::add_assign(op2, op1);
         Ok(())
@@ -14,7 +14,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn wrapping_mul(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, MUL_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, MUL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         op2.wrapping_mul_assign(op1);
         Ok(())
@@ -22,7 +22,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn wrapping_sub(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::VERYLOW, SUB_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::VERYLOW, SUB_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         // Compute op1 - op2 and store in op2
         op2.overflowing_sub_assign_reversed(op1);
@@ -34,7 +34,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             S::SystemFunctionsExt::u256_div_rem(op1, op2, system.io.oracle());
@@ -48,7 +48,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, SDIV_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, SDIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         i256_div(op1, op2, |a, b| {
             S::SystemFunctionsExt::u256_div_rem(a, b, system.io.oracle())
@@ -61,7 +61,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             S::SystemFunctionsExt::u256_div_rem(op1, op2, system.io.oracle());
@@ -76,7 +76,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             i256_mod(op1, op2, |a, b| {
@@ -91,7 +91,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::MID, ADDMOD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::MID, ADDMOD_NATIVE_COST)?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
         if op3.is_zero() {
             return Ok(());
@@ -119,7 +119,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         S::IO: IOSubsystemExt,
     {
         self.gas
-            .spend_gas_and_native(gas_constants::MID, MULMOD_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::MID, MULMOD_NATIVE_COST)?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
         if op3.is_zero() {
             return Ok(());
@@ -152,7 +152,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn eval_exp(&mut self) -> InstructionResult {
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some((gas_cost, native_cost)) = exp_cost(&op2) {
-            self.gas.spend_gas_and_native(gas_cost, native_cost)?;
+            self.gas.spend_step_gas_and_native(gas_cost, native_cost)?;
         } else {
             return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
@@ -163,7 +163,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn sign_extend(&mut self) -> InstructionResult {
         self.gas
-            .spend_gas_and_native(gas_constants::LOW, SIGNEXTEND_NATIVE_COST)?;
+            .spend_step_gas_and_native(gas_constants::LOW, SIGNEXTEND_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some(shift) = op1.try_to_usize_capped::<32>() {
             let bit_index = 8 * shift + 7;

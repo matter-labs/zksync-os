@@ -107,7 +107,9 @@ mod tests {
         let mut hasher = H::new();
         hasher.update(left.as_u8_ref());
         hasher.update(right.as_u8_ref());
-        Bytes32::from_array(*core::borrow::Borrow::<[u8; 32]>::borrow(&hasher.finalize()))
+        Bytes32::from_array(*core::borrow::Borrow::<[u8; 32]>::borrow(
+            &hasher.finalize(),
+        ))
     }
 
     /// Straightforward reference: pad the leaf layer to `2^height` with the

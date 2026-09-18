@@ -34,8 +34,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let mut external_call = None;
         let exit_code = self.run(system, hooks, &mut external_call, tracer)?;
 
-        if let ExitCode::FatalError(e) = exit_code {
-            return Err(e);
+        match exit_code {
+            ExitCode::FatalError => return Err(self.take_fatal_error()),
+            ExitCode::FatalRuntime(f) => return Err(RuntimeError::FatalRuntimeError(f).into()),
+            _ => {}
         }
 
         if let Some(call) = external_call {
@@ -71,6 +73,260 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         }
 
         self.create_immediate_return_state(system, exit_code, tracer)
+    }
+}
+
+/// Returned by a step of the loop form instead of the next opcode when the run is over
+const HALT: u32 = 0x100;
+
+/// Everything an instruction may need besides the interpreter itself
+pub(crate) struct Env<'a, S: EthereumLikeTypes, T: Tracer<S>> {
+    system: &'a mut System<S>,
+    hooks: &'a mut HooksStorage<S, S::Allocator>,
+    external_call_dest: &'a mut Option<EVMCallRequest<S>>,
+    tracer: &'a mut T,
+    cycles: usize,
+}
+
+/// The dispatch loop: one frame for the whole run, a jump table per instruction, and every
+/// instruction charged together with its step
+pub(crate) struct Dispatch<'ee, S: EthereumLikeTypes, T: Tracer<S>>(
+    core::marker::PhantomData<(&'ee (), S, T)>,
+);
+
+macro_rules! handlers {
+    ($($op:ident => |$this:ident, $env:ident| $body:expr,)*) => {
+        /// One instruction. Returns the next opcode, fetched
+        /// while the updated instruction pointer is still at hand, or `HALT` after storing the
+        /// exit code: a word in a register instead of a `Result` in memory.
+        #[inline(always)]
+        fn step(this: &mut Interpreter<'ee, S>, env: &mut Env<'_, S, T>, opcode: u8) -> u32 {
+            let result: InstructionResult = match opcode {
+                $(
+                    opcodes::$op => {
+                        let $this = &mut *this;
+                        let $env = &mut *env;
+                        let _ = &$env;
+                        $body
+                    }
+                )*
+                _ => this
+                    .gas
+                    .spend_native(STEP_NATIVE_COST)
+                    .and(Err(EvmError::InvalidOpcode(opcode).into())),
+            };
+            match result {
+                Ok(()) => this.get_bytecode_unchecked(this.instruction_pointer) as u32,
+                Err(exit_code) => {
+                    this.exit_code = Some(exit_code);
+                    HALT
+                }
+            }
+        }
+    };
+}
+
+impl<'ee, S: EthereumLikeTypes, T: Tracer<S>> Dispatch<'ee, S, T>
+where
+    S::IO: IOSubsystemExt,
+{
+    /// Run until an instruction stores an exit code
+    pub(crate) fn run_loop(this: &mut Interpreter<'ee, S>, env: &mut Env<'_, S, T>) {
+        let mut opcode = this.get_bytecode_unchecked(this.instruction_pointer);
+        loop {
+            env.tracer
+                .evm_tracer()
+                .before_evm_interpreter_execution_step(
+                    opcode,
+                    &InterpreterExternal::new_from(this, env.system),
+                );
+
+            this.instruction_pointer += 1;
+            #[cfg(not(target_arch = "riscv32"))]
+            {
+                env.cycles += 1;
+            }
+            cycle_marker::opcode_start!();
+
+            let next = Self::step(this, env, opcode);
+
+            Self::after_step(this, env, opcode);
+            if next == HALT {
+                return;
+            }
+            opcode = next as u8;
+        }
+    }
+
+    #[inline(always)]
+    fn after_step(this: &mut Interpreter<'ee, S>, env: &mut Env<'_, S, T>, opcode: u8) {
+        cycle_marker::opcode_end!(
+            crate::opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("UNKNOWN")
+        );
+
+        env.tracer
+            .evm_tracer()
+            .after_evm_interpreter_execution_step(
+                opcode,
+                &InterpreterExternal::new_from(this, env.system),
+            );
+
+        if Interpreter::<'ee, S>::PRINT_OPCODES {
+            let _ = env.system.get_logger().write_str("\n");
+        }
+    }
+
+    handlers! {
+        CREATE => |this, env| this.create::<false>(&mut *env.system, &mut *env.external_call_dest, &mut *env.tracer),
+        CREATE2 => |this, env| this.create::<true>(&mut *env.system, &mut *env.external_call_dest, &mut *env.tracer),
+        CALL => |this, env| this.call(&mut *env.external_call_dest),
+        CALLCODE => |this, env| this.call_code(&mut *env.external_call_dest),
+        DELEGATECALL => |this, env| this.delegate_call(&mut *env.external_call_dest),
+        STATICCALL => |this, env| this.static_call(&mut *env.external_call_dest),
+        STOP => |this, env| this.gas.spend_native(STEP_NATIVE_COST).and(Err(ExitCode::Stop)),
+        ADD => |this, env| this.wrapped_add(),
+        MUL => |this, env| this.wrapping_mul(),
+        SUB => |this, env| this.wrapping_sub(),
+        DIV => |this, env| this.div(&mut *env.system),
+        SDIV => |this, env| this.sdiv(&mut *env.system),
+        MOD => |this, env| this.rem(&mut *env.system),
+        SMOD => |this, env| this.smod(&mut *env.system),
+        ADDMOD => |this, env| this.addmod(&mut *env.system),
+        MULMOD => |this, env| this.mulmod(&mut *env.system),
+        EXP => |this, env| this.eval_exp(),
+        SIGNEXTEND => |this, env| this.sign_extend(),
+        LT => |this, env| this.lt(),
+        GT => |this, env| this.gt(),
+        SLT => |this, env| this.slt(),
+        SGT => |this, env| this.sgt(),
+        EQ => |this, env| this.eq(),
+        ISZERO => |this, env| this.iszero(),
+        AND => |this, env| this.bitand(),
+        OR => |this, env| this.bitor(),
+        XOR => |this, env| this.bitxor(),
+        NOT => |this, env| this.not(),
+        BYTE => |this, env| this.byte(),
+        SHL => |this, env| this.shl(),
+        SHR => |this, env| this.shr(),
+        SAR => |this, env| this.sar(),
+        CLZ => |this, env| this.clz(),
+        SHA3 => |this, env| this.sha3(&mut *env.system),
+        ADDRESS => |this, env| this.address(),
+        BALANCE => |this, env| this.balance(&mut *env.system),
+        SELFBALANCE => |this, env| this.selfbalance(&mut *env.system),
+        CODESIZE => |this, env| this.codesize(),
+        CODECOPY => |this, env| this.codecopy(&mut *env.system),
+        CALLDATALOAD => |this, env| this.calldataload(&mut *env.system),
+        CALLDATASIZE => |this, env| this.calldatasize(),
+        CALLDATACOPY => |this, env| this.calldatacopy(&mut *env.system),
+        POP => |this, env| this.pop(),
+        MLOAD => |this, env| this.mload(&mut *env.system),
+        MSTORE => |this, env| this.mstore(&mut *env.system),
+        MSTORE8 => |this, env| this.mstore8(&mut *env.system),
+        JUMP => |this, env| this.jump(),
+        JUMPI => |this, env| this.jumpi(),
+        PC => |this, env| this.pc(),
+        MSIZE => |this, env| this.msize(),
+        JUMPDEST => |this, env| this.jumpdest(),
+        PUSH0 => |this, env| this.push0(),
+        PUSH1 => |this, env| this.push1(),
+        PUSH2 => |this, env| this.push2(),
+        PUSH3 => |this, env| this.push_small::<3>(),
+        PUSH4 => |this, env| this.push_small::<4>(),
+        PUSH5 => |this, env| this.push_small::<5>(),
+        PUSH6 => |this, env| this.push_small::<6>(),
+        PUSH7 => |this, env| this.push_small::<7>(),
+        PUSH8 => |this, env| this.push_small::<8>(),
+        PUSH9 => |this, env| this.push::<9>(),
+        PUSH10 => |this, env| this.push::<10>(),
+        PUSH11 => |this, env| this.push::<11>(),
+        PUSH12 => |this, env| this.push::<12>(),
+        PUSH13 => |this, env| this.push::<13>(),
+        PUSH14 => |this, env| this.push::<14>(),
+        PUSH15 => |this, env| this.push::<15>(),
+        PUSH16 => |this, env| this.push::<16>(),
+        PUSH17 => |this, env| this.push::<17>(),
+        PUSH18 => |this, env| this.push::<18>(),
+        PUSH19 => |this, env| this.push::<19>(),
+        PUSH20 => |this, env| this.push::<20>(),
+        PUSH21 => |this, env| this.push::<21>(),
+        PUSH22 => |this, env| this.push::<22>(),
+        PUSH23 => |this, env| this.push::<23>(),
+        PUSH24 => |this, env| this.push::<24>(),
+        PUSH25 => |this, env| this.push::<25>(),
+        PUSH26 => |this, env| this.push::<26>(),
+        PUSH27 => |this, env| this.push::<27>(),
+        PUSH28 => |this, env| this.push::<28>(),
+        PUSH29 => |this, env| this.push::<29>(),
+        PUSH30 => |this, env| this.push::<30>(),
+        PUSH31 => |this, env| this.push::<31>(),
+        PUSH32 => |this, env| this.push::<32>(),
+        DUP1 => |this, env| this.dup::<1>(),
+        DUP2 => |this, env| this.dup::<2>(),
+        DUP3 => |this, env| this.dup::<3>(),
+        DUP4 => |this, env| this.dup::<4>(),
+        DUP5 => |this, env| this.dup::<5>(),
+        DUP6 => |this, env| this.dup::<6>(),
+        DUP7 => |this, env| this.dup::<7>(),
+        DUP8 => |this, env| this.dup::<8>(),
+        DUP9 => |this, env| this.dup::<9>(),
+        DUP10 => |this, env| this.dup::<10>(),
+        DUP11 => |this, env| this.dup::<11>(),
+        DUP12 => |this, env| this.dup::<12>(),
+        DUP13 => |this, env| this.dup::<13>(),
+        DUP14 => |this, env| this.dup::<14>(),
+        DUP15 => |this, env| this.dup::<15>(),
+        DUP16 => |this, env| this.dup::<16>(),
+        SWAP1 => |this, env| this.swap::<1>(),
+        SWAP2 => |this, env| this.swap::<2>(),
+        SWAP3 => |this, env| this.swap::<3>(),
+        SWAP4 => |this, env| this.swap::<4>(),
+        SWAP5 => |this, env| this.swap::<5>(),
+        SWAP6 => |this, env| this.swap::<6>(),
+        SWAP7 => |this, env| this.swap::<7>(),
+        SWAP8 => |this, env| this.swap::<8>(),
+        SWAP9 => |this, env| this.swap::<9>(),
+        SWAP10 => |this, env| this.swap::<10>(),
+        SWAP11 => |this, env| this.swap::<11>(),
+        SWAP12 => |this, env| this.swap::<12>(),
+        SWAP13 => |this, env| this.swap::<13>(),
+        SWAP14 => |this, env| this.swap::<14>(),
+        SWAP15 => |this, env| this.swap::<15>(),
+        SWAP16 => |this, env| this.swap::<16>(),
+        RETURN => |this, env| this.ret(),
+        REVERT => |this, env| this.revert(),
+        INVALID => |this, env| this.gas.spend_native(STEP_NATIVE_COST).and(Err(EvmError::InvalidOpcode(opcodes::INVALID).into())),
+        BASEFEE => |this, env| this.basefee(&mut *env.system),
+        ORIGIN => |this, env| this.origin(&mut *env.system),
+        CALLER => |this, env| this.caller(),
+        CALLVALUE => |this, env| this.callvalue(),
+        GASPRICE => |this, env| this.gasprice(&mut *env.system),
+        EXTCODESIZE => |this, env| this.extcodesize(&mut *env.system),
+        EXTCODEHASH => |this, env| this.extcodehash(&mut *env.system),
+        EXTCODECOPY => |this, env| this.extcodecopy(&mut *env.system),
+        RETURNDATASIZE => |this, env| this.returndatasize(),
+        RETURNDATACOPY => |this, env| this.returndatacopy(),
+        BLOCKHASH => |this, env| this.blockhash(&mut *env.system),
+        COINBASE => |this, env| this.coinbase(&mut *env.system),
+        TIMESTAMP => |this, env| this.timestamp(&mut *env.system),
+        NUMBER => |this, env| this.number(&mut *env.system),
+        DIFFICULTY => |this, env| this.difficulty(&mut *env.system),
+        GASLIMIT => |this, env| this.gaslimit(&mut *env.system),
+        SLOAD => |this, env| this.sload(&mut *env.system, &mut *env.tracer),
+        SSTORE => |this, env| this.sstore(&mut *env.system, &mut *env.tracer),
+        TLOAD => |this, env| this.tload(&mut *env.system, &mut *env.tracer),
+        TSTORE => |this, env| this.tstore(&mut *env.system, &mut *env.tracer),
+        MCOPY => |this, env| this.mcopy(),
+        GAS => |this, env| this.gas(),
+        LOG0 => |this, env| this.log::<0>(&mut *env.system, &mut *env.hooks, &mut *env.tracer),
+        LOG1 => |this, env| this.log::<1>(&mut *env.system, &mut *env.hooks, &mut *env.tracer),
+        LOG2 => |this, env| this.log::<2>(&mut *env.system, &mut *env.hooks, &mut *env.tracer),
+        LOG3 => |this, env| this.log::<3>(&mut *env.system, &mut *env.hooks, &mut *env.tracer),
+        LOG4 => |this, env| this.log::<4>(&mut *env.system, &mut *env.hooks, &mut *env.tracer),
+        SELFDESTRUCT => |this, env| this.selfdestruct(&mut *env.system, &mut *env.tracer),
+        CHAINID => |this, env| this.chainid(&mut *env.system),
+        BLOBHASH => |this, env| this.blobhash(&mut *env.system),
+        BLOBBASEFEE => |this, env| this.blobbasefee(&mut *env.system),
     }
 }
 
@@ -121,210 +377,24 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        let mut cycles = 0;
-        let result = loop {
-            let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
-
-            match crate::opcodes::OpCode::try_from_u8(opcode) {
-                Some(op) => {
-                    if Self::PRINT_OPCODES {
-                        system_log!(system, "Executing {op}");
-                    }
-                }
-                None => {
-                    system_log!(system, "Unknown opcode = 0x{opcode:02x}\n");
-                }
-            }
-
-            tracer.evm_tracer().before_evm_interpreter_execution_step(
-                opcode,
-                &InterpreterExternal::new_from(&self, system),
-            );
-
-            self.instruction_pointer += 1;
-            cycle_marker::opcode_start!();
-            let result = self
-                .gas
-                .spend_gas_and_native(0, STEP_NATIVE_COST)
-                .and_then(|_| match opcode {
-                    opcodes::CREATE => self.create::<false>(system, external_call_dest, tracer),
-                    opcodes::CREATE2 => self.create::<true>(system, external_call_dest, tracer),
-                    opcodes::CALL => self.call(external_call_dest),
-                    opcodes::CALLCODE => self.call_code(external_call_dest),
-                    opcodes::DELEGATECALL => self.delegate_call(external_call_dest),
-                    opcodes::STATICCALL => self.static_call(external_call_dest),
-                    opcodes::STOP => Err(ExitCode::Stop),
-                    opcodes::ADD => self.wrapped_add(),
-                    opcodes::MUL => self.wrapping_mul(),
-                    opcodes::SUB => self.wrapping_sub(),
-                    opcodes::DIV => self.div(system),
-                    opcodes::SDIV => self.sdiv(system),
-                    opcodes::MOD => self.rem(system),
-                    opcodes::SMOD => self.smod(system),
-                    opcodes::ADDMOD => self.addmod(system),
-                    opcodes::MULMOD => self.mulmod(system),
-                    opcodes::EXP => self.eval_exp(),
-                    opcodes::SIGNEXTEND => self.sign_extend(),
-                    opcodes::LT => self.lt(),
-                    opcodes::GT => self.gt(),
-                    opcodes::SLT => self.slt(),
-                    opcodes::SGT => self.sgt(),
-                    opcodes::EQ => self.eq(),
-                    opcodes::ISZERO => self.iszero(),
-                    opcodes::AND => self.bitand(),
-                    opcodes::OR => self.bitor(),
-                    opcodes::XOR => self.bitxor(),
-                    opcodes::NOT => self.not(),
-                    opcodes::BYTE => self.byte(),
-                    opcodes::SHL => self.shl(),
-                    opcodes::SHR => self.shr(),
-                    opcodes::SAR => self.sar(),
-                    opcodes::CLZ => self.clz(),
-                    opcodes::SHA3 => self.sha3(system),
-                    opcodes::ADDRESS => self.address(),
-                    opcodes::BALANCE => self.balance(system),
-                    opcodes::SELFBALANCE => self.selfbalance(system),
-                    opcodes::CODESIZE => self.codesize(),
-                    opcodes::CODECOPY => self.codecopy(system),
-                    opcodes::CALLDATALOAD => self.calldataload(system),
-                    opcodes::CALLDATASIZE => self.calldatasize(),
-                    opcodes::CALLDATACOPY => self.calldatacopy(system),
-                    opcodes::POP => self.pop(),
-                    opcodes::MLOAD => self.mload(system),
-                    opcodes::MSTORE => self.mstore(system),
-                    opcodes::MSTORE8 => self.mstore8(system),
-                    opcodes::JUMP => self.jump(),
-                    opcodes::JUMPI => self.jumpi(),
-                    opcodes::PC => self.pc(),
-                    opcodes::MSIZE => self.msize(),
-                    opcodes::JUMPDEST => self.jumpdest(),
-                    opcodes::PUSH0 => self.push0(),
-                    opcodes::PUSH1 => self.push1(),
-                    opcodes::PUSH2 => self.push2(),
-                    opcodes::PUSH3 => self.push_small::<3>(),
-                    opcodes::PUSH4 => self.push_small::<4>(),
-                    opcodes::PUSH5 => self.push_small::<5>(),
-                    opcodes::PUSH6 => self.push_small::<6>(),
-                    opcodes::PUSH7 => self.push_small::<7>(),
-                    opcodes::PUSH8 => self.push_small::<8>(),
-                    opcodes::PUSH9 => self.push::<9>(),
-                    opcodes::PUSH10 => self.push::<10>(),
-                    opcodes::PUSH11 => self.push::<11>(),
-                    opcodes::PUSH12 => self.push::<12>(),
-                    opcodes::PUSH13 => self.push::<13>(),
-                    opcodes::PUSH14 => self.push::<14>(),
-                    opcodes::PUSH15 => self.push::<15>(),
-                    opcodes::PUSH16 => self.push::<16>(),
-                    opcodes::PUSH17 => self.push::<17>(),
-                    opcodes::PUSH18 => self.push::<18>(),
-                    opcodes::PUSH19 => self.push::<19>(),
-                    opcodes::PUSH20 => self.push::<20>(),
-                    opcodes::PUSH21 => self.push::<21>(),
-                    opcodes::PUSH22 => self.push::<22>(),
-                    opcodes::PUSH23 => self.push::<23>(),
-                    opcodes::PUSH24 => self.push::<24>(),
-                    opcodes::PUSH25 => self.push::<25>(),
-                    opcodes::PUSH26 => self.push::<26>(),
-                    opcodes::PUSH27 => self.push::<27>(),
-                    opcodes::PUSH28 => self.push::<28>(),
-                    opcodes::PUSH29 => self.push::<29>(),
-                    opcodes::PUSH30 => self.push::<30>(),
-                    opcodes::PUSH31 => self.push::<31>(),
-                    opcodes::PUSH32 => self.push::<32>(),
-                    opcodes::DUP1 => self.dup::<1>(),
-                    opcodes::DUP2 => self.dup::<2>(),
-                    opcodes::DUP3 => self.dup::<3>(),
-                    opcodes::DUP4 => self.dup::<4>(),
-                    opcodes::DUP5 => self.dup::<5>(),
-                    opcodes::DUP6 => self.dup::<6>(),
-                    opcodes::DUP7 => self.dup::<7>(),
-                    opcodes::DUP8 => self.dup::<8>(),
-                    opcodes::DUP9 => self.dup::<9>(),
-                    opcodes::DUP10 => self.dup::<10>(),
-                    opcodes::DUP11 => self.dup::<11>(),
-                    opcodes::DUP12 => self.dup::<12>(),
-                    opcodes::DUP13 => self.dup::<13>(),
-                    opcodes::DUP14 => self.dup::<14>(),
-                    opcodes::DUP15 => self.dup::<15>(),
-                    opcodes::DUP16 => self.dup::<16>(),
-
-                    opcodes::SWAP1 => self.swap::<1>(),
-                    opcodes::SWAP2 => self.swap::<2>(),
-                    opcodes::SWAP3 => self.swap::<3>(),
-                    opcodes::SWAP4 => self.swap::<4>(),
-                    opcodes::SWAP5 => self.swap::<5>(),
-                    opcodes::SWAP6 => self.swap::<6>(),
-                    opcodes::SWAP7 => self.swap::<7>(),
-                    opcodes::SWAP8 => self.swap::<8>(),
-                    opcodes::SWAP9 => self.swap::<9>(),
-                    opcodes::SWAP10 => self.swap::<10>(),
-                    opcodes::SWAP11 => self.swap::<11>(),
-                    opcodes::SWAP12 => self.swap::<12>(),
-                    opcodes::SWAP13 => self.swap::<13>(),
-                    opcodes::SWAP14 => self.swap::<14>(),
-                    opcodes::SWAP15 => self.swap::<15>(),
-                    opcodes::SWAP16 => self.swap::<16>(),
-
-                    opcodes::RETURN => self.ret(),
-                    opcodes::REVERT => self.revert(),
-                    opcodes::INVALID => Err(EvmError::InvalidOpcode(opcodes::INVALID).into()),
-                    opcodes::BASEFEE => self.basefee(system),
-                    opcodes::ORIGIN => self.origin(system),
-                    opcodes::CALLER => self.caller(),
-                    opcodes::CALLVALUE => self.callvalue(),
-                    opcodes::GASPRICE => self.gasprice(system),
-                    opcodes::EXTCODESIZE => self.extcodesize(system),
-                    opcodes::EXTCODEHASH => self.extcodehash(system),
-                    opcodes::EXTCODECOPY => self.extcodecopy(system),
-                    opcodes::RETURNDATASIZE => self.returndatasize(),
-                    opcodes::RETURNDATACOPY => self.returndatacopy(),
-                    opcodes::BLOCKHASH => self.blockhash(system),
-                    opcodes::COINBASE => self.coinbase(system),
-                    opcodes::TIMESTAMP => self.timestamp(system),
-                    opcodes::NUMBER => self.number(system),
-                    opcodes::DIFFICULTY => self.difficulty(system),
-                    opcodes::GASLIMIT => self.gaslimit(system),
-                    opcodes::SLOAD => self.sload(system, tracer),
-                    opcodes::SSTORE => self.sstore(system, tracer),
-                    opcodes::TLOAD => self.tload(system, tracer),
-                    opcodes::TSTORE => self.tstore(system, tracer),
-                    opcodes::MCOPY => self.mcopy(),
-                    opcodes::GAS => self.gas(),
-                    opcodes::LOG0 => self.log::<0>(system, hooks, tracer),
-                    opcodes::LOG1 => self.log::<1>(system, hooks, tracer),
-                    opcodes::LOG2 => self.log::<2>(system, hooks, tracer),
-                    opcodes::LOG3 => self.log::<3>(system, hooks, tracer),
-                    opcodes::LOG4 => self.log::<4>(system, hooks, tracer),
-                    opcodes::SELFDESTRUCT => self.selfdestruct(system, tracer),
-                    opcodes::CHAINID => self.chainid(system),
-                    opcodes::BLOBHASH => self.blobhash(system),
-                    opcodes::BLOBBASEFEE => self.blobbasefee(system),
-                    x => Err(EvmError::InvalidOpcode(x).into()),
-                });
-            cycle_marker::opcode_end!(
-                crate::opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("UNKNOWN")
-            );
-
-            tracer.evm_tracer().after_evm_interpreter_execution_step(
-                opcode,
-                &InterpreterExternal::new_from(&self, system),
-            );
-
-            if Self::PRINT_OPCODES {
-                let _ = system.get_logger().write_str("\n");
-            }
-
-            cycles += 1;
-
-            if let Err(r) = result {
-                break r;
-            }
+        let mut env = Env {
+            system,
+            hooks,
+            external_call_dest,
+            tracer,
+            cycles: 0,
         };
+        self.exit_code = None;
+        Dispatch::<S, _>::run_loop(self, &mut env);
+        let result = self
+            .exit_code
+            .take()
+            .ok_or(internal_error!("interpreter stopped without an exit code"))?;
 
         system_log!(
-            system,
+            env.system,
             "Instructions executed = {}\nFinal instruction result = {:?}\n",
-            cycles,
+            env.cycles,
             &result
         );
 
@@ -347,7 +417,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 return_values.returndata = &self.heap[self.returndata_location.clone()];
             }
             ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
-            ExitCode::ExternalCall | ExitCode::FatalError(_) => {
+            ExitCode::ExternalCall | ExitCode::FatalError | ExitCode::FatalRuntime(_) => {
                 return Err(internal_error!("Invalid exit code passed").into())
             }
         };
