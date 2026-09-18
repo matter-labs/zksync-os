@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(usize)]
+#[repr(u8)]
 pub enum CallModifier {
     #[default]
     NoModifier = 0,

@@ -260,12 +260,7 @@ impl<'a> Line<'a> {
         } else {
             let length_encoding_length = (b0 - 0xf7) as usize;
             let length_encoding_bytes = consume(&mut data, length_encoding_length)?;
-            if length_encoding_bytes.len() > 2 {
-                return Err(());
-            }
-            let mut be_bytes = [0u8; 4];
-            be_bytes[(4 - length_encoding_bytes.len())..].copy_from_slice(length_encoding_bytes);
-            u32::from_be_bytes(be_bytes) as usize
+            super::parse_node::decode_short_length(length_encoding_bytes)?
         };
         if data.len() != payload_len {
             return Err(());

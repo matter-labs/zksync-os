@@ -1738,6 +1738,37 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         result_keeper.unwrap()
     }
 
+    /// Forward-only run of an Ethereum block with a custom tracer (no prover
+    /// input recording and no RISC-V simulation).
+    pub fn run_eth_block_forward_with_tracer(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        tracer: &mut impl Tracer<EthereumStorageSystemTypes<ZkEENonDeterminismSource>>,
+    ) -> ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader> {
+        use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
+        use forward_system::run::result_keeper::ForwardRunningResultKeeper;
+
+        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+        let mut nop_validator = NopTxValidator;
+
+        BasicBootloader::<
+            EthereumStorageSystemTypes<_>,
+            EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
+        >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+            oracle,
+            &mut (),
+            &mut result_keeper,
+            tracer,
+            &mut nop_validator,
+            ChainConfig::default(),
+        )
+        .expect("must succeed");
+        result_keeper
+    }
+
     #[allow(clippy::too_many_arguments, unused_variables)]
     pub fn run_eth_block_with_options(
         &mut self,

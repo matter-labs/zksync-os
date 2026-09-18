@@ -377,6 +377,43 @@ pub fn ethproofs_flamegraph(block_dir: &Path, options: &FlamegraphOptions) -> an
     Ok(execution.cycles_executed as u64)
 }
 
+/// Runs the given blocks forward with the opcode-sequence tracer and prints the
+/// most executed statically adjacent opcode pairs and triples over all of them.
+pub fn ethproofs_opcode_sequences(
+    block_dirs: &[PathBuf],
+    top: usize,
+    output: Option<&Path>,
+) -> anyhow::Result<()> {
+    use rig::forward_system::system::tracers::opcode_sequences::EvmOpcodeSequenceTracer;
+    let mut merged = EvmOpcodeSequenceTracer::default();
+    for block_dir in block_dirs {
+        let inputs = EthBlockInputs::from_dir(block_dir)?;
+        let mut tracer = EvmOpcodeSequenceTracer::default();
+        let start = Instant::now();
+        Chain::<false>::run_eth_block_forward_with_tracer(
+            inputs.transactions.clone(),
+            inputs.witness.clone(),
+            inputs.header.clone(),
+            inputs.withdrawals_encoding.clone(),
+            &mut tracer,
+        );
+        println!(
+            "Block {} ({} gas): {} EVM steps traced in {:?}",
+            inputs.block_number,
+            inputs.gas_used,
+            tracer.total_steps,
+            start.elapsed()
+        );
+        merged.merge(&tracer);
+    }
+    merged.print_top(top);
+    if let Some(path) = output {
+        merged.write_csv(path)?;
+        println!("Sequences written to {}", path.display());
+    }
+    Ok(())
+}
+
 /// Timing of one transpiler run.
 #[derive(Clone, Debug)]
 pub struct OracleRunTiming {

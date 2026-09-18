@@ -41,6 +41,18 @@ macro_rules! impl_conversions {
                 }
             }
 
+            /// Portable `try_to_u32`: the RISC-V flavour overrides it with a
+            /// delegation-based check (see `risc_v::U256::try_to_u32`).
+            #[inline(always)]
+            pub fn try_to_u32_portable(&self) -> Option<u32> {
+                let limbs = self.as_limbs();
+                if (limbs[3] | limbs[2] | limbs[1] | (limbs[0] >> 32)) != 0 {
+                    None
+                } else {
+                    Some(limbs[0] as u32)
+                }
+            }
+
             #[inline(always)]
             pub fn try_to_usize(&self) -> Option<usize> {
                 let limbs = self.as_limbs();

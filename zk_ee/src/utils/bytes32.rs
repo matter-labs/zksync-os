@@ -11,10 +11,26 @@ pub const BYTES32_USIZE_SIZE: usize = 8;
 pub const BYTES32_USIZE_SIZE: usize = 4;
 
 #[repr(align(8))]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
+}
+
+impl PartialEq for Bytes32 {
+    /// Word-wise, branch-free compare. The derived version compares the words as a
+    /// slice, which lowers to a `memcmp` call: on the proving target that is a call
+    /// plus a byte loop for every storage value or hash compare.
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        let mut diff = 0usize;
+        let mut i = 0;
+        while i < BYTES32_USIZE_SIZE {
+            diff |= self.inner[i] ^ other.inner[i];
+            i += 1;
+        }
+        diff == 0
+    }
 }
 
 const _: () = const {

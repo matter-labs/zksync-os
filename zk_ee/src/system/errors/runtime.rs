@@ -7,6 +7,7 @@ use super::{
 };
 
 /// Errors that lead to a transaction-level revert.
+#[repr(u8)]
 #[cfg_attr(target_arch = "riscv32", derive(Copy))]
 #[derive(Clone, Debug, PartialEq, Eq, IntoStaticStr)]
 pub enum FatalRuntimeError {
@@ -14,6 +15,7 @@ pub enum FatalRuntimeError {
     OutOfReturnMemory(Metadata),
 }
 
+#[repr(u8)]
 #[cfg_attr(target_arch = "riscv32", derive(Copy))]
 #[derive(Clone, Debug, PartialEq, Eq, IntoStaticStr)]
 pub enum RuntimeError {

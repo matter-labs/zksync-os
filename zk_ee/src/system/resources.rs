@@ -109,6 +109,33 @@ impl Computational for () {
     }
 }
 
+/// `a - b`, or `None` on borrow.
+///
+/// On the 32-bit proving target this is written as an explicit borrow chain over the
+/// two words: it is the hottest check of the EVM interpreter (once per instruction),
+/// and the generic `u64` compare-then-subtract lowers to a 64-bit compare chain plus
+/// the subtraction (18 instructions), while a signed-domain formulation lets LLVM fold
+/// product costs into a `mulhsu`, which the proving machine does not have. The chain
+/// keeps everything unsigned, so constant costs still fold into immediates.
+#[inline(always)]
+fn sub_with_borrow(a: u64, b: u64) -> Option<u64> {
+    #[cfg(target_pointer_width = "32")]
+    {
+        let (lo, borrow_lo) = (a as u32).overflowing_sub(b as u32);
+        let (hi, borrow_hi) = ((a >> 32) as u32).overflowing_sub((b >> 32) as u32);
+        let (hi, borrow_carry) = hi.overflowing_sub(borrow_lo as u32);
+        if borrow_hi | borrow_carry {
+            None
+        } else {
+            Some(((hi as u64) << 32) | lo as u64)
+        }
+    }
+    #[cfg(not(target_pointer_width = "32"))]
+    {
+        a.checked_sub(b)
+    }
+}
+
 ///
 /// Ergs, the resource for EEs. `GAS_TO_ERGS_FACTOR` is the number of ergs in one
 /// unit of legacy (EVM) gas. It must be in `1..=DEFAULT_GAS_TO_ERGS_FACTOR`, so
@@ -120,6 +147,12 @@ impl Computational for () {
 pub struct Ergs<const GAS_TO_ERGS_FACTOR: u64 = DEFAULT_GAS_TO_ERGS_FACTOR>(pub u64);
 
 impl<const GAS_TO_ERGS_FACTOR: u64> Ergs<GAS_TO_ERGS_FACTOR> {
+    /// Largest ergs value: the sign bit is kept clear, so a charge is a wrapping
+    /// subtraction whose sign bit is the borrow. Every constructor of an ergs
+    /// amount that can be charged from keeps values within this bound
+    /// ([Resource::FORMAL_INFINITE], [ErgsResource::MAX_LEGACY_GAS]).
+    pub const MAX_ERGS: u64 = i64::MAX as u64;
+
     /// Evaluated at monomorphization (no runtime cost): rejects factors outside
     /// `1..=DEFAULT_GAS_TO_ERGS_FACTOR`.
     const FACTOR_IN_RANGE: () = assert!(
@@ -146,8 +179,8 @@ pub trait ErgsResource:
     /// Number of ergs in one unit of legacy gas.
     const GAS_TO_ERGS_FACTOR: u64;
 
-    /// Largest amount of legacy gas representable as ergs.
-    const MAX_LEGACY_GAS: u64 = u64::MAX / Self::GAS_TO_ERGS_FACTOR;
+    /// Largest amount of legacy gas representable as ergs (see [Ergs::MAX_ERGS]).
+    const MAX_LEGACY_GAS: u64 = Ergs::<1>::MAX_ERGS / Self::GAS_TO_ERGS_FACTOR;
 
     /// Converts legacy gas to ergs, `None` if it doesn't fit.
     fn from_legacy_gas(gas: u64) -> Option<Self>;
@@ -235,7 +268,7 @@ impl<const GAS_TO_ERGS_FACTOR: u64> Computational for Ergs<GAS_TO_ERGS_FACTOR> {
 impl<const GAS_TO_ERGS_FACTOR: u64> Resource for Ergs<GAS_TO_ERGS_FACTOR> {
     const FORMAL_INFINITE: Self = {
         let () = Self::FACTOR_IN_RANGE;
-        Self(u64::MAX)
+        Self(Self::MAX_ERGS)
     };
 
     fn empty() -> Self {
@@ -251,13 +284,21 @@ impl<const GAS_TO_ERGS_FACTOR: u64> Resource for Ergs<GAS_TO_ERGS_FACTOR> {
         self >= to_spend
     }
 
+    #[inline(always)]
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
-        if self.0 < to_charge.0 {
-            self.0 = 0;
-            return Err(out_of_ergs_error!());
+        // The failure path is kept inline on purpose: a call, even a cold one, on the
+        // failure path of every inlined handler of the interpreter changes the
+        // register allocation of the handler's hot path.
+        match sub_with_borrow(self.0, to_charge.0) {
+            Some(remaining) => {
+                self.0 = remaining;
+                Ok(())
+            }
+            None => {
+                self.0 = 0;
+                Err(out_of_ergs_error!())
+            }
         }
-        self.0 -= to_charge.0;
-        Ok(())
     }
 
     fn charge_unchecked(&mut self, to_charge: &Self) {
@@ -409,21 +450,49 @@ mod tests {
             Ergs::<256>::from_legacy_gas_saturating(u64::MAX / 256 + 1).as_u64(),
             u64::MAX
         );
-        assert_eq!(<Ergs<256> as ErgsResource>::MAX_LEGACY_GAS, u64::MAX / 256);
+        assert_eq!(
+            <Ergs<256> as ErgsResource>::MAX_LEGACY_GAS,
+            (i64::MAX as u64) / 256
+        );
 
         let unit = Ergs::<1>::from_legacy_gas(u64::MAX).unwrap();
         assert_eq!(unit.as_u64(), u64::MAX);
         assert_eq!(unit.as_legacy_gas(), u64::MAX);
         assert_eq!(unit.as_legacy_gas_ceil(), u64::MAX);
-        assert_eq!(<Ergs<1> as ErgsResource>::MAX_LEGACY_GAS, u64::MAX);
+        assert_eq!(<Ergs<1> as ErgsResource>::MAX_LEGACY_GAS, i64::MAX as u64);
         assert_eq!(
             <crate::reference_implementations::GasOnlyResources as Resources>::MAX_LEGACY_GAS,
-            u64::MAX
+            i64::MAX as u64
         );
         assert_eq!(
             <crate::reference_implementations::BaseResources<()> as Resources>::MAX_LEGACY_GAS,
-            u64::MAX / 256
+            (i64::MAX as u64) / 256
         );
+    }
+
+    #[test]
+    fn charge_borrow_semantics() {
+        let mut e = Ergs::<1>(10);
+        assert!(e.charge(&Ergs(3)).is_ok());
+        assert_eq!(e.0, 7);
+        assert!(e.charge(&Ergs(7)).is_ok());
+        assert_eq!(e.0, 0);
+        let mut e = Ergs::<1>(10);
+        assert!(e.charge(&Ergs(11)).is_err());
+        assert_eq!(e.0, 0);
+        // a saturated cost never succeeds, even against infinite ergs
+        let mut e = Ergs::<1>::FORMAL_INFINITE;
+        assert!(e.charge(&Ergs(u64::MAX)).is_err());
+        assert_eq!(e.0, 0);
+        let mut e = Ergs::<1>(1 << 63);
+        assert!(e.charge(&Ergs((1 << 63) - 1)).is_ok());
+        assert_eq!(e.0, 1);
+        let mut e = Ergs::<1>(u64::MAX);
+        assert!(e.charge(&Ergs(u64::MAX - 5)).is_ok());
+        assert_eq!(e.0, 5);
+        let mut e = Ergs::<1>::FORMAL_INFINITE;
+        assert!(e.charge(&Ergs(Ergs::<1>::MAX_ERGS)).is_ok());
+        assert_eq!(e.0, 0);
     }
 
     #[test]

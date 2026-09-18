@@ -5,6 +5,7 @@ use super::{
     subsystem::{Subsystem, SubsystemError},
 };
 
+#[repr(u8)]
 #[cfg_attr(target_arch = "riscv32", derive(Copy))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SystemError {

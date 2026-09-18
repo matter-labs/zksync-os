@@ -212,6 +212,19 @@ enum Command {
         #[arg(long, action = clap::ArgAction::SetTrue)]
         live_oracle: bool,
     },
+    /// Run collected blocks forward and report the most executed statically
+    /// adjacent opcode pairs and triples (instruction fusing candidates).
+    EthproofsOpcodeSequences {
+        /// Block directories (`<dir>/{block.json,witness.json}`), repeatable.
+        #[arg(long, required = true)]
+        block_dir: Vec<String>,
+        /// How many sequences of each length to print.
+        #[arg(long, default_value_t = 40)]
+        top: usize,
+        /// Optional CSV with every sequence and its count.
+        #[arg(long)]
+        output: Option<String>,
+    },
     /// Run a collected block with the witness-parsing oracle and with a replay
     /// source, and report the runtime difference.
     EthproofsCompareOracles {
@@ -377,6 +390,18 @@ fn main() -> anyhow::Result<()> {
             },
         )
         .map(|_| ()),
+        Command::EthproofsOpcodeSequences {
+            block_dir,
+            top,
+            output,
+        } => ethproofs::ethproofs_opcode_sequences(
+            &block_dir
+                .iter()
+                .map(std::path::PathBuf::from)
+                .collect::<Vec<_>>(),
+            top,
+            output.as_deref().map(std::path::Path::new),
+        ),
         Command::EthproofsCompareOracles {
             block_dir,
             runs,

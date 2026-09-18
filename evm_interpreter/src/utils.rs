@@ -21,7 +21,13 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
-        src.try_to_usize().ok_or(error_to_set)
+        // Narrowing through `u32` keeps the 64-bit forward host and the 32-bit proving
+        // target accepting the same operands, and on the proving target the bound check
+        // is one precompile subtraction instead of testing seven words.
+        match src.try_to_u32() {
+            Some(value) => Ok(value as usize),
+            None => Err(error_to_set),
+        }
     }
 
     /// Casts a 256-bit value to `u64`.

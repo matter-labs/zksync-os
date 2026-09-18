@@ -103,6 +103,12 @@ impl U256 {
     }
 
     #[inline(always)]
+    /// The low 32 bits if the value fits into them.
+    #[inline(always)]
+    pub fn try_to_u32(&self) -> Option<u32> {
+        self.try_to_u32_portable()
+    }
+
     pub fn as_limbs_mut(&mut self) -> &mut [u64; 4] {
         unsafe { self.0.as_limbs_mut() }
     }

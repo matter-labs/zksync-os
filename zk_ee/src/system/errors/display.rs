@@ -23,8 +23,10 @@ where
 
 impl Display for InternalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let Self(msg, meta) = self;
-        write!(f, "Internal error: {msg}\n {meta}")
+        match self.message() {
+            Some(msg) => write!(f, "Internal error: {msg}\n {}", self.metadata),
+            None => write!(f, "Internal error\n {}", self.metadata),
+        }
     }
 }
 impl Display for RuntimeError {

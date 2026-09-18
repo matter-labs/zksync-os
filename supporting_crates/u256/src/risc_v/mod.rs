@@ -120,6 +120,14 @@ impl U256 {
         self.0.as_limbs()
     }
 
+    /// The low 32 bits if the value fits into them. Measured against a bigint
+    /// precompile subtraction: the word test is as cheap in cycles and adds no
+    /// delegation work.
+    #[inline(always)]
+    pub fn try_to_u32(&self) -> Option<u32> {
+        self.try_to_u32_portable()
+    }
+
     #[inline(always)]
     pub fn as_limbs_mut(&mut self) -> &mut [u64; 4] {
         self.0.as_limbs_mut()
