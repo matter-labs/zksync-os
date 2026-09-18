@@ -168,7 +168,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             charge_keccak(self.buffer.len(), resources)?;
             let mut hasher = crypto::sha3::Keccak256::new();
             hasher.update(self.buffer.as_slice());
-            let tx_hash = Bytes32::from_array(hasher.finalize());
+            let tx_hash = Bytes32::from_array(*hasher.finalize());
             self.tx_hash = Some(tx_hash);
         }
 

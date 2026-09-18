@@ -44,7 +44,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         &mut self,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         debug_assert!({
             self.ensure_linked();
@@ -92,7 +92,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<Option<ReattachControlFlow<'a>>, ()> {
         if self.get_cached_key(node).is_empty() == false {
             // bail if cached
@@ -120,7 +120,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         extension_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<Option<ReattachControlFlow<'a>>, ()> {
         // if we want to drag anything along - we just extend a prefix to drag, otherwise do nothing
         let child = self.capacities.extension_nodes[extension_node.index()].child_node;
@@ -305,7 +305,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         branch_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<Option<ReattachControlFlow<'a>>, ()> {
         let mut branch = self.capacities.branch_nodes[branch_node.index()];
         assert!(

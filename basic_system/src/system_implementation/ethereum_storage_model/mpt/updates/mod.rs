@@ -131,7 +131,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         path: &mut Path<'_>,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<ValueInsertionStrategy, ()> {
         // we will mark descend path as dirty, but final node will be marked and updated only in the corresponding path
         debug_assert!(self.root.is_empty() == false);
@@ -279,7 +279,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         pre_encoded_value: &[u8],
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         self.insert_lazy_value(
             path,
@@ -296,7 +296,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         value: LeafValue<'a>,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         // find insertion point
         if self.root.is_empty() {
@@ -363,7 +363,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         &mut self,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         debug_assert!({
             self.ensure_linked();
@@ -397,7 +397,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(bool, &'a [u8]), ()> {
         let (is_new, key) = if node.is_leaf() {
             self.get_leaf_key(node, interner, hasher)?
@@ -423,7 +423,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         &mut self,
         leaf_node: NodeType,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(bool, &'a [u8]), ()> {
         // Leaves are easy - they do not have children
         let leaf = &mut self.capacities.leaf_nodes[leaf_node.index()];
@@ -443,7 +443,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         extension_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(bool, &'a [u8]), ()> {
         debug_assert!(
             self.capacities.extension_nodes[extension_node.index()]
@@ -489,7 +489,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         branch_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(bool, &'a [u8]), ()> {
         // walk over the children - maybe all of them are cached
         let child_nodes = self.capacities.branch_nodes[branch_node.index()].child_nodes;

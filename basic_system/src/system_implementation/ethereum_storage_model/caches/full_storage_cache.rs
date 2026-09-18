@@ -183,6 +183,11 @@ impl<
             )
         })
     }
+    /// Number of accessed storage slots (across all the accounts)
+    pub fn num_accesses(&self) -> usize {
+        self.slot_values.cache.iter().len()
+    }
+
     ///
     /// Returns all the accessed storage slots.
     ///

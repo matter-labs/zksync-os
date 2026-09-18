@@ -357,7 +357,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
         hasher.update(&U256::from(0x20).to_be_bytes::<32>());
         hasher.update(&self.underlying_buffer.as_slice());
-        Ok(hasher.finalize())
+        Ok(*hasher.finalize())
     }
 
     /// Returns the balance required to process the transaction.

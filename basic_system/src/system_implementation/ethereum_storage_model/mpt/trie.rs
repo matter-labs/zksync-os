@@ -526,7 +526,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         key: &'a [u8],
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<&'a [u8], ()> {
         // NOTE: if it is 33 bytes, then we expect RLP encoding if slice, otherwise it can be anything,
         // and we will return it as-is
@@ -542,7 +542,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
                 if COMPARE_HASHES {
                     hasher.update(new);
                     let recomputed = hasher.finalize_reset();
-                    assert_eq!(recomputed, key.as_u8_array());
+                    assert_eq!(*recomputed, key.as_u8_array());
                 }
                 self.preimages_cache.insert(key, new);
 
@@ -627,7 +627,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         parent_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<AppendPath<'a>, ()> {
         if path.remaining_path().len() > 64 {
             return Err(());
@@ -791,7 +791,10 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         }
     }
 
-    pub fn root(&self, hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>) -> [u8; 32] {
+    pub fn root(
+        &self,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
+    ) -> [u8; 32] {
         if self.root.is_empty() {
             EMPTY_ROOT_HASH.as_u8_array()
         } else if self.interned_root_node_key.len() == 33 {
@@ -806,7 +809,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
                 self.interned_root_node_key.len()
             );
             hasher.update(self.interned_root_node_key);
-            hasher.finalize_reset()
+            *hasher.finalize_reset()
         }
     }
 

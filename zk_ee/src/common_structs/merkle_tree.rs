@@ -30,7 +30,7 @@ use crypto::MiniDigest;
 ///   after `height` levels and the result is not a valid fixed-height root.
 pub fn merkle_root_in_place<H>(nodes: &mut [Bytes32], empty_subtree_hashes: &[Bytes32]) -> Bytes32
 where
-    H: MiniDigest<HashOutput = [u8; 32]>,
+    H: MiniDigest<HashOutput: core::borrow::Borrow<[u8; 32]>>,
 {
     assert!(
         !empty_subtree_hashes.is_empty(),
@@ -61,7 +61,9 @@ where
             } else {
                 hasher.update(empty_subtree_hashes[level].as_u8_ref());
             }
-            nodes[i] = Bytes32::from_array(hasher.finalize_reset());
+            nodes[i] = Bytes32::from_array(*core::borrow::Borrow::<[u8; 32]>::borrow(
+                &hasher.finalize_reset(),
+            ));
         }
         count = pairs;
     }
@@ -80,7 +82,7 @@ mod tests {
     /// hardcoded tables; the tests regenerate the recurrence to lock those tables.
     fn empty_subtree_hashes<H>(empty_leaf: Bytes32, height: usize) -> Vec<Bytes32>
     where
-        H: MiniDigest<HashOutput = [u8; 32]>,
+        H: MiniDigest<HashOutput: core::borrow::Borrow<[u8; 32]>>,
     {
         let mut hashes = Vec::with_capacity(height + 1);
         hashes.push(empty_leaf);
@@ -90,7 +92,9 @@ mod tests {
             let prev = hashes[level - 1];
             hasher.update(prev.as_u8_ref());
             hasher.update(prev.as_u8_ref());
-            hashes.push(Bytes32::from_array(hasher.finalize_reset()));
+            hashes.push(Bytes32::from_array(
+                *core::borrow::Borrow::<[u8; 32]>::borrow(&hasher.finalize_reset()),
+            ));
         }
 
         hashes
@@ -98,12 +102,12 @@ mod tests {
 
     fn hash_pair<H>(left: Bytes32, right: Bytes32) -> Bytes32
     where
-        H: MiniDigest<HashOutput = [u8; 32]>,
+        H: MiniDigest<HashOutput: core::borrow::Borrow<[u8; 32]>>,
     {
         let mut hasher = H::new();
         hasher.update(left.as_u8_ref());
         hasher.update(right.as_u8_ref());
-        Bytes32::from_array(hasher.finalize())
+        Bytes32::from_array(*core::borrow::Borrow::<[u8; 32]>::borrow(&hasher.finalize()))
     }
 
     /// Straightforward reference: pad the leaf layer to `2^height` with the
@@ -111,7 +115,7 @@ mod tests {
     /// removed) incremental tree's `reference_root` and to its `root()`.
     fn reference_root<H>(leaves: &[Bytes32], empty_leaf: Bytes32, height: usize) -> Bytes32
     where
-        H: MiniDigest<HashOutput = [u8; 32]>,
+        H: MiniDigest<HashOutput: core::borrow::Borrow<[u8; 32]>>,
     {
         let width = 1usize << height;
         assert!(leaves.len() <= width);
@@ -196,7 +200,8 @@ mod tests {
             L2_TO_L1_LOG_TREE_HEIGHT,
         };
 
-        let empty_leaf = Bytes32::from_array(Keccak256::digest([0u8; L2_TO_L1_LOG_SERIALIZE_SIZE]));
+        let empty_leaf =
+            Bytes32::from_array(*Keccak256::digest([0u8; L2_TO_L1_LOG_SERIALIZE_SIZE]));
         let generic = empty_subtree_hashes::<Keccak256>(empty_leaf, L2_TO_L1_LOG_TREE_HEIGHT);
 
         let table: Vec<Bytes32> = L2_TO_L1_LOG_EMPTY_SUBTREE_HASHES

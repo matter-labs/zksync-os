@@ -83,7 +83,7 @@ pub(crate) enum ParsedNode<'a> {
     BranchHint { num_occupied: usize },
 }
 
-fn parse_node_piece<'a>(data: &mut &'a [u8]) -> Result<&'a [u8], ()> {
+pub(crate) fn parse_node_piece<'a>(data: &mut &'a [u8]) -> Result<&'a [u8], ()> {
     let data_start = data.as_ptr();
     let b0 = consume(data, 1)?;
     let bb0 = b0[0];
@@ -122,7 +122,9 @@ fn parse_node_piece<'a>(data: &mut &'a [u8]) -> Result<&'a [u8], ()> {
 }
 
 #[inline]
-fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [&'a [u8]; 17], usize), ()> {
+pub(crate) fn parse_initial<'a>(
+    raw_encoding: &'a [u8],
+) -> Result<(usize, [&'a [u8]; 17], usize), ()> {
     if raw_encoding.len() < 3 {
         return Err(());
     }

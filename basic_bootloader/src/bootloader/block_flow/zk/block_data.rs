@@ -344,7 +344,7 @@ impl TxHashesAccumulator for TransactionsRollingKeccakHasher {
         self.inner = Bytes32::from_array({
             self.hasher.update(self.inner.as_u8_array_ref());
             self.hasher.update(tx_hash.as_u8_array_ref());
-            self.hasher.finalize_reset()
+            *self.hasher.finalize_reset()
         });
         self.count += 1;
     }
@@ -432,7 +432,7 @@ mod tests {
             let mut hasher = Blake2s256::new();
             hasher.update(prev.as_u8_ref());
             hasher.update(prev.as_u8_ref());
-            prev = Bytes32::from_array(hasher.finalize());
+            prev = Bytes32::from_array(*hasher.finalize());
         }
     }
 

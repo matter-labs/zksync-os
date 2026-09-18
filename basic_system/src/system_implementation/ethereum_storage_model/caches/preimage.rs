@@ -144,7 +144,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
         use crypto::MiniDigest;
 
         self.hasher.update(input);
-        Bytes32::from_array(self.hasher.finalize_reset())
+        Bytes32::from_array(*self.hasher.finalize_reset())
     }
 
     /// Same as `get_preimage`, but gives the code together with its artifacts

@@ -4,6 +4,7 @@ mod nodes;
 mod parse_node;
 mod preimages;
 mod rlp;
+mod stack_trie;
 mod trie;
 mod updates;
 
@@ -21,6 +22,7 @@ pub use self::lazy_leaf_value::{LazyEncodable, LazyLeafValue, LeafValue};
 pub use self::nodes::Path;
 pub use self::parse_node::RLPSlice;
 pub use self::preimages::*;
+pub use self::stack_trie::{StackMPT, TrieKey};
 pub use self::trie::{EthereumMPT, MPTInternalCapacities};
 
 pub(crate) const EMPTY_SLICE_ENCODING: &[u8] = &[0x80];

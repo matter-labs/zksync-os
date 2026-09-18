@@ -91,7 +91,7 @@ pub fn set_properties_code(account: &mut AccountProperties, evm_code: &[u8]) -> 
 
     let unpadded_code_len = evm_code.len();
 
-    let observable_bytecode_hash = Bytes32::from_array(Keccak256::digest(evm_code));
+    let observable_bytecode_hash = Bytes32::from_array(*Keccak256::digest(evm_code));
 
     let (bytecode_hash, artifacts_len, full_bytecode) = if is_delegation {
         let artifacts_len = 0;

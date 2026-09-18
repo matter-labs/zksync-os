@@ -96,7 +96,7 @@ impl BatchOutput {
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
         hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
-        hasher.finalize()
+        *hasher.finalize()
     }
 }
 
@@ -125,7 +125,7 @@ impl BatchPublicInput {
         hasher.update(self.state_after.as_u8_ref());
         hasher.update(self.chain_config_hash.as_u8_ref());
         hasher.update(self.batch_output.as_u8_ref());
-        hasher.finalize()
+        *hasher.finalize()
     }
 }
 

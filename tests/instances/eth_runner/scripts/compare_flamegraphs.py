@@ -49,7 +49,7 @@ WITNESS = "witness verification (read + keccak of code and trie node preimages)"
 
 LEVEL1 = {
     "zksync-os": [
-        (WITNESS, r"BytecodeKeccakPreimagesStorage.*expose_preimage|consult_cache_or_oracle"),
+        (WITNESS, r"BytecodeKeccakPreimagesStorage.*expose_preimage|consult_cache_or_oracle|resolve_child"),
         ("tx validation + sender recovery", r"validate_and_compute_fee_for_transaction"),
         ("state commitment (MPT root update)", r"update_commitment|persist_changes|EthereumStoragePersister"),
         (EVM, r"run_till_completion"),
@@ -136,7 +136,7 @@ KECCAK_WITNESS_NODES = "MPT: witness trie node verification"
 KECCAK_CODE = "bytecode hashing (code hash verification, deployment)"
 KECCAK_CONTEXT = {
     "zksync-os": [
-        (KECCAK_WITNESS_NODES, r"consult_cache_or_oracle"),
+        (KECCAK_WITNESS_NODES, r"consult_cache_or_oracle|resolve_child"),
         (KECCAK_CODE, r"BytecodeKeccakPreimagesStorage|expose_preimage|set_bytecode|deploy_code|deployed_code"),
         ("EVM: SHA3 opcode", r"Interpreter>::sha3"),
         ("EVM: other (CREATE2 address, ...)", r"Interpreter>::"),

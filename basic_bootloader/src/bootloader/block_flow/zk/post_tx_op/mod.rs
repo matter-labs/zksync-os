@@ -356,7 +356,7 @@ fn calculate_imt_root_slot(tree_height: Bytes32) -> Bytes32 {
     let mut hasher = crypto::sha3::Keccak256::new();
     hasher.update(nodes_height_array_slot.to_be_bytes::<32>());
     // _nodes[height][0]
-    Bytes32::from_array(hasher.finalize())
+    Bytes32::from_array(*hasher.finalize())
 }
 
 ///
@@ -415,7 +415,7 @@ fn calculate_multichain_root_slot(tree_height: Bytes32) -> Bytes32 {
     let mut hasher = crypto::sha3::Keccak256::new();
     hasher.update(nodes_height_array_slot.to_be_bytes::<32>());
     // _nodes[height][0]
-    Bytes32::from_array(hasher.finalize())
+    Bytes32::from_array(*hasher.finalize())
 }
 
 #[cfg(test)]
@@ -505,7 +505,7 @@ mod tests {
             let mut h = crypto::sha3::Keccak256::new();
             h.update(a.as_u8_ref());
             h.update(b.as_u8_ref());
-            Bytes32::from_array(h.finalize())
+            Bytes32::from_array(*h.finalize())
         }
 
         let a = Bytes32::from_byte_fill(1);
@@ -532,7 +532,7 @@ mod tests {
             let mut h = crypto::sha3::Keccak256::new();
             h.update(prev.as_u8_ref());
             h.update(prev.as_u8_ref());
-            prev = Bytes32::from_array(h.finalize());
+            prev = Bytes32::from_array(*h.finalize());
         }
     }
 

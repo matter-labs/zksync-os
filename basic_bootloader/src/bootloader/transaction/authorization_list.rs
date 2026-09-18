@@ -229,7 +229,7 @@ fn compute_auth_message_signed_hash<S: EthereumLikeTypes>(
     rlp::apply_bytes_encoding(delegation_address, hasher);
     rlp::apply_number_encoding(&auth_nonce.to_be_bytes(), hasher);
 
-    Ok(hasher.finalize_reset())
+    Ok(*hasher.finalize_reset())
 }
 
 fn recover_authority<S: EthereumLikeTypes>(

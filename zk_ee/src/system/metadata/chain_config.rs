@@ -134,7 +134,7 @@ impl ChainConfig {
         let mut pubdata_content_word = [0u8; 32];
         pubdata_content_word[31] = self.pubdata_content as u8;
         hasher.update(pubdata_content_word);
-        hasher.finalize()
+        *hasher.finalize()
     }
 
     /// Checks chain-level limitations on the config. This is enforced at the

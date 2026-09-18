@@ -106,7 +106,7 @@ pub(crate) fn keccak256_with_closure<FN: FnOnce(&[u8; 32])>(src: &[u8], closure:
     // SAFETY: single-threaded, not reentrant, and the reference does not outlive the function
     let hasher = unsafe { &mut *core::ptr::addr_of_mut!(HASHER) };
     hasher.update(src);
-    hasher.finalize_reset_with_closure(closure);
+    hasher.finalize_reset_with_closure(|hash| closure(hash.as_array()));
 }
 
 #[cfg(not(target_arch = "riscv32"))]
@@ -117,7 +117,7 @@ pub(crate) fn keccak256_with_closure<FN: FnOnce(&[u8; 32])>(src: &[u8], closure:
 
     let mut hasher = Keccak256::new();
     hasher.update(src);
-    hasher.finalize_reset_with_closure(closure);
+    hasher.finalize_reset_with_closure(|hash| closure(hash.as_array()));
 }
 
 #[inline(always)]

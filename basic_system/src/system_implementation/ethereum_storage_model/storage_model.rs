@@ -34,8 +34,6 @@ use zk_ee::{
     utils::Bytes32,
 };
 
-use super::vec_trait::BiVecCtor;
-
 pub struct EthereumStorageModel<
     A: Allocator + Clone,
     R: Resources,
@@ -429,7 +427,7 @@ impl<
             let mut persister = EthereumStoragePersister;
             let initial_commitment = *state_commitment;
             *state_commitment = persister
-                .persist_changes::<A, R, P, SF, N, BiVecCtor>(
+                .persist_changes::<A, R, P, SF, N>(
                     &mut self.account_cache,
                     &self.storage_cache,
                     &initial_commitment,

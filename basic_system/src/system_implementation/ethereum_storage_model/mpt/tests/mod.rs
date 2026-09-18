@@ -2,6 +2,7 @@ mod basic;
 mod prestate;
 mod reth_trie;
 mod serialization;
+mod stack_trie;
 
 use crate::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
 use alloy::primitives::U256;
@@ -129,17 +130,17 @@ fn read_execution_witness() -> ParsedWitness {
 
     // make an oracle
     for el in result.state.iter() {
-        let hash = crypto::sha3::Keccak256::digest(el);
+        let hash = *crypto::sha3::Keccak256::digest(el);
         oracle.insert(Bytes32::from_array(hash), el.to_vec());
     }
 
     for el in result.keys.iter() {
         if el.len() == 20 {
-            let hash = crypto::sha3::Keccak256::digest(el);
+            let hash = *crypto::sha3::Keccak256::digest(el);
             oracle.insert(Bytes32::from_array(hash), el.to_vec());
             addresses_to_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash));
         } else if el.len() == 32 {
-            let hash = crypto::sha3::Keccak256::digest(el);
+            let hash = *crypto::sha3::Keccak256::digest(el);
             oracle.insert(Bytes32::from_array(hash), el.to_vec());
             all_storage_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash));
         } else {
@@ -148,7 +149,7 @@ fn read_execution_witness() -> ParsedWitness {
     }
 
     for el in result.codes.iter() {
-        let hash = crypto::sha3::Keccak256::digest(el);
+        let hash = *crypto::sha3::Keccak256::digest(el);
         oracle.insert(Bytes32::from_array(hash), el.to_vec());
     }
 
@@ -253,7 +254,7 @@ fn test_from_execution_witness() {
                     }
                 }
                 if let Some(code) = account_state.code.as_ref() {
-                    assert_eq!(&Keccak256::digest(code), data[3].data());
+                    assert_eq!(&*Keccak256::digest(code), data[3].data());
                 }
 
                 if let Some(storage) = account_state.storage.as_ref() {
@@ -284,7 +285,7 @@ fn test_from_execution_witness() {
                 if storage_trie.root(&mut hasher) == EMPTY_ROOT_HASH.as_u8_array() {
                     assert!(v.into_inner().is_zero());
                 }
-                let key = crypto::sha3::Keccak256::digest(&k.to_be_bytes::<32>());
+                let key = *crypto::sha3::Keccak256::digest(&k.to_be_bytes::<32>());
                 let trie_pos_digits = byte_path_to_path_digits(&key);
                 let path = Path::new(&trie_pos_digits);
                 if let Ok(slot_value) =
@@ -332,7 +333,7 @@ fn test_from_execution_witness() {
         let final_storage = final_storage.storage.clone().unwrap_or_default();
 
         for (k, final_value) in final_storage.into_iter() {
-            let key = Keccak256::digest(k.to_be_bytes::<32>());
+            let key = *Keccak256::digest(k.to_be_bytes::<32>());
             if let Some(initial_value) = initial_storage.get(&k) {
                 if initial_value.into_inner().is_zero() == false {
                     if final_value.into_inner().is_zero() {

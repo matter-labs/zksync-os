@@ -38,7 +38,7 @@ impl LogsBloom {
     }
     pub fn mark_events<'a>(
         &mut self,
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
         events: impl Iterator<
             Item = GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
         >,
@@ -50,7 +50,7 @@ impl LogsBloom {
 
     pub fn mark_event<'a>(
         &mut self,
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
         event: GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
     ) {
         hasher.update(&event.address.to_be_bytes::<20>());

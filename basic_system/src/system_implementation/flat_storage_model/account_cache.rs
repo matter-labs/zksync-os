@@ -952,7 +952,7 @@ impl<
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
                 let digest = Keccak256::digest(deployed_code);
-                Bytes32::from_array(digest)
+                Bytes32::from_array(*digest)
             }
         };
         let observable_bytecode_len = deployed_code.len() as u32;
@@ -1179,7 +1179,7 @@ impl<
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
                 let digest = Keccak256::digest(code);
-                Bytes32::from_array(digest)
+                Bytes32::from_array(*digest)
             };
 
             let observable_bytecode_len = code.len() as u32;

@@ -78,7 +78,7 @@ pub trait ETHMPTInternerExt<'a>: Interner<'a> {
         &mut self,
         path_for_nibbles: &[u8],
         mut leaf_value: LeafValue<'_>,
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<&'a [u8], ()> {
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
         let num_nibbles = path_for_nibbles.len();
@@ -150,7 +150,7 @@ pub trait ETHMPTInternerExt<'a>: Interner<'a> {
         &mut self,
         path_for_nibbles: &[u8],
         pre_encoded_value: &[u8],
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<&'a [u8], ()> {
         debug_assert!(path_for_nibbles.len() > 0);
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
@@ -220,7 +220,7 @@ pub trait ETHMPTInternerExt<'a>: Interner<'a> {
     fn make_branch_key(
         &mut self,
         child_keys: &[&'_ [u8]; 16],
-        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<&'a [u8], ()> {
         let mut total_list_concatenated_len = 0usize;
         for child_key in child_keys.iter() {

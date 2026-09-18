@@ -253,7 +253,7 @@ mod tests {
         for word in output.iter() {
             hasher.update(word.to_le_bytes());
         }
-        let without_version = Bytes32::from_array(hasher.finalize());
+        let without_version = Bytes32::from_array(*hasher.finalize());
 
         assert_eq!(
             &changed.as_u8_array_ref()[1..],

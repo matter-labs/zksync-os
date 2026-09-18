@@ -157,6 +157,6 @@ impl BlockHeader {
         rlp::apply_bytes_encoding(&self.nonce, &mut hasher);
         rlp::apply_number_encoding(&self.base_fee_per_gas.to_be_bytes(), &mut hasher);
 
-        hasher.finalize()
+        *hasher.finalize()
     }
 }

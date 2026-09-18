@@ -27,7 +27,7 @@ fn mapping_slot_bytes32(key: B256, slot: u64) -> U256 {
     let mut hasher = crypto::sha3::Keccak256::new();
     hasher.update(key.to_be_bytes::<32>());
     hasher.update(U256::from(slot).to_be_bytes::<32>());
-    U256::from_be_bytes(hasher.finalize())
+    U256::from_be_bytes(*hasher.finalize())
 }
 
 fn nested_mapping_slot_u64_bytes32(key1: u64, key2: B256, slot: u64) -> U256 {
@@ -39,7 +39,7 @@ fn nested_mapping_slot_u64_bytes32(key1: u64, key2: B256, slot: u64) -> U256 {
     let mut hasher = crypto::sha3::Keccak256::new();
     hasher.update(key2.to_be_bytes::<32>());
     hasher.update(outer_slot);
-    U256::from_be_bytes(hasher.finalize())
+    U256::from_be_bytes(*hasher.finalize())
 }
 
 fn message_root_multichain_root_slot(tree_height: U256) -> U256 {
@@ -55,7 +55,7 @@ fn message_root_multichain_root_slot(tree_height: U256) -> U256 {
         U256::from_be_bytes(NODES_FIRST_ELEMENT_SLOT).saturating_add(tree_height);
     let mut hasher = crypto::sha3::Keccak256::new();
     hasher.update(nodes_height_array_slot.to_be_bytes::<32>());
-    U256::from_be_bytes(hasher.finalize())
+    U256::from_be_bytes(*hasher.finalize())
 }
 
 /// Seeds the minimal L2MessageRoot storage required by Gateway proving post-tx.

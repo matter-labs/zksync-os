@@ -237,7 +237,7 @@ impl<
         // must not charge ergs — EVM gas accounting is the caller's responsibility
         // (the L1Messenger system contract charges it before invoking the hook).
         use crypto::MiniDigest;
-        let data_hash = Bytes32::from_array(crypto::sha3::Keccak256::digest(data));
+        let data_hash = Bytes32::from_array(*crypto::sha3::Keccak256::digest(data));
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
             .push_message(self.tx_number, address, data, data_hash)?;

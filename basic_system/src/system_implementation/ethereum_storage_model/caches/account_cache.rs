@@ -551,7 +551,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                 let native_cost = blake2s_native_cost(preimage_len);
                 resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
 
-                Ok(Bytes32::from_array(Keccak256::digest(observable_bytecode)))
+                Ok(Bytes32::from_array(*Keccak256::digest(observable_bytecode)))
             }
         }
     }

@@ -1560,19 +1560,19 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         for el in witness.state.iter() {
             hasher.update(el);
             let hash = hasher.finalize_reset();
-            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            oracle.insert(Bytes32::from_array(*hash), el.to_vec());
             preimage_source
                 .inner
-                .insert(Bytes32::from_array(hash), el.to_vec());
+                .insert(Bytes32::from_array(*hash), el.to_vec());
         }
 
         for el in witness.codes.iter() {
             hasher.update(el);
             let hash = hasher.finalize_reset();
-            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            oracle.insert(Bytes32::from_array(*hash), el.to_vec());
             preimage_source
                 .inner
-                .insert(Bytes32::from_array(hash), el.to_vec());
+                .insert(Bytes32::from_array(*hash), el.to_vec());
         }
 
         // we will do some really bad heuristics here

@@ -320,6 +320,14 @@ impl From<B160> for Bytes32 {
     }
 }
 
+impl From<crypto::Bytes32> for Bytes32 {
+    #[inline(always)]
+    fn from(value: crypto::Bytes32) -> Self {
+        // both are word aligned: copied by words
+        unsafe { core::mem::transmute(value) }
+    }
+}
+
 impl From<[u8; 32]> for Bytes32 {
     fn from(value: [u8; 32]) -> Self {
         Self::from_array(value)

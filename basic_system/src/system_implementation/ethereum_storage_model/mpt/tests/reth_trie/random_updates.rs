@@ -175,7 +175,7 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
     assert_eq!(our_root, expected_root);
 }
 
-fn generate_test_data(size: usize) -> (BTreeMap<B256, U256>, BTreeMap<B256, U256>) {
+pub(crate) fn generate_test_data(size: usize) -> (BTreeMap<B256, U256>, BTreeMap<B256, U256>) {
     let mut initial_state = Vec::with_capacity(size);
     let mut final_state = Vec::with_capacity(size);
     let mut runner = TestRunner::deterministic();
