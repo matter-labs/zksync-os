@@ -176,43 +176,59 @@ impl<
         // the real warm-up charge below cannot fail. The bound is data-independent
         // and warmth is rollback-aware, so the gate is identical across sequencer
         // and proving and never depends on cache-entry presence.
-        let is_cold = match cache.get(key) {
-            Some(item) => !item.current().metadata().considered_warm(current_tx_id),
-            None => true,
-        };
-        if is_cold {
+        //
+        // The gate runs inside the single map search: on a found element only if it
+        // is cold, and before the IO of the insertion closure for a missing one.
+        fn probe_cold_read<R: Resources, V, P: StorageAccessPolicy<R, V>>(
+            resources_policy: &mut P,
+            resources: &R,
+            ee_type: ExecutionEnvironmentType,
+        ) -> Result<(), SystemError> {
             let mut probe = resources.clone();
-            resources_policy.charge_cold_storage_read_extra(ee_type, &mut probe, true)?;
+            resources_policy.charge_cold_storage_read_extra(ee_type, &mut probe, true)
         }
+        let mut context = (resources_policy, resources, oracle);
 
         cache
-            .get_or_insert(key, || {
-                // Element doesn't exist in cache yet, initialize it.
-                // Cold access charging happens at warm-up below: the initial
-                // record persists even if the inserting transaction is dropped
-                // from the block, so anything charging-related must live in
-                // rollback-aware metadata.
-                let query_input = (*key).into();
-                let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
-                    .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
+            .get_or_insert_checked(
+                key,
+                &mut context,
+                |(resources_policy, resources, _), item| {
+                    if !item.current().metadata().considered_warm(current_tx_id) {
+                        probe_cold_read::<R, V, P>(resources_policy, resources, ee_type)?;
+                    }
+                    Ok(())
+                },
+                |(resources_policy, resources, oracle)| {
+                    probe_cold_read::<R, V, P>(resources_policy, resources, ee_type)?;
+                    // Element doesn't exist in cache yet, initialize it.
+                    // Cold access charging happens at warm-up below: the initial
+                    // record persists even if the inserting transaction is dropped
+                    // from the block, so anything charging-related must live in
+                    // rollback-aware metadata.
+                    let query_input = (*key).into();
+                    let data_from_oracle = InitialStorageSlotQuery::get(*oracle, &query_input)
+                        .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
 
-                // We need to check that the initial value is default
-                if data_from_oracle.is_new_storage_slot {
-                    assert_eq!(
-                        V::default(),
-                        data_from_oracle.initial_value.into(),
-                        "Initial value of empty slot must be trivial"
-                    );
-                }
+                    // We need to check that the initial value is default
+                    if data_from_oracle.is_new_storage_slot {
+                        assert_eq!(
+                            V::default(),
+                            data_from_oracle.initial_value.into(),
+                            "Initial value of empty slot must be trivial"
+                        );
+                    }
 
-                // Note: we initialize it as cold, should be warmed up separately
-                // Since in case of revert it should become cold again and initial record can't be rolled back
-                Ok((
-                    CacheRecord::new(data_from_oracle.initial_value.into()),
-                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true),
-                ))
-            })
+                    // Note: we initialize it as cold, should be warmed up separately
+                    // Since in case of revert it should become cold again and initial record can't be rolled back
+                    Ok((
+                        CacheRecord::new(data_from_oracle.initial_value.into()),
+                        CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true),
+                    ))
+                },
+            )
             .and_then(|mut x| {
+                let (resources_policy, resources, _) = context;
                 // Warm up element according to EVM rules if needed
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {

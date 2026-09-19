@@ -17,11 +17,22 @@ impl PartialOrd for WarmStorageKey {
 }
 
 impl Ord for WarmStorageKey {
+    /// Address limbs in order, then the key: the same order as comparing the limb array,
+    /// unrolled so that no generic slice comparison runs on the map lookup path.
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        match self.address.as_limbs().cmp(&other.address.as_limbs()) {
-            core::cmp::Ordering::Equal => self.key.cmp(&other.key),
-            a => a,
+        let a = self.address.as_limbs();
+        let b = other.address.as_limbs();
+        if a[0] != b[0] {
+            return a[0].cmp(&b[0]);
         }
+        if a[1] != b[1] {
+            return a[1].cmp(&b[1]);
+        }
+        if a[2] != b[2] {
+            return a[2].cmp(&b[2]);
+        }
+        self.key.cmp(&other.key)
     }
 }
 

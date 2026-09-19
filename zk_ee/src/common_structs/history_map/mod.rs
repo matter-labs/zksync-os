@@ -6,8 +6,7 @@ mod record_pool;
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::utils::ptr_arena::PtrArena;
-use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
-use alloc::collections::btree_map::Entry;
+use crate::{system::errors::internal::InternalError, utils::paged_stack::PagedStack};
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
 use element_with_history::ElementWithHistory;
@@ -48,6 +47,9 @@ impl CacheSnapshotId {
     }
 }
 
+/// Elements per page of the pending-updates stack
+const PENDING_PAGE: usize = 64;
+
 /// Stable pointer to an `ElementWithHistory` owned by the arena.
 type ElementPtr<K, V, A, KP> = NonNull<ElementWithHistory<K, V, A, KP>>;
 
@@ -81,7 +83,8 @@ struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
     /// State can't be rolled back further than frozen snapshot id. Useful for transactions boundaries
     frozen_snapshot_id: CacheSnapshotId,
     /// Chronological list of pointers to elements updated since the last commit.
-    pending_updated_elements: StackLinkedList<(ElementPtr<K, V, A, KP>, CacheSnapshotId), A>,
+    pending_updated_elements:
+        PagedStack<(ElementPtr<K, V, A, KP>, CacheSnapshotId), PENDING_PAGE, A>,
     alloc: A,
 }
 
@@ -98,7 +101,7 @@ where
                 // Initial values will be associated with snapshot 0 (so they can't be reverted)
                 next_snapshot_id: CacheSnapshotId(1),
                 frozen_snapshot_id: CacheSnapshotId(0),
-                pending_updated_elements: StackLinkedList::empty(alloc.clone()),
+                pending_updated_elements: PagedStack::empty(alloc.clone()),
             },
             records_memory_pool: HistoryRecordPool::new(alloc.clone()),
             elements_arena: PtrArena::new_in(alloc),
@@ -121,7 +124,7 @@ where
         // point. Defends against any future panic path between the two
         // drops.
         self.btree.clear();
-        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+        self.state.pending_updated_elements.clear();
         // Now safe to release the backing arena pages along with their
         // contained `ElementWithHistory` values (and their owned keys).
         self.elements_arena.clear();
@@ -158,10 +161,33 @@ where
         key: &K,
         spawn_v: impl FnOnce() -> Result<(V, KP), E>,
     ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
-        let ptr = match self.btree.entry(key.clone()) {
-            Entry::Occupied(o) => *o.into_mut(),
-            Entry::Vacant(vacant_entry) => {
-                let (v, properties) = spawn_v()?;
+        self.get_or_insert_checked(key, &mut (), |_, _| Ok(()), |_| spawn_v())
+    }
+
+    /// Get history of an element by key, inserting it first if it is missing: one search of
+    /// the map on a hit. `check_existing` runs on a found element before it is returned and
+    /// may refuse the access; `spawn_v` creates a missing one. Both get the `context`, which
+    /// lets them share mutable state.
+    pub fn get_or_insert_checked<C, E>(
+        &mut self,
+        key: &K,
+        context: &mut C,
+        check_existing: impl FnOnce(&mut C, &HistoryMapItemRef<'_, K, V, A, KP>) -> Result<(), E>,
+        spawn_v: impl FnOnce(&mut C) -> Result<(V, KP), E>,
+    ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
+        let ptr = match self.btree.get(key).copied() {
+            Some(ptr) => {
+                check_existing(
+                    context,
+                    &HistoryMapItemRef {
+                        // Safety: pointer is valid for the lifetime of `&self`.
+                        history: unsafe { ptr.as_ref() },
+                    },
+                )?;
+                ptr
+            }
+            None => {
+                let (v, properties) = spawn_v(context)?;
                 let element = ElementWithHistory::new(
                     key.clone(),
                     properties,
@@ -169,7 +195,8 @@ where
                     &mut self.records_memory_pool,
                 );
                 let ptr = self.elements_arena.push(element);
-                *vacant_entry.insert(ptr)
+                self.btree.insert(key.clone(), ptr);
+                ptr
             }
         };
 
@@ -245,7 +272,7 @@ where
         }
 
         // We've committed, so we don't need those changes anymore.
-        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+        self.state.pending_updated_elements.clear();
     }
 
     /// Applies callback `do_fn` to all pairs (initial_value, current_value) that have more than 1 (initial) record
