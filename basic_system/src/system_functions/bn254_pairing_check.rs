@@ -150,8 +150,19 @@ fn bn254_pairing_check_inner<A: Allocator>(
                 g2_point
             };
 
+            // e(O, Q) = e(P, O) = 1: a degenerate pair does not change the product, and
+            // skipping it (after the validation above) saves its Miller loop preparation
+            if g1_point.is_zero() || g2_point.is_zero() {
+                continue;
+            }
+
             pairs.push((g1_point, g2_point));
         }
+    }
+
+    if pairs.is_empty() {
+        // the empty product is the identity of the target group
+        return Ok(true);
     }
 
     let g1_iter = pairs.iter().map(|(g1, _)| g1);

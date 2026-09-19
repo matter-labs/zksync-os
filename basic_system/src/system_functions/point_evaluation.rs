@@ -90,14 +90,12 @@ pub fn verify_kzg_proof(
     left_g1 -= proof.mul_bigint(&z);
 
     let left_g1 = left_g1.into_affine();
-    let tau_g2_prepared: <crypto::bls12_381::curves::Bls12_381 as Pairing>::G2Prepared =
-        crypto::bls12_381::consts::G2_BY_TAU_POINT.into();
-
+    // both G2 points are fixed, so their Miller-loop line coefficients are constants
     let gt_el = crypto::bls12_381::curves::Bls12_381::multi_pairing(
         [left_g1, proof],
         [
-            crypto::bls12_381::consts::PREPARED_G2_GENERATOR.clone(),
-            tau_g2_prepared,
+            crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
+            crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
         ],
     );
     gt_el.0 == <crypto::bls12_381::curves::Bls12_381 as Pairing>::TargetField::ONE
