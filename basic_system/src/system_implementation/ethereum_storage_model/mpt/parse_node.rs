@@ -105,7 +105,9 @@ pub(crate) fn parse_node_piece<'a>(data: &mut &'a [u8]) -> Result<&'a [u8], ()> 
     if bb0 < 0x80 {
         Ok(unsafe { core::slice::from_ptr_range(data_start..data.as_ptr()) })
     } else if bb0 == 0x80 {
-        Ok(&[])
+        // empty item: an empty slice that still points at its byte in the encoding, so a
+        // parent re-encoding its children can copy runs of unchanged ones in one go
+        Ok(unsafe { core::slice::from_ptr_range(data_start..data_start) })
     } else if bb0 < 0xb8 {
         let expected_len = (bb0 - 0x80) as usize;
         let _ = consume(data, expected_len)?;

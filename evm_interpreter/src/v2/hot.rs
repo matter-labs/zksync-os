@@ -332,6 +332,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     /// The opcode at `ip`, advancing past it; `STOP` past the end of the code (the pointer
     /// still advances, as the frame's instruction pointer used to)
+    #[cfg(target_arch = "riscv32")]
     #[inline(always)]
     pub fn fetch_and_advance(&mut self) -> u8 {
         self.ip = self.ip.wrapping_add(1);

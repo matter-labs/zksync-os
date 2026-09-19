@@ -372,6 +372,27 @@ pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
         Vec::new()
     };
 
+    if let Ok(path) = std::env::var("PRECOMPILE_STATS_PATH") {
+        // forward run only, with the precompile statistics tracer
+        let mut tracer = PrecompileStatsTracer::<
+            rig::forward_system::system::system_types::ethereum::EthereumStorageSystemTypes<
+                rig::oracle_provider::ZkEENonDeterminismSource,
+            >,
+        >::default();
+        let _ = Chain::<false>::run_eth_block_forward_with_tracer(
+            transactions,
+            witness,
+            header,
+            withdrawals_encoding,
+            &mut tracer,
+        );
+        tracer.print_stats();
+        tracer
+            .write_csv(Path::new(&path))
+            .expect("Failed to write precompile stats CSV");
+        return Ok(());
+    }
+
     let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
     Ok(())
 }

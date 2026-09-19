@@ -15,6 +15,7 @@
 //! Lines are fixed slots that are written in place: a node is parsed straight into its slot,
 //! and folding a line never moves it, as copies of the ~300 byte lines were the dominant cost.
 
+use super::interner::{ByteBuffer, Interner, InterningWordBuffer, WORD};
 use super::*;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
@@ -377,6 +378,55 @@ fn encode_short_node<'a>(
     Ok(buffer.flush())
 }
 
+/// Writes the RLP of a branch with the given children into `buffer`
+fn write_branch_encoding<'a>(
+    buffer: &mut impl ByteBuffer,
+    children: &[ChildRef<'a>; 16],
+    payload_len: usize,
+) {
+    encode_list_len_into_buffer(buffer, payload_len);
+
+    // Children parsed from a node point into its encoding, in order, so unchanged neighbours
+    // are contiguous runs of source bytes (an empty child is its 0x80 byte there, see
+    // `parse_node_piece`): a run is written with one copy instead of one per child. A run
+    // only continues through a child whose bytes start exactly where the run ends; a
+    // reference built by `make_ref` or a synthetic empty child never does (a fresh interner
+    // buffer cannot start inside the parent's encoding, and the empty slice is dangling).
+    let mut run_start: *const u8 = core::ptr::null();
+    let mut run_end: *const u8 = core::ptr::null();
+    for child in children.iter() {
+        let key = child.key;
+        let continues = !run_start.is_null() && core::ptr::eq(key.as_ptr(), run_end);
+        if child.is_empty() {
+            if continues {
+                run_end = run_end.wrapping_add(1);
+            } else {
+                if !run_start.is_null() {
+                    // SAFETY: `run_start..run_end` are bytes of one node encoding
+                    buffer.write_slice(unsafe { core::slice::from_ptr_range(run_start..run_end) });
+                    run_start = core::ptr::null();
+                }
+                buffer.write_byte(0x80);
+            }
+        } else if continues {
+            run_end = run_end.wrapping_add(key.len());
+        } else {
+            if !run_start.is_null() {
+                // SAFETY: as above
+                buffer.write_slice(unsafe { core::slice::from_ptr_range(run_start..run_end) });
+            }
+            run_start = key.as_ptr();
+            run_end = key.as_ptr().wrapping_add(key.len());
+        }
+    }
+    if !run_start.is_null() {
+        // SAFETY: as above
+        buffer.write_slice(unsafe { core::slice::from_ptr_range(run_start..run_end) });
+    }
+    // empty value at the end
+    buffer.write_byte(0x80);
+}
+
 fn encode_branch<'a>(
     interner: &mut (impl Interner<'a> + 'a),
     children: &[ChildRef<'a>; 16],
@@ -388,37 +438,51 @@ fn encode_branch<'a>(
         payload_len += if child.is_empty() { 1 } else { child.key.len() };
     }
     let total_len = list_encoding_prefix_len(payload_len) + payload_len;
+    // The runs of unchanged children are long enough for a memcpy call to beat an inline
+    // word copier (measured: the inline one lost ~20M cycles over the 16 blocks).
     let mut buffer = interner.get_buffer(total_len)?;
-    encode_list_len_into_buffer(&mut buffer, payload_len);
-    for child in children.iter() {
-        if child.is_empty() {
-            buffer.write_byte(0x80);
-        } else {
-            buffer.write_slice(child.key);
-        }
-    }
-    buffer.write_byte(0x80);
-
+    write_branch_encoding(&mut buffer, children, payload_len);
     Ok(buffer.flush())
 }
 
 /// Reference of a node from its full encoding: hash for 32 bytes and longer, the node itself otherwise
-fn make_ref<'a>(
+fn make_ref<'a, I: Interner<'a> + 'a>(
     encoding: &'a [u8],
-    interner: &mut (impl Interner<'a> + 'a),
+    interner: &mut I,
     hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
 ) -> Result<ChildRef<'a>, ()> {
     if encoding.len() >= 32 {
         hasher.update(encoding);
         let hash = hasher.finalize_reset();
-        let mut buffer = interner.get_buffer(33)?;
-        buffer.write_byte(0x80 + 32);
-        buffer.write_slice(&*hash);
-
-        Ok(ChildRef {
-            key: buffer.flush(),
-            encoding,
-        })
+        let hash: &[u8; 32] = &hash;
+        if I::SUPPORTS_WORD_LEVEL_INTERNING {
+            // The 33-byte reference is laid out so that the hash starts on a word boundary:
+            // the prefix is the last byte of the first word, and the hash is copied by words.
+            let mut buffer = interner.get_word_buffer(1 + 32 / WORD)?;
+            buffer.write_word((0x80 + 32) << ((WORD - 1) * 8));
+            if hash.as_ptr().addr() % WORD == 0 {
+                for i in 0..32 / WORD {
+                    // SAFETY: an aligned word of the hash
+                    buffer.write_word(unsafe { hash.as_ptr().cast::<usize>().add(i).read() });
+                }
+            } else {
+                for chunk in hash.chunks_exact(WORD) {
+                    buffer.write_word(usize::from_le_bytes(chunk.try_into().unwrap()));
+                }
+            }
+            Ok(ChildRef {
+                key: &buffer.flush_as_bytes(WORD + 32)[WORD - 1..],
+                encoding,
+            })
+        } else {
+            let mut buffer = interner.get_buffer(33)?;
+            buffer.write_byte(0x80 + 32);
+            buffer.write_slice(hash);
+            Ok(ChildRef {
+                key: buffer.flush(),
+                encoding,
+            })
+        }
     } else {
         Ok(ChildRef {
             key: encoding,

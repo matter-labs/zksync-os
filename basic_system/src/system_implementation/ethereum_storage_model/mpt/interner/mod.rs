@@ -63,6 +63,9 @@ impl<'a> InterningWordBuffer<'a> for () {
     }
 }
 
+/// Bytes of a word
+pub(crate) const WORD: usize = core::mem::size_of::<usize>();
+
 pub trait InternerCtor<A: Allocator>: 'static {
     type Interner<'a>: Interner<'a>
     where
