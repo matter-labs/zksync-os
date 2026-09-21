@@ -105,8 +105,10 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { version = "0.1.3", default-features = false }
-zksync_os_interface = { version = "0.1.3" }
+# TODO: switch back to the crates.io release (0.1.4) once
+# https://github.com/matter-labs/zksync-os-interface/pull/77 is released.
+zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio/l1-tx-filtering-hooks", default-features = false }
+zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio/l1-tx-filtering-hooks" }
 
 # zksync-airbender deps pinned to the same commit airbender-platform
 # resolves `branch = "dev"` to at the time of pinning.

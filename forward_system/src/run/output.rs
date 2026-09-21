@@ -128,6 +128,7 @@ impl<TR: TxResultCallback>
                                 .collect(),
                             execution_result,
                             storage_writes: vec![],
+                            l1_tx_operator_decision: output.l1_tx_operator_decision,
                         };
                         tx_number += 1;
                         o
