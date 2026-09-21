@@ -349,7 +349,7 @@ impl<
                     .basic
                     .considered_warm(self.current_tx_id);
                 if observe {
-                    x.element_properties_mut().mark_value_as_observed();
+                    x.element_properties_mut().mark_value_as_observed()?;
                 }
                 if is_warm == false {
                     // The initial account-cache record survives a dropped
@@ -1296,7 +1296,7 @@ impl<
         if should_be_deconstructed {
             account_data
                 .element_properties_mut()
-                .mark_value_as_observed();
+                .mark_value_as_observed()?;
             account_data.update(|data| {
                 data.update_metadata(|metadata| {
                     metadata.basic.is_marked_for_deconstruction = true;

@@ -132,6 +132,13 @@ unobserved and skips them when it verifies the state. The flat storage model
 verifies every access it reports and its native charging for a touch already
 covers the merkle work, so its `touch` still reads the slot.
 
+The Ethereum storage model's account cache does the same for accounts:
+`touch_account` (access-list addresses, the per-transaction precompile warm-up)
+inserts an element with an undefined value (`CacheElementProperties::undefined()`)
+without oracle IO, and the first access that needs the value has the witness
+declare it, filling every record in place; observation follows as before. A witness therefore only has to carry the accounts the block
+really uses.
+
 A read or write (`materialize_element()`) queries the oracle via
 `InitialStorageSlotQuery` on the first access of an element that was never read,
 whether it is missing from the cache or was only touched. It validates that new

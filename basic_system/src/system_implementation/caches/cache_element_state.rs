@@ -47,7 +47,9 @@ impl Warmth {
 ///
 /// Observation is monotonic: once a value is `Observed` it stays so through
 /// rollbacks (see how the storage cache fills it in), so `Unobserved` never
-/// follows `Observed` in an element's history. The "new element" fact travels
+/// follows `Observed` in an element's history. The only way to reach
+/// `Observed` is with a value read from the oracle: the variant carries it, so
+/// an unobserved element can not be marked observed without one. The "new element" fact travels
 /// with the value: it is only meaningful once the value is known, and keeping
 /// it here lets the `bool` niche hold the discriminant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

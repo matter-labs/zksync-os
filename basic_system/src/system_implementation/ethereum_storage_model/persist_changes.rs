@@ -460,7 +460,7 @@ impl EthereumStoragePersister {
                 }
             }
 
-            entry.element_properties_mut().mark_value_as_observed();
+            entry.element_properties_mut().mark_value_as_observed()?;
 
             if any_mutation {
                 let new_root = reusable_mpt
