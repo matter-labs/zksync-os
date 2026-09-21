@@ -7,7 +7,7 @@ use core::mem::MaybeUninit;
 use errors::internal::InternalError;
 use ruint::aliases::B160;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook};
-use zk_ee::common_structs::CalleeAccountProperties;
+use zk_ee::common_structs::{BytecodeData, CalleeAccountProperties};
 use zk_ee::error_ctx;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::interface_error;
@@ -22,6 +22,7 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::system_log;
+use zk_ee::utils::Bytes32;
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
@@ -429,8 +430,9 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             } else if external_call_launch_params
                 .environment_parameters
                 .callee_account_properties
-                .unpadded_code_len
-                != 0
+                .bytecode
+                .has_code()
+                != Some(false)
             {
                 return Err(internal_error!("Unexpected non-empty bytecode").into());
             }
@@ -694,15 +696,19 @@ where
     };
 
     if DEBUG_OUTPUT {
-        system_log!(
-            system,
-            "Bytecode len for `callee` = {}\n",
-            callee_account_properties.bytecode.len(),
-        );
-        system_log!(system, "Bytecode for `callee` = ");
-        let _ = system
-            .get_logger()
-            .log_data(callee_account_properties.bytecode.iter().copied());
+        match callee_account_properties.bytecode {
+            BytecodeData::Available { bytecode, .. } => {
+                system_log!(system, "Bytecode len for `callee` = {}\n", bytecode.len(),);
+                system_log!(system, "Bytecode for `callee` = ");
+                let _ = system.get_logger().log_data(bytecode.iter().copied());
+            }
+            BytecodeData::UnknownButNotEmpty => {
+                system_log!(system, "Bytecode for `callee` is not loaded\n");
+            }
+            _ => {
+                system_log!(system, "Bytecode for `callee` is unknown\n");
+            }
+        }
     }
 
     let next_ee_version = if call_request.modifier == CallModifier::Constructor {
@@ -758,6 +764,10 @@ fn read_callee_account_properties<'a, S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
+    if call_request.modifier == CallModifier::Constructor {
+        return read_deployment_target_properties(system, caller_ee_type, resources, call_request);
+    }
+
     // IO will follow the rules of the CALLER here to charge for execution
     let (account_properties, delegate_properties) = match system
         .io
@@ -854,13 +864,74 @@ where
     let nominal_token_balance = account_properties.nominal_token_balance.0;
 
     Ok(CalleeAccountProperties {
-        ee_type: next_ee_version,
-        bytecode,
-        code_version,
-        unpadded_code_len,
-        artifacts_len,
-        nonce,
         nominal_token_balance,
+        nonce,
+        bytecode: BytecodeData::Available {
+            bytecode,
+            unpadded_code_len,
+            artifacts_len,
+        },
+        ee_type: next_ee_version,
+        code_version,
+    })
+}
+
+/// keccak256 of the empty string: the code hash of an account without code
+const EMPTY_CODE_HASH: Bytes32 =
+    Bytes32::from_hex("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+
+/// The properties of the target of a deployment. The code to run is the init code, and whether
+/// the address is already taken (a collision) follows from its nonce and code hash, so the
+/// account's code is never loaded: the real execution does not read it either, and the witness
+/// of a block need not contain it.
+fn read_deployment_target_properties<'a, S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    caller_ee_type: ExecutionEnvironmentType,
+    resources: &mut S::Resources,
+    call_request: &ExternalCallRequest<S>,
+) -> Result<CalleeAccountProperties<'a>, SystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    debug_assert_eq!(call_request.modifier, CallModifier::Constructor);
+    let account_properties = match system.io.read_account_properties(
+        caller_ee_type,
+        resources,
+        &call_request.callee,
+        AccountDataRequest::empty()
+            .with_ee_version()
+            .with_nonce()
+            .with_nominal_token_balance()
+            .with_code_version()
+            .with_bytecode_hash(),
+    ) {
+        Ok(account_properties) => account_properties,
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+            system_log!(
+                system,
+                "Call failed: insufficient resources to read callee account data\n",
+            );
+            return Err(out_of_ergs_error!());
+        }
+        Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e))) => {
+            return Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e)))
+        }
+        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+    };
+    // a zero hash is the convention for an account that does not exist yet
+    let bytecode_hash = account_properties.bytecode_hash.0;
+    let bytecode = if bytecode_hash.is_zero() || bytecode_hash == EMPTY_CODE_HASH {
+        BytecodeData::EMPTY
+    } else {
+        BytecodeData::UnknownButNotEmpty
+    };
+
+    Ok(CalleeAccountProperties {
+        nominal_token_balance: account_properties.nominal_token_balance.0,
+        nonce: account_properties.nonce.0,
+        bytecode,
+        ee_type: account_properties.ee_version.0,
+        code_version: account_properties.code_version.0,
     })
 }
 

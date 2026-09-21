@@ -5,7 +5,7 @@ use core::mem;
 
 use u256::U256;
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::common_structs::CalleeAccountProperties;
+use zk_ee::common_structs::{BytecodeData, CalleeAccountProperties};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::interface::InterfaceError;
@@ -317,9 +317,15 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             )?;
             self.cold.set_code(calldata, preprocessing);
         } else {
-            let bytecode = callee_account_properties.bytecode;
-            let unpadded_code_len = callee_account_properties.unpadded_code_len;
-            let artifacts_len = callee_account_properties.artifacts_len;
+            // a call always runs on loaded code; only a deployment target's code is left unloaded
+            let BytecodeData::Available {
+                bytecode,
+                unpadded_code_len,
+                artifacts_len,
+            } = callee_account_properties.bytecode
+            else {
+                return Err(internal_error!("callee code is not loaded for a call").into());
+            };
             match callee_account_properties.code_version {
                 DEFAULT_CODE_VERSION_BYTE => {
                     assert_eq!(artifacts_len, 0);
@@ -523,8 +529,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             };
 
             // account creation cost
+            let Some(callee_has_code) = callee_parameters.bytecode.has_code() else {
+                return Err(internal_error!("callee code state is unknown").into());
+            };
             let callee_is_empty = callee_parameters.nonce == 0
-                && callee_parameters.unpadded_code_len == 0
+                && !callee_has_code
                 && callee_parameters.nominal_token_balance.is_zero();
             if !is_callcode_or_delegate
                 && !call_request.nominal_token_value.is_zero()
@@ -612,17 +621,21 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 };
             };
 
-            let deployee_code_len = frame_state
+            let Some(deployee_has_code) = frame_state
                 .environment_parameters
                 .callee_account_properties
-                .unpadded_code_len;
+                .bytecode
+                .has_code()
+            else {
+                return Err(internal_error!("deployment target code state is unknown").into());
+            };
             let deployee_nonce = frame_state
                 .environment_parameters
                 .callee_account_properties
                 .nonce;
             // No contract may already be deployed at the address; checked here because the
             // constructor must not run then.
-            if deployee_code_len != 0 || deployee_nonce != 0 {
+            if deployee_has_code || deployee_nonce != 0 {
                 system_log!(system, "Deployment on existing account\n",);
                 frame_state
                     .external_call

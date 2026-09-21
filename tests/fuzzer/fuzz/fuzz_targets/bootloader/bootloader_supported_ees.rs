@@ -9,7 +9,7 @@ use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
-use zk_ee::common_structs::CalleeAccountProperties;
+use zk_ee::common_structs::{BytecodeData, CalleeAccountProperties};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
@@ -131,13 +131,15 @@ fn fuzz(input: FuzzInput) {
             };
 
             let callee_account_properties = CalleeAccountProperties {
-                ee_type: 0,
-                nonce: 0,
                 nominal_token_balance: U256::ZERO,
-                bytecode: &actual_bytecode,
+                nonce: 0,
+                bytecode: BytecodeData::Available {
+                    bytecode: &actual_bytecode,
+                    unpadded_code_len: actual_bytecode.len() as u32,
+                    artifacts_len: 0,
+                },
+                ee_type: 0,
                 code_version: 0,
-                unpadded_code_len: 0,
-                artifacts_len: 0,
             };
 
             // Pack everything into ExecutionEnvironmentLaunchParams
