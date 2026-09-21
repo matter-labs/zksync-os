@@ -14,7 +14,7 @@ use zk_ee::{
 };
 
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::{
-    GenericPubdataAwarePlainStorage, StorageSnapshotId,
+    element_values, GenericPubdataAwarePlainStorage, StorageSnapshotId,
 };
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 
@@ -63,19 +63,17 @@ impl<
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
-        oracle: &mut impl IOOracle,
+        _oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
-        // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
-        // and merkle proof obligations until we actually read the value
-
+        // Only warms the slot up. Its value is not read, so no merkle proof
+        // obligation is created: Ethereum does not load access-list slots either,
+        // and a witness legitimately lacks proofs for slots the block never reads.
         let key = WarmStorageKey {
             address: *address,
             key: *key,
         };
 
-        self.slot_values
-            .apply_read_impl(ee_type, &key, resources, oracle)?;
-        Ok(())
+        self.slot_values.apply_touch_impl(ee_type, &key, resources)
     }
 
     fn write(
@@ -165,19 +163,16 @@ impl<
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, N, R, P>
     {
         self.slot_values.cache.iter().map(|item| {
-            let current_record = item.current();
-            let initial_record = item.initial();
-            let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
+            let values = element_values(&item);
             (
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
                 // not actually 'using' it.
                 WarmStorageValue {
-                    current_value: *current_record.value(),
-                    is_new_storage_slot,
-                    initial_value: *initial_record.value(),
-                    initial_value_used,
+                    current_value: values.current,
+                    is_new_storage_slot: values.is_new,
+                    initial_value: values.initial,
+                    initial_value_used: values.is_observed,
                     ..Default::default()
                 },
             )

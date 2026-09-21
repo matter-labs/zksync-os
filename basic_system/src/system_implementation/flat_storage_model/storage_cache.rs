@@ -1,6 +1,6 @@
 //! Storage cache, backed by a history map.
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::{
-    GenericPubdataAwarePlainStorage, StorageSnapshotId,
+    element_values, GenericPubdataAwarePlainStorage, StorageSnapshotId,
 };
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
@@ -73,8 +73,10 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
-        // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
-        // and merkle proof obligations until we actually read the value
+        // The flat tree verifies every access, touched or read, and its native
+        // charging for a touch includes that merkle work, so a touch reads the
+        // slot here (unlike the Ethereum model, which only warms it up).
+        // TODO(EVM-1076): defer the read to the first actual access here as well
 
         let key = WarmStorageKey {
             address: *address,
@@ -228,7 +230,10 @@ impl<
             address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             key: address_into_special_storage_key(address),
         };
-        self.0.cache.get(&key).map(|item| *item.initial().value())
+        self.0
+            .cache
+            .get(&key)
+            .and_then(|item| item.initial().value.observed().copied())
     }
 
     pub fn iter_as_storage_types(
@@ -236,19 +241,16 @@ impl<
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>
     {
         self.0.cache.iter().map(|item| {
-            let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
-            let current_record = item.current();
-            let initial_record = item.initial();
+            let values = element_values(&item);
             (
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
                 // not actually 'using' it.
                 WarmStorageValue {
-                    current_value: *current_record.value(),
-                    is_new_storage_slot,
-                    initial_value: *initial_record.value(),
-                    initial_value_used,
+                    current_value: values.current,
+                    is_new_storage_slot: values.is_new,
+                    initial_value: values.initial,
+                    initial_value_used: values.is_observed,
                     ..Default::default()
                 },
             )
@@ -296,9 +298,14 @@ impl<
             }
             visited_elements.insert(element_key);
 
-            let current_value = element_history.current().value();
-            let initial_value = element_history.initial().value();
-            let at_tx_start_value = element_history.committed().value();
+            // this model reads every slot it touches, so the values are known
+            let (Some(current_value), Some(initial_value), Some(at_tx_start_value)) = (
+                element_history.current().value.observed(),
+                element_history.initial().value.observed(),
+                element_history.committed().value.observed(),
+            ) else {
+                continue;
+            };
 
             // If the current value is resetting to the initial one,
             // we don't consider this diff in the pubdata charging.

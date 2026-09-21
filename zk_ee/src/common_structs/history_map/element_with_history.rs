@@ -116,6 +116,21 @@ impl<K, V, A: Allocator + Clone, KP> ElementWithHistory<K, V, A, KP> {
         records_memory_pool.reuse_memory(last_removed_record, first_removed_record);
     }
 
+    /// Applies `f` to every live record of the element, from the head down to the
+    /// initial one, in place: no record is added, so nothing here is subject to
+    /// rollback. Meant for learning a fact about the element that holds for its
+    /// whole history (e.g. its block-start value), not for state changes.
+    pub fn for_each_record_mut(&mut self, mut f: impl FnMut(&mut V)) {
+        let mut link = Some(self.head);
+        while let Some(mut record_link) = link {
+            // Safety: records are distinct pool allocations reachable only through
+            // this element's chain, which `&mut self` borrows exclusively.
+            let record = unsafe { record_link.as_mut() };
+            f(&mut record.value);
+            link = record.previous;
+        }
+    }
+
     /// Returns (initial_value, current_value) if any
     pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
         let entry = unsafe { self.head.as_ref() };

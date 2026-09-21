@@ -154,7 +154,8 @@ impl<
         })?;
         resources.with_infinite_ergs(|res| {
             // A new (empty at block start) account is a new slot in the tree.
-            policy.charge_cold_storage_read_extra(ee_type, res, charge_as_new)
+            // Only the native part matters here (ergs are infinite in this scope).
+            policy.charge_cold_storage_read_extra(ee_type, res, charge_as_new, false)
         })?;
 
         // 2. Charging the decommitment. When charging as NEW there is no

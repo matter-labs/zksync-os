@@ -444,6 +444,14 @@ where
         unsafe { self.element.as_ref() }.get_initial_and_last_values()
     }
 
+    /// Applies `f` to every record of the element's history in place, without
+    /// adding a record: the change is not rolled back. Use it only to fill in a
+    /// fact that holds for the whole history, e.g. a block-start value learned
+    /// after the element was declared.
+    pub fn for_each_record_mut(&mut self, f: impl FnMut(&mut V)) {
+        unsafe { self.element.as_mut() }.for_each_record_mut(f)
+    }
+
     #[must_use]
     /// Use callback `f` to add new record and update element
     pub fn update<F, E>(&mut self, f: F) -> Result<(), E>
@@ -544,6 +552,48 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn for_each_record_mut_reaches_every_record_and_is_not_rolled_back() {
+        let mut map = HistoryMap::<usize, (usize, bool), Global>::new(Global);
+
+        let snapshot = map.snapshot();
+        let mut v = map
+            .get_or_insert::<()>(&1, || Ok(((1, false), ())))
+            .unwrap();
+        v.update::<_, ()>(|x| {
+            x.0 = 2;
+            Ok(())
+        })
+        .unwrap();
+        map.snapshot();
+        let mut v = map.get_mut(&1).unwrap();
+        v.update::<_, ()>(|x| {
+            x.0 = 3;
+            Ok(())
+        })
+        .unwrap();
+
+        let mut visited = 0;
+        v.for_each_record_mut(|x| {
+            visited += 1;
+            x.1 = true;
+        });
+        assert_eq!(
+            visited, 3,
+            "head, one intermediate record and the initial one"
+        );
+        assert_eq!(*v.initial(), (1, true));
+        assert_eq!(*v.current(), (3, true));
+
+        map.rollback(snapshot).unwrap();
+        let v = map.get(&1).unwrap();
+        assert_eq!(
+            *v.current(),
+            (1, true),
+            "the in-place fact survives, the updates do not"
+        );
     }
 
     #[test]

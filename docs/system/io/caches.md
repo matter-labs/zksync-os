@@ -100,27 +100,67 @@ The [storage cache](../../../basic_system/src/system_implementation/flat_storage
 
 This is the core cache implementation, generic over key type `K`, value type `V`, allocator, and a `StorageAccessPolicy`. It is called "pubdata-aware" because it tracks three value states per storage slot — enabling precise computation of net state changes and their pubdata cost at the end of each transaction.
 
-#### Oracle materialisation
+#### Element records
 
-On the first access to a key, `materialize_element()` queries the oracle via
-`InitialStorageSlotQuery` to fetch the initial value and the `is_new_storage_slot`
-flag. It validates that new slots (`is_new_storage_slot == true`) have a trivial
-(zero) initial value — a malicious oracle returning non-zero for a new slot
-triggers an assertion. The result is inserted into the `HistoryMap`-backed cache.
+Each cache element is a `HistoryMap` history of `StorageElementRecord`s
+([source](../../../basic_system/src/system_implementation/caches/generic_pubdata_aware_plain_storage.rs)).
+A record packs the two rollback-aware facts about the element, defined in
+[`cache_element_state.rs`](../../../basic_system/src/system_implementation/caches/cache_element_state.rs),
+with the charging markers:
+
+- `warmth: Warmth` — `Cold`, or `Warm { in_tx }` for the transaction that
+  established it. Warmth from another transaction counts as cold, so
+  `begin_new_tx()` makes every element cold by bumping the transaction id
+  without visiting the elements. `Cold` is only ever written into the initial
+  record of a freshly inserted element: no transition writes it back.
+- `value: ObservedValue<V>` — `Unobserved` for an element that was only
+  declared, or `Observed { value, is_new }` once it was read. `is_new` is the
+  block-start fact whether the slot was absent from the tree, and travels with
+  the value because it is only meaningful once the value is known (it also lets
+  the `bool` niche hold the discriminant).
+- `write_extra_charged_in_tx`, `new_read_extra_charged` — see the charging
+  invariant below.
+
+#### Touch vs read
+
+A touch (`apply_touch_impl()`, used for access lists) only warms the element
+up: it charges the warm read, inserts the element as `Unobserved` if it is
+missing, and does no oracle IO. Ethereum does not load access-list slots
+either, so a witness may legitimately lack a proof for a slot the block never
+reads; the Ethereum storage model therefore reports such elements as
+unobserved and skips them when it verifies the state. The flat storage model
+verifies every access it reports and its native charging for a touch already
+covers the merkle work, so its `touch` still reads the slot.
+
+A read or write (`materialize_element()`) queries the oracle via
+`InitialStorageSlotQuery` on the first access of an element that was never read,
+whether it is missing from the cache or was only touched. It validates that new
+slots (`is_new_storage_slot == true`) have a trivial (zero) initial value — a
+malicious oracle returning non-zero for a new slot triggers an assertion.
+Observation is not a state change but a fact about the whole history (no write
+can have happened before it), so the value is filled into every record of the
+element in place, and a rollback of the reading frame keeps the value while
+reverting the warmth. `Unobserved` therefore never follows `Observed` in a
+history. Elements that stay unobserved are inert: they are cold in the next
+transaction, no charge ever depends on their presence (a read charges them
+exactly like a slot the cache never saw), and they are skipped when the state
+changes are reported.
 
 #### Cold/warm tracking
 
-Each cache element carries a `StorageElementMetadata` recording the last
-transaction ID that touched it. On access:
+On a read or write:
 
 1. `materialize_element()` always charges a warm read first via `charge_warm_storage_read()`.
-2. If the element's `last_touched_in_tx` does not match the current transaction ID
-   (i.e. the access is "cold"), it additionally charges `charge_cold_storage_read_extra()`.
-   For native resources this cold extra comes in two sizes: NEW (slot absent from the
-   tree at block start, priced for the non-inclusion check) and EXISTING. The NEW extra
-   is charged once per slot per block; which accesses pay it is tracked by the
-   `new_read_extra_charged` metadata flag (see the charging invariant below).
-3. `last_touched_in_tx` is updated to the current transaction ID, making all
+2. If the element is cold for the current transaction, or was only touched so
+   far, it additionally charges `charge_cold_storage_read_extra()`. The gas part
+   (EIP-2929) is charged only for a cold access; a warm element that was only
+   touched pays the native part alone, which prices the merkle work of the read
+   that needs it. For native resources this cold extra comes in two sizes: NEW
+   (slot absent from the tree at block start, priced for the non-inclusion
+   check) and EXISTING. The NEW extra is charged once per slot per block; which
+   accesses pay it is tracked by the `new_read_extra_charged` metadata flag
+   (see the charging invariant below).
+3. `warmth` is set to `Warm` for the current transaction ID, making all
    subsequent accesses within the same transaction "warm".
 4. At the transaction boundary, `begin_new_tx()` increments the transaction ID counter,
    resetting all elements to "cold" for the next transaction.
@@ -142,11 +182,13 @@ caches. Metadata updates, by contrast, are rolled back with the transaction.
 
 Every charging decision must therefore be derived only from:
 
-- **block-start facts** fetched from the oracle and fixed at materialization
-  (`CacheElementProperties::is_new_element`), which are identical in both runs;
+- **block-start facts** fetched from the oracle and fixed at observation
+  (`ObservedValue::Observed { is_new, .. }`, `CacheElementProperties::is_new_element`
+  for accounts), which are identical in both runs;
 - **rollback-aware metadata** updated through `HistoryMap` records
-  (`last_touched_in_tx`, `write_extra_charged_in_tx`, `new_read_extra_charged`,
-  `persist_charged_in_tx`), so a dropped payer's marker disappears with it;
+  (`warmth` / `last_touched_in_tx`, `write_extra_charged_in_tx`,
+  `new_read_extra_charged`, `persist_charged_in_tx`), so a dropped payer's
+  marker disappears with it;
 - **cache values** (`initial` / `committed` / `current`), which also roll back.
 
 In particular, "this slot/account is already in the cache" carries no information

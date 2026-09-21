@@ -2,6 +2,7 @@
 //! This module contains Ethereum storage model implementation.
 //!
 
+use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::element_values;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::StorageSnapshotId;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
@@ -379,17 +380,13 @@ impl<
         Self: 'a;
     fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>> {
         self.storage_cache.slot_values.cache.get(key).map(|item| {
-            let key_properties = item.key_properties();
-            let is_new_storage_slot = key_properties.is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
-            let current_record = item.current();
-            let initial_record = item.initial();
+            let values = element_values(&item);
 
             StorageDiff {
-                initial_value: *initial_record.value(),
-                current_value: *current_record.value(),
-                is_new_storage_slot,
-                initial_value_used,
+                initial_value: values.initial,
+                current_value: values.current,
+                is_new_storage_slot: values.is_new,
+                initial_value_used: values.is_observed,
             }
         })
     }
@@ -398,19 +395,15 @@ impl<
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone {
         self.storage_cache.slot_values.cache.iter().map(|item| {
-            let key_properties = item.key_properties();
-            let is_new_storage_slot = key_properties.is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
-            let current_record = item.current();
-            let initial_record = item.initial();
+            let values = element_values(&item);
             (
                 item.key(),
                 // TODO: so far we copy, but can try to remove it eventually
                 StorageDiff {
-                    initial_value: *initial_record.value(),
-                    current_value: *current_record.value(),
-                    is_new_storage_slot,
-                    initial_value_used,
+                    initial_value: values.initial,
+                    current_value: values.current,
+                    is_new_storage_slot: values.is_new,
+                    initial_value_used: values.is_observed,
                 },
             )
         })

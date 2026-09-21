@@ -14,11 +14,16 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
     /// Charge the extra cost of reading a key
     /// not present in the cache. This cost is added
     /// to the cost of a warm read.
+    ///
+    /// `is_warm_access`: EIP-2929 access warmness. A warm slot that was only
+    ///   touched (access list) and is read for the first time pays no gas
+    ///   extra, only the native part for the merkle work of the read.
     fn charge_cold_storage_read_extra(
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         is_new_slot: bool,
+        is_warm_access: bool,
     ) -> Result<(), SystemError>;
 
     /// Charge the additional cost of performing a write.

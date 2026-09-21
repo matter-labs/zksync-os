@@ -16,6 +16,7 @@ pub use self::account_cache_entry::*;
 pub use self::preimage_cache::*;
 pub use self::simple_growable_storage::*;
 pub use self::storage_cache::*;
+use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::element_values;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
@@ -454,17 +455,14 @@ impl<
         Self: 'a;
     fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>> {
         self.storage_cache.0.cache.get(key).map(|item| {
-            let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
-            let current_record = item.current();
-            let initial_record = item.initial();
+            let values = element_values(&item);
 
             // TODO: so far we copy, but can try to remove it eventually
             StorageDiff {
-                initial_value: *initial_record.value(),
-                current_value: *current_record.value(),
-                is_new_storage_slot,
-                initial_value_used,
+                initial_value: values.initial,
+                current_value: values.current,
+                is_new_storage_slot: values.is_new,
+                initial_value_used: values.is_observed,
             }
         })
     }
@@ -473,18 +471,15 @@ impl<
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone {
         self.storage_cache.0.cache.iter().map(|item| {
-            let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_observed();
-            let current_record = item.current();
-            let initial_record = item.initial();
+            let values = element_values(&item);
             (
                 item.key(),
                 // TODO: so far we copy, but can try to remove it eventually
                 StorageDiff {
-                    initial_value: *initial_record.value(),
-                    current_value: *current_record.value(),
-                    is_new_storage_slot,
-                    initial_value_used,
+                    initial_value: values.initial,
+                    current_value: values.current,
+                    is_new_storage_slot: values.is_new,
+                    initial_value_used: values.is_observed,
                 },
             )
         })
@@ -585,8 +580,12 @@ impl<
             .0
             .cache
             .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // Skip on empty diff
-                if l.value() == r.value() {
+                // Skip on empty diff; this model reads every slot it touches, so
+                // the values are known
+                let (Some(l), Some(r)) = (l.value.observed(), r.value.observed()) else {
+                    return Ok(());
+                };
+                if l == r {
                     return Ok(());
                 }
                 // TODO(EVM-1074): use tree index instead of key for repeated writes
@@ -621,8 +620,8 @@ impl<
                     .map_err(|_| ())?;
                 } else {
                     ValueDiffCompressionStrategy::optimal_compression(
-                        l.value(),
-                        r.value(),
+                        l,
+                        r,
                         pubdata_dst,
                         result_keeper,
                     );

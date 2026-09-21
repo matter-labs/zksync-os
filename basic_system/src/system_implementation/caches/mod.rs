@@ -14,7 +14,7 @@
 //! - block-start facts fixed at materialization
 //!   ([`cache_element_properties::CacheElementProperties::is_new_element`]),
 //! - rollback-aware metadata updated through `HistoryMap` records
-//!   (`last_touched_in_tx`, `write_extra_charged_in_tx`,
+//!   (`warmth` / `last_touched_in_tx`, `write_extra_charged_in_tx`,
 //!   `new_read_extra_charged`, `persist_charged_in_tx`),
 //! - cache values (`initial` / `committed` / `current`), which roll back too.
 //!
@@ -24,5 +24,6 @@
 
 pub mod basic_account_properties;
 pub mod cache_element_properties;
+pub mod cache_element_state;
 pub mod generic_pubdata_aware_plain_storage;
 pub mod storage_access_policy;

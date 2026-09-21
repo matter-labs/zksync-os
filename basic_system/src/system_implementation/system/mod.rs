@@ -47,10 +47,17 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         is_new_slot: bool,
+        is_warm_access: bool,
     ) -> Result<(), SystemError> {
         let gas = match ee_type {
             ExecutionEnvironmentType::NoEE => 0,
-            ExecutionEnvironmentType::EVM => COLD_SLOAD_COST - WARM_STORAGE_READ_COST,
+            ExecutionEnvironmentType::EVM => {
+                if is_warm_access {
+                    0
+                } else {
+                    COLD_SLOAD_COST - WARM_STORAGE_READ_COST
+                }
+            }
         };
         let native = if is_new_slot {
             crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST
