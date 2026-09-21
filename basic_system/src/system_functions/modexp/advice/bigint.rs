@@ -1011,8 +1011,6 @@ mod tests {
     }
 
     fn assert_odd_word_count_panics(packed_lens: usize) {
-        super::super::u256::init();
-
         let dividend = BigintRepr::from_big_endian_with_double_capacity(&[0xA5; 96], Global);
         let modulus = BigintRepr::from_big_endian_with_double_capacity(&[0x5A; 64], Global);
         let mut quotient = BigintRepr::with_capacity_in(4, Global);

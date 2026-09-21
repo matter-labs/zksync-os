@@ -14,7 +14,3 @@ pub struct DelegatedU256([u64; 4]);
 pub use arithmetic::*;
 pub use copy::*;
 pub use delegation::*;
-
-pub fn init() {
-    arithmetic::init();
-}

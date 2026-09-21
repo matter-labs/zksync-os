@@ -42,8 +42,6 @@ fn modexp_inner<L: Logger, A: Allocator + Clone>(
     advisor: &mut impl ModexpAdvisor,
     allocator: A,
 ) -> Vec<u8, A> {
-    self::u256::init();
-
     let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator.clone());
     if m.digits == 0 {
         Vec::new_in(allocator)

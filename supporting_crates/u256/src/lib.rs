@@ -16,12 +16,6 @@ mod risc_v;
 #[cfg(all(feature = "delegation", target_arch = "riscv32"))]
 pub use self::risc_v::U256;
 
-#[inline(always)]
-pub fn init() {
-    #[cfg(all(feature = "delegation", target_arch = "riscv32"))]
-    delegated_u256::init();
-}
-
 #[derive(Debug)]
 pub struct BitIteratorBE<Slice: AsRef<[u64]>> {
     s: Slice,
@@ -76,8 +70,6 @@ mod tests {
 
     #[test]
     fn compare_arithmetic() {
-        delegated_u256::init();
-
         assert_eq!(naive::U256::ZERO.as_limbs(), risc_v::U256::ZERO.as_limbs());
         assert_eq!(naive::U256::ONE.as_limbs(), risc_v::U256::ONE.as_limbs());
 

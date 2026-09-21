@@ -366,6 +366,10 @@ pub fn ethproofs_flamegraph(block_dir: &Path, options: &FlamegraphOptions) -> an
         "program output is all zeroes, the block execution failed inside the guest"
     );
     println!(
+        "Block {} program output: {:08x?}",
+        inputs.block_number, execution.receipt.output
+    );
+    println!(
         "Block {} ({} gas): {} cycles, profiled in {:?} (1 sample / {} cycles), flamegraph written to {}",
         inputs.block_number,
         inputs.gas_used,

@@ -4,16 +4,10 @@ use core::cmp::Ordering;
 use core::ops::{BitAndAssign, BitOrAssign, ShlAssign, ShrAssign};
 use core::{mem::MaybeUninit, ops::BitXorAssign};
 
-pub static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-pub static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-
-pub(super) fn init() {
-    #[allow(static_mut_refs)]
-    unsafe {
-        ZERO.write(DelegatedU256::ZERO);
-        ONE.write(DelegatedU256::ONE);
-    }
-}
+// Immutable statics land in `.rodata`, which the linker places above the ROM bound, so they are
+// valid delegation operands without a runtime initialization
+pub static ZERO: DelegatedU256 = DelegatedU256::ZERO;
+pub static ONE: DelegatedU256 = DelegatedU256::ONE;
 
 impl PartialEq for DelegatedU256 {
     fn eq(&self, other: &Self) -> bool {
@@ -67,34 +61,42 @@ impl DelegatedU256 {
     pub fn zero() -> Self {
         #[allow(static_mut_refs)]
         unsafe {
-            copy_from_operand(ZERO.as_ptr())
+            copy_from_operand(core::ptr::addr_of!(ZERO))
         }
     }
 
     pub fn one() -> Self {
         #[allow(static_mut_refs)]
         unsafe {
-            copy_from_operand(ONE.as_ptr())
+            copy_from_operand(core::ptr::addr_of!(ONE))
         }
     }
 
     pub fn write_zero(&mut self) {
         #[allow(static_mut_refs)]
         unsafe {
-            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(self as *mut Self, ZERO.as_ptr());
+            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
+                self as *mut Self,
+                core::ptr::addr_of!(ZERO),
+            );
         }
     }
 
     pub fn write_one(&mut self) {
         #[allow(static_mut_refs)]
         unsafe {
-            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(self as *mut Self, ONE.as_ptr());
+            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
+                self as *mut Self,
+                core::ptr::addr_of!(ONE),
+            );
         }
     }
 
     pub fn is_zero_mut(&mut self) -> bool {
         #[allow(static_mut_refs)]
-        let eq = unsafe { bigint_op_delegation::<EQ_OP_BIT_IDX>(self as *mut Self, ZERO.as_ptr()) };
+        let eq = unsafe {
+            bigint_op_delegation::<EQ_OP_BIT_IDX>(self as *mut Self, core::ptr::addr_of!(ZERO))
+        };
 
         eq != 0
     }
@@ -104,7 +106,7 @@ impl DelegatedU256 {
             let src = copy_if_needed(self as *const Self);
             // we can cast constness since equality is non-destructive
             #[allow(static_mut_refs)]
-            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), ZERO.as_ptr())
+            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), core::ptr::addr_of!(ZERO))
         };
 
         eq != 0
@@ -115,7 +117,7 @@ impl DelegatedU256 {
             let src = copy_if_needed(self as *const Self);
             // we can cast constness since equality is non-destructive
             #[allow(static_mut_refs)]
-            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), ONE.as_ptr())
+            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), core::ptr::addr_of!(ONE))
         };
 
         eq != 0
@@ -438,7 +440,7 @@ impl ShlAssign<u32> for DelegatedU256 {
 pub unsafe fn write_zero_into_ptr(operand: *mut DelegatedU256) {
     #[allow(static_mut_refs)]
     unsafe {
-        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ZERO.as_ptr());
+        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, core::ptr::addr_of!(ZERO));
     }
 }
 
@@ -447,7 +449,7 @@ pub unsafe fn write_zero_into_ptr(operand: *mut DelegatedU256) {
 pub unsafe fn write_one_into_ptr(operand: *mut DelegatedU256) {
     #[allow(static_mut_refs)]
     unsafe {
-        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ONE.as_ptr());
+        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, core::ptr::addr_of!(ONE));
     }
 }
 
@@ -459,7 +461,7 @@ pub unsafe fn write_one_into_ptr(operand: *mut DelegatedU256) {
 pub unsafe fn write_u64_into_ptr(operand: *mut DelegatedU256, value: u64) {
     #[allow(static_mut_refs)]
     unsafe {
-        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ZERO.as_ptr());
+        bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, core::ptr::addr_of!(ZERO));
     }
     unsafe {
         (*operand).as_limbs_mut()[0] = value;

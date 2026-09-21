@@ -1,16 +1,10 @@
 use core::mem::MaybeUninit;
 use crypto::{bigint_op_delegation_raw, BigIntOps};
 
-static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-
-pub(crate) fn init() {
-    #[allow(static_mut_refs)]
-    unsafe {
-        ZERO.write(DelegatedU256::ZERO);
-        ONE.write(DelegatedU256::ONE);
-    }
-}
+// Immutable statics land in `.rodata`, which the linker places above the ROM bound, so they are
+// valid delegation operands without a runtime initialization
+static ZERO: DelegatedU256 = DelegatedU256::ZERO;
+static ONE: DelegatedU256 = DelegatedU256::ONE;
 
 #[repr(align(32))]
 pub(crate) struct DelegatedU256([u64; 4]);
@@ -42,7 +36,7 @@ impl DelegatedU256 {
     pub(crate) fn zero() -> Self {
         unsafe {
             #[allow(static_mut_refs)]
-            Self::copy_from_ptr(ZERO.as_ptr())
+            Self::copy_from_ptr(core::ptr::addr_of!(ZERO))
         }
     }
 
@@ -85,7 +79,7 @@ impl DelegatedU256 {
             // equality is non-destructive, so we can cast
             let eq = bigint_op_delegation_raw(
                 (self as *const Self).cast_mut().cast(),
-                ZERO.as_ptr().cast(),
+                core::ptr::addr_of!(ZERO).cast(),
                 BigIntOps::Eq,
             );
 
@@ -99,7 +93,7 @@ impl DelegatedU256 {
             // equality is non-destructive, so we can cast
             let eq = bigint_op_delegation_raw(
                 (self as *const Self).cast_mut().cast(),
-                ONE.as_ptr().cast(),
+                core::ptr::addr_of!(ONE).cast(),
                 BigIntOps::Eq,
             );
 
