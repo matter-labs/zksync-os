@@ -204,8 +204,12 @@ impl EthereumAccountProperties {
         self == &Self::EMPTY_ACCOUNT
     }
 
+    /// Whether the account has no code. Both conventions count: the zero hash
+    /// of an account that does not exist in the trie, and the hash of the empty
+    /// string that an existing (e.g. only funded) account carries.
     pub fn has_empty_bytecode(&self) -> bool {
         self.bytecode_hash == Self::EMPTY_ACCOUNT.bytecode_hash
+            || self.bytecode_hash == EMPTY_STRING_KECCAK_HASH
     }
 
     pub fn is_empty_modulo_balance(&self) -> bool {

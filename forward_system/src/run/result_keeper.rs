@@ -1,7 +1,7 @@
 use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
-use ruint::aliases::B160;
+use ruint::aliases::{B160, U256};
 use std::alloc::Global;
 use zk_ee::common_structs::{
     GenericEventContent, GenericEventContentWithTxRef, GenericLogContent,
@@ -20,6 +20,9 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
     pub events: Vec<GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>>,
     pub logs: Vec<GenericLogContent<EthereumIOTypesConfig>>,
     pub storage_writes: Vec<(B160, Bytes32, Bytes32)>,
+    /// Net account changes of the block (nonce, balance, bytecode hash), when
+    /// the block flow reports them (the Ethereum flow does)
+    pub basic_account_diffs: Vec<(B160, (u64, U256, Bytes32))>,
     pub tx_results: Vec<
         Result<TxProcessingOutputOwned, basic_bootloader::bootloader::errors::InvalidTransaction>,
     >,
@@ -36,6 +39,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             events: vec![],
             logs: vec![],
             storage_writes: vec![],
+            basic_account_diffs: vec![],
             tx_results: vec![],
             new_preimages: vec![],
             tx_result_callback,
@@ -75,6 +79,10 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
 
     fn storage_diffs(&mut self, iter: impl Iterator<Item = (B160, Bytes32, Bytes32)>) {
         self.storage_writes = iter.collect();
+    }
+
+    fn basic_account_diffs(&mut self, iter: impl Iterator<Item = (B160, (u64, U256, Bytes32))>) {
+        self.basic_account_diffs = iter.collect();
     }
 
     fn new_preimages<'a>(
@@ -181,6 +189,10 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
 
     fn storage_diffs(&mut self, iter: impl Iterator<Item = (B160, Bytes32, Bytes32)>) {
         self.forward_running_rk.storage_diffs(iter)
+    }
+
+    fn basic_account_diffs(&mut self, iter: impl Iterator<Item = (B160, (u64, U256, Bytes32))>) {
+        self.forward_running_rk.basic_account_diffs(iter)
     }
 
     fn new_preimages<'a>(

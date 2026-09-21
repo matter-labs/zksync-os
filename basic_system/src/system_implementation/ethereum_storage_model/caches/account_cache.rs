@@ -865,3 +865,119 @@ define_subsystem!(AccountCache,
                       EvmSubsystem(EvmSubsystemError),
                   }
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
+    use crate::system_implementation::ethereum_storage_model::caches::account_properties::ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
+    use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
+    use std::alloc::Global;
+    use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::system::Resource;
+
+    type TestResources = BaseResources<DecreasingNative>;
+    type TestAccountCache = EthereumAccountCache<Global, TestResources, VecStackFactory, 4>;
+    type TestStorage = EthereumStorageCache<
+        Global,
+        VecStackFactory,
+        4,
+        TestResources,
+        EthereumLikeStorageAccessCostModel,
+    >;
+
+    /// Every account is a funded EOA: it exists in the trie with the empty-string
+    /// code hash, zero nonce and an empty storage trie
+    struct FundedAccountsOracle;
+
+    impl IOOracle for FundedAccountsOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            assert_eq!(query_type, ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID);
+            let account = EthereumAccountProperties {
+                balance: U256::from(1_000u64),
+                ..EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT
+            };
+            let values: Vec<_> = account.iter().collect();
+            Ok(Box::new(values.into_iter()))
+        }
+    }
+
+    /// A contract created at a pre-funded address whose init code selfdestructs:
+    /// the account was created in this transaction, so EIP-6780 deletes it. The
+    /// funded address carries the empty-string code hash rather than the
+    /// zero-hash convention of a missing account, and the constructor must still
+    /// be recognised.
+    #[test]
+    fn constructor_selfdestruct_on_funded_address_deconstructs_the_account() {
+        let mut storage = TestStorage {
+            slot_values: GenericPubdataAwarePlainStorage::new_from_parts(
+                Global,
+                EthereumLikeStorageAccessCostModel,
+            ),
+        };
+        let mut account_cache = TestAccountCache::new_from_parts(Global);
+        let mut oracle = FundedAccountsOracle;
+        let deployee = B160::from_limbs([0xdead, 0, 0]);
+        let beneficiary = B160::from_limbs([0xbeef, 0, 0]);
+
+        storage.slot_values.begin_new_tx();
+        account_cache.begin_new_tx();
+        let mut resources = TestResources::FORMAL_INFINITE;
+
+        // creation sets the nonce before the init code runs (EIP-161)
+        account_cache
+            .increment_nonce::<false>(
+                ExecutionEnvironmentType::EVM,
+                &mut resources,
+                &deployee,
+                1,
+                &mut oracle,
+            )
+            .expect("nonce bump at creation");
+
+        let transferred = account_cache
+            .mark_for_deconstruction::<false>(
+                ExecutionEnvironmentType::EVM,
+                &mut resources,
+                &deployee,
+                &beneficiary,
+                &mut oracle,
+            )
+            .expect("selfdestruct in the constructor");
+        assert_eq!(transferred, U256::from(1_000u64));
+        assert!(
+            account_cache
+                .cache
+                .get(&deployee.into())
+                .unwrap()
+                .current()
+                .metadata()
+                .is_marked_for_deconstruction,
+            "a selfdestruct while the account has no code happens in its constructor"
+        );
+
+        account_cache
+            .finish_tx(&mut storage)
+            .expect("deconstruction at the end of the transaction");
+
+        let final_state = *account_cache
+            .cache
+            .get(&deployee.into())
+            .unwrap()
+            .current()
+            .value();
+        assert_eq!(
+            final_state,
+            EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT,
+            "the account must be deleted, not left with the creation nonce"
+        );
+    }
+}

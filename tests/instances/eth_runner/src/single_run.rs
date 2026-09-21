@@ -393,6 +393,53 @@ pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if let Ok(path) = std::env::var("ETH_RUN_STATE_DUMP") {
+        // forward run only (no state root check), dumping what the STF ended up
+        // with so that it can be compared against the chain with
+        // `scripts/compare_state.py` when the state root diverges
+        let result_keeper = Chain::<false>::run_eth_block_forward_with_tracer(
+            transactions,
+            witness,
+            header,
+            withdrawals_encoding,
+            &mut NopTracer::default(),
+        );
+        let txs: Vec<serde_json::Value> = result_keeper
+            .tx_results
+            .iter()
+            .map(|r| match r {
+                Ok(o) => serde_json::json!({"status": o.status, "gas_used": o.gas_used}),
+                Err(e) => serde_json::json!({"error": format!("{e:?}")}),
+            })
+            .collect();
+        let accounts: Vec<serde_json::Value> = result_keeper
+            .basic_account_diffs
+            .iter()
+            .map(|(address, (nonce, balance, code_hash))| {
+                serde_json::json!({
+                    "address": format!("0x{:040x}", address.as_uint()),
+                    "nonce": nonce,
+                    "balance": format!("0x{balance:x}"),
+                    "code_hash": format!("{code_hash:?}"),
+                })
+            })
+            .collect();
+        let slots: Vec<serde_json::Value> = result_keeper
+            .storage_writes
+            .iter()
+            .map(|(address, key, value)| {
+                serde_json::json!({
+                    "address": format!("0x{:040x}", address.as_uint()),
+                    "key": format!("{key:?}"),
+                    "value": format!("{value:?}"),
+                })
+            })
+            .collect();
+        let dump = serde_json::json!({"txs": txs, "accounts": accounts, "slots": slots});
+        serde_json::to_writer_pretty(File::create(path)?, &dump)?;
+        return Ok(());
+    }
+
     let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
     Ok(())
 }
