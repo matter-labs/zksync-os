@@ -344,6 +344,10 @@ impl<A, B, C, D, E, F, G, H, I, J, K>
         AccountDataRequest(PhantomData)
     }
 
+    /// Requests the length of the code artifacts (the jumpdest analysis), and is thereby the
+    /// request to have them: a storage model that computes the artifacts for the code it
+    /// serves does so only for requests that include this. Requests that only observe the
+    /// code (`EXTCODESIZE`, `EXTCODECOPY`) should not include it.
     pub fn with_artifacts_len(
         self,
     ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I, J, K>> {

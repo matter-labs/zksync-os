@@ -429,6 +429,11 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             || ArtifactsLen::IS_MATERIAL
             || Bytecode::IS_MATERIAL
             || IsDelegated::IS_MATERIAL;
+        // The jumpdest artifacts are only for the code that is about to run, and that request
+        // asks for their length. Observing the code (`EXTCODESIZE`, `EXTCODECOPY`, the delegation
+        // check) loads it, as its length and bytes must be verified against the hash, but does
+        // not preprocess it.
+        let needs_artifacts = ArtifactsLen::IS_MATERIAL;
         // (bytecode in the form for execution, length of the code itself, length of the artifacts)
         let (bytecode, code_length, artifacts_len) = if needs_preimage {
             // NOTE: deconstruction happens at the end of the TX, so even deconstructed accounts would NOT
@@ -452,6 +457,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                     &full_data.bytecode_hash,
                     resources,
                     oracle,
+                    needs_artifacts,
                 )?;
                 (
                     executable.bytecode,
@@ -463,7 +469,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             (&[][..], 0, 0)
         };
 
-        // artifacts are there only if the code is
+        // artifacts are there only if the code is, and they were requested
         let code_version = if artifacts_len > 0 {
             evm_interpreter::ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE
         } else {

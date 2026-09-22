@@ -82,6 +82,21 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         self.byte_capacity
     }
 
+    /// The whole words of the (initialized) contents, for writing in place
+    pub fn as_mut_words(&mut self) -> &mut [usize] {
+        assert!(
+            self.initialized_bytes >= self.byte_capacity,
+            "trying to access {} bytes, but only {} bytes are initialized",
+            self.byte_capacity,
+            self.initialized_bytes
+        );
+        let words = self.byte_capacity / USIZE_SIZE;
+        debug_assert!(self.inner.len() >= words);
+        // SAFETY: the first `byte_capacity` bytes are initialized (checked above), and the
+        // words are within the allocation
+        unsafe { core::slice::from_raw_parts_mut(self.inner.as_mut_ptr().cast::<usize>(), words) }
+    }
+
     pub fn from_slice_in(src: &[u8], allocator: A) -> Self {
         let mut result = Self::preallocated_in(src.len(), allocator);
         // copy
