@@ -305,6 +305,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Err(ExitCode::SelfDestruct)
     }
 
+    // Keep creation-only config reads from increasing register pressure in the opcode loop.
+    #[cfg_attr(target_arch = "riscv32", inline(never))]
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
