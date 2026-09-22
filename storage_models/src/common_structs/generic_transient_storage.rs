@@ -72,6 +72,17 @@ impl<
         Ok(())
     }
 
+    /// Reads the element and hands its current value to `place` by reference.
+    pub fn apply_read_with(&mut self, key: &K, place: impl FnOnce(&V)) -> Result<(), SystemError>
+    where
+        V: Default,
+    {
+        let data = Self::materialize_element(&mut self.cache, key)?;
+        place(data.current());
+
+        Ok(())
+    }
+
     pub fn apply_write(&mut self, key: &K, value: &V) -> Result<(), SystemError>
     where
         V: Default,

@@ -4,6 +4,15 @@ use crate::*;
 use ruint::aliases::B160;
 use zk_ee::{system::EthereumLikeTypes, utils::exact_size_chain::ExactSizeChain};
 
+/// A `Bytes32` being filled, as the 32 bytes the conversions write into.
+#[inline(always)]
+pub(crate) fn bytes32_as_mut_array(
+    bytes: &mut core::mem::MaybeUninit<zk_ee::utils::Bytes32>,
+) -> &mut [u8; 32] {
+    // SAFETY: `Bytes32` is 32 plain bytes
+    unsafe { &mut *bytes.as_mut_ptr().cast::<[u8; 32]>() }
+}
+
 pub fn bytereverse_u256(value: &mut U256) {
     value.bytereverse();
 }

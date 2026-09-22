@@ -16,6 +16,7 @@ delegated_u256 = { path = "../delegated_u256" }
 
 [features]
 serde = ["ruint/serde", "delegated_u256/serde"]
+bytereverse_delegation = ["delegated_u256/bytereverse_delegation"]
 delegation = []
 
 [dev-dependencies]

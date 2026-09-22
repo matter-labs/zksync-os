@@ -45,6 +45,9 @@ pub struct EvmOpcodeSequenceTracer<S: SystemTypes> {
     pub mulmod_max_modulus: u64,
     /// `DIV`/`SDIV`/`MOD`/`SMOD` executions with a zero divisor (no division is done).
     pub div_by_zero: HashMap<u8, u64>,
+    /// Per executing contract: steps and executions of a few costly opcodes
+    /// (`SLOAD`, `SSTORE`, `SHA3`, `MSTORE`, `MULMOD`), keyed by the 20-byte address.
+    pub by_address: HashMap<[u8; 20], [u64; 6]>,
     frames: Vec<FrameHistory>,
     _marker: PhantomData<S>,
 }
@@ -59,6 +62,7 @@ impl<S: SystemTypes> Default for EvmOpcodeSequenceTracer<S> {
             sha3_words: HashMap::new(),
             mulmod_max_modulus: 0,
             div_by_zero: HashMap::new(),
+            by_address: HashMap::new(),
             frames: Vec::new(),
             _marker: PhantomData,
         }
@@ -96,6 +100,12 @@ impl<S: SystemTypes> EvmOpcodeSequenceTracer<S> {
         self.mulmod_max_modulus += other.mulmod_max_modulus;
         for (k, v) in other.div_by_zero.iter() {
             *self.div_by_zero.entry(*k).or_default() += v;
+        }
+        for (k, v) in other.by_address.iter() {
+            let e = self.by_address.entry(*k).or_default();
+            for (a, b) in e.iter_mut().zip(v.iter()) {
+                *a += b;
+            }
         }
         for (k, v) in other.sha3_words.iter() {
             *self.sha3_words.entry(*k).or_default() += v;
@@ -177,6 +187,23 @@ impl<S: SystemTypes> EvmOpcodeSequenceTracer<S> {
         for (op, count) in by_zero {
             writeln!(f, "div_by_zero,{},{}", opcode_name(*op), count)?;
         }
+        let mut by_address: Vec<_> = self.by_address.iter().collect();
+        by_address.sort_by(|a, b| b.1[0].cmp(&a.1[0]));
+        for (address, counts) in by_address {
+            writeln!(
+                f,
+                "by_address,0x{},{}",
+                address
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>(),
+                counts
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(";")
+            )?;
+        }
         Ok(())
     }
 
@@ -199,6 +226,22 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeSequenceTracer<S> {
         let ip = frame_state.instruction_pointer();
         self.total_steps += 1;
         *self.unigrams.entry(opcode).or_default() += 1;
+        {
+            let address: [u8; 20] = frame_state.address().to_be_bytes();
+            let counts = self.by_address.entry(address).or_default();
+            counts[0] += 1;
+            let slot = match opcode {
+                opcodes::SLOAD => 1,
+                opcodes::SSTORE => 2,
+                opcodes::SHA3 => 3,
+                opcodes::MSTORE => 4,
+                opcodes::MULMOD => 5,
+                _ => 0,
+            };
+            if slot != 0 {
+                counts[slot] += 1;
+            }
+        }
         if matches!(
             opcode,
             opcodes::DIV | opcodes::SDIV | opcodes::MOD | opcodes::SMOD

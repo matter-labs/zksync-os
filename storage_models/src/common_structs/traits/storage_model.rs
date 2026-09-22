@@ -33,6 +33,21 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError>;
 
+    /// Reads a value and hands it to `place` instead of returning it.
+    fn storage_read_and_place(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
+    ) -> Result<(), SystemError> {
+        let value = self.storage_read(ee_type, resources, address, key, oracle)?;
+        place(&value);
+        Ok(())
+    }
+
     /// Touches a storage slot without reading its value, used for warming up storage.
     fn storage_touch(
         &mut self,

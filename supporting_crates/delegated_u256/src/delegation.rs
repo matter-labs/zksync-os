@@ -9,6 +9,8 @@ pub const EQ_OP_BIT_IDX: usize = 5;
 
 pub const CARRY_BIT_IDX: usize = 6;
 pub const MEMCOPY_BIT_IDX: usize = 7;
+/// Experimental (transpiler VM only): `a = bytereverse(a)`, `b` is read but unused, no carry.
+pub const BYTEREVERSE_OP_BIT_IDX: usize = 8;
 
 #[inline(always)]
 /// # Safety
@@ -110,6 +112,16 @@ pub unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
         let b = read(_b);
 
         (a == b) as u32
+    } else if OP_SHIFT == BYTEREVERSE_OP_BIT_IDX {
+        let limbs = *(*_a).as_limbs();
+        (*_a).0 = [
+            limbs[3].swap_bytes(),
+            limbs[2].swap_bytes(),
+            limbs[1].swap_bytes(),
+            limbs[0].swap_bytes(),
+        ];
+
+        0
     } else if OP_SHIFT == MEMCOPY_BIT_IDX {
         let b = read(_b);
         let (t, of) = b.overflowing_add(carry_or_borrow);

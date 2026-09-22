@@ -57,6 +57,24 @@ impl<
             .apply_read_impl(ee_type, &key, resources, oracle)
     }
 
+    fn read_and_place(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
+    ) -> Result<(), SystemError> {
+        let key = WarmStorageKey {
+            address: *address,
+            key: *key,
+        };
+
+        self.slot_values
+            .apply_read_impl_with(ee_type, &key, resources, oracle, place)
+    }
+
     fn touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,

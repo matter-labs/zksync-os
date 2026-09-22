@@ -61,7 +61,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             .get_observable_bytecode_hash(THIS_EE_TYPE, self.gas.resources_mut(), &address)
             .map_err(|e| Self::system_error(e))?;
 
-        *stack_top = U256::from_be_bytes(value.as_u8_array_ref());
+        // SAFETY: `stack_top` is a slot of the stack
+        unsafe {
+            U256::write_be_bytes_into_slot(
+                (value.as_u8_array_ref()).as_ptr(),
+                stack_top as *mut U256,
+            )
+        };
         Ok(())
     }
 
@@ -112,17 +118,32 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_step_gas_and_native(0, SLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
-        let mut key_buf = [0u8; 32];
-        stack_head.write_be_bytes_into(&mut key_buf);
-        let key = Bytes32::from_array(key_buf);
-        let value = system
+        // the slot receives the value below, so the key conversion may mangle it
+        let mut key = core::mem::MaybeUninit::<Bytes32>::uninit();
+        stack_head.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut key));
+        // SAFETY: fully written
+        let key = unsafe { key.assume_init_ref() };
+        let slot = stack_head as *mut U256;
+        system
             .io
-            .storage_read::<false>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
+            .storage_read_and_place::<false>(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                key,
+                |value| {
+                    // SAFETY: `slot` is a slot of the stack; the value goes straight from
+                    // the cache into it
+                    unsafe {
+                        U256::write_be_bytes_into_slot(value.as_u8_array_ref().as_ptr(), slot)
+                    }
+                },
+            )
             .map_err(|e| Self::system_error(e))?;
 
-        *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
-
-        tracer.on_storage_read(THIS_EE_TYPE, false, self.address, key, value);
+        // SAFETY: the slot was just written
+        let value = Bytes32::from_array(unsafe { &*slot }.to_be_bytes());
+        tracer.on_storage_read(THIS_EE_TYPE, false, self.address, *key, value);
 
         Ok(())
     }
@@ -134,17 +155,32 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_step_gas_and_native(0, TLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
-        let mut key_buf = [0u8; 32];
-        stack_head.write_be_bytes_into(&mut key_buf);
-        let key = Bytes32::from_array(key_buf);
-        let value = system
+        // the slot receives the value below, so the key conversion may mangle it
+        let mut key = core::mem::MaybeUninit::<Bytes32>::uninit();
+        stack_head.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut key));
+        // SAFETY: fully written
+        let key = unsafe { key.assume_init_ref() };
+        let slot = stack_head as *mut U256;
+        system
             .io
-            .storage_read::<true>(THIS_EE_TYPE, self.gas.resources_mut(), &self.address, &key)
+            .storage_read_and_place::<true>(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                key,
+                |value| {
+                    // SAFETY: `slot` is a slot of the stack; the value goes straight from
+                    // the cache into it
+                    unsafe {
+                        U256::write_be_bytes_into_slot(value.as_u8_array_ref().as_ptr(), slot)
+                    }
+                },
+            )
             .map_err(|e| Self::system_error(e))?;
 
-        *stack_head = U256::from_be_bytes(value.as_u8_array_ref());
-
-        tracer.on_storage_read(THIS_EE_TYPE, true, self.address, key, value);
+        // SAFETY: the slot was just written
+        let value = Bytes32::from_array(unsafe { &*slot }.to_be_bytes());
+        tracer.on_storage_read(THIS_EE_TYPE, true, self.address, *key, value);
 
         Ok(())
     }
@@ -161,13 +197,15 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.gas.gas_left() <= CALL_STIPEND {
             return Err(EvmError::InvalidOperandOOG.into());
         }
-        let (index, value) = self.stack.pop_2()?;
-        let mut index_buf = [0u8; 32];
-        index.write_be_bytes_into(&mut index_buf);
-        let index = Bytes32::from_array(index_buf);
-        let mut value_buf = [0u8; 32];
-        value.write_be_bytes_into(&mut value_buf);
-        let value = Bytes32::from_array(value_buf);
+        // the popped slots are scratch, so the conversions may mangle them
+        let (index, value) = self.stack.pop_2_mut()?;
+        let mut index_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
+        index.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut index_bytes));
+        let mut value_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
+        value.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut value_bytes));
+        // SAFETY: fully written
+        let (index, value) =
+            unsafe { (index_bytes.assume_init_ref(), value_bytes.assume_init_ref()) };
 
         system
             .io
@@ -175,12 +213,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 THIS_EE_TYPE,
                 self.gas.resources_mut(),
                 &self.address,
-                &index,
-                &value,
+                index,
+                value,
             )
             .map_err(|e| Self::system_error(e))?;
 
-        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
+        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, *index, *value);
 
         // This is an example of what would need to be done with tracing
         if Self::PRINT_OPCODES {
@@ -207,25 +245,27 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
-        let (index, value) = self.stack.pop_2()?;
-        let mut index_buf = [0u8; 32];
-        index.write_be_bytes_into(&mut index_buf);
-        let index = Bytes32::from_array(index_buf);
-        let mut value_buf = [0u8; 32];
-        value.write_be_bytes_into(&mut value_buf);
-        let value = Bytes32::from_array(value_buf);
+        // the popped slots are scratch, so the conversions may mangle them
+        let (index, value) = self.stack.pop_2_mut()?;
+        let mut index_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
+        index.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut index_bytes));
+        let mut value_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
+        value.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut value_bytes));
+        // SAFETY: fully written
+        let (index, value) =
+            unsafe { (index_bytes.assume_init_ref(), value_bytes.assume_init_ref()) };
         system
             .io
             .storage_write::<true>(
                 THIS_EE_TYPE,
                 self.gas.resources_mut(),
                 &self.address,
-                &index,
-                &value,
+                index,
+                value,
             )
             .map_err(|e| Self::system_error(e))?;
 
-        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
+        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, *index, *value);
 
         Ok(())
     }

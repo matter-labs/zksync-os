@@ -41,6 +41,22 @@ pub trait IOSubsystem: Sized {
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError>;
 
+    /// Reads a storage slot and hands the value to `place` instead of returning it, so
+    /// the caller can write it straight into its destination (e.g. a stack slot)
+    /// without the value being copied out of the cache first.
+    fn storage_read_and_place<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageValue),
+    ) -> Result<(), SystemError> {
+        let value = self.storage_read::<TRANSIENT>(ee_type, resources, address, key)?;
+        place(&value);
+        Ok(())
+    }
+
     /// Write value in the storage at a given slot (address, key).
     fn storage_write<const TRANSIENT: bool>(
         &mut self,

@@ -156,6 +156,23 @@ impl<A: Allocator> EvmStack<A> {
         }
     }
 
+    /// Pops two values whose slots the caller may use as scratch
+    #[inline(always)]
+    pub fn pop_2_mut(&'_ mut self) -> Result<(&'_ mut U256, &'_ mut U256), ExitCode> {
+        unsafe {
+            if self.len < 2 {
+                return Err(EvmError::StackUnderflow.into());
+            }
+            let mut offset = self.len - 1;
+            let p0 = self.buffer.get_unchecked_mut(offset).as_mut_ptr();
+            offset -= 1;
+            let p1 = self.buffer.get_unchecked_mut(offset).as_mut_ptr();
+            self.len = offset;
+
+            Ok((&mut *p0, &mut *p1))
+        }
+    }
+
     #[inline(always)]
     pub fn pop_2(&'_ mut self) -> Result<(&'_ U256, &'_ U256), ExitCode> {
         unsafe {

@@ -46,6 +46,7 @@ debug = false
 
 [features]
 scalloc = ["proof_running_system/scalloc"]
+bytereverse_delegation = ["proof_running_system/bytereverse_delegation"]
 print_debug_info = ["proof_running_system/error_origins", "proof_running_system/global-alloc"]
 proving = ["crypto/proving", "proof_running_system/proving"]
 benchmarking = ["proof_running_system/benchmarking"]

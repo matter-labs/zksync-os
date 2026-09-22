@@ -107,7 +107,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let stack_top = self.stack.top_mut()?;
         if let Some(index) = (*stack_top).try_to_usize() {
             if let Some(blob_hash) = system.get_blob_hash(index) {
-                *stack_top = U256::from_be_bytes(blob_hash.as_u8_array_ref());
+                // SAFETY: `stack_top` is a slot of the stack
+                unsafe {
+                    U256::write_be_bytes_into_slot(
+                        (blob_hash.as_u8_array_ref()).as_ptr(),
+                        stack_top as *mut U256,
+                    )
+                };
             } else {
                 U256::write_zero(stack_top);
             }

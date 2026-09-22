@@ -27,7 +27,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 # Base features
-FEATURES="proving"
+# `EXTRA_FEATURES=a,b` adds crate features to every type (e.g. `bytereverse_delegation`)
+FEATURES="proving${EXTRA_FEATURES:+,$EXTRA_FEATURES}"
 
 # Adjust for server modes
 case "$TYPE" in

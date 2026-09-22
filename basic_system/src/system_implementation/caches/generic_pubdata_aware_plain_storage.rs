@@ -390,6 +390,27 @@ impl<
     where
         StorageAddress<EthereumIOTypesConfig>: From<K>,
     {
+        let mut out = None;
+        self.apply_read_impl_with(ee_type, key, resources, oracle, |value| {
+            out = Some(value.clone())
+        })?;
+        // `place` runs exactly once on success
+        out.ok_or_else(|| internal_error!("storage read placed no value").into())
+    }
+
+    /// Reads the element and hands its current value to `place` by reference, so the
+    /// caller copies it once, straight into its destination.
+    pub fn apply_read_impl_with(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        key: &K,
+        resources: &mut R,
+        oracle: &mut impl IOOracle,
+        place: impl FnOnce(&V),
+    ) -> Result<(), SystemError>
+    where
+        StorageAddress<EthereumIOTypesConfig>: From<K>,
+    {
         let (addr_data, _) = Self::materialize_element(
             &mut self.cache,
             &mut self.resources_policy,
@@ -401,7 +422,10 @@ impl<
         )?;
 
         match &addr_data.current().value {
-            ObservedValue::Observed { value, .. } => Ok(value.clone()),
+            ObservedValue::Observed { value, .. } => {
+                place(value);
+                Ok(())
+            }
             ObservedValue::Unobserved => {
                 Err(internal_error!("materialized storage element must be observed").into())
             }

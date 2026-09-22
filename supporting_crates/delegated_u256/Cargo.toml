@@ -16,3 +16,5 @@ serde = { workspace = true, default-features = false, features = ["derive"] }
 
 [features]
 serde = []
+# byte reversal through the bigint delegation (experimental, transpiler VM only)
+bytereverse_delegation = []

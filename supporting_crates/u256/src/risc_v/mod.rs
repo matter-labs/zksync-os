@@ -269,22 +269,44 @@ impl U256 {
     /// of the little-endian limbs, byte-reversed.
     #[inline(always)]
     pub fn assign_from_be_bytes(&mut self, input: &[u8; 32]) {
-        let dst = self.as_limbs_mut().as_mut_ptr().cast::<u32>();
-        let (chunks, _) = input.as_chunks::<4>();
-        let src = chunks.as_ptr().cast::<u32>();
-        if src.is_aligned() {
-            // no unaligned loads of words on our machine, but e.g. a hash in the state of
-            // the hasher is aligned
-            for i in 0..8 {
-                // SAFETY: both are 8 words, and we are little-endian
-                unsafe { dst.add(7 - i).write(src.add(i).read().swap_bytes()) };
-            }
-        } else {
-            for (i, chunk) in chunks.iter().enumerate() {
-                // SAFETY: both are 8 words
-                unsafe { dst.add(7 - i).write(u32::from_be_bytes(*chunk)) };
-            }
-        }
+        // SAFETY: `self` is an aligned slot, `input` is 32 readable bytes
+        unsafe { DelegatedU256::write_be_bytes_into_slot(input.as_ptr(), &mut self.0 as *mut _) }
+    }
+
+    /// Writes the big-endian integer at `src` into the slot `dst`.
+    ///
+    /// # Safety
+    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable.
+    #[inline(always)]
+    pub unsafe fn write_be_bytes_into_slot(src: *const u8, dst: *mut Self) {
+        unsafe { DelegatedU256::write_be_bytes_into_slot(src, dst.cast()) }
+    }
+
+    /// Reverses the 32 bytes of the slot `ptr`.
+    ///
+    /// # Safety
+    /// `ptr` must be 32 bytes aligned and initialized.
+    #[inline(always)]
+    pub unsafe fn bytereverse_in_place(ptr: *mut Self) {
+        unsafe { DelegatedU256::bytereverse_in_place(ptr.cast()) }
+    }
+
+    /// Writes the slot `src` as 32 big-endian bytes at `dst`; the slot may be mangled.
+    ///
+    /// # Safety
+    /// `src` must be 32 bytes aligned and initialized, `dst` must be writable for 32 bytes.
+    #[inline(always)]
+    pub unsafe fn write_slot_as_be_bytes(src: *mut Self, dst: *mut u8) {
+        unsafe { DelegatedU256::write_slot_as_be_bytes(src.cast(), dst) }
+    }
+
+    /// Copies the slot `src` to 32 bytes at `dst` (any alignment).
+    ///
+    /// # Safety
+    /// `src` must be 32 bytes aligned and initialized, `dst` must be writable for 32 bytes.
+    #[inline(always)]
+    pub unsafe fn copy_slot_to_bytes(src: *const Self, dst: *mut u8) {
+        unsafe { DelegatedU256::copy_slot_to_bytes(src.cast(), dst) }
     }
 
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
@@ -301,6 +323,13 @@ impl U256 {
 
     pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
         self.0.write_be_bytes_into(dst);
+    }
+
+    /// Writes the big-endian bytes of the value into `dst`, byte-reversing `self` in
+    /// place on the way (no scratch copy): for a value the caller no longer needs.
+    #[inline(always)]
+    pub fn bytereverse_and_write_le(&mut self, dst: &mut [u8; 32]) {
+        self.0.bytereverse_and_write_le(dst);
     }
 
     pub fn bit_len(&self) -> usize {

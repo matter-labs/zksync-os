@@ -109,6 +109,19 @@ impl<
             .read(ee_type, resources, address, key, oracle)
     }
 
+    fn storage_read_and_place(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
+    ) -> Result<(), SystemError> {
+        self.storage_cache
+            .read_and_place(ee_type, resources, address, key, oracle, place)
+    }
+
     fn storage_touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,

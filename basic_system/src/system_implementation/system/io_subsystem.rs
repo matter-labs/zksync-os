@@ -113,6 +113,39 @@ impl<
         }
     }
 
+    fn storage_read_and_place<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageValue),
+    ) -> Result<(), SystemError> {
+        if TRANSIENT {
+            let gas = match ee_type {
+                ExecutionEnvironmentType::NoEE => 0,
+                ExecutionEnvironmentType::EVM => TLOAD,
+            };
+            resources.charge_legacy_gas_and_native(gas, WARM_TSTORAGE_READ_NATIVE_COST)?;
+
+            let key = WarmStorageKey {
+                address: *address,
+                key: *key,
+            };
+
+            self.transient_storage.apply_read_with(&key, place)
+        } else {
+            self.storage.storage_read_and_place(
+                ee_type,
+                resources,
+                address,
+                key,
+                &mut self.oracle,
+                place,
+            )
+        }
+    }
+
     fn storage_write<const TRANSIENT: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,

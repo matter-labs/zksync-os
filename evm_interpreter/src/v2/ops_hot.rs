@@ -458,8 +458,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         // SAFETY: initialized slots of the stack, still valid after the pop
         let index = cast_to_usize(unsafe { &*index }, EvmError::InvalidOperandOOG.into())?;
         self.ensure_heap(cold, index.saturating_add(32))?;
-        // SAFETY: the heap covers `index..index + 32`
-        unsafe { write_be_word(value, cold.heap.as_mut_ptr().add(index)) };
+        // SAFETY: the heap covers `index..index + 32`; the popped value slot is scratch
+        unsafe { write_be_word(value.cast_mut(), cold.heap.as_mut_ptr().add(index)) };
         Ok(())
     }
 

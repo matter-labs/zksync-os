@@ -97,6 +97,45 @@ impl U256 {
         }
     }
 
+    /// Reverses the 32 bytes of the slot `ptr`.
+    ///
+    /// # Safety
+    /// `ptr` must be aligned and initialized.
+    #[inline(always)]
+    pub unsafe fn bytereverse_in_place(ptr: *mut Self) {
+        unsafe { (*ptr).bytereverse() }
+    }
+
+    /// Writes the big-endian integer at `src` into the slot `dst`.
+    ///
+    /// # Safety
+    /// `src` must be readable for 32 bytes, `dst` must be aligned and writable.
+    #[inline(always)]
+    pub unsafe fn write_be_bytes_into_slot(src: *const u8, dst: *mut Self) {
+        unsafe { dst.write(Self::from_be_bytes(&*src.cast::<[u8; 32]>())) }
+    }
+
+    /// Writes the slot `src` as 32 big-endian bytes at `dst`; the slot may be mangled.
+    ///
+    /// # Safety
+    /// `src` must be aligned and initialized, `dst` must be writable for 32 bytes.
+    #[inline(always)]
+    pub unsafe fn write_slot_as_be_bytes(src: *mut Self, dst: *mut u8) {
+        unsafe {
+            let bytes = (*src).to_be_bytes();
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, 32)
+        }
+    }
+
+    /// Copies the slot `src` to 32 bytes at `dst` (any alignment).
+    ///
+    /// # Safety
+    /// `src` must be aligned and initialized, `dst` must be writable for 32 bytes.
+    #[inline(always)]
+    pub unsafe fn copy_slot_to_bytes(src: *const Self, dst: *mut u8) {
+        unsafe { core::ptr::copy_nonoverlapping(src.cast::<u8>(), dst, 32) }
+    }
+
     #[inline(always)]
     pub fn write_zero(into: &mut Self) {
         *into = Self::ZERO;
@@ -281,6 +320,13 @@ impl U256 {
 
     pub fn to_be_bytes(&self) -> [u8; 32] {
         self.0.to_be_bytes()
+    }
+
+    /// Writes the big-endian bytes of the value into `dst`; `self` is left byte-reversed.
+    #[inline(always)]
+    pub fn bytereverse_and_write_le(&mut self, dst: &mut [u8; 32]) {
+        self.bytereverse();
+        dst.copy_from_slice(&self.to_le_bytes());
     }
 
     pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {

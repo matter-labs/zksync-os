@@ -31,6 +31,21 @@ pub trait StorageCacheModel: Sized + SnapshottableIo {
         // cold_value_oracle_fn: impl FnMut() -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, InternalError>
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError>;
 
+    /// Reads a value and hands it to `place` instead of returning it.
+    fn read_and_place(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
+    ) -> Result<(), SystemError> {
+        let value = self.read(ee_type, resources, address, key, oracle)?;
+        place(&value);
+        Ok(())
+    }
+
     fn touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,
