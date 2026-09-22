@@ -37,15 +37,14 @@ use zk_ee::system::tracer::evm_tracer::EvmTracer;
 /// Address derivation and other helpers shared with the first interpreter
 type V1<'a, S> = crate::Interpreter<'a, S>;
 
-/// Grows the heap to cover `offset..offset + len`, charging the expansion
+/// Grows the heap to cover `..max_offset` (the end of the accessed range, computed once by
+/// the caller with a saturating add), charging the expansion
 #[inline(never)]
 pub(crate) fn resize_heap<S: EthereumLikeTypes>(
     cold: &mut ColdFrameParts<'_, S>,
     resources: &mut S::Resources,
-    offset: usize,
-    len: usize,
+    max_offset: usize,
 ) -> InstructionResult {
-    let max_offset = offset.saturating_add(len);
     let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
         return Err(ExitCode::EvmError(EvmError::MemoryLimitOOG));
     } else {
@@ -304,7 +303,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                     *self.stack.top_mut()? = Self::EMPTY_SLICE_SHA3;
                 }
                 Some(memory_offset) => {
-                    resize_heap(cold, &mut self.resources, memory_offset, len)?;
+                    resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
                     let allocator = env.system.get_allocator();
                     let input = &cold.heap[memory_offset..(memory_offset + len)];
                     let dst = self.stack.top_mut()?;
@@ -340,7 +339,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset, len)?;
+        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
         let source = source_offset
             .and_then(|offset| cold.bytecode.get(offset..))
             .unwrap_or(&[]);
@@ -364,7 +363,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset, len)?;
+        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
         let source = source_offset
             .and_then(|offset| cold.calldata.get(offset..))
             .unwrap_or(&[]);
@@ -393,7 +392,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             return Ok(());
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, memory_offset, len)?;
+        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
         copy_and_zeropad_nonoverlapping(
             cold.returndata.get(source_offset..).unwrap_or(&[]),
             &mut cold.heap[memory_offset..memory_offset + len],
@@ -420,8 +419,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         resize_heap(
             cold,
             &mut self.resources,
-            core::cmp::max(dst_offset, src_offset),
-            len,
+            core::cmp::max(dst_offset, src_offset).saturating_add(len),
         )?;
         // SAFETY: both ranges are in the heap; they may overlap
         unsafe {
@@ -446,7 +444,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (memory_offset, len) =
             cast_offset_and_len(memory_offset, len, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset, len)?;
+        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
         let bytecode = env
             .system
             .io
@@ -475,7 +473,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             cold.returndata_location = 0..0;
         } else {
             let offset = cast_to_usize(offset, EvmError::InvalidOperandOOG.into())?;
-            resize_heap(cold, &mut self.resources, offset, len)?;
+            resize_heap(cold, &mut self.resources, offset.saturating_add(len))?;
             let (end, of) = offset.overflowing_add(len);
             if of {
                 return Err(EvmError::InvalidOperandOOG.into());
@@ -843,7 +841,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             topic_val.write_be_bytes_into(&mut buf);
             topics.push(Bytes32::from_array(buf));
         }
-        resize_heap(cold, &mut self.resources, mem_offset, len)?;
+        resize_heap(cold, &mut self.resources, mem_offset.saturating_add(len))?;
         let data = &cold.heap[mem_offset..mem_offset + len];
         trace!(env, |t| t.on_event(
             THIS_EE_TYPE,
@@ -935,7 +933,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let value: ruint::aliases::U256 = ruint::aliases::U256::from_limbs(*value.as_limbs());
         let (code_offset, len) =
             cast_offset_and_len(code_offset, len, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, code_offset, len)?;
+        resize_heap(cold, &mut self.resources, code_offset.saturating_add(len))?;
 
         if len > MAX_INITCODE_SIZE {
             return Err(EvmError::CreateInitcodeSizeLimit.into());
@@ -1027,8 +1025,12 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             cast_offset_and_len(in_offset, in_len, EvmError::InvalidOperandOOG.into())?;
         let (out_offset, out_len) =
             cast_offset_and_len(out_offset, out_len, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, in_offset, in_len)?;
-        resize_heap(cold, &mut self.resources, out_offset, out_len)?;
+        resize_heap(cold, &mut self.resources, in_offset.saturating_add(in_len))?;
+        resize_heap(
+            cold,
+            &mut self.resources,
+            out_offset.saturating_add(out_len),
+        )?;
         let calldata = in_offset..(in_offset + in_len);
 
         let is_static = matches!(scheme, CallScheme::StaticCall) || cold.is_static;

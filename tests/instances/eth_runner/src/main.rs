@@ -225,6 +225,16 @@ enum Command {
         #[arg(long)]
         output: Option<String>,
     },
+    /// Time the steps of simulating a collected block (JSON parsing, oracle or
+    /// replay source preparation, runner construction, execution).
+    EthproofsSimulationTiming {
+        #[arg(long)]
+        block_dir: String,
+        #[arg(long, default_value_t = 2)]
+        runs: usize,
+        #[arg(long, default_value = "eth_stf")]
+        app: String,
+    },
     /// Run a collected block with the witness-parsing oracle and with a replay
     /// source, and report the runtime difference.
     EthproofsCompareOracles {
@@ -402,6 +412,11 @@ fn main() -> anyhow::Result<()> {
             top,
             output.as_deref().map(std::path::Path::new),
         ),
+        Command::EthproofsSimulationTiming {
+            block_dir,
+            runs,
+            app,
+        } => ethproofs::ethproofs_simulation_timing(std::path::Path::new(&block_dir), runs, &app),
         Command::EthproofsCompareOracles {
             block_dir,
             runs,

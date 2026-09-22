@@ -51,21 +51,26 @@ unsafe fn write_immediate_truncated<const N: usize>(ip: *const u8, end: *const u
 impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     // --- stack ---------------------------------------------------------------------------
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn pop(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, POP_NATIVE_COST)?;
         self.stack.pop_and_ignore()
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn push0(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, PUSH0_NATIVE_COST)?;
         self.stack.push_zero()
     }
 
     /// PUSH1..=PUSH8: the immediate is assembled into a `u64`. The pointer is advanced first
-    /// and the bytes are read behind it, so only one code register is live.
-    #[inline(always)]
+    /// and the bytes are read behind it, so only one code register is live. (Storing the
+    /// bytes straight into a zeroed slot measured the same; the cost is the zeroing
+    /// delegation, the stack bookkeeping and the charge, not the assembly.)
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn push_small<const N: usize>(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -88,7 +93,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     }
 
     /// PUSH9..=PUSH32: the immediate is written straight into the slot, reversed
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn push_wide<const N: usize>(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -110,13 +116,15 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn dup_op<const N: usize>(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, DUP_NATIVE_COST)?;
         self.stack.dup::<N>()
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn swap_op<const N: usize>(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -128,7 +136,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     // --- arithmetic without the oracle ---------------------------------------------------
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn add(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -136,7 +145,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn mul(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::LOW, MUL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -144,7 +154,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn sub(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SUB_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -155,7 +166,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     // --- comparison and bitwise ----------------------------------------------------------
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn lt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, LT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -167,7 +179,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn gt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, GT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -179,7 +192,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn slt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SLT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -191,7 +205,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn sgt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SGT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -203,7 +218,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn eq(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, EQ_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -215,7 +231,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn iszero(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -231,7 +248,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitand(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, AND_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -239,7 +257,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitor(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, OR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -247,7 +266,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitxor(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, XOR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -255,7 +275,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn not(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, NOT_NATIVE_COST)?;
         let top = self.stack.top_mut()?;
@@ -263,7 +284,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn byte(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -281,7 +303,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn shl(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -292,7 +315,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn shr(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -303,7 +327,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn sar(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
@@ -336,7 +361,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn jump(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::MID, JUMP_NATIVE_COST)?;
         let dest = self.stack.pop_1()?;
@@ -348,7 +374,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn jumpi(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::HIGH, JUMPI_NATIVE_COST)?;
         let (dest, value) = self.stack.pop_2()?;
@@ -365,7 +392,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     /// Dispatched on the host for every jump target, and on the proving target only when
     /// execution falls through onto a JUMPDEST byte
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn jumpdest(&mut self) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -374,7 +402,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         )
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn pc(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, PC_NATIVE_COST)?;
         let pc = self.ip.addr() - cold.bytecode.as_ptr().addr() - 1;
@@ -383,23 +412,25 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     // --- memory --------------------------------------------------------------------------
 
-    /// Makes sure the heap covers `offset..offset + len`, growing (and charging) if needed
-    #[inline(always)]
+    /// Makes sure the heap covers `..max_offset` (the end of the accessed range, computed
+    /// once with a saturating add), growing (and charging) if needed
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn ensure_heap(
         &mut self,
         cold: &mut ColdFrameParts<'_, S>,
-        offset: usize,
-        len: usize,
+        max_offset: usize,
     ) -> InstructionResult {
         // the heap length is a multiple of 32, so this is the same test as after rounding up
-        if offset.saturating_add(len) > cold.heap.len() {
-            self.outlined(|hot| resize_heap(cold, &mut hot.resources, offset, len))
+        if max_offset > cold.heap.len() {
+            self.outlined(|hot| resize_heap(cold, &mut hot.resources, max_offset))
         } else {
             Ok(())
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn mload(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -409,13 +440,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let top = self.stack.top_ptr()?;
         // SAFETY: an initialized slot of the stack
         let index = cast_to_usize(unsafe { &*top }, EvmError::InvalidOperandOOG.into())?;
-        self.ensure_heap(cold, index, 32)?;
+        self.ensure_heap(cold, index.saturating_add(32))?;
         // SAFETY: the heap covers `index..index + 32`
         unsafe { read_be_word(cold.heap.as_ptr().add(index), top) };
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn mstore(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -425,13 +457,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (index, value) = self.stack.pop_2_ptr()?;
         // SAFETY: initialized slots of the stack, still valid after the pop
         let index = cast_to_usize(unsafe { &*index }, EvmError::InvalidOperandOOG.into())?;
-        self.ensure_heap(cold, index, 32)?;
+        self.ensure_heap(cold, index.saturating_add(32))?;
         // SAFETY: the heap covers `index..index + 32`
         unsafe { write_be_word(value, cold.heap.as_mut_ptr().add(index)) };
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn mstore8(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -441,13 +474,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (index, value) = self.stack.pop_2()?;
         let index = cast_to_usize(index, EvmError::InvalidOperandOOG.into())?;
         let value = value.byte(0);
-        self.ensure_heap(cold, index, 1)?;
+        self.ensure_heap(cold, index.saturating_add(1))?;
         // SAFETY: the heap covers `index`
         unsafe { cold.heap.as_mut_ptr().add(index).write(value) };
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn msize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = cold.heap.len();
@@ -457,7 +491,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     // --- frame environment ---------------------------------------------------------------
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn address(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -467,13 +502,15 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         self.stack.push_b160(cold.address)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn caller(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, CALLER_NATIVE_COST)?;
         self.stack.push_b160(cold.caller)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn callvalue(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -483,7 +520,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         self.stack.push(&cold.call_value)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn calldatasize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -493,7 +531,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         self.stack.push_u64(cold.calldata.len() as u64)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn calldataload(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -529,7 +568,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn codesize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -540,7 +580,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             .push_u64(cold.bytecode_preprocessing.original_bytecode_len as u64)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn returndatasize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
         charge_step(
             &mut self.resources,
@@ -550,14 +591,16 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         self.stack.push_u64(cold.returndata.len() as u64)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn gas(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::BASE, GAS_NATIVE_COST)?;
         let gas_left = self.gas_left();
         self.stack.push_u64(gas_left)
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
     pub fn stop(&mut self) -> InstructionResult {
         spend_native(&mut self.resources, STEP_NATIVE_COST)?;
         Err(ExitCode::Stop)

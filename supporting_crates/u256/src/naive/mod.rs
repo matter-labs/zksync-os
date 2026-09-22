@@ -112,7 +112,6 @@ impl U256 {
         self.0.as_limbs()
     }
 
-    #[inline(always)]
     /// The low 32 bits if the value fits into them.
     #[inline(always)]
     pub fn try_to_u32(&self) -> Option<u32> {

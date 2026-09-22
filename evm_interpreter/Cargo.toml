@@ -29,3 +29,6 @@ testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
 delegation = ["u256/delegation", "zk_ee/delegation"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(opcode_profile)"] }

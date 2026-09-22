@@ -381,6 +381,88 @@ pub fn ethproofs_flamegraph(block_dir: &Path, options: &FlamegraphOptions) -> an
     Ok(execution.cycles_executed as u64)
 }
 
+/// Times the steps of simulating a stored block on the transpiler, with the
+/// files already read from disk: JSON deserialization, input preparation, runner
+/// construction, non-determinism source preparation (the witness oracle, or the
+/// recorded prover input for a replay) and the execution itself. Both source
+/// kinds are timed `runs` times each.
+pub fn ethproofs_simulation_timing(block_dir: &Path, runs: usize, app: &str) -> anyhow::Result<()> {
+    use airbender_host::raw::QuasiUARTSource;
+
+    anyhow::ensure!(runs > 0, "runs must be positive");
+    let block_text = std::fs::read_to_string(block_dir.join("block.json"))?;
+    let witness_text = std::fs::read_to_string(block_dir.join("witness.json"))?;
+    println!(
+        "block.json {} bytes, witness.json {} bytes (reading them is not timed)",
+        block_text.len(),
+        witness_text.len()
+    );
+
+    for mode in ["oracle", "replay"] {
+        for run in 0..runs {
+            let t = Instant::now();
+            let block: Block = serde_json::from_str(&block_text)?;
+            let block_parse = t.elapsed();
+
+            let t = Instant::now();
+            let witness: JsonResponse<ExecutionWitness> = serde_json::from_str(&witness_text)?;
+            let witness_parse = t.elapsed();
+
+            let t = Instant::now();
+            let inputs = EthBlockInputs::new(block, witness.result);
+            let inputs_prep = t.elapsed();
+
+            let t = Instant::now();
+            let program = load_program_for(app)?;
+            let mut builder = program.transpiler_runner();
+            if cfg!(target_arch = "x86_64") {
+                builder = builder.with_jit();
+            }
+            let runner = builder
+                .build()
+                .context("failed to build transpiler runner")?;
+            let runner_build = t.elapsed();
+
+            let t = Instant::now();
+            let (source_prep, execution) = if mode == "oracle" {
+                let oracle = Chain::<false>::make_eth_block_oracle(
+                    inputs.transactions.clone(),
+                    inputs.witness.clone(),
+                    inputs.header.clone(),
+                    inputs.withdrawals_encoding.clone(),
+                );
+                let source_prep = t.elapsed();
+                let t = Instant::now();
+                let execution = runner
+                    .run_with_source(oracle)
+                    .context("transpiler execution with the witness oracle failed")?;
+                ((source_prep, t.elapsed()), execution)
+            } else {
+                let words = load_or_record_prover_input(block_dir, &inputs)?;
+                let source = QuasiUARTSource::new_with_reads(words);
+                let source_prep = t.elapsed();
+                let t = Instant::now();
+                let execution = runner
+                    .run_with_source(source)
+                    .context("transpiler execution with the replay source failed")?;
+                ((source_prep, t.elapsed()), execution)
+            };
+            anyhow::ensure!(execution.reached_end, "program did not reach the end");
+            let (source_prep, exec) = source_prep;
+            let total =
+                block_parse + witness_parse + inputs_prep + runner_build + source_prep + exec;
+            println!(
+                "{mode} run {run}: block.json parse {block_parse:?}, witness.json parse {witness_parse:?}, \
+                 inputs prep {inputs_prep:?}, runner build {runner_build:?}, source prep {source_prep:?}, \
+                 execution {exec:?} ({} cycles, {:.0} Mcycles/s), total {total:?}",
+                execution.cycles_executed,
+                execution.cycles_executed as f64 / exec.as_secs_f64() / 1e6
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Runs the given blocks forward with the opcode-sequence tracer and prints the
 /// most executed statically adjacent opcode pairs and triples over all of them.
 pub fn ethproofs_opcode_sequences(

@@ -475,6 +475,8 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
 /// `src` must be readable for 32 bytes, `dst` must be a valid slot.
 #[inline(always)]
 pub(crate) unsafe fn read_be_word(src: *const u8, dst: *mut U256) {
+    // Byte loads and stores: the source is unaligned and rv32im has no byte-swap, so
+    // assembling words costs as much as it saves (measured: a 4-byte unroll was slower).
     let dst = dst.cast::<u8>();
     for i in 0..SLOT {
         dst.add(SLOT - 1 - i).write(src.add(i).read());

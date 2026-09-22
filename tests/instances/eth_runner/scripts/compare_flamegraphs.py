@@ -33,7 +33,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import analyze_flamegraphs as fg  # noqa: E402
 
-SAMPLING_RATE = 100  # cycles per sample used when the flamegraphs were recorded
+SAMPLING_RATE = 100  # default cycles per sample; override per side with --rate-a/--rate-b
 
 OTHER = "other: input decode, setup, block bookkeeping"
 UNATTRIBUTED = "unattributed (no frame-pointer chain / asm leaf)"
@@ -104,7 +104,7 @@ PRECOMPILES = {
 CROSSCUT = {
     "zksync-os": [
         ("EVM: keccak (SHA3 opcode, hashing)", r"Keccak256Core|keccak"),
-        ("EVM: bytecode analysis (jumpdests)", r"evm_interpreter::analyze|create_artifacts"),
+        ("EVM: bytecode analysis (jumpdests)", r"evm_interpreter::analyze|create_artifacts|analyze_into|jumpdest|get_executable_bytecode|BytecodeKeccakPreimagesStorage>::get_executable"),
         ("EVM: state access (storage/account/code)", r"io_subsystem|storage_model|EthereumStorageCache|history_map|warm_storage_key|IOSubsystem|preimage|read_storage|storage_read|storage_write|touch_account|account_properties"),
         ("EVM: gas / resource accounting", r"::charge\b|spend_gas|with_infinite_ergs|Resource>::charge"),
         ("EVM: memory copies / compares", r"memcpy|memset|memmove|copy_nonoverlapping|copy_backward|compare_bytes|memcmp"),
@@ -286,6 +286,8 @@ def main():
     ap.add_argument("--ratio", type=float, default=2.0, help="flag threshold: cycle ratio between sides")
     ap.add_argument("--debug", help="print the top stack paths attributed to this category")
     ap.add_argument("--debug-side", help="project name the --debug category is inspected on")
+    ap.add_argument("--rate-a", type=float, default=SAMPLING_RATE, help="cycles per sample of side a")
+    ap.add_argument("--rate-b", type=float, default=SAMPLING_RATE, help="cycles per sample of side b")
     args = ap.parse_args()
     debug_acc = collections.Counter()
 
@@ -305,18 +307,18 @@ def main():
     print(f"{'block':>9} {'gas':>11} | {name_a+' cycles':>18} {'c/gas':>6} | {name_b+' cycles':>18} {'c/gas':>6} | ratio")
     for b in blocks:
         rows = {}
-        for name, d, cyc in ((name_a, dir_a, cyc_a), (name_b, dir_b, cyc_b)):
+        for name, d, cyc, rate in ((name_a, dir_a, cyc_a, args.rate_a), (name_b, dir_b, cyc_b, args.rate_b)):
             total_samples, counts = categorize_svg(os.path.join(d, f"{b}.svg"), name)
             cycles, gas = cyc[b]
             for cat, samples in counts.items():
-                totals[name][cat] += samples * SAMPLING_RATE
+                totals[name][cat] += samples * rate
             # samples whose frame-pointer chain could not be walked are dropped by
             # the profiler; account for them explicitly instead of inflating the rest
-            missing = max(0, cycles - total_samples * SAMPLING_RATE)
+            missing = max(0, cycles - total_samples * rate)
             totals[name][UNATTRIBUTED] += missing
             unattributed[name] += missing
             for purpose, samples in keccak_by_purpose(os.path.join(d, f"{b}.svg"), name).items():
-                keccak[name][purpose] += samples * SAMPLING_RATE
+                keccak[name][purpose] += samples * rate
             if args.debug and name == args.debug_side:
                 debug_paths(os.path.join(d, f"{b}.svg"), name, args.debug, debug_acc)
             sum_cycles[name] += cycles
