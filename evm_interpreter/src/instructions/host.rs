@@ -334,7 +334,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
         // Create code size is limited
-        if len > MAX_INITCODE_SIZE {
+        if len as u64 > u64::from(system.get_chain_config().max_initcode_size()) {
             return Err(EvmError::CreateInitcodeSizeLimit.into());
         }
 

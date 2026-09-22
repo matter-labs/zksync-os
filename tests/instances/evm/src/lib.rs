@@ -18,6 +18,7 @@ use rig::{
     TestingFramework,
 };
 
+mod code_size;
 mod test_support;
 
 // Constructor/runtime behavior during CREATE.

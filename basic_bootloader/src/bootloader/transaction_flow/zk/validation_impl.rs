@@ -16,7 +16,7 @@ use basic_system::system_functions::keccak256::keccak256_native_cost_for_rounds_
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
-use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
+use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
@@ -155,7 +155,9 @@ where
     };
 
     let is_deployment = transaction.is_deployment().is_some();
-    if is_deployment && calldata.len() as u64 > MAX_INITCODE_SIZE as u64 {
+    if is_deployment
+        && calldata.len() as u64 > u64::from(system.get_chain_config().max_initcode_size())
+    {
         return Err(TxError::Validation(
             InvalidTransaction::CreateInitCodeSizeLimit,
         ));

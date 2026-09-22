@@ -71,6 +71,7 @@ where
     /// A consistency checker must not reject a transaction that ZKsync OS accepted, so the
     /// caller passes a cap matching the ZKsync OS build under test.
     tx_gas_limit_cap: Option<u64>,
+    max_code_size: Option<usize>,
 }
 
 impl<State> RevmRunner<State>
@@ -85,6 +86,7 @@ where
             spec: ZkSpecId::default(),
             independent_gas: false,
             tx_gas_limit_cap: None,
+            max_code_size: None,
         }
     }
 
@@ -109,6 +111,12 @@ where
     /// spec-derived default; `Some(u64::MAX)` effectively disables the cap.
     pub fn with_tx_gas_limit_cap(mut self, cap: Option<u64>) -> Self {
         self.tx_gas_limit_cap = cap;
+        self
+    }
+
+    /// Applies the chain's deployed-code limit; REVM derives twice this for initcode.
+    pub fn with_max_code_size(mut self, max_code_size: usize) -> Self {
+        self.max_code_size = Some(max_code_size);
         self
     }
 
@@ -191,6 +199,7 @@ where
                 cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
                 cfg.tx_gas_limit_cap = self.tx_gas_limit_cap;
+                cfg.limit_contract_code_size = self.max_code_size;
             })
             .modify_block_chained(|block| {
                 block.number = U256::from(block_context.block_number());

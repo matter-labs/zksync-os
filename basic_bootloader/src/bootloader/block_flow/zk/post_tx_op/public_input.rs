@@ -188,14 +188,12 @@ mod tests {
 
     #[test]
     fn chain_config_hash_golden_vector() {
-        // Pins the five-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit,
-        // pubdata_content, l1_tx_filtering_enabled) shared with era-contracts
-        // (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI disabled, the default max tx
-        // gas limit, pubdata content `FullPubdata` (0) and L1 tx filtering disabled (0). Changing the
-        // encoding on either side must update both.
+        // Pins the encoding shared with era-contracts: chain id 37, FRI disabled,
+        // default tx gas limit, FullPubdata, L1 filtering and large contracts disabled.
+        // Both repos must update together; see docs/system/large_contracts.md.
         assert_eq!(
             sample_chain_config().hash(),
-            hex!("d677601019863c835bb6fdfd10afdf0f7630c8046cc9de7aeee44931fa2b2f42")
+            hex!("a37baa17e852b9c326cea601ab0565fb733b0e0c4590f5a39efc8da5e3ec485c")
         );
     }
 
@@ -207,7 +205,7 @@ mod tests {
         // same value; changing the public-input encoding on either side must update both.
         assert_eq!(
             sample_public_input(sample_chain_config()).hash(),
-            hex!("df099e94dc933cb1e302ad66826a922df76c4759542b07311d99b0c5e9eb436d")
+            hex!("115e07747f99e4785e3f1c91d3ff85f05eee22c99004e6a81adc37b1b21495fe")
         );
     }
 
@@ -249,6 +247,16 @@ mod tests {
         assert_ne!(
             sample_public_input(base).hash(),
             sample_public_input(other).hash()
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_code_size() {
+        let config = sample_chain_config();
+        let custom = config.with_large_contracts(true);
+        assert_ne!(
+            sample_public_input(config).hash(),
+            sample_public_input(custom).hash()
         );
     }
 }

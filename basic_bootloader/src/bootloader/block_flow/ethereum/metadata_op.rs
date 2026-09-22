@@ -51,7 +51,8 @@ impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for Eth
             header.chain_id,
             base_chain_config.fri_proof_verification_enabled(),
             base_chain_config.max_tx_gas_limit(),
-        )?;
+        )?
+        .with_large_contracts(base_chain_config.large_contracts_enabled());
 
         let metadata = EthereumBlockMetadata {
             block_level: header,
