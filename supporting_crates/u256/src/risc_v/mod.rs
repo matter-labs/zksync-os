@@ -143,6 +143,12 @@ impl U256 {
         self.0.is_one()
     }
 
+    /// `self == 2^256 - 1`
+    #[inline(always)]
+    pub fn is_max(&self) -> bool {
+        self.0.is_max()
+    }
+
     #[inline(always)]
     pub fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
         self.0.overflowing_add_assign(&rhs.0)
@@ -166,6 +172,15 @@ impl U256 {
     #[inline(always)]
     pub fn overflowing_sub_assign(&mut self, rhs: &Self) -> bool {
         self.0.overflowing_sub_assign(&rhs.0)
+    }
+
+    #[inline(always)]
+    pub fn overflowing_sub_assign_with_borrow_propagation(
+        &mut self,
+        rhs: &Self,
+        borrow: bool,
+    ) -> bool {
+        self.0.overflowing_sub_assign_with_borrow(&rhs.0, borrow)
     }
 
     #[inline(always)]
@@ -198,6 +213,13 @@ impl U256 {
     #[inline(always)]
     pub fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
         self.0.widening_mul_assign_into(&mut high.0, &rhs.0);
+    }
+
+    /// `self = (self * rhs) mod 2^256`; returns whether the full product did not fit
+    /// (the high half is non-zero).
+    #[inline(always)]
+    pub fn mul_low_assign_overflows(&mut self, rhs: &Self) -> bool {
+        self.0.mul_low_assign(&rhs.0)
     }
 
     #[inline(always)]

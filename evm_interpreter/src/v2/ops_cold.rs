@@ -105,8 +105,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         charge_step(&mut self.resources, gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            S::SystemFunctionsExt::u256_div_rem(op1, op2, env.system.io.oracle());
-            Clone::clone_from(op2, &*op1);
+            S::SystemFunctionsExt::u256_div_nonzero_divisor(op1, op2, env.system.io.oracle());
         }
         Ok(())
     }
@@ -119,7 +118,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         charge_step(&mut self.resources, gas_constants::LOW, SDIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         i256_div(op1, op2, |a, b| {
-            S::SystemFunctionsExt::u256_div_rem(a, b, env.system.io.oracle())
+            S::SystemFunctionsExt::u256_div_nonzero_divisor(a, b, env.system.io.oracle())
         });
         Ok(())
     }
@@ -132,7 +131,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         charge_step(&mut self.resources, gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            S::SystemFunctionsExt::u256_div_rem(op1, op2, env.system.io.oracle());
+            S::SystemFunctionsExt::u256_rem_nonzero_divisor(op1, op2, env.system.io.oracle());
         } else {
             U256::write_zero(op2);
         }
@@ -148,7 +147,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             i256_mod(op1, op2, |a, b| {
-                S::SystemFunctionsExt::u256_div_rem(a, b, env.system.io.oracle())
+                S::SystemFunctionsExt::u256_rem_nonzero_divisor(a, b, env.system.io.oracle())
             })
         };
         Ok(())
@@ -164,22 +163,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         if op3.is_zero() {
             return Ok(());
         }
-        if *op1 >= *op3 {
-            let mut m = op3.clone();
-            S::SystemFunctionsExt::u256_div_rem(op1, &mut m, env.system.io.oracle());
-            *op1 = m;
-        }
-        if *op2 >= *op3 {
-            let mut m = op3.clone();
-            S::SystemFunctionsExt::u256_div_rem(op2, &mut m, env.system.io.oracle());
-            *op2 = m;
-        }
-        let carry = op1.overflowing_add_assign(op2);
-        if carry || *op1 >= *op3 {
-            op1.overflowing_sub_assign(op3);
-        }
-        // SAFETY: two distinct initialized slots of the stack
-        unsafe { U256::swap_in_place(op1 as *mut U256, op3 as *mut U256) };
+        // the modulus slot (op3) receives the result; op1 is scratch
+        S::SystemFunctionsExt::u256_addmod_nonzero_modulus(op1, op2, op3, env.system.io.oracle());
         Ok(())
     }
 
@@ -198,21 +183,16 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             U256::write_zero(op3);
             return Ok(());
         }
-        let mut product_lo = U256::from_limbs(*op1.as_limbs());
-        let mut product_hi = U256::from_limbs(*op1.as_limbs());
-        product_lo.widening_mul_assign_into(&mut product_hi, op2);
         // modulus = 2^256 - 1: no wide division needed
-        if op3.as_limbs() == &[u64::MAX; 4] {
-            reduce_mod_max(&mut product_lo, &product_hi, op3);
+        if op3.is_max() {
+            // the popped slot of op1 holds the low half of the product in place
+            let mut product_hi = op1.clone();
+            op1.widening_mul_assign_into(&mut product_hi, op2);
+            reduce_mod_max(op1, &product_hi, op3);
             return Ok(());
         }
-        // the divisor (op3) receives the remainder
-        S::SystemFunctionsExt::u256_wide_div_rem(
-            &mut product_lo,
-            &mut product_hi,
-            op3,
-            env.system.io.oracle(),
-        );
+        // the modulus slot (op3) receives the result; op1 is scratch
+        S::SystemFunctionsExt::u256_mulmod_nonzero_modulus(op1, op2, op3, env.system.io.oracle());
         Ok(())
     }
 

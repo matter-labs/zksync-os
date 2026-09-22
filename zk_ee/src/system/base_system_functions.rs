@@ -469,6 +469,10 @@ pub trait SystemFunctionsExt<R: Resources> {
     type ModExp: SystemFunctionExt<R, ModExpErrors>;
     type DivRem: DivRemExt;
     type WideDivRem: WideDivRemExt;
+    type MulModNonZeroModulus: MulModNonZeroModulusExt;
+    type AddModNonZeroModulus: AddModNonZeroModulusExt;
+    type DivNonZeroDivisor: DivNonZeroDivisorExt;
+    type RemNonZeroDivisor: RemNonZeroDivisorExt;
 
     fn secp256k1_ec_recover<
         O: IOOracle,
@@ -518,6 +522,86 @@ pub trait SystemFunctionsExt<R: Resources> {
     ) {
         Self::WideDivRem::execute(dividend_lo, dividend_hi, divisor, oracle)
     }
+
+    /// `modulus = a * b mod modulus`. The caller must have checked that the modulus
+    /// is non-zero; `a` is used as scratch and holds an unspecified value afterwards.
+    fn u256_mulmod_nonzero_modulus<O: IOOracle>(
+        a: &mut u256::U256,
+        b: &u256::U256,
+        modulus: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        Self::MulModNonZeroModulus::execute(a, b, modulus, oracle)
+    }
+
+    /// `modulus = (a + b) mod modulus`. The caller must have checked that the modulus
+    /// is non-zero; `a` is used as scratch and holds an unspecified value afterwards.
+    fn u256_addmod_nonzero_modulus<O: IOOracle>(
+        a: &mut u256::U256,
+        b: &u256::U256,
+        modulus: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        Self::AddModNonZeroModulus::execute(a, b, modulus, oracle)
+    }
+
+    /// `divisor = dividend / divisor`. The caller must have checked that the divisor
+    /// is non-zero; `dividend` is used as scratch and holds an unspecified value
+    /// afterwards.
+    fn u256_div_nonzero_divisor<O: IOOracle>(
+        dividend: &mut u256::U256,
+        divisor: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        Self::DivNonZeroDivisor::execute(dividend, divisor, oracle)
+    }
+
+    /// `divisor = dividend mod divisor`. The caller must have checked that the divisor
+    /// is non-zero; `dividend` is used as scratch and holds an unspecified value
+    /// afterwards.
+    fn u256_rem_nonzero_divisor<O: IOOracle>(
+        dividend: &mut u256::U256,
+        divisor: &mut u256::U256,
+        oracle: &mut O,
+    ) {
+        Self::RemNonZeroDivisor::execute(dividend, divisor, oracle)
+    }
+}
+
+pub trait AddModNonZeroModulusExt {
+    /// `modulus = (a + b) mod modulus`. The caller must have checked that the modulus
+    /// is non-zero; `a` is used as scratch and holds an unspecified value afterwards.
+    fn execute<O: IOOracle>(
+        a: &mut u256::U256,
+        b: &u256::U256,
+        modulus: &mut u256::U256,
+        oracle: &mut O,
+    );
+}
+
+pub trait DivNonZeroDivisorExt {
+    /// `divisor = dividend / divisor`. The caller must have checked that the divisor
+    /// is non-zero; `dividend` is used as scratch and holds an unspecified value
+    /// afterwards.
+    fn execute<O: IOOracle>(dividend: &mut u256::U256, divisor: &mut u256::U256, oracle: &mut O);
+}
+
+pub trait RemNonZeroDivisorExt {
+    /// `divisor = dividend mod divisor`. The caller must have checked that the divisor
+    /// is non-zero; `dividend` is used as scratch and holds an unspecified value
+    /// afterwards.
+    fn execute<O: IOOracle>(dividend: &mut u256::U256, divisor: &mut u256::U256, oracle: &mut O);
+}
+
+pub trait MulModNonZeroModulusExt {
+    /// `modulus = a * b mod modulus`. The caller must have checked that the modulus
+    /// is non-zero; `a` is used as scratch and holds an unspecified value afterwards.
+    fn execute<O: IOOracle>(
+        a: &mut u256::U256,
+        b: &u256::U256,
+        modulus: &mut u256::U256,
+        oracle: &mut O,
+    );
 }
 
 pub trait DivRemExt {

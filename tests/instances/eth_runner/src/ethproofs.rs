@@ -1018,3 +1018,71 @@ mod test {
         assert_eq!(EthProofsConnector::select_block(105, (9, 10)), 99);
     }
 }
+
+/// Writes a collected block in the layout zilkworm's `fetch` reads before it goes to the
+/// network: `<out_dir>/<N>/block<N>.json` (the block with full transactions),
+/// `executionWitness<N>.json` and `blockRlp<N>.json` (the raw block RLP as a hex string). The
+/// RLP is encoded from the block JSON, so the header is checked to hash to the block's hash.
+pub fn ethproofs_export_zilkworm(block_dir: &Path, out_dir: &Path) -> anyhow::Result<()> {
+    let block = std::fs::read_to_string(block_dir.join("block.json")).context(format!(
+        "Failed to read {}",
+        block_dir.join("block.json").display()
+    ))?;
+    let block: Block = serde_json::from_str(&block).context("Failed to parse block.json")?;
+    let witness = std::fs::File::open(block_dir.join("witness.json")).context(format!(
+        "Failed to open {}",
+        block_dir.join("witness.json").display()
+    ))?;
+    let witness: JsonResponse<ExecutionWitness> =
+        serde_json::from_reader(std::io::BufReader::new(witness))
+            .context("Failed to parse witness.json")?;
+
+    let number = block.result.header.number;
+    let expected_hash = block.result.header.hash;
+    let consensus = block
+        .result
+        .clone()
+        .map_transactions(|tx| tx.into_inner())
+        .into_consensus();
+    anyhow::ensure!(
+        consensus.header.hash_slow() == expected_hash,
+        "the header encoded from block.json does not hash to the block hash"
+    );
+    let mut rlp = Vec::new();
+    consensus.encode(&mut rlp);
+
+    let dir = out_dir.join(number.to_string());
+    std::fs::create_dir_all(&dir).context(format!("Failed to create {}", dir.display()))?;
+    let write = |name: String, value: &dyn erased_serde_value::Serialize| -> anyhow::Result<()> {
+        let file =
+            std::fs::File::create(dir.join(&name)).context(format!("Failed to create {name}"))?;
+        value
+            .serialize_to(std::io::BufWriter::new(file))
+            .context(format!("Failed to write {name}"))
+    };
+    write(format!("block{number}.json"), &block.result)?;
+    write(format!("executionWitness{number}.json"), &witness.result)?;
+    write(
+        format!("blockRlp{number}.json"),
+        &alloy::primitives::hex::encode_prefixed(&rlp),
+    )?;
+    info!("Block {number} exported to {}", dir.display());
+    Ok(())
+}
+
+/// Serialization of the exported values without naming their types
+mod erased_serde_value {
+    pub trait Serialize {
+        fn serialize_to(&self, writer: std::io::BufWriter<std::fs::File>)
+            -> serde_json::Result<()>;
+    }
+
+    impl<T: serde::Serialize> Serialize for T {
+        fn serialize_to(
+            &self,
+            writer: std::io::BufWriter<std::fs::File>,
+        ) -> serde_json::Result<()> {
+            serde_json::to_writer(writer, self)
+        }
+    }
+}

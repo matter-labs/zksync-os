@@ -516,6 +516,108 @@ fn bench_addmod() {
 
 #[ignore = "benchmark for native constants"]
 #[test]
+fn bench_div_family() {
+    // One contract per opcode: return op(calldata[0..32], calldata[32..64]).
+    // stack after the two loads is (a, b) with a on top: PUSH1 0x20 CALLDATALOAD,
+    // PUSH1 0 CALLDATALOAD, <op>, MSTORE, RETURN.
+    let contracts: [(&str, u8, rig::alloy::primitives::Address); 4] = [
+        (
+            "DIV",
+            0x04,
+            address!("0x1000000000000000000000000000000000000004"),
+        ),
+        (
+            "SDIV",
+            0x05,
+            address!("0x1000000000000000000000000000000000000005"),
+        ),
+        (
+            "MOD",
+            0x06,
+            address!("0x1000000000000000000000000000000000000006"),
+        ),
+        (
+            "SMOD",
+            0x07,
+            address!("0x1000000000000000000000000000000000000007"),
+        ),
+    ];
+
+    fn encode_2(a: U256, b: U256) -> Vec<u8> {
+        let mut v = Vec::with_capacity(64);
+        v.extend_from_slice(&a.to_be_bytes_vec());
+        v.extend_from_slice(&b.to_be_bytes_vec());
+        v
+    }
+
+    let shl = |bits: u32| U256::from(1u64) << bits;
+    let ones = |bits: u32| shl(bits) - U256::from(1u64);
+    let max = ones(256);
+    let neg = |x: U256| U256::ZERO.wrapping_sub(x);
+    let min_neg = shl(255);
+
+    // (dividend, divisor)
+    let vectors: Vec<(U256, U256, &'static str)> = vec![
+        (max, U256::ZERO, "divisor 0"),
+        (U256::ZERO, U256::from(7u64), "dividend 0"),
+        (U256::from(35u64), U256::from(6u64), "small / small"),
+        (max, U256::from(3u64), "max / 3"),
+        (ones(200), shl(64) + U256::from(1u64), "dense / 2 limbs"),
+        (max, shl(192) + U256::from(1u64), "max / 4-limb"),
+        (shl(255) + ones(100), shl(255) + U256::from(5u64), "q = 1"),
+        (neg(U256::from(35u64)), U256::from(6u64), "-35 / 6"),
+        (U256::from(35u64), neg(U256::from(6u64)), "35 / -6"),
+        (neg(U256::from(35u64)), neg(U256::from(6u64)), "-35 / -6"),
+        (
+            neg(ones(200)),
+            shl(64) + U256::from(1u64),
+            "-dense / 2 limbs",
+        ),
+        (
+            neg(ones(200)),
+            neg(shl(192) + U256::from(1u64)),
+            "-dense / -4-limb",
+        ),
+        (min_neg, max, "MIN / -1"),
+        (min_neg, U256::from(3u64), "MIN / 3"),
+    ];
+
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
+    tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000u64));
+    for (_, op, to) in contracts.iter() {
+        let bytecode = [
+            0x60, 0x20, 0x35, 0x60, 0x00, 0x35, *op, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        ];
+        tester = tester.with_evm_contract(*to, &bytecode);
+    }
+
+    let mut nonce = 0u64;
+    let mut txs = Vec::new();
+    for (name, _, to) in contracts.iter() {
+        for (a, b, tag) in vectors.iter() {
+            println!("tx {nonce}: {name} {tag}");
+            txs.push(ZKsyncTxEnvelope::from_eth_tx(
+                TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce,
+                    gas_price: 1000,
+                    gas_limit: 300_000,
+                    to: rig::alloy::primitives::TxKind::Call(*to),
+                    value: Default::default(),
+                    input: encode_2(*a, *b).into(),
+                },
+                wallet.clone(),
+            ));
+            nonce += 1;
+        }
+    }
+
+    let _result = tester.execute_block(txs);
+}
+
+#[ignore = "benchmark for native constants"]
+#[test]
 fn bench_mulmod() {
     let bytecode = hex::decode("6040356020356000350960005260206000f3").unwrap();
 

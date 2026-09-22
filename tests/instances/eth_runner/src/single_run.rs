@@ -390,6 +390,9 @@ pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
         tracer
             .write_csv(Path::new(&path))
             .expect("Failed to write precompile stats CSV");
+        tracer
+            .write_modexp_shapes_csv(&Path::new(&path).with_extension("modexp_shapes.csv"))
+            .expect("Failed to write modexp shapes CSV");
         return Ok(());
     }
 

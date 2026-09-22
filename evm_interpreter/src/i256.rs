@@ -81,10 +81,12 @@ pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
 }
 
 #[inline(always)]
+/// `div` computes `|dividend| / |divisor|` into the divisor's slot (the dividend is
+/// scratch); both moduli are already taken by then and the divisor is non-zero.
 pub fn i256_div(
     dividend: &mut U256,
     divisor_or_quotient: &mut U256,
-    div_rem: impl FnOnce(&mut U256, &mut U256),
+    div: impl FnOnce(&mut U256, &mut U256),
 ) {
     let divisor_sign = i256_sign::<true>(divisor_or_quotient);
     if divisor_sign == Sign::Zero {
@@ -104,31 +106,23 @@ pub fn i256_div(
         return;
     }
 
-    // this is unsigned division of moduli
-    // After div_rem: dividend becomes quotient, divisor_or_quotient becomes remainder
-    // But we want the unsigned quotient of |dividend| / |divisor|
-    div_rem(dividend, divisor_or_quotient);
-    // Now dividend = quotient, divisor_or_quotient = remainder
-    let quotient_is_zero = dividend.is_zero();
+    // unsigned division of the moduli; the quotient lands in the divisor's slot
+    div(dividend, divisor_or_quotient);
 
-    if quotient_is_zero {
-        U256::write_zero(divisor_or_quotient);
-    } else {
-        match (dividend_sign, divisor_sign) {
-            (Sign::Zero, Sign::Plus)
-            | (Sign::Plus, Sign::Zero)
-            | (Sign::Zero, Sign::Zero)
-            | (Sign::Plus, Sign::Plus)
-            | (Sign::Minus, Sign::Minus) => {
-                // no extra manipulation required
-                Clone::clone_from(divisor_or_quotient, &*dividend);
-            }
-            (Sign::Zero, Sign::Minus)
-            | (Sign::Plus, Sign::Minus)
-            | (Sign::Minus, Sign::Zero)
-            | (Sign::Minus, Sign::Plus) => {
-                // negate: result = 0 - quotient
-                Clone::clone_from(divisor_or_quotient, &*dividend);
+    match (dividend_sign, divisor_sign) {
+        (Sign::Zero, Sign::Plus)
+        | (Sign::Plus, Sign::Zero)
+        | (Sign::Zero, Sign::Zero)
+        | (Sign::Plus, Sign::Plus)
+        | (Sign::Minus, Sign::Minus) => {
+            // no extra manipulation required
+        }
+        (Sign::Zero, Sign::Minus)
+        | (Sign::Plus, Sign::Minus)
+        | (Sign::Minus, Sign::Zero)
+        | (Sign::Minus, Sign::Plus) => {
+            // negate: result = 0 - quotient (a zero quotient stays zero)
+            if !divisor_or_quotient.is_zero() {
                 two_compl_mut(divisor_or_quotient);
             }
         }
@@ -136,10 +130,12 @@ pub fn i256_div(
 }
 
 #[inline(always)]
+/// `rem` computes `|dividend| mod |divisor|` into the divisor's slot (the dividend
+/// is scratch); both moduli are already taken by then and the divisor is non-zero.
 pub fn i256_mod(
     dividend: &mut U256,
     divisor_or_remainder: &mut U256,
-    div_rem: impl FnOnce(&mut U256, &mut U256),
+    rem: impl FnOnce(&mut U256, &mut U256),
 ) {
     let dividend_sign = i256_sign::<true>(dividend);
     if dividend_sign == Sign::Zero {
@@ -149,9 +145,8 @@ pub fn i256_mod(
 
     let _ = i256_sign::<true>(divisor_or_remainder);
 
-    // this is unsigned division of moduli
-    // After div_rem: dividend becomes quotient, divisor_or_remainder becomes remainder
-    div_rem(dividend, divisor_or_remainder);
+    // unsigned remainder of the moduli, landing in the divisor's slot
+    rem(dividend, divisor_or_remainder);
 
     if divisor_or_remainder.is_zero() {
         return;

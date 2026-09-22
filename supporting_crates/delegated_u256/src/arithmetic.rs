@@ -4,23 +4,22 @@ use core::cmp::Ordering;
 use core::ops::{BitAndAssign, BitOrAssign, ShlAssign, ShrAssign};
 use core::{mem::MaybeUninit, ops::BitXorAssign};
 
-// Immutable statics land in `.rodata`, which the linker places above the ROM bound, so they are
-// valid delegation operands without a runtime initialization
+// Immutable statics land in `.rodata` and are valid delegation operands without a runtime
+// initialization
 pub static ZERO: DelegatedU256 = DelegatedU256::ZERO;
 pub static ONE: DelegatedU256 = DelegatedU256::ONE;
+pub static MAX: DelegatedU256 = DelegatedU256::MAX;
 
 impl PartialEq for DelegatedU256 {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            // maybe copy values into scratch if they live in ROM
-            with_ram_operand(self as *const Self, |scratch| {
-                with_ram_operand(other as *const Self, |scratch_2| {
-                    // equality is non-destructive, so we can cast
-                    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast_mut(), scratch_2);
+            // equality is non-destructive, so we can cast
+            let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(
+                (self as *const Self).cast_mut(),
+                other as *const Self,
+            );
 
-                    eq != 0
-                })
-            })
+            eq != 0
         }
     }
 }
@@ -31,19 +30,18 @@ impl Ord for DelegatedU256 {
     fn cmp(&self, other: &Self) -> Ordering {
         unsafe {
             let scratch = copy_to_scratch(self as *const Self);
-            with_ram_operand(other as *const Self, |other| {
-                let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch, other);
-                if eq != 0 {
-                    Ordering::Equal
+            let other = other as *const Self;
+            let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch, other);
+            if eq != 0 {
+                Ordering::Equal
+            } else {
+                let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(scratch, other);
+                if borrow != 0 {
+                    Ordering::Less
                 } else {
-                    let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(scratch, other);
-                    if borrow != 0 {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
+                    Ordering::Greater
                 }
-            })
+            }
         }
     }
 }
@@ -57,6 +55,7 @@ impl PartialOrd for DelegatedU256 {
 impl DelegatedU256 {
     pub const ZERO: Self = Self([0; 4]);
     pub const ONE: Self = Self([1, 0, 0, 0]);
+    pub const MAX: Self = Self([u64::MAX; 4]);
 
     pub fn zero() -> Self {
         #[allow(static_mut_refs)]
@@ -102,22 +101,23 @@ impl DelegatedU256 {
     }
 
     pub fn is_zero(&self) -> bool {
-        let eq = unsafe {
-            let src = copy_if_needed(self as *const Self);
-            // we can cast constness since equality is non-destructive
-            #[allow(static_mut_refs)]
-            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), core::ptr::addr_of!(ZERO))
-        };
-
-        eq != 0
+        self.eq_static(core::ptr::addr_of!(ZERO))
     }
 
     pub fn is_one(&self) -> bool {
+        self.eq_static(core::ptr::addr_of!(ONE))
+    }
+
+    /// `self == 2^256 - 1`
+    pub fn is_max(&self) -> bool {
+        self.eq_static(core::ptr::addr_of!(MAX))
+    }
+
+    #[inline(always)]
+    fn eq_static(&self, constant: *const Self) -> bool {
+        // we can cast constness since equality is non-destructive
         let eq = unsafe {
-            let src = copy_if_needed(self as *const Self);
-            // we can cast constness since equality is non-destructive
-            #[allow(static_mut_refs)]
-            bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), core::ptr::addr_of!(ONE))
+            bigint_op_delegation::<EQ_OP_BIT_IDX>((self as *const Self).cast_mut(), constant)
         };
 
         eq != 0
@@ -133,90 +133,78 @@ impl DelegatedU256 {
 
     pub fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let carry = bigint_op_delegation::<ADD_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-                carry != 0
-            })
+            let carry =
+                bigint_op_delegation::<ADD_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
+            carry != 0
         }
     }
 
     pub fn overflowing_add_assign_with_carry(&mut self, rhs: &Self, carry: bool) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let carry = bigint_op_delegation_with_carry_bit::<ADD_OP_BIT_IDX>(
-                    self as *mut Self,
-                    rhs_ptr,
-                    carry,
-                );
+            let carry = bigint_op_delegation_with_carry_bit::<ADD_OP_BIT_IDX>(
+                self as *mut Self,
+                rhs as *const Self,
+                carry,
+            );
 
-                carry != 0
-            })
+            carry != 0
         }
     }
 
     pub fn overflowing_sub_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
+            let borrow =
+                bigint_op_delegation::<SUB_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
 
-                borrow != 0
-            })
+            borrow != 0
         }
     }
 
     pub fn overflowing_sub_assign_with_borrow(&mut self, rhs: &Self, borrow: bool) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(
-                    self as *mut Self,
-                    rhs_ptr,
-                    borrow,
-                );
+            let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(
+                self as *mut Self,
+                rhs as *const Self,
+                borrow,
+            );
 
-                borrow != 0
-            })
+            borrow != 0
         }
     }
 
     pub fn overflowing_sub_and_negate_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let borrow =
-                    bigint_op_delegation::<SUB_AND_NEGATE_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
+            let borrow = bigint_op_delegation::<SUB_AND_NEGATE_OP_BIT_IDX>(
+                self as *mut Self,
+                rhs as *const Self,
+            );
 
-                borrow != 0
-            })
+            borrow != 0
         }
     }
 
     pub fn mul_low_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let of = bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
+            let of =
+                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
 
-                of != 0
-            })
+            of != 0
         }
     }
 
     pub fn mul_high_assign(&mut self, rhs: &Self) {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-            })
+            bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
         }
     }
 
     pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
         unsafe {
             let mut result = MaybeUninit::<Self>::uninit();
-            // no need to copy to scratch since self cannot be in ROM
             bigint_op_delegation::<MEMCOPY_BIT_IDX>(result.as_mut_ptr(), self as *const Self);
 
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(result.as_mut_ptr(), rhs_ptr);
-            });
+            bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
+            bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(result.as_mut_ptr(), rhs as *const Self);
 
             result.assume_init()
         }
@@ -224,10 +212,8 @@ impl DelegatedU256 {
 
     pub fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
         unsafe {
-            with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(high as *mut Self, rhs_ptr);
-            })
+            bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
+            bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(high as *mut Self, rhs as *const Self);
         }
     }
 

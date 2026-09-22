@@ -15,7 +15,7 @@ use evm_interpreter::opcodes::{self, OPCODE_JUMPMAP};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
-        evm::{EvmError, EvmFrameInterface},
+        evm::{EvmError, EvmFrameInterface, EvmStackInterface},
         tracer::{evm_tracer::EvmTracer, Tracer},
         CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, SystemTypes,
     },
@@ -34,8 +34,17 @@ struct FrameHistory {
 
 pub struct EvmOpcodeSequenceTracer<S: SystemTypes> {
     pub total_steps: u64,
+    /// Executions per opcode.
+    pub unigrams: HashMap<u8, u64>,
     pub bigrams: HashMap<[u8; 2], u64>,
     pub trigrams: HashMap<[u8; 3], u64>,
+    /// `KECCAK256` input lengths, bucketed by 32-byte words (`len.div_ceil(32)`),
+    /// capped at 64 words.
+    pub sha3_words: HashMap<u32, u64>,
+    /// `MULMOD` executions whose modulus is `2^256 - 1` (the interpreter's fast path).
+    pub mulmod_max_modulus: u64,
+    /// `DIV`/`SDIV`/`MOD`/`SMOD` executions with a zero divisor (no division is done).
+    pub div_by_zero: HashMap<u8, u64>,
     frames: Vec<FrameHistory>,
     _marker: PhantomData<S>,
 }
@@ -44,8 +53,12 @@ impl<S: SystemTypes> Default for EvmOpcodeSequenceTracer<S> {
     fn default() -> Self {
         Self {
             total_steps: 0,
+            unigrams: HashMap::new(),
             bigrams: HashMap::new(),
             trigrams: HashMap::new(),
+            sha3_words: HashMap::new(),
+            mulmod_max_modulus: 0,
+            div_by_zero: HashMap::new(),
             frames: Vec::new(),
             _marker: PhantomData,
         }
@@ -77,6 +90,16 @@ impl<S: SystemTypes> EvmOpcodeSequenceTracer<S> {
     /// Adds the counts of `other` into `self`.
     pub fn merge(&mut self, other: &Self) {
         self.total_steps += other.total_steps;
+        for (k, v) in other.unigrams.iter() {
+            *self.unigrams.entry(*k).or_default() += v;
+        }
+        self.mulmod_max_modulus += other.mulmod_max_modulus;
+        for (k, v) in other.div_by_zero.iter() {
+            *self.div_by_zero.entry(*k).or_default() += v;
+        }
+        for (k, v) in other.sha3_words.iter() {
+            *self.sha3_words.entry(*k).or_default() += v;
+        }
         for (k, v) in other.bigrams.iter() {
             *self.bigrams.entry(*k).or_default() += v;
         }
@@ -132,11 +155,27 @@ impl<S: SystemTypes> EvmOpcodeSequenceTracer<S> {
     pub fn write_csv(&self, path: &Path) -> std::io::Result<()> {
         let mut f = std::fs::File::create(path)?;
         writeln!(f, "length,sequence,count")?;
+        let mut unigrams: Vec<_> = self.unigrams.iter().collect();
+        unigrams.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        for (op, count) in unigrams {
+            writeln!(f, "1,{},{}", opcode_name(*op), count)?;
+        }
         for (seq, count) in self.top_bigrams() {
             writeln!(f, "2,{},{}", sequence_name(&seq), count)?;
         }
         for (seq, count) in self.top_trigrams() {
             writeln!(f, "3,{},{}", sequence_name(&seq), count)?;
+        }
+        let mut sha3: Vec<_> = self.sha3_words.iter().collect();
+        sha3.sort();
+        for (words, count) in sha3 {
+            writeln!(f, "sha3_words,{},{}", words, count)?;
+        }
+        writeln!(f, "mulmod_max_modulus,,{}", self.mulmod_max_modulus)?;
+        let mut by_zero: Vec<_> = self.div_by_zero.iter().collect();
+        by_zero.sort();
+        for (op, count) in by_zero {
+            writeln!(f, "div_by_zero,{},{}", opcode_name(*op), count)?;
         }
         Ok(())
     }
@@ -159,6 +198,36 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeSequenceTracer<S> {
         // instruction pointer is the opcode's own offset.
         let ip = frame_state.instruction_pointer();
         self.total_steps += 1;
+        *self.unigrams.entry(opcode).or_default() += 1;
+        if matches!(
+            opcode,
+            opcodes::DIV | opcodes::SDIV | opcodes::MOD | opcodes::SMOD
+        ) {
+            // stack: dividend, divisor from the top
+            if let Ok(divisor) = frame_state.stack().peek_n(1) {
+                if divisor.is_zero() {
+                    *self.div_by_zero.entry(opcode).or_default() += 1;
+                }
+            }
+        }
+        if opcode == opcodes::MULMOD {
+            // stack: a, b, N from the top
+            if let Ok(n) = frame_state.stack().peek_n(2) {
+                if n.is_max() {
+                    self.mulmod_max_modulus += 1;
+                }
+            }
+        }
+        if opcode == opcodes::SHA3 {
+            // stack top is the offset, below it the length
+            if let Ok(len) = frame_state.stack().peek_n(1) {
+                let words = len
+                    .try_to_u32()
+                    .map_or(u32::MAX, |l| l.div_ceil(32))
+                    .min(64);
+                *self.sha3_words.entry(words).or_default() += 1;
+            }
+        }
         let frame = *self.current_frame();
         let mut history = frame;
         if history.len > 0 && ip != history.next_ip {

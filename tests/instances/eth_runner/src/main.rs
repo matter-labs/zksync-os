@@ -235,6 +235,15 @@ enum Command {
         #[arg(long, default_value = "eth_stf")]
         app: String,
     },
+    /// Write a collected block as the inputs zilkworm's `fetch` builds its bundle from:
+    /// `block<N>.json`, `executionWitness<N>.json` and `blockRlp<N>.json` (the raw block RLP,
+    /// encoded from the block JSON) under `<out-dir>/<N>/`.
+    EthproofsExportZilkworm {
+        #[arg(long)]
+        block_dir: String,
+        #[arg(long)]
+        out_dir: String,
+    },
     /// Run a collected block with the witness-parsing oracle and with a replay
     /// source, and report the runtime difference.
     EthproofsCompareOracles {
@@ -423,6 +432,12 @@ fn main() -> anyhow::Result<()> {
             app,
         } => ethproofs::ethproofs_compare_oracles(std::path::Path::new(&block_dir), runs, &app)
             .map(|_| ()),
+        Command::EthproofsExportZilkworm { block_dir, out_dir } => {
+            ethproofs::ethproofs_export_zilkworm(
+                std::path::Path::new(&block_dir),
+                std::path::Path::new(&out_dir),
+            )
+        }
     }
 }
 

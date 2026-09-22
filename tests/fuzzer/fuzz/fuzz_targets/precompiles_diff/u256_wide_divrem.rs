@@ -92,7 +92,7 @@ fn fuzz(input: Input) {
     // Positive: correct hint must pass
     let mut pos_lo = U256::from_limbs(div_lo);
     let mut pos_hi = U256::from_limbs(div_hi);
-    assert!(verify_wide_div_rem_hint(&mut pos_lo, &mut pos_hi, &divisor, q_lo_limbs, q_hi_limbs));
+    assert!(verify_wide_div_rem_hint(&mut pos_lo, &mut pos_hi, &divisor, &U256::from_limbs(q_lo_limbs), &U256::from_limbs(q_hi_limbs)));
     // pos_lo now holds the remainder
     assert_eq!(*pos_lo.as_limbs(), d, "remainder mismatch");
 
@@ -109,7 +109,7 @@ fn fuzz(input: Input) {
         let mut neg_lo = U256::from_limbs(div_lo);
         let mut neg_hi = U256::from_limbs(div_hi);
         assert!(
-            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, bad_q_lo, q_hi_limbs),
+            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, &U256::from_limbs(bad_q_lo), &U256::from_limbs(q_hi_limbs)),
             "verification accepted bad q_lo"
         );
     }
@@ -119,7 +119,7 @@ fn fuzz(input: Input) {
         let mut neg_lo = U256::from_limbs(div_lo);
         let mut neg_hi = U256::from_limbs(div_hi);
         assert!(
-            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, q_lo_limbs, bad_q_hi),
+            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, &U256::from_limbs(q_lo_limbs), &U256::from_limbs(bad_q_hi)),
             "verification accepted bad q_hi"
         );
     }
@@ -129,7 +129,7 @@ fn fuzz(input: Input) {
         let mut neg_lo = U256::from_limbs(div_lo);
         let mut neg_hi = U256::from_limbs(div_hi);
         assert!(
-            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, bad_q_lo, bad_q_hi),
+            !verify_wide_div_rem_hint(&mut neg_lo, &mut neg_hi, &divisor, &U256::from_limbs(bad_q_lo), &U256::from_limbs(bad_q_hi)),
             "verification accepted bad hint"
         );
     }

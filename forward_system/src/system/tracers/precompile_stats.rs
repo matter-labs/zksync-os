@@ -186,8 +186,55 @@ struct PendingFrame {
     native_in: u64,
 }
 
+/// Operand lengths of a modexp call (bytes) and whether the modulus is odd
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ModexpShape {
+    pub base_len: u64,
+    pub exp_len: u64,
+    pub mod_len: u64,
+    pub odd_modulus: bool,
+}
+
+impl ModexpShape {
+    /// Parses the precompile input (three 32-byte lengths, then the operands)
+    fn of_input(input: &[u8]) -> Self {
+        fn len_at(input: &[u8], at: usize) -> u64 {
+            let mut word = [0u8; 32];
+            let end = at.saturating_add(32).min(input.len());
+            if at < end {
+                word[..end - at].copy_from_slice(&input[at..end]);
+            }
+            // lengths beyond `u64` never occur in a valid call; saturate for the histogram
+            if word[..24].iter().any(|b| *b != 0) {
+                u64::MAX
+            } else {
+                u64::from_be_bytes(word[24..].try_into().unwrap())
+            }
+        }
+        let base_len = len_at(input, 0);
+        let exp_len = len_at(input, 32);
+        let mod_len = len_at(input, 64);
+        let odd_modulus = (|| {
+            let start = 96u64.checked_add(base_len)?.checked_add(exp_len)?;
+            let end = start.checked_add(mod_len)?;
+            // the modulus is zero-padded past the end of the input
+            let last = end.checked_sub(1)?;
+            Some(last < input.len() as u64 && input[last as usize] & 1 == 1)
+        })()
+        .unwrap_or(false);
+        Self {
+            base_len,
+            exp_len,
+            mod_len,
+            odd_modulus,
+        }
+    }
+}
+
 pub struct PrecompileStatsTracer<S: SystemTypes> {
     pub stats: BTreeMap<u16, PrecompileStats>,
+    /// modexp calls by operand shape
+    pub modexp_shapes: BTreeMap<ModexpShape, u64>,
     pending: Option<PendingFrame>,
     /// `fn() -> S` is always `Send + Sync` regardless of `S`, so the tracer
     /// can be held in a `static OnceLock<Mutex<...>>` even when `S` itself
@@ -200,6 +247,7 @@ impl<S: SystemTypes> Default for PrecompileStatsTracer<S> {
     fn default() -> Self {
         Self {
             stats: BTreeMap::new(),
+            modexp_shapes: BTreeMap::new(),
             pending: None,
             _marker: PhantomData,
         }
@@ -207,6 +255,20 @@ impl<S: SystemTypes> Default for PrecompileStatsTracer<S> {
 }
 
 impl<S: SystemTypes> PrecompileStatsTracer<S> {
+    /// Writes the modexp calls by operand shape: `base_len,exp_len,mod_len,odd_modulus,count`
+    pub fn write_modexp_shapes_csv(&self, path: &Path) -> std::io::Result<()> {
+        let mut file = std::fs::File::create(path)?;
+        writeln!(file, "base_len,exp_len,mod_len,odd_modulus,count")?;
+        for (shape, count) in &self.modexp_shapes {
+            writeln!(
+                file,
+                "{},{},{},{},{}",
+                shape.base_len, shape.exp_len, shape.mod_len, shape.odd_modulus, count
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn write_csv(&self, path: &Path) -> std::io::Result<()> {
         write_stats_csv(&self.stats, path)
     }
@@ -292,6 +354,12 @@ impl<S: EthereumLikeTypes> Tracer<S> for PrecompileStatsTracer<S> {
         let addr = &request.external_call.callee;
         let bytes: [u8; 20] = addr.to_be_bytes::<{ ruint::aliases::B160::BYTES }>();
         if let Some(id) = precompile_id_from_address(&bytes) {
+            if id == 0x05 {
+                *self
+                    .modexp_shapes
+                    .entry(ModexpShape::of_input(request.external_call.input))
+                    .or_default() += 1;
+            }
             let ergs_in = request.external_call.available_resources.legacy_gas();
             let native_in = request.external_call.available_resources.native().as_u64();
             self.pending = Some(PendingFrame {

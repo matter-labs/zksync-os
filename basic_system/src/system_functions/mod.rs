@@ -67,4 +67,8 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>
     type ModExp = modexp::ModExpImpl<USE_ADVICE>;
     type DivRem = u256_advice::DivRemImpl<USE_ADVICE>;
     type WideDivRem = u256_advice::WideDivRemImpl<USE_ADVICE>;
+    type MulModNonZeroModulus = u256_advice::MulModNonZeroModulusImpl<USE_ADVICE>;
+    type AddModNonZeroModulus = u256_advice::AddModNonZeroModulusImpl<USE_ADVICE>;
+    type DivNonZeroDivisor = u256_advice::DivNonZeroDivisorImpl<USE_ADVICE>;
+    type RemNonZeroDivisor = u256_advice::RemNonZeroDivisorImpl<USE_ADVICE>;
 }

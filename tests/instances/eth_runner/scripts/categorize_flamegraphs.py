@@ -113,16 +113,17 @@ def classify(path_names):
     return phase, component, kind
 
 
-def attribute(svg, reported_cycles=None):
+def attribute(svg, reported_cycles=None, scale=1.0):
+    """`scale` is the cycles per sample; the counters returned are in samples."""
     total, frames = fg.parse_svg(svg)
     roots = fg.build_tree(frames)
-    # weight of a delegation-leaf sample: 1 + (missing cycles / such samples)
+    # weight of a delegation-leaf sample: 1 + (missing cycles / such samples), in samples
     delegation_samples = sum(
         f["samples"] - sum(c["samples"] for c in f["children"])
         for f in frames if DELEGATION_LEAF.search(f["name"]))
     weight = 1.0
-    if reported_cycles and reported_cycles > total and delegation_samples:
-        weight = 1.0 + (reported_cycles - total) / delegation_samples
+    if reported_cycles and reported_cycles > total * scale and delegation_samples:
+        weight = 1.0 + (reported_cycles - total * scale) / (delegation_samples * scale)
     by_component = collections.Counter()
     by_phase = collections.Counter()
     by_pc = collections.Counter()
@@ -152,11 +153,11 @@ def attribute(svg, reported_cycles=None):
     for r in roots:
         walk(r, [])
     if weight > 1.0:
-        total = reported_cycles
+        total = reported_cycles / scale
     return total, attributed, by_component, by_phase, by_pc, by_ck, by_pck
 
 
-def load_dir(d):
+def load_dir(d, scale=1.0):
     tot = collections.Counter()
     comp = collections.Counter()
     phase = collections.Counter()
@@ -175,7 +176,7 @@ def load_dir(d):
         if "inverse" in svg:
             continue
         block = os.path.basename(svg).split(".")[0]
-        total, attributed, c, p, x, k, y = attribute(svg, cycles_of.get(block))
+        total, attributed, c, p, x, k, y = attribute(svg, cycles_of.get(block), scale)
         tot["samples"] += total
         tot["attributed"] += attributed
         comp.update(c)
@@ -209,15 +210,15 @@ def main():
     ap.add_argument("--matrix-top", type=int, default=12)
     args = ap.parse_args()
 
-    blocks, gas, tot, comp, phase, pc, ck, pck = load_dir(args.dir)
     scale = args.scale
+    blocks, gas, tot, comp, phase, pc, ck, pck = load_dir(args.dir, scale)
     total = tot["samples"]
     print(f"{args.dir}: {blocks} blocks, {gas/1e6:.1f} Mgas, {total*scale/1e6:.1f} Mcycles "
           f"({total*scale/gas:.2f} cycles/gas), {100*tot['attributed']/total:.1f}% of cycles attributed "
           f"(delegation rows spread over their call sites)")
     base = None
     if args.baseline:
-        bblocks, bgas, btot, bcomp, bphase, bpc, bck, _ = load_dir(args.baseline)
+        bblocks, bgas, btot, bcomp, bphase, bpc, bck, _ = load_dir(args.baseline, scale)
         print(f"baseline {args.baseline}: {bblocks} blocks, {bgas/1e6:.1f} Mgas, {btot['samples']*scale/1e6:.1f} Mcycles "
               f"({btot['samples']*scale/bgas:.2f} cycles/gas)")
         base = (bcomp, bphase)

@@ -132,6 +132,12 @@ impl U256 {
         self.0 == ruint::aliases::U256::ONE
     }
 
+    /// `self == 2^256 - 1`
+    #[inline(always)]
+    pub fn is_max(&self) -> bool {
+        self.0 == ruint::aliases::U256::MAX
+    }
+
     #[inline(always)]
     pub fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
         let (t, of) = self.0.overflowing_add(rhs.0);
@@ -186,6 +192,15 @@ impl U256 {
         high.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
     }
 
+    /// `self = (self * rhs) mod 2^256`; returns whether the full product did not fit
+    /// (the high half is non-zero).
+    #[inline(always)]
+    pub fn mul_low_assign_overflows(&mut self, rhs: &Self) -> bool {
+        let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
+        self.as_limbs_mut().copy_from_slice(&t.as_limbs()[0..4]);
+        t.as_limbs()[4..8].iter().any(|limb| *limb != 0)
+    }
+
     #[inline(always)]
     pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
         let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
@@ -203,6 +218,18 @@ impl U256 {
     ) -> bool {
         let (t, of1) = self.0.overflowing_add(rhs.0);
         let (t, of2) = t.overflowing_add(ruint::aliases::U256::from(carry as u64));
+        self.0 = t;
+        of1 | of2
+    }
+
+    #[inline(always)]
+    pub fn overflowing_sub_assign_with_borrow_propagation(
+        &mut self,
+        rhs: &Self,
+        borrow: bool,
+    ) -> bool {
+        let (t, of1) = self.0.overflowing_sub(rhs.0);
+        let (t, of2) = t.overflowing_sub(ruint::aliases::U256::from(borrow as u64));
         self.0 = t;
         of1 | of2
     }

@@ -37,8 +37,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_step_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            S::SystemFunctionsExt::u256_div_rem(op1, op2, system.io.oracle());
-            Clone::clone_from(op2, &*op1);
+            S::SystemFunctionsExt::u256_div_nonzero_divisor(op1, op2, system.io.oracle());
         }
         Ok(())
     }
@@ -51,7 +50,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_step_gas_and_native(gas_constants::LOW, SDIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         i256_div(op1, op2, |a, b| {
-            S::SystemFunctionsExt::u256_div_rem(a, b, system.io.oracle())
+            S::SystemFunctionsExt::u256_div_nonzero_divisor(a, b, system.io.oracle())
         });
         Ok(())
     }
@@ -64,7 +63,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_step_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
-            S::SystemFunctionsExt::u256_div_rem(op1, op2, system.io.oracle());
+            S::SystemFunctionsExt::u256_rem_nonzero_divisor(op1, op2, system.io.oracle());
         } else {
             U256::write_zero(op2);
         }
@@ -80,7 +79,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             i256_mod(op1, op2, |a, b| {
-                S::SystemFunctionsExt::u256_div_rem(a, b, system.io.oracle())
+                S::SystemFunctionsExt::u256_rem_nonzero_divisor(a, b, system.io.oracle())
             })
         };
         Ok(())
@@ -96,21 +95,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if op3.is_zero() {
             return Ok(());
         }
-        if *op1 >= *op3 {
-            let mut m = op3.clone();
-            S::SystemFunctionsExt::u256_div_rem(op1, &mut m, system.io.oracle());
-            *op1 = m;
-        }
-        if *op2 >= *op3 {
-            let mut m = op3.clone();
-            S::SystemFunctionsExt::u256_div_rem(op2, &mut m, system.io.oracle());
-            *op2 = m;
-        }
-        let carry = op1.overflowing_add_assign(op2);
-        if carry || *op1 >= *op3 {
-            op1.overflowing_sub_assign(op3);
-        }
-        core::mem::swap(op1, op3);
+        // the modulus slot (op3) receives the result; op1 is scratch
+        S::SystemFunctionsExt::u256_addmod_nonzero_modulus(op1, op2, op3, system.io.oracle());
         Ok(())
     }
 
@@ -129,23 +115,16 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             U256::write_zero(op3);
             return Ok(());
         }
-        // Compute a * b -> (product_lo, product_hi)
-        let mut product_lo = U256::from_limbs(*op1.as_limbs());
-        let mut product_hi = U256::from_limbs(*op1.as_limbs());
-        product_lo.widening_mul_assign_into(&mut product_hi, op2);
         // Fast path: modulus = 2^256 - 1. Skip the oracle-backed wide div_rem.
-        if op3.as_limbs() == &[u64::MAX; 4] {
-            reduce_mod_max(&mut product_lo, &product_hi, op3);
+        if op3.is_max() {
+            // the popped slot of op1 holds the low half of the product in place
+            let mut product_hi = op1.clone();
+            op1.widening_mul_assign_into(&mut product_hi, op2);
+            reduce_mod_max(op1, &product_hi, op3);
             return Ok(());
         }
-        // Wide div_rem: divisor (op3) receives remainder
-        S::SystemFunctionsExt::u256_wide_div_rem(
-            &mut product_lo,
-            &mut product_hi,
-            op3,
-            system.io.oracle(),
-        );
-        // op3 now holds the remainder = mulmod result
+        // the modulus slot (op3) receives the result; op1 is scratch
+        S::SystemFunctionsExt::u256_mulmod_nonzero_modulus(op1, op2, op3, system.io.oracle());
         Ok(())
     }
 
@@ -200,10 +179,11 @@ pub(crate) fn reduce_mod_max(product_lo: &mut U256, product_hi: &U256, out: &mut
         // when carry was set the wrapped value is `<= 2^256 - 2`.
         product_lo.overflowing_add_assign(&U256::ONE);
     }
-    if product_lo.as_limbs() == &[u64::MAX; 4] {
+    if product_lo.is_max() {
         U256::write_zero(out);
     } else {
-        core::mem::swap(out, product_lo);
+        // SAFETY: `out` is a distinct, aligned, initialized U256
+        unsafe { U256::write_into_ptr_unchecked(out as *mut U256, product_lo) };
     }
 }
 
