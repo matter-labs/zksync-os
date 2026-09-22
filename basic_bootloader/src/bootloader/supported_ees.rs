@@ -1,5 +1,6 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::{EESubsystemError, InterfaceError};
+use zk_ee::system::CalleePreCheck;
 use zk_ee::{
     common_structs::{system_hooks::HooksStorage, CalleeAccountProperties},
     execution_environment_type::ExecutionEnvironmentType,
@@ -79,7 +80,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         call_request: &mut ExternalCallRequest<S>,
         callstack_depth: usize,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<bool, EESubsystemError>
+    ) -> Result<CalleePreCheck, EESubsystemError>
     where
         S::IO: IOSubsystemExt,
     {

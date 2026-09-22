@@ -131,8 +131,8 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             &call_request,
         );
 
-        // Pre-checks before even reading the callee, shouldn't warm up the callee
-        // on failure
+        // Pre-checks and callee-independent charges before even reading the callee:
+        // a failure here must not warm up (or observe) the callee
         match SupportedEEVMState::before_reading_callee(
             // We use EVM as default
             if caller_ee_type == ExecutionEnvironmentType::NoEE {
@@ -145,15 +145,21 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             self.callstack_height,
             tracer,
         ) {
-            Ok(success) => {
-                if !success {
-                    return Ok(CompletedExecution {
-                        resources_returned: call_request.available_resources,
-                        result: CallResult::Failed {
-                            return_values: ReturnValues::empty(),
-                        },
-                    });
-                }
+            Ok(CalleePreCheck::Proceed) => {}
+            Ok(CalleePreCheck::Failed) => {
+                return Ok(CompletedExecution {
+                    resources_returned: call_request.available_resources,
+                    result: CallResult::Failed {
+                        return_values: ReturnValues::empty(),
+                    },
+                });
+            }
+            Ok(CalleePreCheck::OutOfErgs) => {
+                // Failure in the **caller** frame context
+                return Ok(CompletedExecution {
+                    resources_returned: call_request.available_resources,
+                    result: CallResult::PreparationStepFailed,
+                });
             }
             Err(e) => return Err(wrap_error!(e)),
         }

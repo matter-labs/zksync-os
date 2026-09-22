@@ -326,9 +326,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             let is_callcode = call_request.is_callcode();
             let is_callcode_or_delegate = is_callcode || is_delegate;
 
-            // Positive value cost and stipend
+            // Stipend for a positive value; its cost was charged in `before_reading_callee`
             stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
-                resources_available_in_caller_frame.charge_legacy_gas(CALLVALUE)?;
                 Some(<S::Resources as Resources>::Ergs::from_legacy_gas_saturating(CALL_STIPEND))
             } else {
                 None
@@ -376,7 +375,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         call_request: &mut ExternalCallRequest<S>,
         callstack_depth: usize,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<bool, Self::SubsystemError>
+    ) -> Result<zk_ee::system::CalleePreCheck, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -391,11 +390,30 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         if call_request.modifier == CallModifier::Constructor {
             if let Some(error) = constructor_pre_checks(system, call_request, callstack_depth)? {
                 emit_pre_frame_call_error(call_request, callstack_depth, tracer, &error);
-                return Ok(false);
+                return Ok(zk_ee::system::CalleePreCheck::Failed);
+            }
+        } else if callstack_depth > 0
+            && !call_request.is_delegate()
+            && !call_request.nominal_token_value.is_zero()
+        {
+            // The value transfer cost is paid before the callee is loaded (as revm does,
+            // and unlike the cold/new-account costs, which need the callee): a call that
+            // can not afford it fails without warming the callee up, and the callee is
+            // then absent from the block's witness. The entry frame (depth 0) pays it as
+            // part of the intrinsic gas instead.
+            match call_request
+                .available_resources
+                .charge_legacy_gas(CALLVALUE)
+            {
+                Ok(()) => {}
+                Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                    return Ok(zk_ee::system::CalleePreCheck::OutOfErgs);
+                }
+                Err(e) => return Err(e.into()),
             }
         }
 
-        Ok(true)
+        Ok(zk_ee::system::CalleePreCheck::Proceed)
     }
 
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(

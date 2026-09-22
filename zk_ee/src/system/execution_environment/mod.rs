@@ -52,14 +52,17 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
     ///
-    /// Pre-checks to be performed before reading and warming up the callee.
+    /// Pre-checks to be performed before reading and warming up the callee, and the
+    /// charges for the call that do not depend on the callee. Failing here leaves the
+    /// callee untouched: on Ethereum such calls do not load the callee, so a witness
+    /// need not contain it.
     ///
     fn before_reading_callee<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         call_request: &mut ExternalCallRequest<S>,
         callstack_depth: usize,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<bool, Self::SubsystemError>
+    ) -> Result<CalleePreCheck, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt;
 

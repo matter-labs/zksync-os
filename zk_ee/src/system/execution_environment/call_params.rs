@@ -124,3 +124,18 @@ pub struct TransferInfo {
     pub value: U256,
     pub target: B160,
 }
+
+/// Outcome of the checks an execution environment runs before the callee of a
+/// call is read (and thereby warmed up and observed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CalleePreCheck {
+    /// Read the callee and continue with the call
+    Proceed,
+    /// The call fails in the caller's frame without touching the callee, and the
+    /// caller keeps its resources (e.g. CREATE at the depth limit, with an
+    /// insufficient balance or a nonce overflow)
+    Failed,
+    /// The caller's frame ran out of ergs while paying the part of the call cost
+    /// that does not depend on the callee, which is therefore never touched
+    OutOfErgs,
+}
