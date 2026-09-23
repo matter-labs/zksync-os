@@ -54,28 +54,6 @@ impl KeyLikeWithBounds for WarmStorageKey {
     }
 }
 
-/// A map key assembled from an address and a slot key. Callers pass the two parts by
-/// reference; the composite is only built where the map needs an owned key.
-pub trait ComposedStorageKey: Ord + Clone {
-    type Address: Copy;
-    type Key: Copy;
-
-    fn compose(address: &Self::Address, key: &Self::Key) -> Self;
-}
-
-impl ComposedStorageKey for WarmStorageKey {
-    type Address = B160;
-    type Key = Bytes32;
-
-    #[inline(always)]
-    fn compose(address: &B160, key: &Bytes32) -> Self {
-        Self {
-            address: *address,
-            key: *key,
-        }
-    }
-}
-
 impl From<WarmStorageKey> for StorageAddress<crate::types_config::EthereumIOTypesConfig> {
     fn from(value: WarmStorageKey) -> Self {
         Self {

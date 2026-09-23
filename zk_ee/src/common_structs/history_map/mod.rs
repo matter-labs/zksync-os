@@ -1,15 +1,16 @@
 //! Contains a key-value map that allows reverting items state.
 
 pub(crate) mod element_with_history;
+pub mod index;
 mod record_pool;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::utils::ptr_arena::PtrArena;
 use crate::{system::errors::internal::InternalError, utils::paged_stack::PagedStack};
-use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
 use element_with_history::ElementWithHistory;
+pub use index::{BTreeIndex, DenseIndex, ElementIndex, HashIndex};
 pub(crate) use record_pool::HistoryRecordPool;
 
 /// Number of `ElementWithHistory` slots per arena page. Sized so a page fits
@@ -53,24 +54,59 @@ const PENDING_PAGE: usize = 64;
 /// Stable pointer to an `ElementWithHistory` owned by the arena.
 type ElementPtr<K, V, A, KP> = NonNull<ElementWithHistory<K, V, A, KP>>;
 
+/// Opaque handle of an element of a [`HistoryMap`]: the map's own stable
+/// pointer to it. It is what the map's index stores, and users may keep
+/// handles to link elements among themselves (see [`HistoryMap::item_mut`]).
+/// A handle is valid until the map is cleared or dropped.
+pub struct ElementHandle<K, V, A: Allocator + Clone, KP = ()>(ElementPtr<K, V, A, KP>);
+
+impl<K, V, A: Allocator + Clone, KP> Clone for ElementHandle<K, V, A, KP> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<K, V, A: Allocator + Clone, KP> Copy for ElementHandle<K, V, A, KP> {}
+
+impl<K, V, A: Allocator + Clone, KP> PartialEq for ElementHandle<K, V, A, KP> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<K, V, A: Allocator + Clone, KP> Eq for ElementHandle<K, V, A, KP> {}
+
+impl<K, V, A: Allocator + Clone, KP> Debug for ElementHandle<K, V, A, KP> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "ElementHandle({:?})", self.0)
+    }
+}
+
+/// The index a [`HistoryMap`] uses unless told otherwise: an ordered tree
+pub type DefaultIndex<K, V, A, KP> = BTreeIndex<K, ElementHandle<K, V, A, KP>, A>;
+
 /// A key-value map with history. State can be reverted to snapshots.
 /// The snapshots are created using `Self::snapshot(...)` method.
 ///
 /// Internally, `ElementWithHistory` values live in an arena (a chain of
-/// fixed-size pages) so their addresses are stable. The BTreeMap and the
+/// fixed-size pages) so their addresses are stable. The index and the
 /// pending-updates list store pointers into that arena. This bypasses
-/// `BTreeMap::get(&K)` lookups on rollback/commit/iter-pending paths and
+/// key lookups on rollback/commit/iter-pending paths and
 /// amortizes the per-element allocation cost over arena pages.
+///
+/// The index `I` is how keys are searched (see [`index`]): an ordered tree by
+/// default, which also serves range walks; a direct table or a hash table for
+/// integer keys, which are faster but unordered.
 ///
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
-pub struct HistoryMap<K, V, A: Allocator + Clone, KP = ()> {
+pub struct HistoryMap<K, V, A: Allocator + Clone, KP = (), I = DefaultIndex<K, V, A, KP>> {
     // Drop order (fields drop top-to-bottom): pointer holders before the storage
-    // they point into — `btree`/`state` hold pointers into `elements_arena`,
+    // they point into — `index`/`state` hold pointers into `elements_arena`,
     // whose elements hold record links into `records_memory_pool`. Defensive
     // today (no `Drop` derefs these links), but sound by construction.
-    /// Map from key to pointer into the elements arena.
-    btree: BTreeMap<K, ElementPtr<K, V, A, KP>, A>,
+    /// Map from key to the handle of the element
+    index: I,
     state: HistoryMapState<K, V, A, KP>,
     /// Stable-address storage for `ElementWithHistory` values.
     elements_arena: ElementArena<K, V, A, KP>,
@@ -93,9 +129,45 @@ where
     K: Ord + Clone,
     A: Allocator + Clone,
 {
+    /// A map with the default, ordered index
     pub fn new(alloc: A) -> Self {
+        Self::with_index(BTreeIndex::new_in(alloc.clone()), alloc)
+    }
+
+    /// Applies callback `do_fn` to elements in range
+    pub fn for_each_range<F>(
+        &mut self,
+        range: (Bound<&K>, Bound<&K>),
+        mut do_fn: F,
+    ) -> Result<(), InternalError>
+    where
+        F: FnMut(HistoryMapItemRefMut<K, V, A, KP>) -> Result<(), InternalError>,
+    {
+        for (_k, handle) in self.index.tree.range(range) {
+            do_fn(HistoryMapItemRefMut {
+                // Pointer is valid for the lifetime of `&mut self`.
+                element: handle.0,
+                cache_state: &mut self.state,
+                records_memory_pool: &mut self.records_memory_pool,
+                _element_borrow: PhantomData,
+            })?
+        }
+
+        Ok(())
+    }
+}
+
+impl<K, V, A, KP, I> HistoryMap<K, V, A, KP, I>
+where
+    K: Clone,
+    A: Allocator + Clone,
+    I: ElementIndex<K, ElementHandle<K, V, A, KP>>,
+{
+    /// A map that searches its keys with `index`, which must be empty
+    pub fn with_index(index: I, alloc: A) -> Self {
+        debug_assert!(index.is_empty());
         Self {
-            btree: BTreeMap::new_in(alloc.clone()),
+            index,
             state: HistoryMapState {
                 alloc: alloc.clone(),
                 // Initial values will be associated with snapshot 0 (so they can't be reverted)
@@ -108,9 +180,10 @@ where
         }
     }
 
-    /// Clears the map while reusing history record allocations.
+    /// Clears the map while reusing history record allocations. Every handle
+    /// handed out before is invalid afterwards.
     pub fn clear(&mut self) {
-        for (_, ptr) in self.btree.iter_mut() {
+        for mut ptr in self.index.iter().map(|handle| handle.0) {
             // Safety: each pointer was produced by `elements_arena.push` and the
             // arena is still alive here. No pending-list user can race with this
             // (we hold `&mut self`).
@@ -119,11 +192,11 @@ where
                 .reuse_memory(element.head, element.initial);
         }
         // Drop the containers that hold arena-derived pointers *before* the
-        // arena itself, so the invariant "every pointer in `btree` and in
+        // arena itself, so the invariant "every pointer in `index` and in
         // `pending_updated_elements` is valid" holds at every observable
         // point. Defends against any future panic path between the two
         // drops.
-        self.btree.clear();
+        self.index.clear();
         self.state.pending_updated_elements.clear();
         // Now safe to release the backing arena pages along with their
         // contained `ElementWithHistory` values (and their owned keys).
@@ -132,31 +205,71 @@ where
         self.state.frozen_snapshot_id = CacheSnapshotId(0);
     }
 
+    /// Number of elements
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
     /// Get history of an element by key
     pub fn get(&self, key: &K) -> Option<HistoryMapItemRef<'_, K, V, A, KP>> {
-        self.btree.get(key).map(|ptr| HistoryMapItemRef {
+        self.index.get(key).map(|handle| HistoryMapItemRef {
             // Safety: pointer is valid for the lifetime of `&self`.
-            history: unsafe { ptr.as_ref() },
+            history: unsafe { handle.0.as_ref() },
         })
     }
 
     /// Get history of an element by key, mutable
     pub fn get_mut(&mut self, key: &K) -> Option<HistoryMapItemRefMut<'_, K, V, A, KP>> {
-        let ptr = *self.btree.get(key)?;
+        let handle = self.index.get(key)?;
         Some(HistoryMapItemRefMut {
             // Pointer is valid for the lifetime of `&mut self`. We carry the raw
-            // arena pointer rather than re-entering the BTreeMap so that
+            // arena pointer rather than re-entering the index so that
             // `cache_state` and `records_memory_pool` can be borrowed mutably
             // alongside.
-            element: ptr,
+            element: handle.0,
             cache_state: &mut self.state,
             records_memory_pool: &mut self.records_memory_pool,
             _element_borrow: PhantomData,
         })
     }
 
+    /// The element a handle refers to.
+    ///
+    /// # Safety
+    /// The handle must have been produced by this map, which must not have been
+    /// cleared since.
+    pub unsafe fn item(
+        &self,
+        handle: ElementHandle<K, V, A, KP>,
+    ) -> HistoryMapItemRef<'_, K, V, A, KP> {
+        HistoryMapItemRef {
+            history: unsafe { handle.0.as_ref() },
+        }
+    }
+
+    /// The element a handle refers to, mutable.
+    ///
+    /// # Safety
+    /// The handle must have been produced by this map, which must not have been
+    /// cleared since.
+    pub unsafe fn item_mut(
+        &mut self,
+        handle: ElementHandle<K, V, A, KP>,
+    ) -> HistoryMapItemRefMut<'_, K, V, A, KP> {
+        HistoryMapItemRefMut {
+            element: handle.0,
+            cache_state: &mut self.state,
+            records_memory_pool: &mut self.records_memory_pool,
+            _element_borrow: PhantomData,
+        }
+    }
+
     /// Get history of an element by key or use callback to insert initial value
-    pub fn get_or_insert<E>(
+    pub fn get_or_insert<E: From<InternalError>>(
         &mut self,
         key: &K,
         spawn_v: impl FnOnce() -> Result<(V, KP), E>,
@@ -167,24 +280,24 @@ where
     /// Get history of an element by key, inserting it first if it is missing: one search of
     /// the map on a hit. `check_existing` runs on a found element before it is returned and
     /// may refuse the access; `spawn_v` creates a missing one. Both get the `context`, which
-    /// lets them share mutable state.
-    pub fn get_or_insert_checked<C, E>(
+    /// lets them share mutable state. Fails if the index has no room for a new element.
+    pub fn get_or_insert_checked<C, E: From<InternalError>>(
         &mut self,
         key: &K,
         context: &mut C,
         check_existing: impl FnOnce(&mut C, &HistoryMapItemRef<'_, K, V, A, KP>) -> Result<(), E>,
         spawn_v: impl FnOnce(&mut C) -> Result<(V, KP), E>,
     ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
-        let ptr = match self.btree.get(key).copied() {
-            Some(ptr) => {
+        let ptr = match self.index.get(key) {
+            Some(handle) => {
                 check_existing(
                     context,
                     &HistoryMapItemRef {
                         // Safety: pointer is valid for the lifetime of `&self`.
-                        history: unsafe { ptr.as_ref() },
+                        history: unsafe { handle.0.as_ref() },
                     },
                 )?;
-                ptr
+                handle.0
             }
             None => {
                 let (v, properties) = spawn_v(context)?;
@@ -195,50 +308,9 @@ where
                     &mut self.records_memory_pool,
                 );
                 let ptr = self.elements_arena.push(element);
-                self.btree.insert(key.clone(), ptr);
-                ptr
-            }
-        };
-
-        Ok(HistoryMapItemRefMut {
-            // Pointer is valid for the lifetime of `&mut self`.
-            element: ptr,
-            cache_state: &mut self.state,
-            records_memory_pool: &mut self.records_memory_pool,
-            _element_borrow: PhantomData,
-        })
-    }
-
-    /// [`Self::get_or_insert_checked`] with the key passed by value: on an insert the
-    /// key moves into the map, so it is cloned once (for the element) instead of twice.
-    pub fn get_or_insert_checked_owned<C, E>(
-        &mut self,
-        key: K,
-        context: &mut C,
-        check_existing: impl FnOnce(&mut C, &HistoryMapItemRef<'_, K, V, A, KP>) -> Result<(), E>,
-        spawn_v: impl FnOnce(&mut C) -> Result<(V, KP), E>,
-    ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
-        let ptr = match self.btree.get(&key).copied() {
-            Some(ptr) => {
-                check_existing(
-                    context,
-                    &HistoryMapItemRef {
-                        // Safety: pointer is valid for the lifetime of `&self`.
-                        history: unsafe { ptr.as_ref() },
-                    },
-                )?;
-                ptr
-            }
-            None => {
-                let (v, properties) = spawn_v(context)?;
-                let element = ElementWithHistory::new(
-                    key.clone(),
-                    properties,
-                    v,
-                    &mut self.records_memory_pool,
-                );
-                let ptr = self.elements_arena.push(element);
-                self.btree.insert(key, ptr);
+                // An element the index refuses stays in the arena, unreachable,
+                // until the map is cleared: the failure is fatal for the caller.
+                self.index.insert(key.clone(), ElementHandle(ptr))?;
                 ptr
             }
         };
@@ -323,46 +395,24 @@ where
     where
         F: FnMut(&V, &V, &K) -> Result<(), E>,
     {
-        for (k, ptr) in &self.btree {
+        for handle in self.index.iter() {
             // Safety: pointer is valid for the lifetime of `&self`.
-            let element = unsafe { ptr.as_ref() };
+            let element = unsafe { handle.0.as_ref() };
             if let Some((initial, last)) = element.get_initial_and_last_values() {
-                do_fn(initial, last, k)?;
+                do_fn(initial, last, &element.key)?;
             }
         }
 
         Ok(())
     }
 
-    /// Applies callback `do_fn` to elements in range
-    pub fn for_each_range<F>(
-        &mut self,
-        range: (Bound<&K>, Bound<&K>),
-        mut do_fn: F,
-    ) -> Result<(), InternalError>
-    where
-        F: FnMut(HistoryMapItemRefMut<K, V, A, KP>) -> Result<(), InternalError>,
-    {
-        for (_k, ptr) in self.btree.range_mut(range) {
-            do_fn(HistoryMapItemRefMut {
-                // Pointer is valid for the lifetime of `&mut self`.
-                element: *ptr,
-                cache_state: &mut self.state,
-                records_memory_pool: &mut self.records_memory_pool,
-                _element_borrow: PhantomData,
-            })?
-        }
-
-        Ok(())
-    }
-
-    /// Iterate over all elements in map
+    /// Iterate over all elements in map, in the order of the index
     pub fn iter(
         &'_ self,
     ) -> impl ExactSizeIterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> + Clone {
-        self.btree.values().map(|ptr| HistoryMapItemRef {
+        self.index.iter().map(|handle| HistoryMapItemRef {
             // Safety: pointer is valid for the lifetime of `&self`.
-            history: unsafe { ptr.as_ref() },
+            history: unsafe { handle.0.as_ref() },
         })
     }
 
@@ -442,7 +492,7 @@ where
 
 /// External mutable reference to element's history
 pub struct HistoryMapItemRefMut<'a, K, V, A: Allocator + Clone, KP = ()> {
-    /// Canonical arena pointer to the element — the *same* pointer the BTreeMap
+    /// Canonical arena pointer to the element — the *same* pointer the index
     /// stores. We keep the raw pointer (rather than a `&mut`) so that the
     /// pointer pushed into the pending-updates list shares the arena's
     /// provenance: a fresh `&mut`-derived pointer would be invalidated before
@@ -459,6 +509,15 @@ where
     V: Clone,
     A: Allocator + Clone,
 {
+    /// The map's handle of this element, to find it again without a key search
+    pub fn handle(&self) -> ElementHandle<K, V, A, KP> {
+        ElementHandle(self.element)
+    }
+
+    pub fn key(&self) -> &K {
+        unsafe { &self.element.as_ref().key }
+    }
+
     pub fn current(&self) -> &V {
         // Safety: `element` is a valid arena pointer borrowed for `'a`; each
         // access goes through a transient borrow tied to `&self`.
@@ -525,7 +584,7 @@ where
 
             unsafe { self.element.as_mut() }.add_new_record(new);
 
-            // Push the *canonical* arena pointer (the one the BTreeMap holds):
+            // Push the *canonical* arena pointer (the one the index holds):
             // it shares the arena's provenance, so it stays valid for the writes
             // performed later by `commit`/`rollback`. Valid until
             // `HistoryMap::clear`, which also resets the pending list.
@@ -543,12 +602,15 @@ mod tests {
     use std::alloc::Global;
 
     use super::HistoryMap;
+    use crate::system::errors::internal::InternalError;
 
     #[test]
     fn miri_retrieve_single_elem() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        let v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         assert_eq!(1, *v.current());
     }
@@ -559,7 +621,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -579,7 +643,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -603,7 +669,7 @@ mod tests {
 
         let snapshot = map.snapshot();
         let mut v = map
-            .get_or_insert::<()>(&1, || Ok(((1, false), ())))
+            .get_or_insert::<InternalError>(&1, || Ok(((1, false), ())))
             .unwrap();
         v.update::<_, ()>(|x| {
             x.0 = 2;
@@ -645,7 +711,8 @@ mod tests {
 
         map.snapshot();
 
-        map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        map.get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         map.commit();
 
@@ -661,7 +728,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -687,7 +756,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -697,7 +768,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((4, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 3;
@@ -723,7 +796,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -733,7 +808,9 @@ mod tests {
 
         let ss = map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((4, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 3;
@@ -761,7 +838,9 @@ mod tests {
 
         map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
 
         v.update::<_, ()>(|x| {
             *x = 2;
@@ -772,7 +851,9 @@ mod tests {
         // We'll rollback to this point.
         let ss = map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((4, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((4, ())))
+            .unwrap();
 
         // This snapshot will be rolled back.
         v.update::<_, ()>(|x| {
@@ -786,7 +867,9 @@ mod tests {
 
         map.rollback(ss).expect("Correct snapshot");
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((5, ())))
+            .unwrap();
 
         // This will create a new snapshot and will reuse the one that rolled back.
         v.update::<_, ()>(|x| {
@@ -812,7 +895,9 @@ mod tests {
         map.snapshot();
 
         // Create one modified entry.
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
         v.update::<_, ()>(|x| {
             *x = 2;
             Ok(())
@@ -841,7 +926,9 @@ mod tests {
         // Keep a pre-clear snapshot handle.
         let pre_clear_snapshot = map.snapshot();
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((1, ())))
+            .unwrap();
         v.update::<_, ()>(|x| {
             *x = 2;
             Ok(())
@@ -854,13 +941,16 @@ mod tests {
         assert!(map.rollback(pre_clear_snapshot).is_err());
 
         // Materialize key after clear with initial value.
-        map.get_or_insert::<()>(&1, || Ok((3, ()))).unwrap();
+        map.get_or_insert::<InternalError>(&1, || Ok((3, ())))
+            .unwrap();
 
         // Take snapshot after clear.
         let post_clear_snapshot = map.snapshot();
         assert_eq!(post_clear_snapshot, super::CacheSnapshotId(1));
 
-        let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
+        let mut v = map
+            .get_or_insert::<InternalError>(&1, || Ok((5, ())))
+            .unwrap();
         v.update::<_, ()>(|x| {
             *x = 4;
             Ok(())
@@ -899,7 +989,8 @@ mod tests {
 
         // Initial values: key k -> k, materialized across many arena pages.
         for k in 0..count {
-            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+            map.get_or_insert::<InternalError>(&k, || Ok((k, ())))
+                .unwrap();
         }
 
         // Snapshot we will roll back to.
@@ -969,7 +1060,6 @@ mod tests {
     #[test]
     fn miri_for_each_range() {
         use super::ELEMENT_PAGE_CAPACITY;
-        use crate::system::errors::internal::InternalError;
         use core::ops::Bound;
 
         // Several pages, partially-filled last page.
@@ -980,7 +1070,8 @@ mod tests {
 
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
         for k in 0..count {
-            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+            map.get_or_insert::<InternalError>(&k, || Ok((k, ())))
+                .unwrap();
         }
         map.snapshot();
 
@@ -1010,7 +1101,8 @@ mod tests {
     fn miri_iter_altered_since_commit() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
         for k in 0..4usize {
-            map.get_or_insert::<()>(&k, || Ok((k, ()))).unwrap();
+            map.get_or_insert::<InternalError>(&k, || Ok((k, ())))
+                .unwrap();
         }
         map.snapshot();
 
@@ -1050,7 +1142,8 @@ mod tests {
         // KP = u32 so the property paths are actually exercised.
         let mut map = HistoryMap::<usize, usize, Global, u32>::new(Global);
         for k in 0..count {
-            map.get_or_insert::<()>(&k, || Ok((k, k as u32))).unwrap();
+            map.get_or_insert::<InternalError>(&k, || Ok((k, k as u32)))
+                .unwrap();
         }
         map.snapshot();
 

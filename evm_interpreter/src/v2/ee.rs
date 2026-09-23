@@ -310,12 +310,18 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         if modifier == CallModifier::Constructor {
             // the code to execute is in the calldata
-            let preprocessing = BytecodePreprocessingData::create_artifacts(
+            let mut preprocessing = BytecodePreprocessingData::create_artifacts(
                 system.get_allocator(),
                 calldata,
                 &mut available_resources,
             )?;
-            self.cold.set_code(calldata, preprocessing);
+            let code = if S::CODE_IS_PADDED {
+                // the interpreter reads past the end of padded code; the calldata is not padded
+                preprocessing.take_padded_copy(system.get_allocator(), calldata)
+            } else {
+                calldata
+            };
+            self.cold.set_code(code, preprocessing);
         } else {
             // a call always runs on loaded code; only a deployment target's code is left unloaded
             let BytecodeData::Available {
@@ -329,12 +335,18 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             match callee_account_properties.code_version {
                 DEFAULT_CODE_VERSION_BYTE => {
                     assert_eq!(artifacts_len, 0);
-                    let preprocessing = BytecodePreprocessingData::create_artifacts(
+                    let mut preprocessing = BytecodePreprocessingData::create_artifacts(
                         system.get_allocator(),
                         bytecode,
                         &mut available_resources,
                     )?;
-                    self.cold.set_code(bytecode, preprocessing);
+                    let code = if S::CODE_IS_PADDED {
+                        // code without cached artifacts comes from an unpadded buffer
+                        preprocessing.take_padded_copy(system.get_allocator(), bytecode)
+                    } else {
+                        bytecode
+                    };
+                    self.cold.set_code(code, preprocessing);
                 }
                 ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
                     let (code, preprocessing) = BytecodePreprocessingData::parse_bytecode(
@@ -418,6 +430,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.cold.is_static = is_static;
         self.cold.is_constructor = is_constructor;
         self.cold.calldata = calldata;
+        // the heap is zeroed and copied by whole 32-byte slots (see `resize_heap`), which
+        // needs the backing memory 32 bytes aligned: the bootloader aligns the root buffer
+        // and every frame's heap starts at a multiple of 32 in it
+        assert!(
+            heap.memory_ptr().addr().is_multiple_of(32),
+            "frame heap must be 32 bytes aligned"
+        );
         self.cold.heap = heap;
         self.cold.call_value = U256::from(nominal_token_value);
 

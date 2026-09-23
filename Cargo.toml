@@ -129,6 +129,9 @@ seq-macro = { version = "0.3.6", default-features = false }
 
 anyhow = "1"
 ruint = { version = "1.20", default-features = false }
+# The hash map behind `std::collections::HashMap`, for the no_std runtime crates;
+# `nightly` = the core `Allocator` API, so the guest allocators work unchanged.
+hashbrown = { version = "0.17", default-features = false, features = ["nightly"] }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
 hex = "0.4.3"

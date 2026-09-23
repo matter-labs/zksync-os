@@ -9,6 +9,7 @@ pub(crate) mod ptr_arena;
 pub mod stack_linked_list;
 pub mod type_assert;
 pub mod usize_rw;
+pub mod word_hasher;
 pub mod write_bytes;
 
 pub const USIZE_ALIGNMENT: usize = core::mem::align_of::<usize>();

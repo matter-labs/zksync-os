@@ -18,6 +18,7 @@ serde = { workspace = true, default-features = false, features = ["derive"], opt
 
 u256 = { path = "../supporting_crates/u256", default-features = false }
 cfg-if = { workspace = true }
+hashbrown = { workspace = true }
 crypto = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = { workspace = true }

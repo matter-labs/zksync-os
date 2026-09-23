@@ -342,7 +342,12 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(always)]
     pub fn fetch_and_advance(&mut self) -> u8 {
         self.ip = self.ip.wrapping_add(1);
-        if self.ip <= self.code_end {
+        if S::CODE_IS_PADDED {
+            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes, and `ip`
+            // never gets further than 33 bytes past its end (a `STOP` is read there at
+            // the latest, see `CODE_PADDING_BYTES`)
+            unsafe { self.ip.sub(1).read() }
+        } else if self.ip <= self.code_end {
             // SAFETY: in bounds of the code
             unsafe { self.ip.sub(1).read() }
         } else {
@@ -461,9 +466,16 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
     let net_byte_increase = new_msize - current_msize;
     let new_heap_size_words = new_msize as u64 / 32;
     debug_assert_eq!(new_heap_size_words * 32, new_msize as u64);
-    let end_cost = MEMORY
-        .saturating_mul(new_heap_size_words)
-        .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512);
+    // `3 * words + words^2 / 512`, in 32-bit arithmetic while `words^2` fits (heaps below
+    // 2 MiB, i.e. nearly always): the 64-bit products are emulated on the proving target
+    let end_cost = if new_heap_size_words < (1 << 16) {
+        let words = new_heap_size_words as u32;
+        (MEMORY as u32 * words + (words * words) / 512) as u64
+    } else {
+        MEMORY
+            .saturating_mul(new_heap_size_words)
+            .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512)
+    };
     let net_cost_gas = end_cost - *gas_paid_for_heap_growth;
     let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
         HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),

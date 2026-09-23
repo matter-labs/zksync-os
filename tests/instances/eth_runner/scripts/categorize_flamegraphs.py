@@ -39,7 +39,7 @@ DELEGATION_LEAF = re.compile(r"delegation_types::keccak_special5::keccak_f1600")
 # (name, regex) — the innermost matching frame decides the component
 COMPONENTS = [
     ("MPT / state commitment", r"persist_changes|::mpt::|StackMPT|SortedMPTWithInterner|EthereumMPT|trie"),
-    ("storage slot cache", r"generic_pubdata_aware_plain_storage|addressed_plain_storage|AddressedPlainStorage|full_storage_cache|EthereumStorageCache|storage_read|storage_write|storage_touch|StorageCacheModel"),
+    ("storage slot cache", r"generic_pubdata_aware_plain_storage|full_storage_cache|interner|Interner|EthereumStorageCache|storage_read|storage_write|storage_touch|StorageCacheModel"),
     ("account cache", r"account_cache|EthereumAccountCache|read_account_properties|touch_account|account_properties|increment_nonce|nominal_token|mark_for_deconstruction|deploy_code"),
     ("bytecode / preimage cache", r"preimage|get_executable_bytecode|analyze_into|jumpdest|Bytecode"),
     ("secp256k1 (ecrecover)", r"ecrecover|secp256k1"),

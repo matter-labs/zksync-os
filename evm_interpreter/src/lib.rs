@@ -194,6 +194,10 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
 }
 
 pub const STACK_SIZE: usize = 1024;
+/// Zero bytes a padded code buffer carries after the code: 32 for the immediate of a
+/// `PUSH32` at the last byte, one for the `STOP` fetched after it (rounded up to whole
+/// words). See `EthereumLikeTypes::CODE_IS_PADDED`.
+pub const CODE_PADDING_BYTES: usize = 40;
 pub const MAX_CODE_SIZE: usize = 0x6000;
 pub const MAX_INITCODE_SIZE: usize = MAX_CODE_SIZE * 2;
 pub const BYTECODE_ALIGNMENT: usize = core::mem::size_of::<u64>();
@@ -204,6 +208,9 @@ pub struct BytecodePreprocessingData<'a, A: Allocator> {
     /// Either a reference to a part of the decommitted bytecode,
     /// or an owned vec created on deployment.
     pub jumpdest_bitmap: either::Either<BitMap<'a>, BitMapOwned<A>>,
+    /// A zero-padded copy of code that did not come from a padded buffer (init code, code
+    /// without cached artifacts); the frame's code slice points into it
+    pub owned_code: Option<Vec<u8, A>>,
 }
 
 impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
@@ -215,7 +222,22 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         Self {
             original_bytecode_len: 0,
             jumpdest_bitmap: Either::Left(BitMap::empty()),
+            owned_code: None,
         }
+    }
+
+    /// Copies `code` into an owned buffer with `CODE_PADDING_BYTES` zero bytes after it and
+    /// returns the code slice of the copy. The buffer lives in `self` as long as the frame,
+    /// and does not move when `self` does, so the slice stays valid for the frame's life.
+    pub fn take_padded_copy(&mut self, allocator: A, code: &[u8]) -> &'a [u8] {
+        let mut buffer = Vec::with_capacity_in(code.len() + CODE_PADDING_BYTES, allocator);
+        buffer.extend_from_slice(code);
+        buffer.resize(code.len() + CODE_PADDING_BYTES, 0);
+        // SAFETY: the heap allocation of the buffer outlives the frame (it is dropped with
+        // `self`), and it is never reallocated (nothing is pushed to it again)
+        let slice = unsafe { core::slice::from_raw_parts(buffer.as_ptr(), code.len()) };
+        self.owned_code = Some(buffer);
+        slice
     }
 
     ///
@@ -255,6 +277,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         let preprocessing = Self {
             original_bytecode_len: deployed_len,
             jumpdest_bitmap: Either::Left(BitMap::from_raw(bitmap_slice)),
+            owned_code: None,
         };
         Ok((code, preprocessing))
     }
@@ -302,6 +325,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         Self {
             original_bytecode_len: deployed_code.len(),
             jumpdest_bitmap: Either::Right(bitmap),
+            owned_code: None,
         }
     }
 

@@ -157,6 +157,8 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for EthereumStorageSystemType
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes
     for EthereumStorageSystemTypesWithPostOps<O, L>
 {
+    // the Ethereum preimage cache pads every code buffer
+    const CODE_IS_PADDED: bool = true;
 }
 
 impl<O: IOOracle, L: Logger + Default> BasicSTF for EthereumStorageSystemTypesWithPostOps<O, L> {

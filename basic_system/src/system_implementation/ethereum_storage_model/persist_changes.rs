@@ -4,6 +4,7 @@ use crate::system_implementation::ethereum_storage_model::caches::account_proper
 use crate::system_implementation::ethereum_storage_model::caches::full_storage_cache::EthereumStorageCache;
 use crate::system_implementation::ethereum_storage_model::caches::EMPTY_STRING_KECCAK_HASH;
 use crate::system_implementation::ethereum_storage_model::compare_bytes32_and_mpt_integer;
+use crate::system_implementation::ethereum_storage_model::interner::EthereumKeyInterners;
 use crate::system_implementation::ethereum_storage_model::mpt::{
     BoxInternerCtor, InternerCtor, MPTInternalCapacities, Path, StackMPT, TrieKey,
 };
@@ -11,13 +12,13 @@ use crate::system_implementation::ethereum_storage_model::LeafValue;
 use crate::system_implementation::ethereum_storage_model::{
     EthereumMPT, InterningWordBuffer, PreimagesOracle,
 };
-use alloc::collections::btree_map::Entry;
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
@@ -26,6 +27,7 @@ use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::types_config::EthereumIOTypesConfig;
+use zk_ee::utils::word_hasher::BuildWordHasher;
 use zk_ee::utils::{Bytes32, USIZE_SIZE};
 
 use super::vec_trait::VecLikeCtor;
@@ -263,17 +265,25 @@ impl<'a, A: Allocator + Clone + 'a, IC: InternerCtor<A>> SortedMPTWithInterner<'
 }
 
 impl EthereumStoragePersister {
-    fn cache_slot_trie_key<A: Allocator + Clone>(
-        slot: &Bytes32,
-        cache: &mut BTreeMap<Bytes32, TrieKey, A>,
+    /// The trie key of a slot key, hashed once per distinct slot key: the cache
+    /// is keyed by the interned slot key index, so it is shared by every
+    /// account that uses the same slot key.
+    fn cache_slot_trie_key<A: Allocator>(
+        key_index: u32,
+        slot_keys: &[Bytes32],
+        cache: &mut HashMap<u32, TrieKey, BuildWordHasher, A>,
         hasher: &mut Keccak256,
     ) -> TrieKey {
-        match cache.entry(*slot) {
+        match cache.entry(key_index) {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
+                // the cache may hold little-endian keys; the trie is big-endian
+                let mut slot = slot_keys[key_index as usize];
+                if super::STORAGE_SLOTS_LE {
+                    slot.bytereverse();
+                }
                 hasher.update(slot.as_u8_array_ref());
-                let key = TrieKey::from_hash(&hasher.finalize_reset());
-                *e.insert(key)
+                *e.insert(TrieKey::from_hash(&hasher.finalize_reset()))
             }
         }
     }
@@ -359,6 +369,7 @@ impl EthereumStoragePersister {
         &mut self,
         account_cache: &mut EthereumAccountCache<A, R, SF, N>,
         storage_cache: &EthereumStorageCache<A, SF, N, R, P>,
+        interners: &EthereumKeyInterners<A>,
         initial_state_root: &Bytes32,
         oracle: &mut impl IOOracle,
         logger: &mut impl Logger,
@@ -368,7 +379,16 @@ impl EthereumStoragePersister {
         let _ = logger.write_fmt(format_args!("Beginning MTP updates\n"));
 
         let mut preimage_oracle = OracleProxy(oracle);
-        let mut key_cache = BTreeMap::<Bytes32, TrieKey, A>::new_in(allocator.clone());
+        let slot_keys = interners.slot_keys();
+        let addresses = interners.addresses();
+        // trie keys of the slot keys, by interned index, hashed on first use; sized
+        // for every slot key up front so it never grows
+        let mut key_cache =
+            HashMap::<u32, TrieKey, BuildWordHasher, A>::with_capacity_and_hasher_in(
+                slot_keys.len(),
+                BuildWordHasher,
+                allocator.clone(),
+            );
         let mut hasher = crypto::sha3::Keccak256::new();
 
         let mut reusable_mpt =
@@ -380,32 +400,36 @@ impl EthereumStoragePersister {
         let mut slot_value_encoding_buffer =
             [MaybeUninit::uninit(); LEAF_VALUE_PRE_ENCODING_MAX_LEN];
 
-        // Storage tries: slots are grouped by address (the cache is ordered by address, then by slot),
-        // and every group is sorted by the trie key to walk the trie in a single pass
+        // Storage tries: the cache chains the slots of every account together, so they
+        // are walked account by account, and every group is sorted by the trie key to
+        // walk the trie in a single pass
         // NOTE: allocations can not grow in the proving environment, so we pre-allocate for the
         // worst case: all the accesses belong to a single account
         let mut slot_updates =
             Vec::<SlotUpdate, A>::with_capacity_in(storage_cache.num_accesses(), allocator.clone());
-        let mut accesses = storage_cache.net_accesses_iter().peekable();
 
-        while let Some((first_key, _)) = accesses.peek() {
-            let active_address = first_key.address;
+        for (address_index, active_address) in addresses.iter().enumerate() {
+            let active_address = *active_address;
+            let address_index = address_index as u32;
             slot_updates.clear();
-            while let Some((addr, value)) = accesses.next_if(|(k, _)| k.address == active_address) {
-                if value.initial_value_used {
-                    // the cache may hold little-endian keys and values; the trie is big-endian
-                    let (slot, initial, current) = if super::STORAGE_SLOTS_LE {
-                        let mut slot = addr.key;
-                        slot.bytereverse();
-                        let mut initial = value.initial_value;
+            for (key_index, value) in storage_cache.iter_slots_of_account(address_index) {
+                if value.is_observed {
+                    // the cache may hold little-endian values; the trie is big-endian
+                    let (initial, current) = if super::STORAGE_SLOTS_LE {
+                        let mut initial = value.initial;
                         initial.bytereverse();
-                        let mut current = value.current_value;
+                        let mut current = value.current;
                         current.bytereverse();
-                        (slot, initial, current)
+                        (initial, current)
                     } else {
-                        (addr.key, value.initial_value, value.current_value)
+                        (value.initial, value.current)
                     };
-                    let key = Self::cache_slot_trie_key(&slot, &mut key_cache, &mut hasher);
+                    let key = Self::cache_slot_trie_key(
+                        key_index,
+                        slot_keys,
+                        &mut key_cache,
+                        &mut hasher,
+                    );
                     slot_updates.push(SlotUpdate {
                         key,
                         initial,
@@ -414,8 +438,8 @@ impl EthereumStoragePersister {
                 } else {
                     let _ = logger.write_fmt(format_args!(
                         "Value for address 0x{:040x}, slot {:?} is unobservable\n",
-                        addr.address.as_uint(),
-                        addr.key,
+                        active_address.as_uint(),
+                        slot_keys[key_index as usize],
                     ));
                 }
             }
@@ -432,7 +456,7 @@ impl EthereumStoragePersister {
 
             let mut entry = account_cache
                 .cache
-                .get_mut((&active_address).into())
+                .get_mut(&address_index)
                 .expect("account with storage address must be cached");
             let initial_root = entry.current().value().storage_root;
             debug_assert!(
@@ -508,21 +532,21 @@ impl EthereumStoragePersister {
         let mut accounts_mpt = reusable_mpt.reinit_with_root(initial_state_root.as_u8_array());
 
         let mut account_updates =
-            Vec::with_capacity_in(account_cache.cache.iter().len(), allocator.clone());
+            Vec::with_capacity_in(account_cache.cache.len(), allocator.clone());
         for record in account_cache.cache.iter() {
+            let addr = addresses[*record.key() as usize];
             if record.key_properties().is_value_observed() == false {
                 // whatever it was - it's unobservable, we can just skip it
                 assert_eq!(record.initial().value(), record.current().value());
                 continue;
             }
-            hasher.update(record.key().0.to_be_bytes::<20>());
+            hasher.update(addr.to_be_bytes::<20>());
             let key = TrieKey::from_hash(&hasher.finalize_reset());
-            account_updates.push((key, record));
+            account_updates.push((key, addr, record));
         }
-        account_updates.sort_unstable_by_key(|(key, _)| *key);
+        account_updates.sort_unstable_by_key(|(key, _, _)| *key);
 
-        for (key, record) in account_updates.iter() {
-            let addr = record.key();
+        for (key, addr, record) in account_updates.iter() {
             let key_properties = record.key_properties();
             let initial = record.initial();
             let current = record.current();
@@ -530,12 +554,12 @@ impl EthereumStoragePersister {
             assert!(
                 current_metadata.is_marked_for_deconstruction == false,
                 "Account 0x{:040x} was marked for deconstruction, but it was not completed",
-                addr.0.as_uint()
+                addr.as_uint()
             );
 
             let _ = logger.write_fmt(format_args!(
                 "Updating the state of address 0x{:040x}\n",
-                addr.0.as_uint()
+                addr.as_uint()
             ));
 
             // we need to check that initial value is the one we claimed in cache
@@ -557,7 +581,7 @@ impl EthereumStoragePersister {
 
                 let _ = logger.write_fmt(format_args!(
                     "Will insert new account at address 0x{:040x}\n",
-                    addr.0.as_uint()
+                    addr.as_uint()
                 ));
 
                 let mut current_value = *current;
@@ -569,7 +593,7 @@ impl EthereumStoragePersister {
 
                 let pre_encoded_value =
                     current_value.rlp_encode_for_leaf(&mut account_data_encoding_buffer);
-                result_keeper.account_state_opaque_encoding(&addr.0, pre_encoded_value);
+                result_keeper.account_state_opaque_encoding(&addr, pre_encoded_value);
                 accounts_mpt
                     .set(pre_encoded_value, &mut hasher)
                     .map_err(|_| internal_error!("failed to insert account value into MPT"))?;
@@ -594,7 +618,7 @@ impl EthereumStoragePersister {
                 debug_assert!(current.bytecode_hash.is_zero() == false);
 
                 if initial == current {
-                    result_keeper.account_state_opaque_encoding(&addr.0, existing);
+                    result_keeper.account_state_opaque_encoding(&addr, existing);
                     continue;
                 }
 
@@ -603,7 +627,7 @@ impl EthereumStoragePersister {
                 {
                     let _ = logger.write_fmt(format_args!(
                         "Will delete leaf for address 0x{:040x}\n",
-                        addr.0.as_uint()
+                        addr.as_uint()
                     ));
 
                     accounts_mpt
@@ -612,12 +636,12 @@ impl EthereumStoragePersister {
                 } else {
                     let _ = logger.write_fmt(format_args!(
                         "Will update account state at address 0x{:040x}\n",
-                        addr.0.as_uint()
+                        addr.as_uint()
                     ));
 
                     let pre_encoded_value =
                         current.rlp_encode_for_leaf(&mut account_data_encoding_buffer);
-                    result_keeper.account_state_opaque_encoding(&addr.0, pre_encoded_value);
+                    result_keeper.account_state_opaque_encoding(&addr, pre_encoded_value);
                     accounts_mpt
                         .set(pre_encoded_value, &mut hasher)
                         .map_err(|_| internal_error!("failed to update account value in MPT"))?;

@@ -12,6 +12,7 @@ pub const STORAGE_SLOTS_LE: bool = cfg!(feature = "le_storage_slots");
 
 pub mod caches;
 pub(crate) mod cost_constants;
+pub mod interner;
 mod mpt;
 mod persist_changes;
 mod storage_model;

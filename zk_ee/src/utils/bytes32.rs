@@ -224,6 +224,11 @@ impl Bytes32 {
         &mut self.inner
     }
 
+    /// The machine words of the value, in memory order
+    pub fn as_usize_array_ref(&self) -> &[usize; BYTES32_USIZE_SIZE] {
+        &self.inner
+    }
+
     #[cfg(target_pointer_width = "32")]
     fn as_u32_array_ref(&self) -> &[u32; 8] {
         unsafe { &*(&self.inner as *const usize).cast::<[u32; 8]>() }

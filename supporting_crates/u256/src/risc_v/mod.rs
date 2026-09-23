@@ -578,14 +578,32 @@ impl<'a> BitOrAssign<&'a U256> for U256 {
 }
 
 impl ShrAssign<u32> for U256 {
+    /// One multiplication delegation: the high half of `self * 2^(256 - rhs)` is the shift
     #[inline(always)]
     fn shr_assign(&mut self, rhs: u32) {
-        self.0 >>= rhs;
+        if rhs == 0 {
+            return;
+        }
+        if rhs >= 256 {
+            self.0.write_zero();
+            return;
+        }
+        self.0
+            .mul_high_assign(&delegated_u256::POW2[(256 - rhs) as usize]);
     }
 }
 
 impl ShlAssign<u32> for U256 {
+    /// One multiplication delegation: the low half of `self * 2^rhs` is the shift
+    #[inline(always)]
     fn shl_assign(&mut self, rhs: u32) {
-        self.0 <<= rhs;
+        if rhs == 0 {
+            return;
+        }
+        if rhs >= 256 {
+            self.0.write_zero();
+            return;
+        }
+        let _ = self.0.mul_low_assign(&delegated_u256::POW2[rhs as usize]);
     }
 }

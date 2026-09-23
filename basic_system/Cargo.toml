@@ -10,6 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+hashbrown = { workspace = true }
 zk_ee = { path = "../zk_ee", default-features = false }
 u256 = { path = "../supporting_crates/u256", default-features = false }
 evm_interpreter = { path = "../evm_interpreter"  }
@@ -41,6 +42,8 @@ multiblock-batch = []
 state-diffs-pi = []
 # Ethereum storage model keeps slot keys and values as little-endian U256 bytes (experiment)
 le_storage_slots = []
+# Ethereum storage model searches its slot cache with an ordered tree over the packed u32 keys instead of a hash table (experiment)
+slot_cache_btree_index = []
 
 [dev-dependencies]
 hex = { workspace = true }

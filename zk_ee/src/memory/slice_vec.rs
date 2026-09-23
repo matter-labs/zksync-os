@@ -71,6 +71,36 @@ impl<'a, T> SliceVec<'a, T> {
     }
 }
 
+impl<T> SliceVec<'_, T> {
+    /// Number of elements the backing memory can hold
+    #[inline(always)]
+    pub fn capacity(&self) -> usize {
+        self.memory.len()
+    }
+
+    /// The whole backing memory, initialized up to `len()`
+    #[inline(always)]
+    pub fn memory_mut(&mut self) -> &mut [MaybeUninit<T>] {
+        self.memory
+    }
+
+    /// Start of the backing memory
+    #[inline(always)]
+    pub fn memory_ptr(&self) -> *const T {
+        self.memory.as_ptr().cast::<T>()
+    }
+
+    /// Sets the length.
+    ///
+    /// # Safety
+    /// `new_length <= capacity()` and the elements `..new_length` must be initialized.
+    #[inline(always)]
+    pub unsafe fn set_len(&mut self, new_length: usize) {
+        debug_assert!(new_length <= self.memory.len());
+        self.length = new_length;
+    }
+}
+
 impl<T: Clone> SliceVec<'_, T> {
     /// Resizes the `SliceVec` to the requested length.
     /// Adds copies of `padding` to the end if the size increases.

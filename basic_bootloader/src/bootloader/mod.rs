@@ -107,12 +107,16 @@ where
             &mut system_functions,
         )?;
 
-        let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+        // The heaps are carved out of one buffer at lengths that are multiples of 32, so a
+        // 32 bytes aligned start makes every frame's heap 32 bytes aligned (the interpreter
+        // zeroes and copies whole slots)
+        let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE + 32, system.get_allocator());
+        let heaps_start = heaps.as_ptr().addr().next_multiple_of(32) - heaps.as_ptr().addr();
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
 
         let mut memories = RunnerMemoryBuffers {
-            heaps: &mut heaps,
+            heaps: &mut heaps[heaps_start..heaps_start + MAX_HEAP_BUFFER_SIZE],
             return_data: &mut return_data,
         };
 

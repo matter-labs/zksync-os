@@ -22,7 +22,6 @@
 //! discussion and the regression tests in
 //! `tests/instances/transactions/src/storage_charging.rs`.
 
-pub mod addressed_plain_storage;
 pub mod basic_account_properties;
 pub mod cache_element_properties;
 pub mod cache_element_state;

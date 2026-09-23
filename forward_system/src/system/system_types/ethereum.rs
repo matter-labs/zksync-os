@@ -34,7 +34,10 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypes<O> {
     type Metadata = EthereumBlockMetadata;
 }
 
-impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypes<O> {}
+impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypes<O> {
+    // the Ethereum preimage cache pads every code buffer
+    const CODE_IS_PADDED: bool = true;
+}
 
 impl<O: IOOracle> BasicSTF for EthereumStorageSystemTypes<O> {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<Global, Global>;
@@ -80,7 +83,9 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
     type Metadata = EthereumBlockMetadata;
 }
 
-impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypesWithPostOps<O> {}
+impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypesWithPostOps<O> {
+    const CODE_IS_PADDED: bool = true;
+}
 
 impl<O: IOOracle> BasicSTF for EthereumStorageSystemTypesWithPostOps<O> {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<Global, Global>;

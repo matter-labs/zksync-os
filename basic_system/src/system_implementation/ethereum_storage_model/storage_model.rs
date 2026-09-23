@@ -2,17 +2,18 @@
 //! This module contains Ethereum storage model implementation.
 //!
 
-use crate::system_implementation::caches::addressed_plain_storage::AddressedPlainStorage;
-use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::element_values;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::StorageSnapshotId;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::ethereum_storage_model::caches::account_cache::EthereumAccountCache;
 use crate::system_implementation::ethereum_storage_model::caches::full_storage_cache::EthereumStorageCache;
 use crate::system_implementation::ethereum_storage_model::caches::preimage::BytecodeKeccakPreimagesStorage;
+use crate::system_implementation::ethereum_storage_model::interner::{
+    EthereumKeyInterners, Interned,
+};
 use crate::system_implementation::ethereum_storage_model::persist_changes::EthereumStoragePersister;
 use core::alloc::Allocator;
+use ruint::aliases::{B160, U256};
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
-use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::history_map::NopSnapshotId;
 use zk_ee::common_structs::PreimageType;
@@ -25,7 +26,7 @@ use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
 use zk_ee::system::*;
 use zk_ee::{
-    common_structs::{history_map::CacheSnapshotId, WarmStorageKey},
+    common_structs::{history_map::CacheSnapshotId, WarmStorageKey, WarmStorageValue},
     execution_environment_type::ExecutionEnvironmentType,
     system::{
         errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
@@ -46,7 +47,85 @@ pub struct EthereumStorageModel<
     pub account_cache: EthereumAccountCache<A, R, SF, N>,
     pub storage_cache: EthereumStorageCache<A, SF, N, R, P>,
     pub preimages_cache: BytecodeKeccakPreimagesStorage<R, A>,
+    /// Every address and slot key the block touches gets a dense index here;
+    /// the caches are keyed by those indices
+    pub interners: EthereumKeyInterners<A>,
     pub(crate) allocator: A,
+}
+
+impl<
+        A: Allocator + Clone,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<N>,
+        const N: usize,
+        const PROOF_ENV: bool,
+    > EthereumStorageModel<A, R, P, SF, N, PROOF_ENV>
+{
+    #[inline(always)]
+    fn intern_address<'a>(&mut self, address: &'a B160) -> Result<Interned<'a, B160>, SystemError> {
+        Ok(self.interners.intern_address(address)?)
+    }
+
+    #[inline(always)]
+    fn intern_slot<'a>(
+        &mut self,
+        address: &'a B160,
+        key: &'a Bytes32,
+    ) -> Result<(Interned<'a, B160>, Interned<'a, Bytes32>), SystemError> {
+        Ok((
+            self.interners.intern_address(address)?,
+            self.interners.intern_slot_key(key)?,
+        ))
+    }
+
+    /// Accounts that were changed during execution
+    pub fn account_net_diffs_iter(
+        &self,
+    ) -> impl Iterator<Item = (B160, (u64, U256, Bytes32))> + use<'_, A, R, P, SF, N, PROOF_ENV>
+    {
+        self.account_cache
+            .net_diffs_iter(self.interners.addresses())
+    }
+
+    /// All the accessed storage slots, in the cache's own order. Includes the
+    /// initial reads, so this is what a merkle proof validation uses.
+    pub fn storage_net_accesses_iter(
+        &self,
+    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)>
+           + Clone
+           + use<'_, A, R, P, SF, N, PROOF_ENV> {
+        let addresses = self.interners.addresses();
+        let slot_keys = self.interners.slot_keys();
+        self.storage_cache
+            .iter_slots()
+            .map(move |((address_index, key_index), values)| {
+                (
+                    WarmStorageKey {
+                        address: addresses[address_index as usize],
+                        key: slot_keys[key_index as usize],
+                    },
+                    // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
+                    // not actually 'using' it.
+                    WarmStorageValue {
+                        current_value: values.current,
+                        is_new_storage_slot: values.is_new,
+                        initial_value: values.initial,
+                        initial_value_used: values.is_observed,
+                        ..Default::default()
+                    },
+                )
+            })
+    }
+
+    /// Storage slots that were changed during execution
+    pub fn storage_net_diffs_iter(
+        &self,
+    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + use<'_, A, R, P, SF, N, PROOF_ENV>
+    {
+        self.storage_net_accesses_iter()
+            .filter(|(_, v)| v.current_value != v.initial_value)
+    }
 }
 
 #[derive(Debug)]
@@ -74,9 +153,11 @@ impl<
 
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
         let resources_policy = init_data;
-        let storage_cache = EthereumStorageCache::<A, SF, N, R, P> {
-            slot_values: AddressedPlainStorage::new_from_parts(allocator.clone(), resources_policy),
-        };
+        let storage_cache = EthereumStorageCache::<A, SF, N, R, P>::new_from_parts(
+            allocator.clone(),
+            resources_policy,
+        );
+        let interners = EthereumKeyInterners::new_in(allocator.clone());
 
         let preimages_cache =
             BytecodeKeccakPreimagesStorage::<R, A>::new_from_parts(allocator.clone());
@@ -86,6 +167,7 @@ impl<
             storage_cache,
             preimages_cache,
             account_cache,
+            interners,
             allocator,
         }
     }
@@ -104,6 +186,7 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+        let (address, key) = self.intern_slot(address, key)?;
         self.storage_cache
             .read(ee_type, resources, address, key, oracle)
     }
@@ -117,6 +200,7 @@ impl<
         oracle: &mut impl IOOracle,
         place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
     ) -> Result<(), SystemError> {
+        let (address, key) = self.intern_slot(address, key)?;
         self.storage_cache
             .read_and_place(ee_type, resources, address, key, oracle, place)
     }
@@ -130,6 +214,7 @@ impl<
         oracle: &mut impl IOOracle,
         // TODO: maybe recover is_access_list?
     ) -> Result<(), SystemError> {
+        let (address, key) = self.intern_slot(address, key)?;
         self.storage_cache
             .touch(ee_type, resources, address, key, oracle)
     }
@@ -143,6 +228,7 @@ impl<
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+        let (address, key) = self.intern_slot(address, key)?;
         self.storage_cache
             .write(ee_type, resources, address, key, new_value, oracle)
     }
@@ -196,6 +282,7 @@ impl<
         >,
         SystemError,
     > {
+        let address = self.intern_address(address)?;
         self.account_cache
             .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _, _, _>(
                 ee_type,
@@ -214,6 +301,7 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
+        let address = self.intern_address(address)?;
         self.account_cache
             .touch_account::<PROOF_ENV>(ee_type, resources, address, oracle, false)
     }
@@ -224,6 +312,8 @@ impl<
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, SystemError> {
+        // an address that was never interned can not be in the cache
+        let address = self.interners.address_index(address);
         self.account_cache
             .read_account_balance_assuming_warm(ee_type, resources, address)
     }
@@ -243,6 +333,7 @@ impl<
         ),
         SystemError,
     > {
+        let at_address = self.intern_address(at_address)?;
         self.account_cache.deploy_code::<PROOF_ENV>(
             from_ee,
             resources,
@@ -275,6 +366,7 @@ impl<
         delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
+        let at_address = self.intern_address(at_address)?;
         self.account_cache.set_delegation::<PROOF_ENV>(
             resources,
             at_address,
@@ -295,6 +387,8 @@ impl<
         <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         DeconstructionSubsystemError,
     > {
+        let at_address = self.intern_address(at_address)?;
+        let nominal_token_beneficiary = self.intern_address(nominal_token_beneficiary)?;
         self.account_cache.mark_for_deconstruction::<PROOF_ENV>(
             from_ee,
             resources,
@@ -312,6 +406,7 @@ impl<
         increment_by: u64,
         oracle: &mut impl IOOracle,
     ) -> Result<u64, NonceSubsystemError> {
+        let address = self.intern_address(address)?;
         self.account_cache.increment_nonce::<PROOF_ENV>(
             ee_type,
             resources,
@@ -330,6 +425,8 @@ impl<
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         oracle: &mut impl IOOracle,
     ) -> Result<(), BalanceSubsystemError> {
+        let from = self.intern_address(from)?;
+        let to = self.intern_address(to)?;
         self.account_cache
             .transfer_nominal_token_value::<PROOF_ENV>(from_ee, resources, from, to, amount, oracle)
     }
@@ -349,18 +446,17 @@ impl<
         _fee_payment_in_simulation: bool,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, BalanceSubsystemError>
     {
+        let address = self.intern_address(address)?;
         self.account_cache
             .update_nominal_token_value::<PROOF_ENV>(from_ee, resources, address, update_fn, oracle)
     }
 
     fn get_refund_counter(&'_ self) -> &'_ Self::Resources {
-        self.storage_cache.slot_values.get_refund_counter_impl()
+        self.storage_cache.get_refund_counter_impl()
     }
 
     fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError> {
-        self.storage_cache
-            .slot_values
-            .add_to_refund_counter_impl(refund)
+        self.storage_cache.add_to_refund_counter_impl(refund)
     }
 
     fn persist_caches(
@@ -383,7 +479,7 @@ impl<
     }
 
     type StorageKey<'a>
-        = &'a WarmStorageKey
+        = WarmStorageKey
     where
         Self: 'a;
     type StorageDiff<'a>
@@ -391,34 +487,40 @@ impl<
     where
         Self: 'a;
     fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>> {
-        self.storage_cache.slot_values.cache.get(key).map(|item| {
-            let values = element_values(&item);
-
-            StorageDiff {
+        // a slot whose address or key was never interned is not cached
+        let address_index = self.interners.address_index(&key.address)?;
+        let key_index = self.interners.slot_key_index(&key.key)?;
+        self.storage_cache
+            .get_slot(address_index, key_index)
+            .map(|values| StorageDiff {
                 initial_value: values.initial,
                 current_value: values.current,
                 is_new_storage_slot: values.is_new,
                 initial_value_used: values.is_observed,
-            }
-        })
+            })
     }
 
     fn storage_diffs_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone {
-        self.storage_cache.slot_values.cache.iter().map(|item| {
-            let values = element_values(&item);
-            (
-                item.key(),
-                // TODO: so far we copy, but can try to remove it eventually
-                StorageDiff {
-                    initial_value: values.initial,
-                    current_value: values.current,
-                    is_new_storage_slot: values.is_new,
-                    initial_value_used: values.is_observed,
-                },
-            )
-        })
+        let addresses = self.interners.addresses();
+        let slot_keys = self.interners.slot_keys();
+        self.storage_cache
+            .iter_slots()
+            .map(move |((address_index, key_index), values)| {
+                (
+                    WarmStorageKey {
+                        address: addresses[address_index as usize],
+                        key: slot_keys[key_index as usize],
+                    },
+                    StorageDiff {
+                        initial_value: values.initial,
+                        current_value: values.current,
+                        is_new_storage_slot: values.is_new,
+                        initial_value_used: values.is_observed,
+                    },
+                )
+            })
     }
 
     fn update_commitment(
@@ -435,6 +537,7 @@ impl<
                 .persist_changes::<A, R, P, SF, N>(
                     &mut self.account_cache,
                     &self.storage_cache,
+                    &self.interners,
                     &initial_commitment,
                     oracle,
                     logger,
@@ -487,7 +590,7 @@ impl<
         rollback_handle: Option<&Self::StateSnapshot>,
     ) -> Result<(), InternalError> {
         self.storage_cache
-            .finish_frame(rollback_handle.map(|x| &x.storage))?;
+            .finish_frame_impl(rollback_handle.map(|x| &x.storage))?;
         self.preimages_cache
             .finish_frame(rollback_handle.map(|x| &x.preimages))?;
         self.account_cache

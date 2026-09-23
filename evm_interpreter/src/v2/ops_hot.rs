@@ -3,12 +3,12 @@
 
 use u256::U256;
 use zk_ee::system::evm::EvmError;
-use zk_ee::system::EthereumLikeTypes;
+use zk_ee::system::{EthereumLikeTypes, Resource};
 
 use super::hot::{
     charge_step, read_be_word, spend_gas_and_native, spend_native, write_be_word, Hot,
 };
-use super::ops_cold::resize_heap;
+use super::ops_cold::resize_heap_by_value;
 use super::{cast_to_usize, ColdFrameParts};
 use crate::gas_constants;
 use crate::i256::i256_cmp;
@@ -78,10 +78,10 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             PUSH_NATIVE_COSTS[N],
         )?;
         self.ip = self.ip.wrapping_add(N);
-        let value = if self.ip <= self.code_end {
+        let value = if S::CODE_IS_PADDED || self.ip <= self.code_end {
             let mut acc = 0u64;
             for i in 0..N {
-                // SAFETY: the whole immediate is in the code
+                // SAFETY: the whole immediate is in the code, or in its zero padding
                 acc = (acc << 8) | unsafe { self.ip.sub(N - i).read() } as u64;
             }
             acc
@@ -104,9 +104,10 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let slot = self.stack.push_slot_zeroed()?;
         let dst = slot.cast::<u8>();
         self.ip = self.ip.wrapping_add(N);
-        if self.ip <= self.code_end {
+        if S::CODE_IS_PADDED || self.ip <= self.code_end {
             for i in 0..N {
-                // SAFETY: the whole immediate is in the code, `dst` is a 32-byte slot
+                // SAFETY: the whole immediate is in the code or in its zero padding, `dst`
+                // is a 32-byte slot
                 unsafe { dst.add(N - 1 - i).write(self.ip.sub(N - i).read()) };
             }
         } else {
@@ -423,7 +424,12 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     ) -> InstructionResult {
         // the heap length is a multiple of 32, so this is the same test as after rounding up
         if max_offset > cold.heap.len() {
-            self.outlined(|hot| resize_heap(cold, &mut hot.resources, max_offset))
+            // the resources go by value and come back: nothing of the hot state is
+            // addressed, so the call spills nothing of it
+            let resources = core::mem::replace(&mut self.resources, S::Resources::empty());
+            let (resources, result) = resize_heap_by_value(cold, resources, max_offset);
+            self.resources = resources;
+            result
         } else {
             Ok(())
         }

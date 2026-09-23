@@ -80,7 +80,13 @@ pub trait SystemTypes {
     type Metadata: BasicMetadata<Self::IOTypes> + ChainConfigMetadata;
 }
 
-pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
+pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {
+    /// Whether every bytecode the system hands to the EVM interpreter is followed by at
+    /// least `evm_interpreter::CODE_PADDING_BYTES` readable zero bytes. The interpreter then
+    /// fetches opcodes and PUSH immediates without bounds checks: past the end of the code
+    /// it reads zeros, which is `STOP` and the zero-padded immediate the EVM specifies.
+    const CODE_IS_PADDED: bool = false;
+}
 
 pub struct System<S: SystemTypes> {
     pub io: S::IO,

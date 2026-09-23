@@ -38,7 +38,21 @@ use zk_ee::system::tracer::evm_tracer::EvmTracer;
 type V1<'a, S> = crate::Interpreter<'a, S>;
 
 /// Grows the heap to cover `..max_offset` (the end of the accessed range, computed once by
-/// the caller with a saturating add), charging the expansion
+/// the caller with a saturating add), charging the expansion.
+///
+/// The resources travel by value: the caller keeps its state in registers, and taking the
+/// address of the resources for a call would pin them in memory for the whole run.
+#[inline(never)]
+pub(crate) fn resize_heap_by_value<S: EthereumLikeTypes>(
+    cold: &mut ColdFrameParts<'_, S>,
+    mut resources: S::Resources,
+    max_offset: usize,
+) -> (S::Resources, InstructionResult) {
+    let result = resize_heap(cold, &mut resources, max_offset);
+    (resources, result)
+}
+
+/// [`resize_heap_by_value`] for the outlined instructions, whose state is in memory anyway
 #[inline(never)]
 pub(crate) fn resize_heap<S: EthereumLikeTypes>(
     cold: &mut ColdFrameParts<'_, S>,
@@ -58,9 +72,23 @@ pub(crate) fn resize_heap<S: EthereumLikeTypes>(
             current_heap_size,
             new_heap_size,
         )?;
-        cold.heap
-            .resize(new_heap_size, 0)
-            .map_err(|_| ExitCode::EvmError(EvmError::OutOfGas))?;
+        if new_heap_size >= cold.heap.capacity() {
+            return Err(ExitCode::EvmError(EvmError::OutOfGas));
+        }
+        // The heap is 32 bytes aligned (the root buffer is, and every length is a multiple
+        // of 32), so the new region is zeroed by whole slots: one delegation each on the
+        // proving target instead of a byte loop.
+        let base = cold.heap.memory_mut().as_mut_ptr().cast::<u8>();
+        debug_assert!(base.addr().is_multiple_of(32));
+        let mut offset = current_heap_size;
+        while offset < new_heap_size {
+            // SAFETY: `offset..offset + 32` is inside the backing memory (checked above)
+            // and 32 bytes aligned
+            unsafe { U256::write_zero_into_ptr(base.add(offset).cast::<U256>()) };
+            offset += 32;
+        }
+        // SAFETY: `..new_heap_size` is initialized now, and it is within the capacity
+        unsafe { cold.heap.set_len(new_heap_size) };
     }
     Ok(())
 }

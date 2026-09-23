@@ -66,8 +66,12 @@ impl<A: Allocator + Clone> BytecodeWithArtifacts<A> {
         write_code: impl FnOnce(&mut [MaybeUninit<usize>]) -> usize,
         allocator: A,
     ) -> Self {
+        // The code is followed by at least `CODE_PADDING_BYTES` zero bytes, which lets the
+        // interpreter fetch past its end without a bounds check (`CODE_IS_PADDED`).
         // NOTE: we leave some slack for 64/32 bit arch mismatches
-        let code_words = code_len.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        let code_words = (code_len + evm_interpreter::CODE_PADDING_BYTES)
+            .next_multiple_of(USIZE_SIZE)
+            / USIZE_SIZE;
         let code_words = code_words.next_multiple_of(2);
         let artifacts_len = evm_interpreter::artifacts_byte_len(code_len);
         debug_assert_eq!(artifacts_len % USIZE_SIZE, 0);

@@ -83,8 +83,8 @@ pub struct ElementValues<V> {
 }
 
 /// Summarizes an element's history for reporting
-pub fn element_values<K, V: Default + Clone, A: Allocator + Clone>(
-    item: &HistoryMapItemRef<'_, K, StorageElementRecord<V>, A>,
+pub fn element_values<K, V: Default + Clone, A: Allocator + Clone, KP>(
+    item: &HistoryMapItemRef<'_, K, StorageElementRecord<V>, A, KP>,
 ) -> ElementValues<V> {
     match (&item.initial().value, &item.current().value) {
         (

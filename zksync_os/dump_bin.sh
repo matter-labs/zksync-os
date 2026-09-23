@@ -27,7 +27,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 # Base features
-# `EXTRA_FEATURES=a,b` adds crate features to every type (e.g. `bytereverse_delegation`)
+# `EXTRA_FEATURES=a,b` adds crate features to every type (e.g. `bytereverse_delegation`).
+# The `eth-stf*` types imply `le_storage_slots` (through the `eth_stf` feature); the code
+# padding of the Ethereum STF is unconditional.
 FEATURES="proving${EXTRA_FEATURES:+,$EXTRA_FEATURES}"
 
 # Adjust for server modes

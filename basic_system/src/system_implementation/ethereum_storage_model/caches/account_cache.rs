@@ -13,8 +13,10 @@ use crate::system_implementation::ethereum_storage_model::caches::full_storage_c
 use crate::system_implementation::ethereum_storage_model::caches::preimage::BytecodeKeccakPreimagesStorage;
 use crate::system_implementation::ethereum_storage_model::caches::preimage::PreimageRequestForUnknownLength;
 use crate::system_implementation::ethereum_storage_model::caches::EMPTY_STRING_KECCAK_HASH;
+use crate::system_implementation::ethereum_storage_model::interner::{
+    Interned, MAX_UNIQUE_ADDRESSES,
+};
 use crate::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH;
-use crate::system_implementation::flat_storage_model::BitsOrd160;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::errors::EvmSubsystemError;
@@ -23,6 +25,8 @@ use ruint::aliases::U256;
 use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
+use zk_ee::common_structs::history_map::DenseIndex;
+use zk_ee::common_structs::history_map::ElementHandle;
 use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
@@ -38,7 +42,6 @@ use zk_ee::system::Computational;
 use zk_ee::system::DeconstructionSubsystemError;
 use zk_ee::system::NonceError;
 use zk_ee::system::NonceSubsystemError;
-use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
 use zk_ee::wrap_error;
 use zk_ee::{
@@ -49,13 +52,17 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 
-pub type AddressItem<'a, A> = HistoryMapItemRefMut<
-    'a,
-    BitsOrd<160, 3>,
-    CacheRecord<EthereumAccountProperties, BasicAccountPropertiesMetadata>,
-    A,
-    CacheElementProperties,
->;
+pub type AccountRecord = CacheRecord<EthereumAccountProperties, BasicAccountPropertiesMetadata>;
+
+pub type AddressItem<'a, A> =
+    HistoryMapItemRefMut<'a, u32, AccountRecord, A, CacheElementProperties>;
+
+pub type AccountHandle<A> = ElementHandle<u32, AccountRecord, A, CacheElementProperties>;
+
+/// Accounts are keyed by their interned address index, so the map's index is a
+/// direct table: a lookup is one load.
+pub type AccountCacheMap<A> =
+    HistoryMap<u32, AccountRecord, A, CacheElementProperties, DenseIndex<AccountHandle<A>, A>>;
 
 pub struct EthereumAccountCache<
     A: Allocator + Clone, // = Global,
@@ -63,12 +70,7 @@ pub struct EthereumAccountCache<
     SF: StackFactory<N>,
     const N: usize,
 > {
-    pub(crate) cache: HistoryMap<
-        BitsOrd160,
-        CacheRecord<EthereumAccountProperties, BasicAccountPropertiesMetadata>,
-        A,
-        CacheElementProperties,
-    >,
+    pub(crate) cache: AccountCacheMap<A>,
     pub(crate) current_tx_number: u32,
     #[allow(dead_code)]
     alloc: A,
@@ -80,7 +82,10 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
-            cache: HistoryMap::new(allocator.clone()),
+            cache: HistoryMap::with_index(
+                DenseIndex::new_in(MAX_UNIQUE_ADDRESSES, allocator.clone()),
+                allocator.clone(),
+            ),
             current_tx_number: 0,
             alloc: allocator.clone(),
             phantom: PhantomData,
@@ -92,7 +97,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &'_ mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         observe: bool,
@@ -121,7 +126,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &'_ mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         observe: bool,
@@ -145,7 +150,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         let current_tx_number = self.current_tx_number;
         let mut x = self
             .cache
-            .get_or_insert::<SystemError>(address.into(), || {
+            .get_or_insert::<SystemError>(&address.index, || {
                 // Undefined: no value declared yet, it is loaded below when it is needed.
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
@@ -161,7 +166,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             match ee_type {
                 ExecutionEnvironmentType::NoEE => {}
                 ExecutionEnvironmentType::EVM => {
-                    let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
+                    let mut cost: R = if evm_interpreter::utils::is_precompile(address.key) {
                         R::empty() // We've charged the access already.
                     } else {
                         R::from_legacy_gas_saturating(COLD_PROPERTIES_ACCESS_EXTRA_COST_GAS)
@@ -186,7 +191,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 
         if load_value && !x.element_properties().is_value_declared() {
             // we just ask the oracle for properties
-            let acc_data = EthereumAccountPropertiesQuery::get(oracle, address)?;
+            let acc_data = EthereumAccountPropertiesQuery::get(oracle, address.key)?;
             let empty_account = acc_data.is_empty();
             x.for_each_record_mut(|record| {
                 record
@@ -212,7 +217,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
@@ -249,15 +254,15 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
-        from: &B160,
-        to: &B160,
+        from: Interned<'_, B160>,
+        to: Interned<'_, B160>,
         amount: &U256,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
     ) -> Result<(), BalanceSubsystemError> {
         use zk_ee::system::BalanceError;
 
-        let mut f = |addr, op: fn(U256, U256) -> (U256, bool), err| {
+        let mut f = |addr: Interned<'_, B160>, op: fn(U256, U256) -> (U256, bool), err| {
             self.update_nominal_token_value_inner::<PROOF_ENV>(
                 from_ee,
                 resources,
@@ -316,11 +321,13 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         }
     }
 
+    /// `address` is the interned index of the address if it was interned: an
+    /// address that was never interned can not be in the cache.
     pub fn read_account_balance_assuming_warm(
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &<EthereumIOTypesConfig as SystemIOTypesConfig>::Address,
+        address: Option<u32>,
     ) -> Result<<EthereumIOTypesConfig as SystemIOTypesConfig>::NominalTokenValue, SystemError>
     {
         // Charge for gas
@@ -331,7 +338,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             }
         }
 
-        match self.cache.get(address.into()) {
+        match address.and_then(|index| self.cache.get(&index)) {
             Some(cache_item) if cache_item.key_properties().is_value_declared() => {
                 Ok(cache_item.current().value().balance)
             }
@@ -346,7 +353,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         oracle: &mut impl IOOracle,
         observe: bool,
     ) -> Result<(), SystemError> {
@@ -374,7 +381,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         _request: AccountDataRequest<
             AccountData<
                 EEVersion,
@@ -501,7 +508,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         increment_by: u64,
         oracle: &mut impl IOOracle,
     ) -> Result<u64, NonceSubsystemError> {
@@ -537,7 +544,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        address: &B160,
+        address: Interned<'_, B160>,
         update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         oracle: &mut impl IOOracle,
     ) -> Result<U256, BalanceSubsystemError> {
@@ -550,8 +557,8 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
-        from: &B160,
-        to: &B160,
+        from: Interned<'_, B160>,
+        to: Interned<'_, B160>,
         amount: &U256,
         oracle: &mut impl IOOracle,
     ) -> Result<(), BalanceSubsystemError> {
@@ -585,7 +592,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
-        at_address: &B160,
+        at_address: Interned<'_, B160>,
         deployed_code: &[u8],
         preimages_cache: &mut BytecodeKeccakPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
@@ -663,8 +670,8 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
-        at_address: &B160,
-        nominal_token_beneficiary: &B160,
+        at_address: Interned<'_, B160>,
+        nominal_token_beneficiary: Interned<'_, B160>,
         oracle: &mut impl IOOracle,
     ) -> Result<U256, DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
@@ -675,7 +682,8 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        let same_address = at_address == nominal_token_beneficiary;
+        // interned by the same interner: equal indices are equal addresses
+        let same_address = at_address.index == nominal_token_beneficiary.index;
         let transfer_amount = account_data.current().value().balance;
 
         // We consider two cases: either deconstruction happens within the same
@@ -729,7 +737,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             match from_ee {
                 ExecutionEnvironmentType::NoEE => (),
                 ExecutionEnvironmentType::EVM => {
-                    let entry = match self.cache.get(nominal_token_beneficiary.into()) {
+                    let entry = match self.cache.get(&nominal_token_beneficiary.index) {
                         Some(entry) => Ok(entry),
                         None => Err(internal_error!("Account assumed warm but not in cache")),
                     }?;
@@ -753,7 +761,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
     pub fn set_delegation<const PROOF_ENV: bool>(
         &mut self,
         resources: &mut R,
-        at_address: &B160,
+        at_address: Interned<'_, B160>,
         delegate: &B160,
         preimages_cache: &mut BytecodeKeccakPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
@@ -854,8 +862,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                         Ok(())
                     })?;
                     storage
-                        .slot_values
-                        .clear_state_impl(key)
+                        .clear_state_impl(*key)
                         .expect("must clear state for code deconstruction in same TX");
                 }
                 Ok(())
@@ -866,16 +873,18 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
     }
 
     ///
-    /// Returns slots that were changed during execution.
+    /// Returns accounts that were changed during execution. `addresses` are the
+    /// interned addresses, by index.
     ///
-    pub fn net_diffs_iter(
-        &self,
-    ) -> impl Iterator<Item = (B160, (u64, U256, Bytes32))> + use<'_, A, SF, N, R> {
+    pub fn net_diffs_iter<'a>(
+        &'a self,
+        addresses: &'a [B160],
+    ) -> impl Iterator<Item = (B160, (u64, U256, Bytes32))> + use<'a, A, SF, N, R> {
         self.cache
             .iter()
             .filter(|v| v.initial().value() != v.current().value())
             .map(|v| {
-                let address = v.key().0;
+                let address = addresses[*v.key() as usize];
                 let current = v.current().value();
                 (
                     address,
@@ -895,10 +904,11 @@ define_subsystem!(AccountCache,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system_implementation::caches::addressed_plain_storage::AddressedPlainStorage;
     use crate::system_implementation::ethereum_storage_model::caches::account_properties::ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
+    use crate::system_implementation::ethereum_storage_model::interner::EthereumKeyInterners;
     use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
     use std::alloc::Global;
+    use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
@@ -947,18 +957,16 @@ mod tests {
     /// be recognised.
     #[test]
     fn constructor_selfdestruct_on_funded_address_deconstructs_the_account() {
-        let mut storage = TestStorage {
-            slot_values: AddressedPlainStorage::new_from_parts(
-                Global,
-                EthereumLikeStorageAccessCostModel,
-            ),
-        };
+        let mut storage = TestStorage::new_from_parts(Global, EthereumLikeStorageAccessCostModel);
         let mut account_cache = TestAccountCache::new_from_parts(Global);
+        let mut interners = EthereumKeyInterners::new_in(Global);
         let mut oracle = FundedAccountsOracle::default();
-        let deployee = B160::from_limbs([0xdead, 0, 0]);
-        let beneficiary = B160::from_limbs([0xbeef, 0, 0]);
+        let deployee_address = B160::from_limbs([0xdead, 0, 0]);
+        let beneficiary_address = B160::from_limbs([0xbeef, 0, 0]);
+        let deployee = interners.intern_address(&deployee_address).unwrap();
+        let beneficiary = interners.intern_address(&beneficiary_address).unwrap();
 
-        storage.slot_values.begin_new_tx();
+        storage.begin_new_tx();
         account_cache.begin_new_tx();
         let mut resources = TestResources::FORMAL_INFINITE;
 
@@ -967,7 +975,7 @@ mod tests {
             .increment_nonce::<false>(
                 ExecutionEnvironmentType::EVM,
                 &mut resources,
-                &deployee,
+                deployee,
                 1,
                 &mut oracle,
             )
@@ -977,8 +985,8 @@ mod tests {
             .mark_for_deconstruction::<false>(
                 ExecutionEnvironmentType::EVM,
                 &mut resources,
-                &deployee,
-                &beneficiary,
+                deployee,
+                beneficiary,
                 &mut oracle,
             )
             .expect("selfdestruct in the constructor");
@@ -986,7 +994,7 @@ mod tests {
         assert!(
             account_cache
                 .cache
-                .get(&deployee.into())
+                .get(&deployee.index)
                 .unwrap()
                 .current()
                 .metadata()
@@ -1000,7 +1008,7 @@ mod tests {
 
         let final_state = *account_cache
             .cache
-            .get(&deployee.into())
+            .get(&deployee.index)
             .unwrap()
             .current()
             .value();
@@ -1020,14 +1028,17 @@ mod tests {
         let mut account_cache = TestAccountCache::new_from_parts(Global);
         let mut preimages =
             BytecodeKeccakPreimagesStorage::<TestResources, Global>::new_from_parts(Global);
+        let mut interners = EthereumKeyInterners::new_in(Global);
         let mut oracle = FundedAccountsOracle::default();
-        let precompile = B160::from_limbs([0x03, 0, 0]);
-        let listed = B160::from_limbs([0xabcd, 0, 0]);
+        let precompile_address = B160::from_limbs([0x03, 0, 0]);
+        let listed_address = B160::from_limbs([0xabcd, 0, 0]);
+        let precompile = interners.intern_address(&precompile_address).unwrap();
+        let listed = interners.intern_address(&listed_address).unwrap();
 
         account_cache.begin_new_tx();
         let mut resources = TestResources::FORMAL_INFINITE;
 
-        for address in [&precompile, &listed] {
+        for address in [precompile, listed] {
             account_cache
                 .touch_account::<false>(
                     ExecutionEnvironmentType::NoEE,
@@ -1039,8 +1050,8 @@ mod tests {
                 .expect("touch");
         }
         assert_eq!(oracle.queries, 0, "a touch must not read the account");
-        for address in [&precompile, &listed] {
-            let item = account_cache.cache.get(&(*address).into()).unwrap();
+        for address in [precompile, listed] {
+            let item = account_cache.cache.get(&address.index).unwrap();
             assert!(!item.key_properties().is_value_declared());
             assert!(!item.key_properties().is_value_observed());
             assert!(item
@@ -1053,7 +1064,7 @@ mod tests {
                 .read_account_balance_assuming_warm(
                     ExecutionEnvironmentType::NoEE,
                     &mut resources,
-                    &precompile
+                    Some(precompile.index)
                 )
                 .is_err(),
             "an undefined account has no value to hand out"
@@ -1065,7 +1076,7 @@ mod tests {
             .touch_account::<false>(
                 ExecutionEnvironmentType::NoEE,
                 &mut resources,
-                &listed,
+                listed,
                 &mut oracle,
                 false,
             )
@@ -1078,7 +1089,7 @@ mod tests {
             .read_account_properties::<false, _, _, _, _, _, _, _, _, _, _, _>(
                 ExecutionEnvironmentType::EVM,
                 &mut resources,
-                &listed,
+                listed,
                 AccountDataRequest::empty()
                     .with_nonce()
                     .with_nominal_token_balance(),
@@ -1089,7 +1100,7 @@ mod tests {
         assert_eq!(oracle.queries, 1, "the first real access loads the account");
         assert_eq!(data.nominal_token_balance.0, U256::from(1_000u64));
         assert_eq!(data.nonce.0, 0);
-        let item = account_cache.cache.get(&listed.into()).unwrap();
+        let item = account_cache.cache.get(&listed.index).unwrap();
         assert!(
             item.key_properties().is_value_declared() && item.key_properties().is_value_observed()
         );
@@ -1104,7 +1115,7 @@ mod tests {
             .read_account_properties::<false, _, _, _, _, _, _, _, _, _, _, _>(
                 ExecutionEnvironmentType::EVM,
                 &mut resources,
-                &listed,
+                listed,
                 AccountDataRequest::empty().with_nonce(),
                 &mut preimages,
                 &mut oracle,

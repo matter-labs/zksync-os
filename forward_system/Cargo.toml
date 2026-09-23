@@ -60,8 +60,9 @@ for_tests = ["production", "basic_bootloader/eip-4844"]
 # Features used for eth_runner.
 eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
-# Additional features used for eth_stf in eth_runner
-eth_stf = []
+# Additional features used for eth_stf in eth_runner. The Ethereum STF keeps storage slot
+# keys and values little-endian, on the host as in the proving binary.
+eth_stf = ["basic_system/le_storage_slots"]
 
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
