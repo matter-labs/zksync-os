@@ -895,7 +895,7 @@ define_subsystem!(AccountCache,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
+    use crate::system_implementation::caches::addressed_plain_storage::AddressedPlainStorage;
     use crate::system_implementation::ethereum_storage_model::caches::account_properties::ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
     use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
     use std::alloc::Global;
@@ -948,7 +948,7 @@ mod tests {
     #[test]
     fn constructor_selfdestruct_on_funded_address_deconstructs_the_account() {
         let mut storage = TestStorage {
-            slot_values: GenericPubdataAwarePlainStorage::new_from_parts(
+            slot_values: AddressedPlainStorage::new_from_parts(
                 Global,
                 EthereumLikeStorageAccessCostModel,
             ),

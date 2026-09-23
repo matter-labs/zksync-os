@@ -2,8 +2,8 @@
 //! This module contains Ethereum storage model implementation.
 //!
 
+use crate::system_implementation::caches::addressed_plain_storage::AddressedPlainStorage;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::element_values;
-use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::StorageSnapshotId;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::ethereum_storage_model::caches::account_cache::EthereumAccountCache;
@@ -75,10 +75,7 @@ impl<
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
         let resources_policy = init_data;
         let storage_cache = EthereumStorageCache::<A, SF, N, R, P> {
-            slot_values: GenericPubdataAwarePlainStorage::new_from_parts(
-                allocator.clone(),
-                resources_policy,
-            ),
+            slot_values: AddressedPlainStorage::new_from_parts(allocator.clone(), resources_policy),
         };
 
         let preimages_cache =
@@ -96,6 +93,8 @@ impl<
     fn pubdata_used_by_tx(&self) -> u32 {
         0
     }
+
+    const STORAGE_SLOTS_LE: bool = super::STORAGE_SLOTS_LE;
 
     fn storage_read(
         &mut self,

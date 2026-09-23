@@ -105,8 +105,13 @@ where
         // These two benefit from filter being applied early, so for now it's kept using internal structure
         result_keeper.basic_account_diffs(io.storage.account_cache.net_diffs_iter());
         result_keeper.storage_diffs(io.storage.storage_cache.net_diffs_iter().map(|(k, v)| {
-            let WarmStorageKey { address, key } = k;
-            let value = v.current_value;
+            let WarmStorageKey { address, mut key } = k;
+            let mut value = v.current_value;
+            if basic_system::system_implementation::ethereum_storage_model::STORAGE_SLOTS_LE {
+                // the cache holds little-endian; diffs are reported big-endian
+                key.bytereverse();
+                value.bytereverse();
+            }
             (address, key, value)
         }));
 

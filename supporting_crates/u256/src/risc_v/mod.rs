@@ -291,6 +291,15 @@ impl U256 {
         unsafe { DelegatedU256::bytereverse_in_place(ptr.cast()) }
     }
 
+    /// Copies 32 bytes at `src` (any alignment) into the slot `dst` as they are.
+    ///
+    /// # Safety
+    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable.
+    #[inline(always)]
+    pub unsafe fn copy_bytes_into_slot(src: *const u8, dst: *mut Self) {
+        unsafe { DelegatedU256::copy_bytes_into_slot(src, dst.cast()) }
+    }
+
     /// Writes the slot `src` as 32 big-endian bytes at `dst`; the slot may be mangled.
     ///
     /// # Safety

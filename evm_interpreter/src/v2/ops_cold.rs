@@ -731,15 +731,27 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             },
         )?;
         let stack_head = self.stack.top_mut()?;
-        // the slot receives the value below, so the key conversion may mangle it
+        let le: bool = <S::IO as zk_ee::system::IOSubsystem>::STORAGE_SLOTS_LE;
+        // the slot receives the value below, so the key conversion may mangle it; with a
+        // little-endian model the key is the slot's own bytes
         let mut key = core::mem::MaybeUninit::<Bytes32>::uninit();
-        stack_head.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut key));
+        if le {
+            // SAFETY: an initialized slot and 32 writable bytes
+            unsafe {
+                U256::copy_slot_to_bytes(
+                    stack_head as *const U256,
+                    crate::utils::bytes32_as_mut_array(&mut key).as_mut_ptr(),
+                )
+            };
+        } else {
+            stack_head.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut key));
+        }
         // SAFETY: fully written
         let key = unsafe { key.assume_init_ref() };
         let slot = stack_head as *mut U256;
         env.system
             .io
-            .storage_read_and_place::<TRANSIENT>(
+            .storage_read_raw_and_place::<TRANSIENT>(
                 THIS_EE_TYPE,
                 &mut self.resources,
                 &cold.address,
@@ -748,19 +760,29 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                     // SAFETY: `slot` is a slot of the stack; the value goes straight from
                     // the cache into it
                     unsafe {
-                        U256::write_be_bytes_into_slot(value.as_u8_array_ref().as_ptr(), slot)
+                        if le {
+                            U256::copy_bytes_into_slot(value.as_u8_array_ref().as_ptr(), slot)
+                        } else {
+                            U256::write_be_bytes_into_slot(value.as_u8_array_ref().as_ptr(), slot)
+                        }
                     }
                 },
             )
             .map_err(system_error_exit)?;
-        trace!(env, |t| t.on_storage_read(
-            THIS_EE_TYPE,
-            TRANSIENT,
-            cold.address,
-            *key,
-            // SAFETY: the slot was just written
-            Bytes32::from_array(unsafe { &*slot }.to_be_bytes())
-        ));
+        trace!(env, |t| {
+            let mut traced_key = *key;
+            if le {
+                traced_key.bytereverse();
+            }
+            t.on_storage_read(
+                THIS_EE_TYPE,
+                TRANSIENT,
+                cold.address,
+                traced_key,
+                // SAFETY: the slot was just written
+                Bytes32::from_array(unsafe { &*slot }.to_be_bytes()),
+            )
+        });
         Ok(())
     }
 
@@ -788,18 +810,34 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         if !TRANSIENT && self.gas_left() <= CALL_STIPEND {
             return Err(EvmError::InvalidOperandOOG.into());
         }
-        // the popped slots are scratch, so the conversions may mangle them
+        let le: bool = <S::IO as zk_ee::system::IOSubsystem>::STORAGE_SLOTS_LE;
+        // the popped slots are scratch, so the conversions may mangle them; with a
+        // little-endian model the key and the value are the slots' own bytes
         let (index, value) = self.stack.pop_2_mut()?;
         let mut index_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
-        index.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut index_bytes));
         let mut value_bytes = core::mem::MaybeUninit::<Bytes32>::uninit();
-        value.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut value_bytes));
+        if le {
+            // SAFETY: initialized slots and 32 writable bytes each
+            unsafe {
+                U256::copy_slot_to_bytes(
+                    index as *const U256,
+                    crate::utils::bytes32_as_mut_array(&mut index_bytes).as_mut_ptr(),
+                );
+                U256::copy_slot_to_bytes(
+                    value as *const U256,
+                    crate::utils::bytes32_as_mut_array(&mut value_bytes).as_mut_ptr(),
+                );
+            }
+        } else {
+            index.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut index_bytes));
+            value.bytereverse_and_write_le(crate::utils::bytes32_as_mut_array(&mut value_bytes));
+        }
         // SAFETY: fully written
         let (index, value) =
             unsafe { (index_bytes.assume_init_ref(), value_bytes.assume_init_ref()) };
         env.system
             .io
-            .storage_write::<TRANSIENT>(
+            .storage_write_raw::<TRANSIENT>(
                 THIS_EE_TYPE,
                 &mut self.resources,
                 &cold.address,
@@ -807,13 +845,20 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                 value,
             )
             .map_err(system_error_exit)?;
-        trace!(env, |t| t.on_storage_write(
-            THIS_EE_TYPE,
-            TRANSIENT,
-            cold.address,
-            *index,
-            *value
-        ));
+        trace!(env, |t| {
+            let (mut traced_index, mut traced_value) = (*index, *value);
+            if le {
+                traced_index.bytereverse();
+                traced_value.bytereverse();
+            }
+            t.on_storage_write(
+                THIS_EE_TYPE,
+                TRANSIENT,
+                cold.address,
+                traced_index,
+                traced_value,
+            )
+        });
         Ok(())
     }
 

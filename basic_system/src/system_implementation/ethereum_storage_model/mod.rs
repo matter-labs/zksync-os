@@ -1,3 +1,10 @@
+/// Whether the Ethereum storage model keeps slot keys and values as the little-endian
+/// bytes of the U256 (the interpreter's own layout) instead of big-endian. The trie
+/// and the oracle always see big-endian, so with the little-endian convention the byte
+/// reversal happens once per slot at the key hashing, value encoding and initial-value
+/// read instead of on every SLOAD/SSTORE.
+pub const STORAGE_SLOTS_LE: bool = cfg!(feature = "le_storage_slots");
+
 // Ethereum storage layout. There are multiple fundamental drawbacks of using it for zk:
 // - inefficient for state diffs (no space to encode indexes)
 // - inefficient for code analysis caching, or delegation caching (no space to put such data)

@@ -32,6 +32,11 @@ pub trait IOSubsystem: Sized {
     type IOTypes: SystemIOTypesConfig;
     type StateSnapshot;
 
+    /// Byte order of slot keys and values in the "raw" storage entry points below:
+    /// `true` means the little-endian bytes of the U256, `false` big-endian. The
+    /// non-raw entry points always take and return big-endian.
+    const STORAGE_SLOTS_LE: bool = false;
+
     /// Read value from storage at a given slot (address, key).
     fn storage_read<const TRANSIENT: bool>(
         &mut self,
@@ -55,6 +60,33 @@ pub trait IOSubsystem: Sized {
         let value = self.storage_read::<TRANSIENT>(ee_type, resources, address, key)?;
         place(&value);
         Ok(())
+    }
+
+    /// [`Self::storage_read_and_place`] with the key and the value in the raw byte order
+    /// (`STORAGE_SLOTS_LE`): the interpreter's entry point, which then converts nothing
+    /// when the model's order is its own.
+    fn storage_read_raw_and_place<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageValue),
+    ) -> Result<(), SystemError> {
+        self.storage_read_and_place::<TRANSIENT>(ee_type, resources, address, key, place)
+    }
+
+    /// [`Self::storage_write`] with the key and the value in the raw byte order
+    /// (`STORAGE_SLOTS_LE`).
+    fn storage_write_raw<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        value_to_write: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
+    ) -> Result<(), SystemError> {
+        self.storage_write::<TRANSIENT>(ee_type, resources, address, key, value_to_write)
     }
 
     /// Write value in the storage at a given slot (address, key).

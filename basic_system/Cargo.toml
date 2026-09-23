@@ -39,6 +39,8 @@ delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
 state-diffs-pi = []
+# Ethereum storage model keeps slot keys and values as little-endian U256 bytes (experiment)
+le_storage_slots = []
 
 [dev-dependencies]
 hex = { workspace = true }

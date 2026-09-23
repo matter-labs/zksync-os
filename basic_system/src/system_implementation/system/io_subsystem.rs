@@ -84,6 +84,8 @@ impl<
     type Resources = R;
     type StateSnapshot = FullIOStateSnapshot<M>;
 
+    const STORAGE_SLOTS_LE: bool = M::STORAGE_SLOTS_LE;
+
     fn storage_read<const TRANSIENT: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -91,29 +93,42 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
-        if TRANSIENT {
-            let gas = match ee_type {
-                ExecutionEnvironmentType::NoEE => 0,
-                ExecutionEnvironmentType::EVM => TLOAD,
-            };
-            resources.charge_legacy_gas_and_native(gas, WARM_TSTORAGE_READ_NATIVE_COST)?;
-
-            let key = WarmStorageKey {
-                address: *address,
-                key: *key,
-            };
-
-            let mut result = Bytes32::ZERO;
-            self.transient_storage.apply_read(&key, &mut result)?;
-
-            Ok(result)
-        } else {
-            self.storage
-                .storage_read(ee_type, resources, address, key, &mut self.oracle)
-        }
+        let mut result = Bytes32::ZERO;
+        self.storage_read_and_place::<TRANSIENT>(ee_type, resources, address, key, |value| {
+            result = *value
+        })?;
+        Ok(result)
     }
 
     fn storage_read_and_place<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageValue),
+    ) -> Result<(), SystemError> {
+        if M::STORAGE_SLOTS_LE {
+            // big-endian in and out, little-endian inside
+            let mut key = *key;
+            key.bytereverse();
+            self.storage_read_raw_and_place::<TRANSIENT>(
+                ee_type,
+                resources,
+                address,
+                &key,
+                |value| {
+                    let mut value = *value;
+                    value.bytereverse();
+                    place(&value)
+                },
+            )
+        } else {
+            self.storage_read_raw_and_place::<TRANSIENT>(ee_type, resources, address, key, place)
+        }
+    }
+
+    fn storage_read_raw_and_place<const TRANSIENT: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
@@ -147,6 +162,25 @@ impl<
     }
 
     fn storage_write<const TRANSIENT: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        value_to_write: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
+    ) -> Result<(), SystemError> {
+        if M::STORAGE_SLOTS_LE {
+            let mut key = *key;
+            key.bytereverse();
+            let mut value = *value_to_write;
+            value.bytereverse();
+            self.storage_write_raw::<TRANSIENT>(ee_type, resources, address, &key, &value)
+        } else {
+            self.storage_write_raw::<TRANSIENT>(ee_type, resources, address, key, value_to_write)
+        }
+    }
+
+    fn storage_write_raw<const TRANSIENT: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
@@ -630,8 +664,15 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
     ) -> Result<(), SystemError> {
-        self.storage
-            .storage_touch(ee_type, resources, address, key, &mut self.oracle)
+        if M::STORAGE_SLOTS_LE {
+            let mut key = *key;
+            key.bytereverse();
+            self.storage
+                .storage_touch(ee_type, resources, address, &key, &mut self.oracle)
+        } else {
+            self.storage
+                .storage_touch(ee_type, resources, address, key, &mut self.oracle)
+        }
     }
 
     fn touch_account(

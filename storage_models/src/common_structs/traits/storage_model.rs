@@ -23,6 +23,11 @@ pub trait StorageModel: Sized + SnapshottableIo {
     type Resources: Resources;
     type StorageCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug; // easier to have it here than propagate
 
+    /// The model's native byte order for slot keys and values: `true` when they are the
+    /// little-endian bytes of the U256 (byte-reversed against the big-endian
+    /// convention of the trie and the oracle).
+    const STORAGE_SLOTS_LE: bool = false;
+
     /// Reads a value from contract storage at the given address and key.
     fn storage_read(
         &mut self,

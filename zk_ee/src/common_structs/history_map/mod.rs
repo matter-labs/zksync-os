@@ -209,6 +209,49 @@ where
         })
     }
 
+    /// [`Self::get_or_insert_checked`] with the key passed by value: on an insert the
+    /// key moves into the map, so it is cloned once (for the element) instead of twice.
+    pub fn get_or_insert_checked_owned<C, E>(
+        &mut self,
+        key: K,
+        context: &mut C,
+        check_existing: impl FnOnce(&mut C, &HistoryMapItemRef<'_, K, V, A, KP>) -> Result<(), E>,
+        spawn_v: impl FnOnce(&mut C) -> Result<(V, KP), E>,
+    ) -> Result<HistoryMapItemRefMut<'_, K, V, A, KP>, E> {
+        let ptr = match self.btree.get(&key).copied() {
+            Some(ptr) => {
+                check_existing(
+                    context,
+                    &HistoryMapItemRef {
+                        // Safety: pointer is valid for the lifetime of `&self`.
+                        history: unsafe { ptr.as_ref() },
+                    },
+                )?;
+                ptr
+            }
+            None => {
+                let (v, properties) = spawn_v(context)?;
+                let element = ElementWithHistory::new(
+                    key.clone(),
+                    properties,
+                    v,
+                    &mut self.records_memory_pool,
+                );
+                let ptr = self.elements_arena.push(element);
+                self.btree.insert(key, ptr);
+                ptr
+            }
+        };
+
+        Ok(HistoryMapItemRefMut {
+            // Pointer is valid for the lifetime of `&mut self`.
+            element: ptr,
+            cache_state: &mut self.state,
+            records_memory_pool: &mut self.records_memory_pool,
+            _element_borrow: PhantomData,
+        })
+    }
+
     /// Save current state as a snapshot. Returns corresponding snapshot id
     pub fn snapshot(&mut self) -> CacheSnapshotId {
         let snapshot_id = self.state.next_snapshot_id;

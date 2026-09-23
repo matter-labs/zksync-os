@@ -115,6 +115,15 @@ impl U256 {
         unsafe { dst.write(Self::from_be_bytes(&*src.cast::<[u8; 32]>())) }
     }
 
+    /// Copies 32 bytes at `src` (any alignment) into the slot `dst` as they are.
+    ///
+    /// # Safety
+    /// `src` must be readable for 32 bytes, `dst` must be aligned and writable.
+    #[inline(always)]
+    pub unsafe fn copy_bytes_into_slot(src: *const u8, dst: *mut Self) {
+        unsafe { core::ptr::copy_nonoverlapping(src, dst.cast::<u8>(), 32) }
+    }
+
     /// Writes the slot `src` as 32 big-endian bytes at `dst`; the slot may be mangled.
     ///
     /// # Safety

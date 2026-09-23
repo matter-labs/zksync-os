@@ -13,8 +13,9 @@ use zk_ee::{
     utils::Bytes32,
 };
 
+use crate::system_implementation::caches::addressed_plain_storage::AddressedPlainStorage;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::{
-    element_values, GenericPubdataAwarePlainStorage, StorageSnapshotId,
+    element_values, StorageSnapshotId,
 };
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 
@@ -25,8 +26,7 @@ pub struct EthereumStorageCache<
     R: Resources,
     P: StorageAccessPolicy<R, Bytes32>,
 > {
-    pub(crate) slot_values:
-        GenericPubdataAwarePlainStorage<WarmStorageKey, Bytes32, A, SF, N, R, P>,
+    pub(crate) slot_values: AddressedPlainStorage<WarmStorageKey, Bytes32, A, SF, N, R, P>,
 }
 
 impl<
@@ -48,13 +48,8 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
-        let key = WarmStorageKey {
-            address: *address,
-            key: *key,
-        };
-
         self.slot_values
-            .apply_read_impl(ee_type, &key, resources, oracle)
+            .apply_read_impl(ee_type, address, key, resources, oracle)
     }
 
     fn read_and_place(
@@ -66,13 +61,8 @@ impl<
         oracle: &mut impl IOOracle,
         place: impl FnOnce(&<Self::IOTypes as SystemIOTypesConfig>::StorageKey),
     ) -> Result<(), SystemError> {
-        let key = WarmStorageKey {
-            address: *address,
-            key: *key,
-        };
-
         self.slot_values
-            .apply_read_impl_with(ee_type, &key, resources, oracle, place)
+            .apply_read_impl_with(ee_type, address, key, resources, oracle, place)
     }
 
     fn touch(
@@ -86,12 +76,8 @@ impl<
         // Only warms the slot up. Its value is not read, so no merkle proof
         // obligation is created: Ethereum does not load access-list slots either,
         // and a witness legitimately lacks proofs for slots the block never reads.
-        let key = WarmStorageKey {
-            address: *address,
-            key: *key,
-        };
-
-        self.slot_values.apply_touch_impl(ee_type, &key, resources)
+        self.slot_values
+            .apply_touch_impl(ee_type, address, key, resources)
     }
 
     fn write(
@@ -103,14 +89,9 @@ impl<
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
-        let key = WarmStorageKey {
-            address: *address,
-            key: *key,
-        };
-
         let old_value = self
             .slot_values
-            .apply_write_impl(ee_type, &key, new_value, oracle, resources)?;
+            .apply_write_impl(ee_type, address, key, new_value, oracle, resources)?;
 
         Ok(old_value)
     }

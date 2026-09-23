@@ -393,11 +393,23 @@ impl EthereumStoragePersister {
             slot_updates.clear();
             while let Some((addr, value)) = accesses.next_if(|(k, _)| k.address == active_address) {
                 if value.initial_value_used {
-                    let key = Self::cache_slot_trie_key(&addr.key, &mut key_cache, &mut hasher);
+                    // the cache may hold little-endian keys and values; the trie is big-endian
+                    let (slot, initial, current) = if super::STORAGE_SLOTS_LE {
+                        let mut slot = addr.key;
+                        slot.bytereverse();
+                        let mut initial = value.initial_value;
+                        initial.bytereverse();
+                        let mut current = value.current_value;
+                        current.bytereverse();
+                        (slot, initial, current)
+                    } else {
+                        (addr.key, value.initial_value, value.current_value)
+                    };
+                    let key = Self::cache_slot_trie_key(&slot, &mut key_cache, &mut hasher);
                     slot_updates.push(SlotUpdate {
                         key,
-                        initial: value.initial_value,
-                        current: value.current_value,
+                        initial,
+                        current,
                     });
                 } else {
                     let _ = logger.write_fmt(format_args!(
