@@ -1,11 +1,5 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 #![feature(allocator_api)]
-#![feature(get_mut_unchecked)]
-#![feature(vec_push_within_capacity)]
-#![feature(ptr_alignment_type)]
-#![feature(btreemap_alloc)]
-#![feature(maybe_uninit_array_assume_init)]
-#![feature(ptr_metadata)]
 #![allow(incomplete_features)]
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::needless_borrows_for_generic_args)]
@@ -191,18 +185,24 @@ where
         <S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp,
         ModExpErrors,
     >(hooks, MODEXP_HOOK_ADDRESS_LOW)?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
-        hooks,
-        ECADD_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Mul, Bn254MulErrors>(
-        hooks,
-        ECMUL_HOOK_ADDRESS_LOW,
-    )?;
-    add_precompile::<
+    // the bn254 and point evaluation precompiles take field inversions and square roots from
+    // oracle hints
+    add_precompile_ext::<
         _,
         _,
-        <S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck,
+        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bn254Add,
+        Bn254AddErrors,
+    >(hooks, ECADD_HOOK_ADDRESS_LOW)?;
+    add_precompile_ext::<
+        _,
+        _,
+        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bn254Mul,
+        Bn254MulErrors,
+    >(hooks, ECMUL_HOOK_ADDRESS_LOW)?;
+    add_precompile_ext::<
+        _,
+        _,
+        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bn254PairingCheck,
         Bn254PairingCheckErrors,
     >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
     add_precompile::<
@@ -212,10 +212,10 @@ where
         Blake2FPrecompileErrors,
     >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
 
-    add_precompile::<
+    add_precompile_ext::<
         _,
         _,
-        <S::SystemFunctions as SystemFunctions<_>>::PointEvaluation,
+        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::PointEvaluation,
         PointEvaluationErrors,
     >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW)?;
 

@@ -324,10 +324,8 @@ where
     ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
         use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
-            Ok(maybe_next_len) => match maybe_next_len {
-                None => return None,
-                Some(size) => size.get() as usize,
-            },
+            Ok(None) => return None,
+            Ok(Some(size)) => size.get() as usize,
             Err(e) => return Some(Err(e.into())),
         };
 

@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "testing"), no_std)]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
-#![feature(btreemap_alloc)]
 #![feature(const_trait_impl)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]

@@ -7,6 +7,7 @@ pub mod bls12_381;
 pub mod bn254_ecadd;
 pub mod bn254_ecmul;
 pub mod bn254_pairing_check;
+pub mod curve_hints;
 pub mod ecrecover;
 pub mod field_ops;
 pub mod keccak256;
@@ -45,11 +46,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctions<R> for NoStdSystemFun
     type Secp256r1AddProjective = MissingSystemFunction;
     type Secp256r1MulProjective = MissingSystemFunction;
     type P256Verify = p256_verify::P256VerifyImpl;
-    type Bn254Add = bn254_ecadd::Bn254AddImpl;
-    type Bn254Mul = bn254_ecmul::Bn254MulImpl;
-    type Bn254PairingCheck = bn254_pairing_check::Bn254PairingCheckImpl;
     type RipeMd160 = ripemd160::RipeMd160Impl;
-    type PointEvaluation = point_evaluation::PointEvaluationImpl;
     type Bls12G1Add = bls12_381::Bls12381G1AdditionPrecompile;
     type Bls12G2Add = bls12_381::Bls12381G2AdditionPrecompile;
     type Bls12G1Msm = bls12_381::Bls12381G1MSMPrecompile;
@@ -65,6 +62,10 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>
 {
     type Secp256k1ECRecover = ecrecover::EcRecoverImpl<USE_ADVICE>;
     type ModExp = modexp::ModExpImpl<USE_ADVICE>;
+    type Bn254Add = bn254_ecadd::Bn254AddImpl<USE_ADVICE>;
+    type Bn254Mul = bn254_ecmul::Bn254MulImpl<USE_ADVICE>;
+    type Bn254PairingCheck = bn254_pairing_check::Bn254PairingCheckImpl<USE_ADVICE>;
+    type PointEvaluation = point_evaluation::PointEvaluationImpl<USE_ADVICE>;
     type DivRem = u256_advice::DivRemImpl<USE_ADVICE>;
     type WideDivRem = u256_advice::WideDivRemImpl<USE_ADVICE>;
     type MulModNonZeroModulus = u256_advice::MulModNonZeroModulusImpl<USE_ADVICE>;

@@ -259,11 +259,7 @@ pub trait SystemFunctions<R: Resources> {
     type Secp256r1AddProjective: SystemFunction<R, Secp256r1AddProjectiveErrors>;
     type Secp256r1MulProjective: SystemFunction<R, Secp256r1MulProjectiveErrors>;
     type P256Verify: SystemFunction<R, P256VerifyErrors>;
-    type Bn254Add: SystemFunction<R, Bn254AddErrors>;
-    type Bn254Mul: SystemFunction<R, Bn254MulErrors>;
-    type Bn254PairingCheck: SystemFunction<R, Bn254PairingCheckErrors>;
     type RipeMd160: SystemFunction<R, RipeMd160Errors>;
-    type PointEvaluation: SystemFunction<R, PointEvaluationErrors>;
     type Bls12G1Add: SystemFunction<R, Bls12PrecompileErrors>;
     type Bls12G2Add: SystemFunction<R, Bls12PrecompileErrors>;
     type Bls12G1Msm: SystemFunction<R, Bls12PrecompileErrors>;
@@ -346,33 +342,6 @@ pub trait SystemFunctions<R: Resources> {
         Self::P256Verify::execute(input, output, resources, allocator)
     }
 
-    fn bn254_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bn254AddErrors>> {
-        Self::Bn254Add::execute(input, output, resources, allocator)
-    }
-
-    fn bn254_mul<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bn254MulErrors>> {
-        Self::Bn254Mul::execute(input, output, resources, allocator)
-    }
-
-    fn bn254_pairing_check<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
-        Self::Bn254PairingCheck::execute(input, output, resources, allocator)
-    }
-
     fn ripemd160<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
@@ -380,15 +349,6 @@ pub trait SystemFunctions<R: Resources> {
         allocator: A,
     ) -> Result<(), SubsystemError<RipeMd160Errors>> {
         Self::RipeMd160::execute(input, output, resources, allocator)
-    }
-
-    fn point_evaluation<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
-        Self::PointEvaluation::execute(input, output, resources, allocator)
     }
 
     fn bls12_g1_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
@@ -467,6 +427,12 @@ pub trait SystemFunctions<R: Resources> {
 pub trait SystemFunctionsExt<R: Resources> {
     type Secp256k1ECRecover: SystemFunctionExt<R, Secp256k1ECRecoverErrors>;
     type ModExp: SystemFunctionExt<R, ModExpErrors>;
+    /// The bn254 and KZG point evaluation precompiles take field inversions and square roots
+    /// from oracle hints (see `curve_hints` in `basic_system`), hence the oracle access.
+    type Bn254Add: SystemFunctionExt<R, Bn254AddErrors>;
+    type Bn254Mul: SystemFunctionExt<R, Bn254MulErrors>;
+    type Bn254PairingCheck: SystemFunctionExt<R, Bn254PairingCheckErrors>;
+    type PointEvaluation: SystemFunctionExt<R, PointEvaluationErrors>;
     type DivRem: DivRemExt;
     type WideDivRem: WideDivRemExt;
     type MulModNonZeroModulus: MulModNonZeroModulusExt;
@@ -488,6 +454,70 @@ pub trait SystemFunctionsExt<R: Resources> {
         allocator: A,
     ) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
         Self::Secp256k1ECRecover::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bn254_add<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bn254AddErrors>> {
+        Self::Bn254Add::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bn254_mul<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bn254MulErrors>> {
+        Self::Bn254Mul::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bn254_pairing_check<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
+        Self::Bn254PairingCheck::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn point_evaluation<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
+        Self::PointEvaluation::execute(input, output, resources, oracle, logger, allocator)
     }
 
     fn mod_exp<

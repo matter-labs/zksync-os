@@ -15,12 +15,39 @@ use zk_ee::system::base_system_functions::{
 };
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::Resource;
+use zk_ee::system::logger::NullLogger;
 use zk_ee::system::{SystemFunction, SystemFunctionExt};
+
+/// The bn254 and point evaluation functions run without advice here, so the oracle is unused
+struct DummyOracle;
+
+impl zk_ee::oracle::IOOracle for DummyOracle {
+    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+    fn raw_query<
+        'a,
+        I: zk_ee::oracle::usize_serialization::UsizeSerializable
+            + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+    >(
+        &'a mut self,
+        _query_type: u32,
+        _input: &I,
+    ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+        unreachable!("the oracle is not consulted without advice");
+    }
+}
 
 pub fn ecadd(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254AddErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254AddImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254AddImpl::<false>::execute(
+        &src,
+        dst,
+        &mut resource,
+        &mut DummyOracle,
+        &mut NullLogger,
+        allocator,
+    )
 }
 
 pub fn sha256(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Sha256Errors>> {
@@ -44,7 +71,14 @@ pub fn ripemd160(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Rip
 pub fn ecmul(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254MulErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254MulImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254MulImpl::<false>::execute(
+        &src,
+        dst,
+        &mut resource,
+        &mut DummyOracle,
+        &mut NullLogger,
+        allocator,
+    )
 }
 
 pub fn p256_verify(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<P256VerifyErrors>> {
@@ -59,11 +93,25 @@ pub fn pairing(
 ) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254PairingCheckImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254PairingCheckImpl::<false>::execute(
+        &src,
+        dst,
+        &mut resource,
+        &mut DummyOracle,
+        &mut NullLogger,
+        allocator,
+    )
 }
 
 pub fn kzg(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<PointEvaluationErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    PointEvaluationImpl::execute(&src, dst, &mut resource, allocator)
+    PointEvaluationImpl::<false>::execute(
+        &src,
+        dst,
+        &mut resource,
+        &mut DummyOracle,
+        &mut NullLogger,
+        allocator,
+    )
 }

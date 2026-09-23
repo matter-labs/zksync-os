@@ -460,14 +460,14 @@ fn make_ref<'a, I: Interner<'a> + 'a>(
             // the prefix is the last byte of the first word, and the hash is copied by words.
             let mut buffer = interner.get_word_buffer(1 + 32 / WORD)?;
             buffer.write_word((0x80 + 32) << ((WORD - 1) * 8));
-            if hash.as_ptr().addr() % WORD == 0 {
+            if hash.as_ptr().addr().is_multiple_of(WORD) {
                 for i in 0..32 / WORD {
                     // SAFETY: an aligned word of the hash
                     buffer.write_word(unsafe { hash.as_ptr().cast::<usize>().add(i).read() });
                 }
             } else {
-                for chunk in hash.chunks_exact(WORD) {
-                    buffer.write_word(usize::from_le_bytes(chunk.try_into().unwrap()));
+                for chunk in hash.as_chunks::<WORD>().0 {
+                    buffer.write_word(usize::from_le_bytes(*chunk));
                 }
             }
             Ok(ChildRef {

@@ -13,6 +13,9 @@ pub const BYTES32_USIZE_SIZE: usize = 4;
 #[repr(align(8))]
 #[derive(Clone, Copy, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+// the manual `PartialEq` below is word-wise equality, the same relation the derived `Hash` is
+// consistent with
+#[allow(clippy::derived_hash_with_manual_eq)]
 pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
 }

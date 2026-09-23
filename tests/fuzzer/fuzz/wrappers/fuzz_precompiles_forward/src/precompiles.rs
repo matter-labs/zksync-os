@@ -33,7 +33,7 @@ impl zk_ee::oracle::IOOracle for DummyOracle {
 pub fn ecadd(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254AddErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254AddImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254AddImpl::<false>::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }
 
 pub fn sha256(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Sha256Errors>> {
@@ -57,7 +57,7 @@ pub fn ripemd160(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Rip
 pub fn ecmul(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254MulErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254MulImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254MulImpl::<false>::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }
 
 pub fn p256_verify(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<P256VerifyErrors>> {
@@ -87,11 +87,11 @@ pub fn ecrecover_with_oracle(src: &[u8], dst: &mut Vec<u8>) -> Result<(), Subsys
 pub fn pairing(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    Bn254PairingCheckImpl::execute(&src, dst, &mut resource, allocator)
+    Bn254PairingCheckImpl::<false>::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }
 
 pub fn kzg(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<PointEvaluationErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    PointEvaluationImpl::execute(&src, dst, &mut resource, allocator)
+    PointEvaluationImpl::<false>::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }

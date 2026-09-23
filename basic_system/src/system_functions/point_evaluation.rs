@@ -1,23 +1,28 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST};
+use crate::system_functions::curve_hints;
 use crypto::ark_ec::pairing::Pairing;
 use crypto::ark_ec::{AffineRepr, CurveGroup};
 use crypto::ark_ff::{Field, PrimeField};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::interface_error;
+use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::logger::Logger;
 use zk_ee::system::*;
 
 pub type KzgScalar = <crypto::bls12_381::Fr as PrimeField>::BigInt;
 
 ///
 /// Point evaluation system function implementation.
+/// With `USE_ADVICE`, the square roots of the point decompressions and the field inversions
+/// (of the affine conversion and of the final exponentiation) are taken from oracle hints.
 ///
-pub struct PointEvaluationImpl;
+pub struct PointEvaluationImpl<const USE_ADVICE: bool>;
 
-impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationImpl {
-    zk_ee::system_function_execute_with_closure_via_buffer!(PointEvaluationErrors);
-
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, PointEvaluationErrors>
+    for PointEvaluationImpl<USE_ADVICE>
+{
     /// Returns `OutOfGas` if not enough resources provided, resources may be not touched.
     ///
     /// Returns `InvalidInputSize` error if `input_len` != 192,
@@ -25,14 +30,22 @@ impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationI
     /// `InvalidScalar` if `z` or `y` scalars encoded incorrectly,
     /// `InvalidVersionedHash` if versioned hash doesn't correspond to the commitment,
     /// `PairingMismatch` if kzg proof pairing check failed.
-    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         _allocator: A,
     ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
         cycle_marker::wrap_with_resources!("point_evaluation", resources, {
-            point_evaluation_as_system_function_inner(input, output, resources)
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
+            point_evaluation_as_system_function_inner(input, output, resources, oracle)
         })
     }
 }
@@ -73,6 +86,21 @@ pub fn parse_g1_compressed(input: &[u8]) -> Result<crypto::bls12_381::G1Affine, 
     crypto::bls12_381::G1Affine::deserialize_compressed(input).map_err(|_| ())
 }
 
+/// `parse_g1_compressed` with the square root of the decompression from a checked oracle
+/// hint, when an oracle is given
+fn parse_g1_compressed_with_oracle<O: IOOracle>(
+    input: &[u8],
+    oracle: Option<&mut O>,
+) -> Result<crypto::bls12_381::G1Affine, ()> {
+    match oracle {
+        Some(oracle) => crypto::bls12_381::g1_from_compressed_with_sqrt(input, |y_squared| {
+            curve_hints::bls12_381_fq_sqrt(oracle, y_squared)
+        })
+        .map_err(|_| ()),
+        None => parse_g1_compressed(input),
+    }
+}
+
 #[inline(always)]
 pub fn verify_kzg_proof(
     commitment: crypto::bls12_381::G1Affine,
@@ -80,6 +108,19 @@ pub fn verify_kzg_proof(
     z: KzgScalar,
     y: KzgScalar,
 ) -> bool {
+    verify_kzg_proof_with_oracle::<oracle_provider_stub::NoOracle>(commitment, proof, z, y, None)
+}
+
+/// With an oracle, the field inversions (of the affine conversion and of the final
+/// exponentiation) come from checked hints.
+pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
+    commitment: crypto::bls12_381::G1Affine,
+    proof: crypto::bls12_381::G1Affine,
+    z: KzgScalar,
+    y: KzgScalar,
+    mut oracle: Option<&mut O>,
+) -> bool {
+    use crypto::bls12_381::curves::Bls12_381;
     // Original check:
     // e(yG1 - commitment, G2) * e(proof, tauG2 - zG2) == 1.
     //
@@ -89,22 +130,81 @@ pub fn verify_kzg_proof(
     left_g1 -= &commitment;
     left_g1 -= proof.mul_bigint(&z);
 
-    let left_g1 = left_g1.into_affine();
+    let left_g1 = match oracle.as_deref_mut() {
+        Some(oracle) => crypto::hinted_ops::to_affine_with_inverse(&left_g1, |z| {
+            curve_hints::bls12_381_fq_inverse(oracle, z)
+        }),
+        None => left_g1.into_affine(),
+    };
     // both G2 points are fixed, so their Miller-loop line coefficients are constants
-    let gt_el = crypto::bls12_381::curves::Bls12_381::multi_pairing(
-        [left_g1, proof],
-        [
-            crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
-            crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
-        ],
-    );
-    gt_el.0 == <crypto::bls12_381::curves::Bls12_381 as Pairing>::TargetField::ONE
+    let g2 = [
+        crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
+        crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
+    ];
+    let Some(oracle) = oracle else {
+        let miller_loop = Bls12_381::multi_miller_loop([left_g1, proof], g2);
+        // the Miller loop of curve points never evaluates to zero
+        let gt_el = Bls12_381::final_exponentiation(miller_loop)
+            .expect("the Miller loop output is invertible");
+        return gt_el.0 == <Bls12_381 as Pairing>::TargetField::ONE;
+    };
+    // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
+    // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
+    // `crypto::residue_witness`): the Miller loop started at `d` gives `d^|u| f`, the rest is
+    // one Frobenius map. The prover claims the outcome; it cannot choose it: a claimed
+    // identity must come with a witness that passes the check (a failed check is a broken
+    // prover and panics), and a claimed non-identity is settled by the exact final
+    // exponentiation, which finds an identity all the same.
+    match curve_hints::bls12_381_kzg_residue_witness(oracle, &left_g1, &proof) {
+        curve_hints::PairingClaim::Identity { c: _, d, s } => {
+            let l = Bls12_381::multi_miller_loop_with_initial(&d, [left_g1, proof], g2);
+            assert!(
+                crypto::residue_witness::bls12_381::check(&l, &d, &s),
+                "the residue witness of the KZG proof claimed to be valid is wrong"
+            );
+            true
+        }
+        curve_hints::PairingClaim::NotIdentity { f_inverse } => {
+            let miller_loop = Bls12_381::multi_miller_loop([left_g1, proof], g2);
+            let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop.0, |f| {
+                curve_hints::checked_inverse(f, f_inverse)
+            })
+            .expect("the Miller loop output is invertible");
+            gt_el == <Bls12_381 as Pairing>::TargetField::ONE
+        }
+    }
 }
 
-fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
+/// An oracle type for the calls that use none
+mod oracle_provider_stub {
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::IOOracle;
+    use zk_ee::system::errors::internal::InternalError;
+
+    pub enum NoOracle {}
+
+    impl IOOracle for NoOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            match *self {}
+        }
+    }
+}
+
+fn point_evaluation_as_system_function_inner<
+    D: ?Sized + TryExtend<u8>,
+    R: Resources,
+    O: IOOracle,
+>(
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
+    mut oracle: Option<&mut O>,
 ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
     resources
         .charge_legacy_gas_and_native(POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST)?;
@@ -127,13 +227,14 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
     }
 
     // Parse the commitment and proof
-    let Ok(commitment_point) = parse_g1_compressed(commitment) else {
+    let Ok(commitment_point) = parse_g1_compressed_with_oracle(commitment, oracle.as_deref_mut())
+    else {
         return Err(interface_error!(
             PointEvaluationInterfaceError::InvalidPoint
         ));
     };
     let proof = &input[144..192];
-    let Ok(proof) = parse_g1_compressed(proof) else {
+    let Ok(proof) = parse_g1_compressed_with_oracle(proof, oracle.as_deref_mut()) else {
         return Err(interface_error!(
             PointEvaluationInterfaceError::InvalidPoint
         ));
@@ -151,7 +252,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
         ));
     };
 
-    if verify_kzg_proof(commitment_point, proof, z, y) {
+    if verify_kzg_proof_with_oracle(commitment_point, proof, z, y, oracle) {
         dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
             .map_err(|_| out_of_return_memory!())?;
         Ok(())
@@ -165,10 +266,58 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
 #[cfg(test)]
 mod tests {
     use super::*;
+    use callable_oracles::field_hints::NativeFieldOpsQuery;
+    use oracle_provider::ZkEENonDeterminismSource;
     use std::alloc::Global;
     use zk_ee::reference_implementations::BaseResources;
     use zk_ee::reference_implementations::DecreasingNative;
+    use zk_ee::system::logger::NullLogger;
     use zk_ee::system::Resource;
+
+    /// Runs the precompile without and with the oracle hints; both must agree
+    fn execute(
+        input: &[u8],
+        output: &mut Vec<u8>,
+        resources: &mut TestResources,
+    ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(NativeFieldOpsQuery);
+        let mut hinted_output = Vec::new();
+        let mut hinted_resources = infinite_resources();
+        let hinted = PointEvaluationImpl::<true>::execute(
+            input,
+            &mut hinted_output,
+            &mut hinted_resources,
+            &mut oracle,
+            &mut NullLogger,
+            Global,
+        );
+        let result = PointEvaluationImpl::<false>::execute(
+            input,
+            output,
+            resources,
+            &mut oracle,
+            &mut NullLogger,
+            Global,
+        );
+        assert_eq!(result.is_ok(), hinted.is_ok(), "{result:?} vs {hinted:?}");
+        assert_eq!(*output, hinted_output);
+        assert_eq!(resources.legacy_gas(), hinted_resources.legacy_gas());
+        // a prover claiming an invalid proof (with a correct inverse) does not change the answer
+        let mut claiming = curve_hints::tests::non_identity_claiming_oracle();
+        let mut claiming_output = Vec::new();
+        let claimed = PointEvaluationImpl::<true>::execute(
+            input,
+            &mut claiming_output,
+            &mut infinite_resources(),
+            &mut claiming,
+            &mut NullLogger,
+            Global,
+        );
+        assert_eq!(result.is_ok(), claimed.is_ok(), "{result:?} vs {claimed:?}");
+        assert_eq!(*output, claiming_output);
+        result
+    }
 
     use alloy_primitives::hex;
 
@@ -203,7 +352,7 @@ mod tests {
         let mut resources = infinite_resources();
         let gas_before = resources.legacy_gas();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
         assert!(result.is_ok(), "Result: {:?}", result);
 
         let gas_used = gas_before - resources.legacy_gas();
@@ -247,6 +396,28 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "claimed to be valid is wrong")]
+    fn wrong_identity_witness_panics() {
+        let commitment = hex!("8f59a8d2a1a625a17f3fea0fe5eb8c896db3764f3185481bc22f91b4aaffcca25f26936857bc3a7c2539ea8ec3a952b7").to_vec();
+        let versioned_hash = versioned_hash_for_kzg(&commitment).to_vec();
+        let z = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000").to_vec();
+        let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9").to_vec();
+        let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
+        let input = [versioned_hash, z, y, commitment, proof].concat();
+        let mut lying = curve_hints::tests::lying_oracle(&[
+            crate::system_functions::field_ops::FieldHintOp::Bls12381KzgResidueWitness,
+        ]);
+        let _ = PointEvaluationImpl::<true>::execute(
+            &input,
+            &mut Vec::new(),
+            &mut infinite_resources(),
+            &mut lying,
+            &mut NullLogger,
+            Global,
+        );
+    }
+
+    #[test]
     fn test_invalid_input() {
         let commitment = hex!("c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").to_vec();
 
@@ -265,7 +436,7 @@ mod tests {
         let mut output = Vec::new();
         let mut resources = infinite_resources();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
         assert!(result.is_err(), "Result: {:?}", result);
     }
 
@@ -276,7 +447,7 @@ mod tests {
         let mut output = Vec::new();
         let mut resources = infinite_resources();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
 
         assert!(result.is_err());
         if let Err(SubsystemError::LeafUsage(err)) = result {
@@ -297,7 +468,7 @@ mod tests {
         let mut output = Vec::new();
         let mut resources = infinite_resources();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
 
         assert!(result.is_err());
         if let Err(SubsystemError::LeafUsage(err)) = result {
@@ -337,7 +508,7 @@ mod tests {
         let mut output = Vec::new();
         let mut resources = infinite_resources();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
 
         assert!(result.is_err());
         if let Err(SubsystemError::LeafUsage(err)) = result {
@@ -377,7 +548,7 @@ mod tests {
         let mut output = Vec::new();
         let mut resources = infinite_resources();
 
-        let result = PointEvaluationImpl::execute(&input, &mut output, &mut resources, Global);
+        let result = execute(&input, &mut output, &mut resources);
 
         assert!(result.is_err());
         if let Err(SubsystemError::LeafUsage(err)) = result {

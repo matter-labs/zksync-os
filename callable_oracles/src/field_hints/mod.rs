@@ -1,4 +1,5 @@
-//! Oracle query processors for secp256k1 field operations (sqrt, inverse).
+//! Oracle query processors for field operation hints (square roots and inverses of the
+//! secp256k1, bn254 and bls12-381 fields).
 //!
 //! Provides two implementations:
 //! - [`FieldOpsQuery`]: Reads operands from simulated RISC-V memory.
@@ -53,35 +54,101 @@ impl OracleQueryProcessor for FieldOpsQuery {
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.src_ptr > 0);
-        assert_eq!(arg.src_len_u32_words, 8);
-        let n = read_memory_as_u64(memory, arg.src_ptr as u32, arg.src_len_u32_words / 2).unwrap();
+        assert!(op.accepts_input_len_u32_words(arg.src_len_u32_words));
+        let n = read_memory_as_u64(memory, arg.src_ptr, arg.src_len_u32_words / 2).unwrap();
+        let bytes: Vec<u8> = n.into_iter().flat_map(|el| el.to_le_bytes()).collect();
 
-        let n = Bytes32::from_array(
-            n.into_iter()
-                .flat_map(|el| el.to_le_bytes())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        );
+        answer(op, &bytes)
+    }
+}
 
-        match op {
-            FieldHintOp::Secp256k1BaseFieldSqrt => {
-                let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1BaseFieldInverse => {
-                let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1ScalarFieldInverse => {
-                let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            _ => {
-                panic!("Unknown field hint op {}", arg.op);
-            }
+/// The answer to the hint `op` on the operand `bytes` (of `op.input_len_u32_words()` words)
+fn answer(
+    op: FieldHintOp,
+    bytes: &[u8],
+) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    let bytes32 = || Bytes32::from_array(bytes.try_into().expect("a 32-byte operand"));
+    match op {
+        FieldHintOp::Secp256k1BaseFieldSqrt => {
+            let t = impls::secp256k1_base_field_sqrt(bytes32());
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Secp256k1BaseFieldInverse => {
+            let t = impls::secp256k1_base_field_inverse(bytes32());
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Secp256k1ScalarFieldInverse => {
+            let t = impls::secp256k1_scalar_field_inverse(bytes32());
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bn254BaseFieldInverse => {
+            let t: [Bytes32; 1] = impls::inverse::<crypto::bn254::Fq, 1>(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bn254Fq12Inverse => {
+            let t: [Bytes32; 12] = impls::inverse::<crypto::bn254::Fq12, 12>(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bls12381BaseFieldSqrt => {
+            let t: ([Bytes32; 2], bool) = impls::bls12_381_base_field_sqrt(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bls12381BaseFieldInverse => {
+            let t: [Bytes32; 2] = impls::inverse::<crypto::bls12_381::Fq, 2>(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bls12381Fq12Inverse => {
+            let t: [Bytes32; 24] = impls::inverse::<crypto::bls12_381::Fq12, 24>(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bn254PairingResidueWitness => {
+            let t: (bool, ([Bytes32; 12], ([Bytes32; 12], [Bytes32; 6]))) =
+                impls::bn254_pairing_residue_witness(bytes, false);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        FieldHintOp::Bls12381KzgResidueWitness => {
+            let t: (bool, ([Bytes32; 24], [Bytes32; 12])) =
+                impls::bls12_381_kzg_residue_witness(bytes, false);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
+        _ => {
+            panic!("Unknown field hint op {}", op as u32);
         }
     }
+}
+
+/// The operand of a request (`src_ptr`, `src_len_u32_words` of the request) in native memory
+fn native_operand(op: FieldHintOp, src_ptr: u64, src_len_u32_words: u32) -> Vec<u8> {
+    const { assert!(8 == core::mem::size_of::<usize>()) };
+    assert!(src_ptr > 0);
+    assert!(op.accepts_input_len_u32_words(src_len_u32_words));
+    let n: Vec<u64> = read_u64_words(src_ptr, u64::from(src_len_u32_words / 2));
+    n.into_iter().flat_map(|el| el.to_le_bytes()).collect()
+}
+
+/// The answer to a bn254 pairing request (its operand at `src_ptr`, `src_len_u32_words`
+/// long, in native memory) that claims a non-identity, with the inverse the exact path needs,
+/// whatever the product is: for tests of that path
+pub fn bn254_pairing_not_identity_claim(src_ptr: u64, src_len_u32_words: u32) -> Vec<usize> {
+    let operand = native_operand(
+        FieldHintOp::Bn254PairingResidueWitness,
+        src_ptr,
+        src_len_u32_words,
+    );
+    let t = impls::bn254_pairing_residue_witness(&operand, true);
+    t.iter().collect()
+}
+
+/// The answer to a KZG pairing request that claims a non-identity, as
+/// `bn254_pairing_not_identity_claim`
+pub fn bls12_381_kzg_not_identity_claim(src_ptr: u64, src_len_u32_words: u32) -> Vec<usize> {
+    let operand = native_operand(
+        FieldHintOp::Bls12381KzgResidueWitness,
+        src_ptr,
+        src_len_u32_words,
+    );
+    let t = impls::bls12_381_kzg_residue_witness(&operand, true);
+    t.iter().collect()
 }
 
 #[derive(Default)]
@@ -110,33 +177,11 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.src_ptr > 0);
-        assert_eq!(arg.src_len_u32_words, 8);
+        assert!(op.accepts_input_len_u32_words(arg.src_len_u32_words));
         let n: Vec<u64> = read_u64_words(arg.src_ptr, u64::from(arg.src_len_u32_words / 2));
-        let n = Bytes32::from_array(
-            n.into_iter()
-                .flat_map(|el| el.to_le_bytes())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        );
+        let bytes: Vec<u8> = n.into_iter().flat_map(|el| el.to_le_bytes()).collect();
 
-        match op {
-            FieldHintOp::Secp256k1BaseFieldSqrt => {
-                let t = impls::secp256k1_base_field_sqrt(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1BaseFieldInverse => {
-                let t = impls::secp256k1_base_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            FieldHintOp::Secp256k1ScalarFieldInverse => {
-                let t = impls::secp256k1_scalar_field_inverse(n);
-                DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
-            }
-            _ => {
-                panic!("Unknown field hint op {}", arg.op);
-            }
-        }
+        answer(op, &bytes)
     }
 }
 

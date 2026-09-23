@@ -145,27 +145,20 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_step_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let value = match stack_top.try_to_usize() {
-            Some(index) => {
-                if index < self.calldata.len() {
-                    let have_bytes = 32.min(self.calldata.len() - index);
-                    let mut bytes = Bytes32::ZERO;
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(
-                            self.calldata.as_ptr().add(index),
-                            bytes.as_u8_array_mut().as_mut_ptr(),
-                            have_bytes,
-                        )
-                    }
-                    U256::from_be_bytes(bytes.as_u8_array_ref())
-                } else {
-                    // virtual zero-pad
-                    U256::zero()
+            Some(index) if index < self.calldata.len() => {
+                let have_bytes = 32.min(self.calldata.len() - index);
+                let mut bytes = Bytes32::ZERO;
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        self.calldata.as_ptr().add(index),
+                        bytes.as_u8_array_mut().as_mut_ptr(),
+                        have_bytes,
+                    )
                 }
+                U256::from_be_bytes(bytes.as_u8_array_ref())
             }
-            None => {
-                // virtual zero-pad
-                U256::zero()
-            }
+            // virtual zero-pad
+            _ => U256::zero(),
         };
 
         if Self::PRINT_OPCODES {

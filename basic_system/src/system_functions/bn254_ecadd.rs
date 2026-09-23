@@ -1,24 +1,28 @@
 use super::*;
 use crate::cost_constants::{BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST};
 use crate::system_functions::bytereverse;
+use crate::system_functions::curve_hints;
 use crypto::ark_ec::CurveGroup;
 use crypto::ark_ff::PrimeField;
 use crypto::ark_serialize::{CanonicalSerialize, Valid};
 use zk_ee::common_traits::TryExtend;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
-    Bn254AddErrors, Bn254AddInterfaceError, SystemFunction,
+    Bn254AddErrors, Bn254AddInterfaceError, SystemFunctionExt,
 };
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::logger::Logger;
 use zk_ee::{interface_error, out_of_return_memory};
 
 ///
 /// bn254 ecadd system function implementation.
+/// With `USE_ADVICE`, the inversion that makes the result affine is taken from an oracle hint.
 ///
-pub struct Bn254AddImpl;
+pub struct Bn254AddImpl<const USE_ADVICE: bool>;
 
-impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
-    zk_ee::system_function_execute_with_closure_via_buffer!(Bn254AddErrors);
-
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254AddErrors>
+    for Bn254AddImpl<USE_ADVICE>
+{
     /// Returns the size in bytes of output.
     ///
     /// If the input size is less than expected - it will be padded with zeroes.
@@ -27,14 +31,22 @@ impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
     /// If output len less than needed(64) returns `InternalError`.
     /// Returns `OutOfGas` if not enough resources provided.
     /// Returns `InvalidInput` error only if failed to create affine points from inputs.
-    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         _: A,
     ) -> Result<(), SubsystemError<Bn254AddErrors>> {
         cycle_marker::wrap_with_resources!("bn254_ecadd", resources, {
-            bn254_ecadd_as_system_function_inner(src, dst, resources)
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
+            bn254_ecadd_as_system_function_inner(src, dst, resources, oracle)
         })
     }
 }
@@ -43,10 +55,12 @@ fn bn254_ecadd_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
     R: Resources,
+    O: IOOracle,
 >(
     src: &S,
     dst: &mut D,
     resources: &mut R,
+    oracle: Option<&mut O>,
 ) -> Result<(), SubsystemError<Bn254AddErrors>> {
     resources.charge_legacy_gas_and_native(BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST)?;
 
@@ -57,9 +71,10 @@ fn bn254_ecadd_as_system_function_inner<
 
     let coordinates = buffer.as_chunks::<64>().0.try_into().unwrap();
 
-    let serialized_result = bn254_ecadd_inner(coordinates).map_err(|_| -> SubsystemError<_> {
-        interface_error!(Bn254AddInterfaceError::InvalidPoint)
-    })?;
+    let serialized_result =
+        bn254_ecadd_inner(coordinates, oracle).map_err(|_| -> SubsystemError<_> {
+            interface_error!(Bn254AddInterfaceError::InvalidPoint)
+        })?;
 
     dst.try_extend(serialized_result)
         .map_err(|_| out_of_return_memory!())?;
@@ -67,7 +82,11 @@ fn bn254_ecadd_as_system_function_inner<
     Ok(())
 }
 
-pub fn bn254_ecadd_inner(coordinates: &[[u8; 64]; 2]) -> Result<[u8; 64], ()> {
+/// With an oracle, the inversion that makes the result affine comes from a checked hint.
+pub fn bn254_ecadd_inner<O: IOOracle>(
+    coordinates: &[[u8; 64]; 2],
+    oracle: Option<&mut O>,
+) -> Result<[u8; 64], ()> {
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::PrimeField;
     use crypto::ark_serialize::CanonicalDeserialize;
@@ -98,19 +117,29 @@ pub fn bn254_ecadd_inner(coordinates: &[[u8; 64]; 2]) -> Result<[u8; 64], ()> {
     let [a, b] = points;
     let mut result: G1Projective = a.into_group();
     result += &b;
-    let result = serialize_projective(result);
+    let result = serialize_projective(result, oracle);
 
     Ok(result)
 }
 
-pub(crate) fn serialize_projective(point: crypto::bn254::G1Projective) -> [u8; 64] {
+/// The EVM encoding of `point`. With an oracle, the inversion of its `Z` coordinate comes from
+/// a checked hint instead of an exponentiation.
+pub(crate) fn serialize_projective<O: IOOracle>(
+    point: crypto::bn254::G1Projective,
+    oracle: Option<&mut O>,
+) -> [u8; 64] {
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::Zero;
     if point.is_zero() {
         // canonical for zero point
         [0u8; 64]
     } else {
-        let result = point.into_affine();
+        let result = match oracle {
+            Some(oracle) => crypto::hinted_ops::to_affine_with_inverse(&point, |z| {
+                curve_hints::bn254_fq_inverse(oracle, z)
+            }),
+            None => point.into_affine(),
+        };
         let (x, y) = result.xy().unwrap();
         let x_bigint = x.into_bigint();
         let y_bigint = y.into_bigint();

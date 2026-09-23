@@ -22,25 +22,133 @@ pub type FieldOpsHint64 = GenericFieldOpsHint<u64>;
 
 #[repr(u32)]
 #[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldHintOp {
     Secp256k1BaseFieldSqrt = 0,
     Secp256k1BaseFieldInverse,
     Secp256k1ScalarFieldInverse,
+    /// bn254 base field inverse: a canonical little-endian 32-byte element in, the same out.
+    /// The elements of this and the following ops are encoded as in `curve_hints::encode`.
+    Bn254BaseFieldInverse,
+    /// bn254 `Fq12` inverse: 12 base field elements (384 bytes) in and out
+    Bn254Fq12Inverse,
+    /// bls12-381 base field square root: a canonical little-endian 48-byte element in a 64-byte
+    /// buffer in; a 64-byte candidate root and a "quadratic non-residue" flag out. As for
+    /// secp256k1 (`p = 3 mod 4`), the candidate is the root of the input, or of its negation
+    /// when the input is not a square.
+    Bls12381BaseFieldSqrt,
+    /// bls12-381 base field inverse: 64-byte buffers with a 48-byte element in and out
+    Bls12381BaseFieldInverse,
+    /// bls12-381 `Fq12` inverse: 12 base field elements of 64 bytes (768 bytes) in and out
+    Bls12381Fq12Inverse,
+    /// The prover's claim about a bn254 pairing product (see `crypto::residue_witness` and
+    /// `curve_hints::PairingClaim`): the affine pairs (`x, y` of `G1`, `x, y` of `G2` as
+    /// `c0, c1`: 6 elements of 32 bytes per pair, any number of pairs) in; an "is the
+    /// identity" flag, then for an identity the witness `c`, `d = c^-1` (`Fq12`, 12 elements
+    /// each) and the scaling factor (`Fq6`, 6 elements), otherwise the inverse of the Miller
+    /// loop output in the first 12 elements and zeros
+    Bn254PairingResidueWitness,
+    /// The prover's claim about the KZG proof pairing product `e(P1, G2) e(P2, tau G2)`: the
+    /// two affine `G1` points (`x, y` each, 4 elements of 64 bytes) in; an "is the identity"
+    /// flag, then for an identity the witness `d` (`Fq12`, 12 elements) and the scaling
+    /// factor (`Fq6`, 6 elements), otherwise the inverse of the Miller loop output in the
+    /// first 12 elements and zeros
+    Bls12381KzgResidueWitness,
 }
 
 impl FieldHintOp {
     pub fn parse_u32(value: u32) -> Option<Self> {
-        match value {
-            a if a == (Self::Secp256k1BaseFieldSqrt as u32) => Some(Self::Secp256k1BaseFieldSqrt),
-            a if a == (Self::Secp256k1BaseFieldInverse as u32) => {
-                Some(Self::Secp256k1BaseFieldInverse)
-            }
-            a if a == (Self::Secp256k1ScalarFieldInverse as u32) => {
-                Some(Self::Secp256k1ScalarFieldInverse)
-            }
-            _ => None,
+        const ALL: [FieldHintOp; 10] = [
+            FieldHintOp::Secp256k1BaseFieldSqrt,
+            FieldHintOp::Secp256k1BaseFieldInverse,
+            FieldHintOp::Secp256k1ScalarFieldInverse,
+            FieldHintOp::Bn254BaseFieldInverse,
+            FieldHintOp::Bn254Fq12Inverse,
+            FieldHintOp::Bls12381BaseFieldSqrt,
+            FieldHintOp::Bls12381BaseFieldInverse,
+            FieldHintOp::Bls12381Fq12Inverse,
+            FieldHintOp::Bn254PairingResidueWitness,
+            FieldHintOp::Bls12381KzgResidueWitness,
+        ];
+        ALL.into_iter().find(|op| *op as u32 == value)
+    }
+
+    /// The length of the operand of the op in 32-bit words, `None` for a variable one (a
+    /// multiple of `variable_input_unit_u32_words`)
+    pub const fn input_len_u32_words(self) -> Option<u32> {
+        let words = match self {
+            FieldHintOp::Secp256k1BaseFieldSqrt
+            | FieldHintOp::Secp256k1BaseFieldInverse
+            | FieldHintOp::Secp256k1ScalarFieldInverse
+            | FieldHintOp::Bn254BaseFieldInverse => 8,
+            FieldHintOp::Bn254Fq12Inverse => 12 * 8,
+            FieldHintOp::Bls12381BaseFieldSqrt | FieldHintOp::Bls12381BaseFieldInverse => 16,
+            FieldHintOp::Bls12381Fq12Inverse => 12 * 16,
+            FieldHintOp::Bn254PairingResidueWitness => return None,
+            FieldHintOp::Bls12381KzgResidueWitness => 4 * 16,
+        };
+        Some(words)
+    }
+
+    /// The unit of a variable operand length, in 32-bit words
+    pub const fn variable_input_unit_u32_words(self) -> u32 {
+        match self {
+            FieldHintOp::Bn254PairingResidueWitness => 6 * 8,
+            _ => 1,
         }
     }
+
+    /// Whether `len` 32-bit words are a valid operand length
+    pub const fn accepts_input_len_u32_words(self, len: u32) -> bool {
+        match self.input_len_u32_words() {
+            Some(expected) => len == expected,
+            None => len > 0 && len.is_multiple_of(self.variable_input_unit_u32_words()),
+        }
+    }
+}
+
+/// Asks the oracle for the hint `op` on `input`, which must be 4-byte aligned and of a length
+/// the op accepts. The answer is checked by the caller.
+pub fn query_field_hint<O: IOOracle, R: UsizeDeserializable>(
+    oracle: &mut O,
+    op: FieldHintOp,
+    input: &[u8],
+) -> R {
+    debug_assert!(input.len().is_multiple_of(4));
+    let src_len_u32_words = (input.len() / 4) as u32;
+    debug_assert!(op.accepts_input_len_u32_words(src_len_u32_words));
+    debug_assert!(input.as_ptr().addr().is_multiple_of(4));
+    // We use different advice params depending on architecture
+    // They are mostly the same, main difference is the width of pointers
+    #[cfg(target_pointer_width = "32")]
+    let r: R = {
+        let hint_request = FieldOpsHint {
+            op: op as u32,
+            src_ptr: input.as_ptr().addr() as u32,
+            src_len_u32_words,
+        };
+        oracle
+            .query_serializable(
+                FIELD_OPS_ADVISE_QUERY_ID,
+                &((&hint_request as *const FieldOpsHint).addr() as u32),
+            )
+            .unwrap()
+    };
+    #[cfg(target_pointer_width = "64")]
+    let r: R = {
+        let hint_request = FieldOpsHint64 {
+            op: op as u32,
+            src_ptr: input.as_ptr().addr() as u64,
+            src_len_u32_words,
+        };
+        oracle
+            .query_serializable(
+                FIELD_OPS_ADVISE_QUERY_ID,
+                &((&hint_request as *const FieldOpsHint64).addr() as u64),
+            )
+            .unwrap()
+    };
+    r
 }
 
 /// Secp256k1 hooks implementation that uses an IOOracle for field operations.
@@ -138,37 +246,7 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
 
 impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
     fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
-        // We use different advice params depending on architecture
-        // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_pointer_width = "32")]
-        let r: R = {
-            let hint_request = FieldOpsHint {
-                op: op as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint).addr() as u32),
-                )
-                .unwrap()
-        };
-        #[cfg(target_pointer_width = "64")]
-        let r: R = {
-            let hint_request = FieldOpsHint64 {
-                op: op as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
-                )
-                .unwrap()
-        };
-        r
+        query_field_hint(self.oracle, op, input.as_u8_array_ref())
     }
 }
 

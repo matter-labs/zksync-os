@@ -121,7 +121,6 @@ struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
     /// Chronological list of pointers to elements updated since the last commit.
     pending_updated_elements:
         PagedStack<(ElementPtr<K, V, A, KP>, CacheSnapshotId), PENDING_PAGE, A>,
-    alloc: A,
 }
 
 impl<K, V, A, KP> HistoryMap<K, V, A, KP>
@@ -169,7 +168,6 @@ where
         Self {
             index,
             state: HistoryMapState {
-                alloc: alloc.clone(),
                 // Initial values will be associated with snapshot 0 (so they can't be reverted)
                 next_snapshot_id: CacheSnapshotId(1),
                 frozen_snapshot_id: CacheSnapshotId(0),
