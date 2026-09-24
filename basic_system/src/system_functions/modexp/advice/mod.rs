@@ -3,9 +3,12 @@ use bigint::ModexpAdvisor;
 use core::alloc::Allocator;
 
 mod bigint;
+mod exponent;
+mod single_digit;
 mod u256;
 
 use self::bigint::BigintRepr;
+use crate::system_functions::modexp::strip_leading_zeroes;
 
 use zk_ee::system::logger::Logger;
 #[cfg(feature = "testing")]
@@ -42,15 +45,25 @@ fn modexp_inner<L: Logger, A: Allocator + Clone>(
     advisor: &mut impl ModexpAdvisor,
     allocator: A,
 ) -> Vec<u8, A> {
-    let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator.clone());
-    if m.digits == 0 {
-        Vec::new_in(allocator)
-    } else {
-        // another short circuit (as parsing below is infallible - we can even skip parsing the base and exponent)
-        if m.digits == 1 && m.backing[0].is_one() {
+    let modulus_digits = strip_leading_zeroes(modulus);
+    if modulus_digits.is_empty() {
+        return Vec::new_in(allocator);
+    }
+    if modulus_digits.len() <= 32 {
+        // one digit: the U256 path
+        let mut padded = [0u8; 32];
+        padded[32 - modulus_digits.len()..].copy_from_slice(modulus_digits);
+        let m = ::u256::U256::from_be_bytes(&padded);
+        if m.is_one() {
             // it is base ^ exponent mod 1 == 0 in all the cases
             return Vec::new_in(allocator);
         }
+        return single_digit::modexp(base, exp, &m, advisor, allocator);
+    }
+
+    let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator.clone());
+    debug_assert!(m.digits > 1);
+    {
         let min_capacity = m.capacity();
         let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
             &base,
@@ -69,6 +82,7 @@ mod test {
     use super::bigint::naive_advisor::NaiveAdvisor;
     use super::*;
     use num_bigint::BigUint;
+    use num_traits::Zero;
 
     fn invoke_precompile_with_advisor(
         modulus: &[u8],
@@ -143,6 +157,15 @@ mod test {
 
             write_bigint_digits(&advice.quotient_digits, quotient_dst);
             write_bigint_digits(&advice.remainder_digits, remainder_dst);
+        }
+
+        fn wide_quotient(
+            &mut self,
+            lo: &::u256::U256,
+            hi: &::u256::U256,
+            modulus: &::u256::U256,
+        ) -> (::u256::U256, ::u256::U256) {
+            super::bigint::naive_wide_quotient(lo, hi, modulus)
         }
     }
 
@@ -335,6 +358,128 @@ mod test {
         let expected = hex::decode("").unwrap();
 
         assert_eq!(output, expected);
+    }
+
+    /// A small deterministic generator (xorshift64*) for the randomized comparisons
+    struct Rng(u64);
+
+    impl Rng {
+        fn next_u64(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+
+        fn bytes(&mut self, len: usize) -> std::vec::Vec<u8> {
+            (0..len).map(|_| self.next_u64() as u8).collect()
+        }
+    }
+
+    fn assert_matches_reference(base: &[u8], exp: &[u8], modulus: &[u8]) {
+        let output = invoke_precompile_no_prepadding(modulus, base, exp);
+        let modulus_big = BigUint::from_bytes_be(modulus);
+        let expected = if modulus_big.is_zero() {
+            std::vec::Vec::new()
+        } else {
+            let result =
+                BigUint::from_bytes_be(base).modpow(&BigUint::from_bytes_be(exp), &modulus_big);
+            if result.is_zero() {
+                std::vec::Vec::new()
+            } else {
+                result.to_bytes_be()
+            }
+        };
+        assert_eq!(
+            BigUint::from_bytes_be(&output),
+            BigUint::from_bytes_be(&expected),
+            "base {base:02x?} exp {exp:02x?} modulus {modulus:02x?}"
+        );
+    }
+
+    /// The single-digit modulus path against the reference: bases of up to 4 digits (the
+    /// Horner reduction), exponents around the window threshold, moduli of every size up to
+    /// 32 bytes including even and small ones.
+    #[test]
+    fn single_digit_modulus_matches_reference() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        for round in 0..400 {
+            let modulus_len = 1 + (rng.next_u64() as usize) % 32;
+            let mut modulus = rng.bytes(modulus_len);
+            if round % 7 == 0 {
+                // a small modulus: two-digit quotients in every step
+                modulus = vec![1 + (rng.next_u64() as u8) % 16];
+            }
+            let base_len = (rng.next_u64() as usize) % 130;
+            let base = rng.bytes(base_len);
+            let exp_len = match round % 4 {
+                0 => (rng.next_u64() as usize) % 8,
+                1 => 8,
+                2 => 9 + (rng.next_u64() as usize) % 24,
+                _ => 32 + (rng.next_u64() as usize) % 40,
+            };
+            let mut exp = rng.bytes(exp_len);
+            if round % 11 == 0 {
+                // sparse exponents: zero windows and short runs
+                for byte in exp.iter_mut() {
+                    *byte &= 0x11;
+                }
+            }
+            assert_matches_reference(&base, &exp, &modulus);
+        }
+    }
+
+    /// The special values of the single-digit path
+    #[test]
+    fn single_digit_modulus_special_cases() {
+        let m = vec![0xffu8; 32];
+        // 0^0 = 1, 0^e = 0, 1^e = 1, base = modulus, base = modulus + 1, exp = 0 for a large base
+        assert_matches_reference(&[], &[], &m);
+        assert_matches_reference(&[0, 0], &[5], &m);
+        assert_matches_reference(&[1], &[0xff; 40], &m);
+        assert_matches_reference(&m, &[3], &m);
+        let mut m_plus_one = vec![1u8];
+        m_plus_one.extend(std::iter::repeat_n(0u8, 32));
+        assert_matches_reference(&m_plus_one, &[3], &m);
+        assert_matches_reference(&[0xab; 100], &[], &m);
+        // modulus 2 and an even modulus with a zero-absorbing base
+        assert_matches_reference(&[7], &[0xff; 9], &[2]);
+        assert_matches_reference(&[2], &[0xff; 9], &[0, 0, 0x40]);
+        // leading zero bytes of the modulus do not change the path
+        let mut padded = vec![0u8; 40];
+        padded.extend_from_slice(&m);
+        assert_matches_reference(&[0xab; 33], &[0xcd; 9], &padded);
+    }
+
+    /// The multi-digit modulus path against the reference: 2 to 5 digit moduli, bases up to
+    /// 8 digits (the initial reduction) and exponents on both sides of the window threshold
+    #[test]
+    fn multi_digit_modulus_matches_reference() {
+        let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+        for round in 0..60 {
+            let modulus_len = 33 + (rng.next_u64() as usize) % 128;
+            let modulus = rng.bytes(modulus_len);
+            let base_len = (rng.next_u64() as usize) % 260;
+            let base = rng.bytes(base_len);
+            let exp_len = match round % 3 {
+                0 => (rng.next_u64() as usize) % 8,
+                1 => 8 + (rng.next_u64() as usize) % 4,
+                _ => 12 + (rng.next_u64() as usize) % 10,
+            };
+            let exp = rng.bytes(exp_len);
+            assert_matches_reference(&base, &exp, &modulus);
+        }
+        // special values
+        let m = vec![0xffu8; 64];
+        assert_matches_reference(&[], &[], &m);
+        assert_matches_reference(&[0], &[5], &m);
+        assert_matches_reference(&[1], &[0xff; 40], &m);
+        assert_matches_reference(&m, &[3], &m);
+        assert_matches_reference(&[0xab; 100], &[], &m);
+        // an even modulus with a zero-absorbing base: 2^512 mod 2^500
+        let mut even = vec![0u8; 63];
+        even.insert(0, 0x10);
+        assert_matches_reference(&[2], &[0xff, 0xff], &even);
     }
 
     #[test]

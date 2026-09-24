@@ -40,6 +40,19 @@ impl DelegatedU256 {
         }
     }
 
+    /// The zero digit as a delegation operand (it lives in `.rodata`)
+    pub(crate) fn zero_ptr() -> *const Self {
+        core::ptr::addr_of!(ZERO)
+    }
+
+    /// Writes zero into `dst`
+    ///
+    /// # Safety
+    /// `dst` must be 32 bytes aligned and point to 32 bytes of accessible memory.
+    pub(crate) unsafe fn write_zero_into_ptr(dst: *mut Self) {
+        let _ = bigint_op_delegation_raw(dst.cast(), Self::zero_ptr().cast(), BigIntOps::MemCpy);
+    }
+
     pub(crate) unsafe fn from_be_bytes_in_place(input: &[u8; 32], place: &mut MaybeUninit<Self>) {
         unsafe {
             let ptr = place.as_mut_ptr().cast::<u64>();

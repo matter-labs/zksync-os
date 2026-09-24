@@ -143,7 +143,7 @@ fn query_div_rem_hint<'a, O: IOOracle>(
 /// Asks the oracle for `(dividend_hi * 2^256 + dividend_lo) / divisor`; the answer is
 /// the quotient, 8 limbs (low half first).
 #[inline(always)]
-fn query_wide_div_rem_hint<'a, O: IOOracle>(
+pub(crate) fn query_wide_div_rem_hint<'a, O: IOOracle>(
     dividend_lo: &U256,
     dividend_hi: &U256,
     divisor: &U256,
@@ -352,7 +352,9 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
 /// each word is stored where it belongs instead of being assembled in registers
 /// and copied.
 #[inline(always)]
-fn read_u256_from_oracle_response(it: &mut impl ExactSizeIterator<Item = usize>) -> U256 {
+pub(crate) fn read_u256_from_oracle_response(
+    it: &mut impl ExactSizeIterator<Item = usize>,
+) -> U256 {
     const WORDS: usize = core::mem::size_of::<U256>() / core::mem::size_of::<usize>();
     let mut out = core::mem::MaybeUninit::<U256>::uninit();
     let dst = out.as_mut_ptr().cast::<usize>();
@@ -436,15 +438,34 @@ fn u256_mulmod_nonzero_modulus_with_advice<O: IOOracle>(
     product_lo.widening_mul_assign_into(&mut product_hi, b);
 
     let mut it = query_wide_div_rem_hint(product_lo, &product_hi, modulus, oracle);
+    let q_lo = read_u256_from_oracle_response(&mut it);
+    let q_hi = read_u256_from_oracle_response(&mut it);
+    reduce_product_with_quotient(product_lo, &mut product_hi, modulus, q_lo, q_hi);
 
+    // SAFETY: the modulus slot is a distinct, aligned, initialized U256
+    unsafe { U256::write_into_ptr_unchecked(modulus as *mut U256, product_lo) };
+}
+
+/// Reduces the 512-bit product `(product_lo, product_hi)` modulo `modulus` with its advised
+/// quotient `(q_lo, q_hi)`: the remainder `product - q * modulus` is formed in `product_lo`
+/// and checked to be in `[0, modulus)`. Panics on a wrong quotient. `product_hi` is
+/// consumed as scratch.
+#[inline]
+pub(crate) fn reduce_product_with_quotient(
+    product_lo: &mut U256,
+    product_hi: &mut U256,
+    modulus: &U256,
+    mut q_lo: U256,
+    mut q_hi: U256,
+) {
     // q * modulus as 512 bits: q_lo * m = (qd_lo, qd_mid), q_hi * m must fit in 256 bits
-    let mut qd_lo = read_u256_from_oracle_response(&mut it);
+    let qd_lo = &mut q_lo;
     let mut qd_mid = qd_lo.clone();
     qd_lo.widening_mul_assign_into(&mut qd_mid, modulus);
-    let mut qd_hi_lo = read_u256_from_oracle_response(&mut it);
+    let qd_hi_lo = &mut q_hi;
     let mut qd_hi_hi = qd_hi_lo.clone();
     qd_hi_lo.widening_mul_assign_into(&mut qd_hi_hi, modulus);
-    let carry = qd_mid.overflowing_add_assign(&qd_hi_lo);
+    let carry = qd_mid.overflowing_add_assign(qd_hi_lo);
     assert!(
         !carry && qd_hi_hi.is_zero(),
         "mulmod hint: quotient too large"
@@ -452,7 +473,7 @@ fn u256_mulmod_nonzero_modulus_with_advice<O: IOOracle>(
 
     // remainder = product - q * modulus, formed in the low half; must not borrow and
     // must fit in 256 bits
-    let borrow_lo = product_lo.overflowing_sub_assign(&qd_lo);
+    let borrow_lo = product_lo.overflowing_sub_assign(qd_lo);
     let borrow_mid = product_hi.overflowing_sub_assign_with_borrow_propagation(&qd_mid, borrow_lo);
     assert!(
         !borrow_mid && product_hi.is_zero(),
@@ -463,9 +484,6 @@ fn u256_mulmod_nonzero_modulus_with_advice<O: IOOracle>(
     let mut check = product_lo.clone();
     let borrow = check.overflowing_sub_assign(modulus);
     assert!(borrow, "mulmod hint: remainder not reduced");
-
-    // SAFETY: the modulus slot is a distinct, aligned, initialized U256
-    unsafe { U256::write_into_ptr_unchecked(modulus as *mut U256, product_lo) };
 }
 
 #[cfg(test)]

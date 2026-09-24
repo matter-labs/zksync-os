@@ -66,6 +66,22 @@ fn run_precompile_inner(
     input: &[u8],
     disable_revm_consistency_checker: bool,
 ) -> BlockOutput {
+    run_precompile_configured(
+        precompile_id,
+        gas,
+        input,
+        disable_revm_consistency_checker,
+        None,
+    )
+}
+
+fn run_precompile_configured(
+    precompile_id: &str,
+    gas: Option<u64>,
+    input: &[u8],
+    disable_revm_consistency_checker: bool,
+    run_config: Option<rig::chain::RunConfig>,
+) -> BlockOutput {
     let gas = gas.unwrap_or(DEFAULT_MAX_TX_GAS_LIMIT);
 
     let mut tester = TestingFramework::new();
@@ -115,6 +131,9 @@ fn run_precompile_inner(
 
     if disable_revm_consistency_checker {
         tester = tester.without_revm_consistency_check();
+    }
+    if let Some(run_config) = run_config {
+        tester = tester.with_run_config(run_config);
     }
 
     let txs = vec![direct_tx, forwarded_tx];
@@ -6803,6 +6822,66 @@ fn bench_modexp() {
             "0000000000000000000000000000000000000005",
             None::<u64>,
             &input,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("Tx should have succeeded");
+    }
+}
+
+/// modexp shapes beyond the single-digit modulus of the block fixtures: 2 digits, an
+/// RSA-2048 verification (exponent 65537), 8 digits with a 256-bit exponent, and the
+/// EIP-7823 maximum of 32 digits. With `MODEXP_FLAMEGRAPH_DIR` set, each shape's RISC-V
+/// run also writes a flamegraph there.
+#[test]
+fn bench_modexp_shapes() {
+    fn pseudo_random(seed: u64, len: usize) -> Vec<u8> {
+        let mut x = seed | 1;
+        (0..len)
+            .map(|_| {
+                x ^= x >> 12;
+                x ^= x << 25;
+                x ^= x >> 27;
+                (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 56) as u8
+            })
+            .collect()
+    }
+    fn input(name: &str, base_len: usize, exp: &[u8], mod_len: usize) -> Vec<u8> {
+        let mut calldata = Vec::with_capacity(96 + base_len + exp.len() + mod_len);
+        for len in [base_len, exp.len(), mod_len] {
+            calldata.extend_from_slice(&[0u8; 24]);
+            calldata.extend_from_slice(&(len as u64).to_be_bytes());
+        }
+        calldata.extend(pseudo_random(name.len() as u64 * 7919, base_len));
+        calldata.extend_from_slice(exp);
+        let mut modulus = pseudo_random(name.len() as u64 * 104729, mod_len);
+        modulus[0] |= 0x80;
+        modulus[mod_len - 1] |= 1;
+        calldata.extend(modulus);
+        calldata
+    }
+    let exp_256 = pseudo_random(42, 32);
+    let exp_64 = pseudo_random(43, 8);
+    let shapes: [(&str, usize, &[u8], usize); 4] = [
+        ("modexp_2_digits", 64, &exp_256, 64),
+        ("modexp_rsa2048_verify", 256, &[1, 0, 1], 256),
+        ("modexp_8_digits", 256, &exp_256, 256),
+        ("modexp_32_digits", 1024, &exp_64, 1024),
+    ];
+    let flamegraph_dir = std::env::var("MODEXP_FLAMEGRAPH_DIR").ok();
+    for (name, base_len, exp, mod_len) in shapes {
+        cycle_marker::log_marker(name);
+        let run_config = flamegraph_dir
+            .as_ref()
+            .map(|dir| rig::run_config::with_profiler(format!("{dir}/{name}.svg")));
+        run_precompile_configured(
+            "0000000000000000000000000000000000000005",
+            None::<u64>,
+            &input(name, base_len, exp, mod_len),
+            false,
+            run_config,
         )
         .tx_results
         .first()

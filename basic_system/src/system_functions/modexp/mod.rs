@@ -81,7 +81,7 @@ fn modexp_initial_reduction_native_cost(quotient_digits: u64, modulus_digits: u6
         .div_ceil(2)
 }
 
-fn strip_leading_zeroes(bytes: &[u8]) -> &[u8] {
+pub(super) fn strip_leading_zeroes(bytes: &[u8]) -> &[u8] {
     let first_nonzero = bytes
         .iter()
         .position(|&byte| byte != 0)
