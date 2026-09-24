@@ -69,7 +69,7 @@ fn bn254_ecadd_as_system_function_inner<
         *dst = *src;
     }
 
-    let coordinates = buffer.as_chunks::<64>().0.try_into().unwrap();
+    let coordinates = buffer.as_chunks_mut::<64>().0.try_into().unwrap();
 
     let serialized_result =
         bn254_ecadd_inner(coordinates, oracle).map_err(|_| -> SubsystemError<_> {
@@ -84,29 +84,26 @@ fn bn254_ecadd_as_system_function_inner<
 
 /// With an oracle, the inversion that makes the result affine comes from a checked hint.
 pub fn bn254_ecadd_inner<O: IOOracle>(
-    coordinates: &[[u8; 64]; 2],
+    coordinates: &mut [[u8; 64]; 2],
     oracle: Option<&mut O>,
 ) -> Result<[u8; 64], ()> {
-    use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::PrimeField;
     use crypto::ark_serialize::CanonicalDeserialize;
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, xy) in points.iter_mut().zip(coordinates.iter()) {
-        let [mut x, mut y] = xy.as_chunks::<32>().0.try_into().unwrap();
-
-        let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
+    for (dst, xy) in points.iter_mut().zip(coordinates.iter_mut()) {
+        let is_zero = xy.iter().all(|el| *el == 0);
         if is_zero {
             continue;
         }
-
-        bytereverse(&mut x);
-        bytereverse(&mut y);
-        let x_bigint =
-            <Fq as PrimeField>::BigInt::deserialize_uncompressed(&x[..]).map_err(|_| ())?;
-        let y_bigint =
-            <Fq as PrimeField>::BigInt::deserialize_uncompressed(&y[..]).map_err(|_| ())?;
+        // the coordinates are parsed in place: big-endian in the input, little-endian for
+        // the deserialization
+        let (x, y) = xy.split_at_mut(32);
+        bytereverse(x);
+        bytereverse(y);
+        let x_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&*x).map_err(|_| ())?;
+        let y_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&*y).map_err(|_| ())?;
         let x_coordinate = Fq::from_bigint(x_bigint).ok_or(())?;
         let y_coordinate = Fq::from_bigint(y_bigint).ok_or(())?;
         let affine_point = G1Affine::new_unchecked(x_coordinate, y_coordinate);
@@ -114,9 +111,9 @@ pub fn bn254_ecadd_inner<O: IOOracle>(
         *dst = affine_point;
     }
 
-    let [a, b] = points;
-    let mut result: G1Projective = a.into_group();
-    result += &b;
+    let [a, b] = &points;
+    // the in-place group law: arkworks' `Projective + Affine` copies every field element
+    let result = crypto::bn254::g1::add_affine(a, b);
     let result = serialize_projective(result, oracle);
 
     Ok(result)
