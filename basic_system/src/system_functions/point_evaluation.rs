@@ -136,17 +136,18 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
         }),
         None => left_g1.into_affine(),
     };
-    // both G2 points are fixed, so their Miller-loop line coefficients are constants
+    // both G2 points are fixed, so their Miller-loop line coefficients are constants, read
+    // in place
     let g2 = [
-        crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
-        crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
+        &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
+        &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
     ];
     let Some(oracle) = oracle else {
-        let miller_loop = Bls12_381::multi_miller_loop([left_g1, proof], g2);
+        let miller_loop = Bls12_381::multi_miller_loop_prepared([left_g1, proof], g2);
         // the Miller loop of curve points never evaluates to zero
-        let gt_el = Bls12_381::final_exponentiation(miller_loop)
+        let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, Field::inverse)
             .expect("the Miller loop output is invertible");
-        return gt_el.0 == <Bls12_381 as Pairing>::TargetField::ONE;
+        return gt_el == <Bls12_381 as Pairing>::TargetField::ONE;
     };
     // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
     // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
@@ -165,8 +166,8 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
             true
         }
         curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            let miller_loop = Bls12_381::multi_miller_loop([left_g1, proof], g2);
-            let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop.0, |f| {
+            let miller_loop = Bls12_381::multi_miller_loop_prepared([left_g1, proof], g2);
+            let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, |f| {
                 curve_hints::checked_inverse(f, f_inverse)
             })
             .expect("the Miller loop output is invertible");

@@ -107,7 +107,7 @@ pub(crate) fn bn254_pairing_residue_witness(
     claim_not_identity: bool,
 ) -> (bool, ([Bytes32; 12], ([Bytes32; 12], [Bytes32; 6]))) {
     use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
-    use crypto::bn254::curves::Bn254;
+    use crypto::bn254::curves::{Bn254, G2PreparedNoAlloc};
     use crypto::bn254::{Fq, Fq12, Fq2, Fq6, G1Affine, G2Affine};
     let fq = |i: usize| -> Fq { from_bytes(&bytes[32 * i..]) };
     let pairs: Vec<(G1Affine, G2Affine)> = (0..bytes.len() / 192)
@@ -119,11 +119,14 @@ pub(crate) fn bn254_pairing_residue_witness(
             )
         })
         .collect();
-    let f = Bn254::multi_miller_loop(
-        pairs.iter().map(|(g1, _)| g1),
-        pairs.iter().map(|(_, g2)| g2),
-    )
-    .0;
+    // the lines as the verifier computes them (projective; the affine ones from hinted
+    // inverses, `g2_affine::prepare_as_verifier`, are not in use): the witness equation holds
+    // for the verifier's Miller loop output only
+    let prepared: Vec<G2PreparedNoAlloc> = pairs
+        .iter()
+        .map(|(_, g2)| G2PreparedNoAlloc::from(*g2))
+        .collect();
+    let f = Bn254::multi_miller_loop_prepared(pairs.iter().map(|(g1, _)| g1), prepared.iter());
     let is_identity = !claim_not_identity
         && Bn254::final_exponentiation(MillerLoopOutput(f))
             .expect("non-zero")
@@ -153,7 +156,7 @@ pub(crate) fn bls12_381_kzg_residue_witness(
     bytes: &[u8],
     claim_not_identity: bool,
 ) -> (bool, ([Bytes32; 24], [Bytes32; 12])) {
-    use crypto::ark_ec::pairing::Pairing;
+    use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
     use crypto::ark_ff::One;
     use crypto::bls12_381::curves::Bls12_381;
     use crypto::bls12_381::{Fq, Fq12, Fq6, G1Affine};
@@ -161,15 +164,17 @@ pub(crate) fn bls12_381_kzg_residue_witness(
     let p1 = G1Affine::new_unchecked(fq(0), fq(1));
     let p2 = G1Affine::new_unchecked(fq(2), fq(3));
     let g2 = [
-        crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
-        crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
+        &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
+        &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
     ];
-    let f = Bls12_381::multi_miller_loop_with_initial(&Fq12::one(), [p1, p2], g2.clone());
+    let f = Bls12_381::multi_miller_loop_with_initial(&Fq12::one(), [p1, p2], g2);
     let is_identity = !claim_not_identity
-        && Bls12_381::final_exponentiation(Bls12_381::multi_miller_loop([p1, p2], g2))
-            .expect("non-zero")
-            .0
-            .is_one();
+        && Bls12_381::final_exponentiation(MillerLoopOutput(
+            Bls12_381::multi_miller_loop_prepared([p1, p2], g2),
+        ))
+        .expect("non-zero")
+        .0
+        .is_one();
     if is_identity {
         let (d, s) = crypto::residue_witness::bls12_381::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");
@@ -181,4 +186,44 @@ pub(crate) fn bls12_381_kzg_residue_witness(
         let f_inverse = conjugated.inverse().expect("non-zero");
         (false, (to_words(&f_inverse), to_words(&Fq6::zero())))
     }
+}
+
+/// The inverses of the two affine `G2` chains of the encoded pairing input point, see
+/// `curve_hints::bn254_g2_pairing_inverses`: a flag and the subgroup test inverses, a flag
+/// and the line precomputation inverses (zeros behind a cleared flag)
+pub(crate) fn bn254_g2_pairing_inverses(
+    bytes: &[u8],
+) -> (
+    bool,
+    (
+        [Bytes32; basic_system::system_functions::curve_hints::G2_SUBGROUP_INVERSE_WORDS],
+        (
+            bool,
+            [Bytes32; basic_system::system_functions::curve_hints::G2_LINE_INVERSE_WORDS],
+        ),
+    ),
+) {
+    use basic_system::system_functions::curve_hints::{
+        G2_LINE_INVERSE_WORDS, G2_SUBGROUP_INVERSE_WORDS,
+    };
+    use crypto::bn254::curves::g2_affine::{line_inverses, subgroup_inverses};
+    use crypto::bn254::{Fq2, G2Affine};
+    let x: Fq2 = from_bytes(&bytes[..64]);
+    let y: Fq2 = from_bytes(&bytes[64..128]);
+    let q = G2Affine::new_unchecked(x, y);
+    fn chain<const N: usize, const W: usize>(inverses: Option<[Fq2; N]>) -> (bool, [Bytes32; W]) {
+        let mut words = [Bytes32::ZERO; W];
+        match inverses {
+            Some(inverses) => {
+                for (element, out) in inverses.iter().zip(words.as_chunks_mut::<2>().0) {
+                    *out = to_words(element);
+                }
+                (true, words)
+            }
+            None => (false, words),
+        }
+    }
+    let (subgroup_ok, subgroup) = chain::<_, G2_SUBGROUP_INVERSE_WORDS>(subgroup_inverses(&q));
+    let (lines_ok, lines) = chain::<_, G2_LINE_INVERSE_WORDS>(line_inverses(&q));
+    (subgroup_ok, (subgroup, (lines_ok, lines)))
 }

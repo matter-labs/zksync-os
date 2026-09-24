@@ -89,7 +89,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
 ) -> Result<bool, ()> {
     use crypto::ark_ec::pairing::Pairing;
     use crypto::ark_ff::{One, PrimeField};
-    use crypto::bn254::curves::{Bn254, G1Affine, G2Affine};
+    use crypto::bn254::curves::{Bn254, G1Affine, G2Affine, G2PreparedNoAlloc};
     use crypto::bn254::fields::{Fq, Fq2};
 
     if num_pairs == 0 {
@@ -97,6 +97,12 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
     }
 
     let mut pairs = Vec::with_capacity_in(num_pairs, allocator.clone());
+    // the lines of the G2 points, precomputed from hinted inverses (affine coordinates, half
+    // the multiplications) when an oracle is given
+    let mut prepared = Vec::with_capacity_in(
+        if oracle.is_some() { num_pairs } else { 0 },
+        allocator.clone(),
+    );
     let mut src_iter = src.iter();
 
     for _ in 0..num_pairs {
@@ -158,14 +164,32 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
 
             let g2_is_zero = g2_x.is_zero() && g2_y.is_zero();
             let g2_point = G2Affine::new_unchecked(g2_x, g2_y);
-            if !g2_is_zero {
-                g2_point.check().map_err(|_| ())?;
-            }
-
-            // e(O, Q) = e(P, O) = 1: a degenerate pair does not change the product, and
-            // skipping it (after the validation above) saves its Miller loop preparation
-            if g1_is_zero || g2_is_zero {
+            if g2_is_zero {
+                // e(P, O) = 1: the pair does not change the product; the G1 point was
+                // validated above
                 continue;
+            }
+            if !g2_point.is_on_curve() {
+                return Err(());
+            }
+            if !g2_point.is_in_correct_subgroup_assuming_on_curve() {
+                return Err(());
+            }
+            if g1_is_zero {
+                // e(O, Q) = 1
+                continue;
+            }
+            if oracle.is_some() {
+                // the lines of the point, built in the vector's next slot (they are 16 KB,
+                // not to be moved), for the Miller loop that starts at the residue witness.
+                // NOTE: the affine chains with hinted inverses (`curve_hints::G2InverseHints`,
+                // `g2_affine::prepare_into`) are not used for now: their hint plumbing costs
+                // about what the affine formulas save.
+                prepared.reserve(1);
+                let slot = &mut prepared.spare_capacity_mut()[0];
+                slot.write(G2PreparedNoAlloc::from(g2_point));
+                // SAFETY: the slot was just initialized
+                prepared.set_len(prepared.len() + 1);
             }
 
             pairs.push((g1_point, g2_point));
@@ -195,7 +219,8 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
     // exponentiation, which finds an identity all the same.
     match curve_hints::bn254_pairing_residue_witness(oracle, &pairs, allocator) {
         curve_hints::PairingClaim::Identity { c, d, s } => {
-            let l = Bn254::multi_miller_loop_with_initial(&d, &c, g1_iter(), g2_iter());
+            debug_assert_eq!(prepared.len(), pairs.len());
+            let l = Bn254::multi_miller_loop_with_initial(&d, &c, g1_iter(), prepared.iter());
             assert!(
                 crypto::residue_witness::bn254::check(&l, &d, &s),
                 "the residue witness of the pairing claimed to be the identity is wrong"
@@ -203,8 +228,8 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
             Ok(true)
         }
         curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            let miller_loop = Bn254::multi_miller_loop(g1_iter(), g2_iter());
-            let result = Bn254::final_exponentiation_with_inverse(&miller_loop.0, |f| {
+            let miller_loop = Bn254::multi_miller_loop_prepared(g1_iter(), prepared.iter());
+            let result = Bn254::final_exponentiation_with_inverse(&miller_loop, |f| {
                 curve_hints::checked_inverse(f, f_inverse)
             })
             .expect("the Miller loop output is invertible");

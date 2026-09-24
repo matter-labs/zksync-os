@@ -11,7 +11,7 @@
 //! A wrong hint fails an assertion: hints come from the prover's own oracle, never from
 //! external input, so a bad one is a broken prover rather than a case to recover from.
 
-use crate::system_functions::field_ops::{query_field_hint, FieldHintOp};
+use crate::system_functions::field_ops::{query_field_hint, raw_field_hint_query, FieldHintOp};
 use crypto::ark_ff::{Field, One, PrimeField, Zero};
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
@@ -98,7 +98,27 @@ macro_rules! fp6_encoding {
     };
 }
 
+macro_rules! fp2_encoding {
+    ($field:ty, $limbs:expr) => {
+        impl HintEncoding for $field {
+            const LIMBS: usize = $limbs;
+            const COMPONENTS: usize = 2;
+
+            fn write_components(&self, out: &mut [Self::BasePrimeField]) {
+                out[0] = self.c0;
+                out[1] = self.c1;
+            }
+
+            fn from_components(c: &[Self::BasePrimeField]) -> Self {
+                Self::new(c[0], c[1])
+            }
+        }
+    };
+}
+
 prime_field_encoding!(crypto::bn254::Fq, 4);
+fp2_encoding!(crypto::bn254::Fq2, 4);
+fp2_encoding!(crypto::bls12_381::Fq2, 8);
 prime_field_encoding!(crypto::bls12_381::Fq, 8);
 fp6_encoding!(crypto::bn254::Fq6, crypto::bn254::Fq2, 4);
 fp6_encoding!(crypto::bls12_381::Fq6, crypto::bls12_381::Fq2, 8);
@@ -324,6 +344,120 @@ pub fn bn254_pairing_residue_witness<O: IOOracle, A: core::alloc::Allocator>(
             f_inverse: from_words(&first),
         }
     }
+}
+
+/// The hinted inverses of the affine `G2` chains of one point
+/// (`crypto::bn254::curves::g2_affine`), read from the oracle response as the chains consume
+/// them, so that no array of them is ever moved: a flag and the inverses of the membership
+/// test, then a flag and those of the line precomputation. A cleared flag is the prover
+/// reporting an exceptional chain (the caller falls back to the projective computation; the
+/// words of that chain are zeros and are skipped). The hints are not checked here: each chain
+/// checks every inverse against its denominator, and a wrong one is a broken prover. Whatever
+/// is left of the response is drained on drop, so the oracle stays in step on every path.
+pub struct G2InverseHints<I: ExactSizeIterator<Item = usize>> {
+    words: I,
+}
+
+/// Words of the hinted inverses of the subgroup test and of the line precomputation
+pub const G2_SUBGROUP_INVERSE_WORDS: usize =
+    2 * crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES;
+pub const G2_LINE_INVERSE_WORDS: usize = 2 * crypto::bn254::curves::g2_affine::LINE_INVERSES;
+
+/// The inverses of the affine `G2` chains of `q` (on the twist, not the point at infinity)
+/// from the oracle
+pub fn bn254_g2_pairing_inverses<'a, O: IOOracle>(
+    oracle: &'a mut O,
+    q: &crypto::bn254::G2Affine,
+) -> G2InverseHints<O::RawIterator<'a>> {
+    let mut input = [Bytes32::ZERO; 4];
+    {
+        let limbs = as_limbs_mut(&mut input);
+        encode(&q.x, &mut limbs[0..8]);
+        encode(&q.y, &mut limbs[8..16]);
+    }
+    let words = raw_field_hint_query(
+        oracle,
+        FieldHintOp::Bn254G2PairingInverses,
+        as_bytes(&input),
+    );
+    G2InverseHints { words }
+}
+
+impl<I: ExactSizeIterator<Item = usize>> G2InverseHints<I> {
+    /// The inverses of the membership test, `None` if the prover reports an exceptional chain
+    pub fn subgroup_chain(&mut self) -> Option<HintedChain<'_, I>> {
+        self.chain(crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES)
+    }
+
+    /// The inverses of the line precomputation, `None` if the prover reports an exceptional
+    /// chain; after the membership test's
+    pub fn line_chain(&mut self) -> Option<HintedChain<'_, I>> {
+        self.chain(crypto::bn254::curves::g2_affine::LINE_INVERSES)
+    }
+
+    fn chain(&mut self, inverses: usize) -> Option<HintedChain<'_, I>> {
+        let present: bool = UsizeDeserializable::from_iter(&mut self.words)
+            .expect("the hint response has the flag of the chain");
+        if !present {
+            for _ in 0..inverses * FQ2_HINT_WORDS {
+                self.words
+                    .next()
+                    .expect("the hint response has the words of the chain");
+            }
+            return None;
+        }
+        Some(HintedChain {
+            words: &mut self.words,
+            remaining: inverses,
+        })
+    }
+}
+
+impl<I: ExactSizeIterator<Item = usize>> Drop for G2InverseHints<I> {
+    fn drop(&mut self) {
+        for _ in &mut self.words {}
+    }
+}
+
+/// Words of one `Fq2` hint
+const FQ2_HINT_WORDS: usize = 2 * <Bytes32 as UsizeDeserializable>::USIZE_LEN;
+
+/// The hints of one chain, in the chain's order
+pub struct HintedChain<'a, I: ExactSizeIterator<Item = usize>> {
+    words: &'a mut I,
+    remaining: usize,
+}
+
+impl<I: ExactSizeIterator<Item = usize>> crypto::bn254::curves::g2_affine::Inverter
+    for HintedChain<'_, I>
+{
+    fn inverse(&mut self, den: &crypto::bn254::Fq2) -> Option<crypto::bn254::Fq2> {
+        debug_assert!(self.remaining > 0, "the chain is longer than its hints");
+        self.remaining -= 1;
+        let c0 = read_bn254_fq(self.words);
+        let c1 = read_bn254_fq(self.words);
+        crypto::bn254::curves::g2_affine::verify_inverse(den, crypto::bn254::Fq2::new(c0, c1))
+    }
+}
+
+/// A canonical bn254 base field element from the next words of a hint response (the
+/// `HintEncoding` limbs, read straight into the integer: no intermediate value is moved)
+fn read_bn254_fq(words: &mut impl Iterator<Item = usize>) -> crypto::bn254::Fq {
+    let mut limbs = [0u64; 4];
+    for limb in limbs.iter_mut() {
+        #[cfg(target_pointer_width = "32")]
+        {
+            let low = words.next().expect("the hint response has the element") as u64;
+            let high = words.next().expect("the hint response has the element") as u64;
+            *limb = low | (high << 32);
+        }
+        #[cfg(target_pointer_width = "64")]
+        {
+            *limb = words.next().expect("the hint response has the element") as u64;
+        }
+    }
+    crypto::bn254::Fq::from_bigint(<crypto::bn254::Fq as PrimeField>::BigInt::new(limbs))
+        .expect("the hint is a canonical field element")
 }
 
 /// The claim and witness of `e(p1, G2) e(p2, tau G2)` (the KZG proof check) from the oracle,

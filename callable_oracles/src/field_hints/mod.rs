@@ -106,6 +106,10 @@ fn answer(
                 impls::bn254_pairing_residue_witness(bytes, false);
             DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
         }
+        FieldHintOp::Bn254G2PairingInverses => {
+            let t = impls::bn254_g2_pairing_inverses(bytes);
+            DynUsizeIterator::from_constructor(t, UsizeSerializable::iter)
+        }
         FieldHintOp::Bls12381KzgResidueWitness => {
             let t: (bool, ([Bytes32; 24], [Bytes32; 12])) =
                 impls::bls12_381_kzg_residue_witness(bytes, false);

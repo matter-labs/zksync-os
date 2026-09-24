@@ -48,6 +48,13 @@ pub enum FieldHintOp {
     /// each) and the scaling factor (`Fq6`, 6 elements), otherwise the inverse of the Miller
     /// loop output in the first 12 elements and zeros
     Bn254PairingResidueWitness,
+    /// The inverses of the two affine `G2` chains of a bn254 pairing input point (see
+    /// `crypto::bn254::curves::g2_affine`): the affine point (`x` and `y` as `c0, c1`, 4
+    /// elements of 32 bytes) in; a flag and the 93 inverses (186 elements) of the subgroup
+    /// membership test, then a flag and the 87 inverses (174 elements) of the line
+    /// precomputation out. A cleared flag means the chain hit an exceptional case and the
+    /// projective computation is to be used.
+    Bn254G2PairingInverses,
     /// The prover's claim about the KZG proof pairing product `e(P1, G2) e(P2, tau G2)`: the
     /// two affine `G1` points (`x, y` each, 4 elements of 64 bytes) in; an "is the identity"
     /// flag, then for an identity the witness `d` (`Fq12`, 12 elements) and the scaling
@@ -58,7 +65,7 @@ pub enum FieldHintOp {
 
 impl FieldHintOp {
     pub fn parse_u32(value: u32) -> Option<Self> {
-        const ALL: [FieldHintOp; 10] = [
+        const ALL: [FieldHintOp; 11] = [
             FieldHintOp::Secp256k1BaseFieldSqrt,
             FieldHintOp::Secp256k1BaseFieldInverse,
             FieldHintOp::Secp256k1ScalarFieldInverse,
@@ -68,6 +75,7 @@ impl FieldHintOp {
             FieldHintOp::Bls12381BaseFieldInverse,
             FieldHintOp::Bls12381Fq12Inverse,
             FieldHintOp::Bn254PairingResidueWitness,
+            FieldHintOp::Bn254G2PairingInverses,
             FieldHintOp::Bls12381KzgResidueWitness,
         ];
         ALL.into_iter().find(|op| *op as u32 == value)
@@ -85,6 +93,7 @@ impl FieldHintOp {
             FieldHintOp::Bls12381BaseFieldSqrt | FieldHintOp::Bls12381BaseFieldInverse => 16,
             FieldHintOp::Bls12381Fq12Inverse => 12 * 16,
             FieldHintOp::Bn254PairingResidueWitness => return None,
+            FieldHintOp::Bn254G2PairingInverses => 4 * 8,
             FieldHintOp::Bls12381KzgResidueWitness => 4 * 16,
         };
         Some(words)
@@ -114,41 +123,55 @@ pub fn query_field_hint<O: IOOracle, R: UsizeDeserializable>(
     op: FieldHintOp,
     input: &[u8],
 ) -> R {
+    let mut words = raw_field_hint_query(oracle, op, input);
+    let r: R = UsizeDeserializable::from_iter(&mut words).unwrap();
+    assert!(words.next().is_none(), "the hint response has excess data");
+    r
+}
+
+/// The response of a hint query as its raw words, for a response consumed piecemeal. The
+/// caller must read it to the end: an unread tail would be taken for the next response.
+pub fn raw_field_hint_query<'a, O: IOOracle>(
+    oracle: &'a mut O,
+    op: FieldHintOp,
+    input: &[u8],
+) -> O::RawIterator<'a> {
     debug_assert!(input.len().is_multiple_of(4));
     let src_len_u32_words = (input.len() / 4) as u32;
     debug_assert!(op.accepts_input_len_u32_words(src_len_u32_words));
     debug_assert!(input.as_ptr().addr().is_multiple_of(4));
     // We use different advice params depending on architecture
     // They are mostly the same, main difference is the width of pointers
+    // the request and the input are read while the query is made, not after
     #[cfg(target_pointer_width = "32")]
-    let r: R = {
+    let words = {
         let hint_request = FieldOpsHint {
             op: op as u32,
             src_ptr: input.as_ptr().addr() as u32,
             src_len_u32_words,
         };
         oracle
-            .query_serializable(
+            .raw_query(
                 FIELD_OPS_ADVISE_QUERY_ID,
                 &((&hint_request as *const FieldOpsHint).addr() as u32),
             )
             .unwrap()
     };
     #[cfg(target_pointer_width = "64")]
-    let r: R = {
+    let words = {
         let hint_request = FieldOpsHint64 {
             op: op as u32,
             src_ptr: input.as_ptr().addr() as u64,
             src_len_u32_words,
         };
         oracle
-            .query_serializable(
+            .raw_query(
                 FIELD_OPS_ADVISE_QUERY_ID,
                 &((&hint_request as *const FieldOpsHint64).addr() as u64),
             )
             .unwrap()
     };
-    r
+    words
 }
 
 /// Secp256k1 hooks implementation that uses an IOOracle for field operations.
@@ -163,6 +186,10 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
 }
 
 impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1HooksWithOracle<'a, O> {
+    /// An inversion is a hint checked with one multiplication, so the scalar multiplication
+    /// makes its table affine (one inversion) instead of carrying a shared denominator
+    const FE_INVERT_IS_CHEAP: bool = true;
+
     fn fe_sqrt_and_assign(&mut self, x: &mut FieldElement) -> bool {
         // Match default hook semantics: sqrt(0) exists and equals 0.
         if x.normalizes_to_zero() {
@@ -260,7 +287,7 @@ mod tests {
 
     fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
-        oracle.add_external_processor(NativeFieldOpsQuery::default());
+        oracle.add_external_processor(NativeFieldOpsQuery);
         oracle
     }
 
@@ -390,7 +417,7 @@ mod tests {
         impl LyingFieldOpsQuery {
             fn new(corruption: Corruption) -> Self {
                 Self {
-                    inner: callable_oracles::field_hints::NativeFieldOpsQuery::default(),
+                    inner: callable_oracles::field_hints::NativeFieldOpsQuery,
                     corruption,
                     lie_about_sqrt_existence: false,
                 }
