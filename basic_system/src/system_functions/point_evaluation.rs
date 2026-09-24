@@ -126,9 +126,18 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     //
     // Move the z multiplication from G2 to G1:
     // e(yG1 - commitment - z*proof, G2) * e(proof, tauG2) == 1.
-    let mut left_g1 = crypto::bls12_381::G1Affine::generator().mul_bigint(&y);
+    // y G - z proof as one joint double-and-add (the doublings are shared), then minus the
+    // commitment; the scalars were parsed below the group order
+    let scalar = |repr: &KzgScalar| {
+        crypto::bls12_381::Fr::from_bigint(*repr).expect("the scalar is below the group order")
+    };
+    let mut left_g1 = crypto::bls12_381::curves::g1::mul_two(
+        &crypto::bls12_381::G1Affine::generator().into_group(),
+        scalar(&y),
+        &proof.into_group(),
+        -scalar(&z),
+    );
     left_g1 -= &commitment;
-    left_g1 -= proof.mul_bigint(&z);
 
     let left_g1 = match oracle.as_deref_mut() {
         Some(oracle) => crypto::hinted_ops::to_affine_with_inverse(&left_g1, |z| {
