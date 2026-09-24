@@ -9,6 +9,15 @@ pub trait TryExtend<T> {
     fn try_extend<I>(&mut self, iter: I) -> Result<(), Self::Error>
     where
         I: IntoIterator<Item = T>;
+
+    /// `try_extend` with the items of a slice; contiguous storage copies the slice in one go
+    /// instead of item by item
+    fn try_extend_from_slice(&mut self, items: &[T]) -> Result<(), Self::Error>
+    where
+        T: Copy,
+    {
+        self.try_extend(items.iter().copied())
+    }
 }
 
 impl<A: Allocator, T> TryExtend<T> for alloc::vec::Vec<T, A> {

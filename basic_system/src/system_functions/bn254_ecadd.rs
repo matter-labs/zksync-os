@@ -1,10 +1,9 @@
 use super::*;
 use crate::cost_constants::{BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST};
-use crate::system_functions::bytereverse;
 use crate::system_functions::curve_hints;
 use crypto::ark_ec::CurveGroup;
 use crypto::ark_ff::PrimeField;
-use crypto::ark_serialize::{CanonicalSerialize, Valid};
+use crypto::ark_serialize::Valid;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
@@ -69,14 +68,14 @@ fn bn254_ecadd_as_system_function_inner<
         *dst = *src;
     }
 
-    let coordinates = buffer.as_chunks_mut::<64>().0.try_into().unwrap();
+    let coordinates = buffer.as_chunks::<64>().0.try_into().unwrap();
 
     let serialized_result =
         bn254_ecadd_inner(coordinates, oracle).map_err(|_| -> SubsystemError<_> {
             interface_error!(Bn254AddInterfaceError::InvalidPoint)
         })?;
 
-    dst.try_extend(serialized_result)
+    dst.try_extend_from_slice(&serialized_result)
         .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
@@ -84,31 +83,19 @@ fn bn254_ecadd_as_system_function_inner<
 
 /// With an oracle, the inversion that makes the result affine comes from a checked hint.
 pub fn bn254_ecadd_inner<O: IOOracle>(
-    coordinates: &mut [[u8; 64]; 2],
+    coordinates: &[[u8; 64]; 2],
     oracle: Option<&mut O>,
 ) -> Result<[u8; 64], ()> {
-    use crypto::ark_ff::PrimeField;
-    use crypto::ark_serialize::CanonicalDeserialize;
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, xy) in points.iter_mut().zip(coordinates.iter_mut()) {
+    for (dst, xy) in points.iter_mut().zip(coordinates.iter()) {
         let is_zero = xy.iter().all(|el| *el == 0);
         if is_zero {
             continue;
         }
-        // the coordinates are parsed in place: big-endian in the input, little-endian for
-        // the deserialization
-        let (x, y) = xy.split_at_mut(32);
-        bytereverse(x);
-        bytereverse(y);
-        let x_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&*x).map_err(|_| ())?;
-        let y_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&*y).map_err(|_| ())?;
-        let x_coordinate = Fq::from_bigint(x_bigint).ok_or(())?;
-        let y_coordinate = Fq::from_bigint(y_bigint).ok_or(())?;
-        let affine_point = G1Affine::new_unchecked(x_coordinate, y_coordinate);
-        affine_point.check().map_err(|_| ())?;
-        *dst = affine_point;
+        let xy = xy.as_chunks::<32>().0;
+        *dst = parse_affine(&xy[0], &xy[1])?;
     }
 
     let [a, b] = &points;
@@ -119,13 +106,45 @@ pub fn bn254_ecadd_inner<O: IOOracle>(
     Ok(result)
 }
 
+/// The integer encoded big-endian in `bytes`
+pub(crate) fn bigint_from_be(bytes: &[u8; 32]) -> <crypto::bn254::Fq as PrimeField>::BigInt {
+    let mut limbs = [0u64; 4];
+    for (limb, chunk) in limbs.iter_mut().zip(bytes.as_chunks::<8>().0.iter().rev()) {
+        *limb = u64::from_be_bytes(*chunk);
+    }
+    <crypto::bn254::Fq as PrimeField>::BigInt::new(limbs)
+}
+
+/// `value` big-endian in `out`
+fn write_bigint_be(value: &<crypto::bn254::Fq as PrimeField>::BigInt, out: &mut [u8; 32]) {
+    for (chunk, limb) in out
+        .as_chunks_mut::<8>()
+        .0
+        .iter_mut()
+        .zip(value.as_ref().iter().rev())
+    {
+        *chunk = limb.to_be_bytes();
+    }
+}
+
+/// The curve point with the big-endian coordinates `x` and `y`: `Err` unless both are below
+/// the modulus and the point is on the curve (the curve has no other points of small order,
+/// so this is also the subgroup check)
+pub(crate) fn parse_affine(x: &[u8; 32], y: &[u8; 32]) -> Result<crypto::bn254::G1Affine, ()> {
+    use crypto::bn254::*;
+    let x = Fq::from_bigint(bigint_from_be(x)).ok_or(())?;
+    let y = Fq::from_bigint(bigint_from_be(y)).ok_or(())?;
+    let point = G1Affine::new_unchecked(x, y);
+    point.check().map_err(|_| ())?;
+    Ok(point)
+}
+
 /// The EVM encoding of `point`. With an oracle, the inversion of its `Z` coordinate comes from
 /// a checked hint instead of an exponentiation.
 pub(crate) fn serialize_projective<O: IOOracle>(
     point: crypto::bn254::G1Projective,
     oracle: Option<&mut O>,
 ) -> [u8; 64] {
-    use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::Zero;
     if point.is_zero() {
         // canonical for zero point
@@ -137,17 +156,12 @@ pub(crate) fn serialize_projective<O: IOOracle>(
             }),
             None => point.into_affine(),
         };
-        let (x, y) = result.xy().unwrap();
-        let x_bigint = x.into_bigint();
-        let y_bigint = y.into_bigint();
-        let mut result = [0u8; 64];
-        x_bigint.serialize_uncompressed(&mut result[0..32]).unwrap();
-        bytereverse(&mut result[0..32]);
-        y_bigint
-            .serialize_uncompressed(&mut result[32..64])
-            .unwrap();
-        bytereverse(&mut result[32..64]);
-
-        result
+        let mut out = [0u8; 64];
+        let [x, y] = out.as_chunks_mut::<32>().0 else {
+            unreachable!("64 bytes are two 32-byte chunks")
+        };
+        write_bigint_be(&result.x.into_bigint(), x);
+        write_bigint_be(&result.y.into_bigint(), y);
+        out
     }
 }

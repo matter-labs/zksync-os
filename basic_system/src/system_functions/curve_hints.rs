@@ -12,10 +12,14 @@
 //! external input, so a bad one is a broken prover rather than a case to recover from.
 
 use crate::system_functions::field_ops::{query_field_hint, raw_field_hint_query, FieldHintOp};
+use core::mem::MaybeUninit;
 use crypto::ark_ff::{Field, One, PrimeField, Zero};
 use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 use zk_ee::oracle::IOOracle;
 use zk_ee::utils::Bytes32;
+
+/// The most components an encoded element has (a degree-12 extension)
+const MAX_COMPONENTS: usize = 12;
 
 /// The hint encoding of a field element: its base prime field components in a fixed order
 /// (for a tower `c0` before `c1` before `c2`, recursively), each as its canonical integer in
@@ -25,12 +29,12 @@ use zk_ee::utils::Bytes32;
 pub trait HintEncoding: Field {
     /// Limbs per base prime field element: 4 for bn254, 8 for bls12-381 (48 bytes in 64)
     const LIMBS: usize;
-    /// Base prime field components of an element
+    /// Base prime field components of an element, at most `MAX_COMPONENTS`
     const COMPONENTS: usize;
     /// Limbs of a whole element
     const TOTAL_LIMBS: usize = Self::LIMBS * Self::COMPONENTS;
 
-    fn write_components(&self, out: &mut [Self::BasePrimeField]);
+    fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]);
     fn from_components(components: &[Self::BasePrimeField]) -> Self;
 }
 
@@ -40,8 +44,8 @@ macro_rules! prime_field_encoding {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 1;
 
-            fn write_components(&self, out: &mut [Self::BasePrimeField]) {
-                out[0] = *self;
+            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
+                out[0].write(*self);
             }
 
             fn from_components(components: &[Self::BasePrimeField]) -> Self {
@@ -57,12 +61,12 @@ macro_rules! fp12_encoding {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 12;
 
-            fn write_components(&self, out: &mut [Self::BasePrimeField]) {
+            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
                 let mut i = 0;
                 for fp6 in [&self.c0, &self.c1] {
                     for fp2 in [&fp6.c0, &fp6.c1, &fp6.c2] {
-                        out[i] = fp2.c0;
-                        out[i + 1] = fp2.c1;
+                        out[i].write(fp2.c0);
+                        out[i + 1].write(fp2.c1);
                         i += 2;
                     }
                 }
@@ -83,10 +87,10 @@ macro_rules! fp6_encoding {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 6;
 
-            fn write_components(&self, out: &mut [Self::BasePrimeField]) {
+            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
                 for (i, fp2) in [&self.c0, &self.c1, &self.c2].into_iter().enumerate() {
-                    out[2 * i] = fp2.c0;
-                    out[2 * i + 1] = fp2.c1;
+                    out[2 * i].write(fp2.c0);
+                    out[2 * i + 1].write(fp2.c1);
                 }
             }
 
@@ -104,9 +108,9 @@ macro_rules! fp2_encoding {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 2;
 
-            fn write_components(&self, out: &mut [Self::BasePrimeField]) {
-                out[0] = self.c0;
-                out[1] = self.c1;
+            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
+                out[0].write(self.c0);
+                out[1].write(self.c1);
             }
 
             fn from_components(c: &[Self::BasePrimeField]) -> Self {
@@ -138,12 +142,14 @@ fp12_encoding!(
 /// `value` in the hint encoding; `limbs` must hold `F::TOTAL_LIMBS`
 pub fn encode<F: HintEncoding>(value: &F, limbs: &mut [u64]) {
     debug_assert_eq!(limbs.len(), F::TOTAL_LIMBS);
-    let mut components = [F::BasePrimeField::zero(); 12];
-    value.write_components(&mut components[..F::COMPONENTS]);
-    for (component, out) in components[..F::COMPONENTS]
-        .iter()
-        .zip(limbs.chunks_exact_mut(F::LIMBS))
-    {
+    let mut components = [const { MaybeUninit::<F::BasePrimeField>::uninit() }; MAX_COMPONENTS];
+    let components = &mut components[..F::COMPONENTS];
+    value.write_components(components);
+    // SAFETY: `write_components` initializes all `F::COMPONENTS` elements
+    let components = unsafe {
+        &*(components as *const [MaybeUninit<F::BasePrimeField>] as *const [F::BasePrimeField])
+    };
+    for (component, out) in components.iter().zip(limbs.chunks_exact_mut(F::LIMBS)) {
         let repr = component.into_bigint();
         let repr = repr.as_ref();
         debug_assert!(repr.len() <= F::LIMBS);
@@ -156,20 +162,22 @@ pub fn encode<F: HintEncoding>(value: &F, limbs: &mut [u64]) {
 /// canonical, i.e. below the modulus with zero padding
 pub fn decode<F: HintEncoding>(limbs: &[u64]) -> Option<F> {
     debug_assert_eq!(limbs.len(), F::TOTAL_LIMBS);
-    let mut components = [F::BasePrimeField::zero(); 12];
-    for (component, chunk) in components[..F::COMPONENTS]
-        .iter_mut()
-        .zip(limbs.chunks_exact(F::LIMBS))
-    {
+    let mut components = [const { MaybeUninit::<F::BasePrimeField>::uninit() }; MAX_COMPONENTS];
+    let components = &mut components[..F::COMPONENTS];
+    for (component, chunk) in components.iter_mut().zip(limbs.chunks_exact(F::LIMBS)) {
         let mut repr = <F::BasePrimeField as PrimeField>::BigInt::default();
         let width = repr.as_ref().len().min(F::LIMBS);
         if chunk[width..].iter().any(|limb| *limb != 0) {
             return None;
         }
         repr.as_mut()[..width].copy_from_slice(&chunk[..width]);
-        *component = F::BasePrimeField::from_bigint(repr)?;
+        component.write(F::BasePrimeField::from_bigint(repr)?);
     }
-    Some(F::from_components(&components[..F::COMPONENTS]))
+    // SAFETY: the loop initialized all `F::COMPONENTS` elements (an early return skips this)
+    let components = unsafe {
+        &*(components as *const [MaybeUninit<F::BasePrimeField>] as *const [F::BasePrimeField])
+    };
+    Some(F::from_components(components))
 }
 
 /// The oracle reads and writes operands as words of `Bytes32`, which are also aligned as the

@@ -1,10 +1,9 @@
 use super::*;
 use crate::cost_constants::BN254_ECMUL_NATIVE_COST;
-use crate::system_functions::bytereverse;
 use crate::{
-    cost_constants::BN254_ECMUL_COST_GAS, system_functions::bn254_ecadd::serialize_projective,
+    cost_constants::BN254_ECMUL_COST_GAS,
+    system_functions::bn254_ecadd::{bigint_from_be, parse_affine, serialize_projective},
 };
-use crypto::ark_serialize::Valid;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
@@ -77,7 +76,7 @@ fn bn254_ecmul_as_system_function_inner<
         })?
     };
 
-    dst.try_extend(serialized_result)
+    dst.try_extend_from_slice(&serialized_result)
         .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
@@ -91,29 +90,14 @@ pub fn bn254_ecmul_inner<O: IOOracle>(
     oracle: Option<&mut O>,
 ) -> Result<[u8; 64], ()> {
     use crypto::ark_ec::AffineRepr;
-    use crypto::ark_ff::PrimeField;
-    use crypto::ark_serialize::CanonicalDeserialize;
-    use crypto::bn254::*;
 
     let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
     if is_zero {
         return Ok([0u8; 64]);
     }
-    let mut x = *x;
-    let mut y = *y;
-    bytereverse(&mut x);
-    bytereverse(&mut y);
-    let x_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&x[..]).map_err(|_| ())?;
-    let y_bigint = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&y[..]).map_err(|_| ())?;
-    let x_coordinate = Fq::from_bigint(x_bigint).ok_or(())?;
-    let y_coordinate = Fq::from_bigint(y_bigint).ok_or(())?;
-    let affine_point = G1Affine::new_unchecked(x_coordinate, y_coordinate);
-    affine_point.check().map_err(|_| ())?;
-
-    let mut scalar = *scalar;
-    bytereverse(&mut scalar);
-    let scalar =
-        <Fr as PrimeField>::BigInt::deserialize_uncompressed(&scalar[..]).map_err(|_| ())?;
+    let affine_point = parse_affine(x, y)?;
+    // the scalar is not reduced: any 256-bit integer is a valid multiplier
+    let scalar = bigint_from_be(scalar);
 
     let result = affine_point.mul_bigint(&scalar);
     let result = serialize_projective(result, oracle);

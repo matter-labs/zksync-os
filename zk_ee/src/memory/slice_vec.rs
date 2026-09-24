@@ -172,6 +172,28 @@ impl<T> TryExtend<T> for SliceVec<'_, T> {
         self.length = idx;
         Ok(())
     }
+
+    fn try_extend_from_slice(&mut self, items: &[T]) -> Result<(), Self::Error>
+    where
+        T: Copy,
+    {
+        let end = self.length.checked_add(items.len()).ok_or(())?;
+        if end > self.memory.len() {
+            // Ran out of space, nothing is written
+            return Err(());
+        }
+        // SAFETY: `[self.length, end)` is within the backing slice, `MaybeUninit<T>` has the
+        // layout of `T`, and the source is a distinct, initialized slice
+        unsafe {
+            ptr::copy_nonoverlapping(
+                items.as_ptr(),
+                self.memory.as_mut_ptr().add(self.length).cast::<T>(),
+                items.len(),
+            );
+        }
+        self.length = end;
+        Ok(())
+    }
 }
 
 impl<T> Drop for SliceVec<'_, T> {
