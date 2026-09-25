@@ -848,13 +848,7 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         hi: &HintU256,
         modulus: &HintU256,
     ) -> (HintU256, HintU256) {
-        use crate::system_functions::u256_advice::{
-            query_wide_div_rem_hint, read_u256_from_oracle_response,
-        };
-        let mut it = query_wide_div_rem_hint(lo, hi, modulus, self.inner);
-        let q_lo = read_u256_from_oracle_response(&mut it);
-        let q_hi = read_u256_from_oracle_response(&mut it);
-        (q_lo, q_hi)
+        crate::system_functions::u256_advice::query_wide_div_rem_hint(lo, hi, modulus, self.inner)
     }
 }
 
@@ -869,6 +863,8 @@ mod tests {
     struct PackedLengthOracle {
         packed_lens: usize,
     }
+
+    impl zk_ee::oracle::memory_io::MemoryOracle for PackedLengthOracle {}
 
     impl IOOracle for PackedLengthOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;

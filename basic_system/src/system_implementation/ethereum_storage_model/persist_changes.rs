@@ -21,6 +21,7 @@ use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackFactory;
+use zk_ee::oracle::memory_io::{DynamicOracleQuery, OracleQuery};
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
@@ -38,6 +39,23 @@ pub const ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID: u32 =
     STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | 0x81;
 pub const ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | 0x82;
 
+/// The length in bytes of the preimage of an MPT node, given its hash.
+pub struct MptPreimageByteLenQuery;
+
+impl OracleQuery for MptPreimageByteLenQuery {
+    const QUERY_ID: u32 = ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID;
+    type Input = Bytes32;
+    type Output = u32;
+}
+
+/// The preimage of an MPT node, given its hash.
+pub struct MptPreimageWordsQuery;
+
+impl DynamicOracleQuery for MptPreimageWordsQuery {
+    const QUERY_ID: u32 = ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID;
+    type Input = Bytes32;
+}
+
 const LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 34;
 
 impl<'o, O: IOOracle> PreimagesOracle for OracleProxy<'o, O> {
@@ -48,19 +66,14 @@ impl<'o, O: IOOracle> PreimagesOracle for OracleProxy<'o, O> {
     ) -> Result<&'a [u8], ()> {
         let key = Bytes32::from_array(*key);
         // first length
-        let expected_bytes: u32 = self
-            .0
-            .query_serializable(ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, &key)
-            .map_err(|_| ())?;
+        let expected_bytes = MptPreimageByteLenQuery::get(self.0, &key).map_err(|_| ())?;
         let words_buffer_size = (expected_bytes as usize).next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
         assert!(I::SUPPORTS_WORD_LEVEL_INTERNING);
         // NOTE: we leave some slack for 64/32 bit arch mismatches
         let mut buffer = interner.get_word_buffer(words_buffer_size.next_multiple_of(2))?;
         let capacity = buffer.spare_capacity_mut();
-        let num_written = self
-            .0
-            .expose_preimage(ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID, &key, capacity)
-            .map_err(|_| ())?;
+        let num_written =
+            MptPreimageWordsQuery::get_into(self.0, &key, capacity).map_err(|_| ())?;
         unsafe {
             buffer.set_word_len(num_written);
         }

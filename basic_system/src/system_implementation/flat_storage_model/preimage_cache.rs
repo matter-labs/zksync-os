@@ -6,6 +6,7 @@ use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
     internal_error,
+    oracle::memory_io::DynamicOracleQuery,
     oracle::query_ids::PREIMAGE_SUBSPACE_MASK,
     out_of_native_resources,
     system::{
@@ -23,6 +24,14 @@ use crate::cost_constants::blake2s_native_cost;
 /// Query ID for requesting preimage data from the flat storage system
 pub const FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: u32 =
     PREIMAGE_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
+
+/// The preimage with the given hash.
+pub struct GenericPreimageQuery;
+
+impl DynamicOracleQuery for GenericPreimageQuery {
+    const QUERY_ID: u32 = FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
+    type Input = Bytes32;
+}
 
 /// On the 32-bit proving target, `UsizeAlignedByteBox` rounds allocations to
 /// pairs of four-byte native words.
@@ -417,18 +426,22 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // We do not charge for gas in this concrete implementation and
             // expect higher-level model to do so.
             // We charge for native.
-            let it = oracle
-                .raw_query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
-                .expect("must make an iterator for preimage");
-            // IMPORTANT: oracle should be somewhat "sane", it also limits the number of cycles spent below.
-
-            if it.len() > num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes) {
+            // IMPORTANT: the oracle can not claim more than the capacity for the expected length,
+            // which also limits the number of cycles spent below.
+            let mut received = Ok(0);
+            let mut buffered = UsizeAlignedByteBox::from_init_fn_in(
+                num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes),
+                |dst| {
+                    received = GenericPreimageQuery::get_into(oracle, hash, dst);
+                    *received.as_ref().unwrap_or(&0)
+                },
+                self.allocator.clone(),
+            );
+            if received.is_err() {
                 return Err(
-                    internal_error!("Iterator length exceeds expected preimage length").into(),
+                    internal_error!("Oracle preimage exceeds expected preimage length").into(),
                 );
             }
-            let mut buffered =
-                UsizeAlignedByteBox::from_usize_iterator_in(it, self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 
@@ -696,6 +709,8 @@ mod tests {
     use zk_ee::{
         common_structs::PreimageType,
         oracle::{
+            memory_io::host::{write_dynamic_bytes, ResponseBuffer},
+            memory_io::MemoryOracle,
             usize_serialization::{UsizeDeserializable, UsizeSerializable},
             IOOracle,
         },
@@ -706,22 +721,36 @@ mod tests {
     type TestResources = BaseResources<DecreasingNative>;
     type TestCache = BytecodeAndAccountDataPreimagesStorage<TestResources>;
 
+    /// Serves `words` as the preimage of any hash.
     #[derive(Default)]
     struct TestOracle {
         words: Vec<usize>,
         queries: usize,
+        response: ResponseBuffer,
+    }
+
+    impl MemoryOracle for TestOracle {
+        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            assert_eq!(query_id, FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID);
+            self.queries += 1;
+            let bytes: Vec<u8> = self.words.iter().flat_map(|w| w.to_ne_bytes()).collect();
+            let mut response = vec![];
+            write_dynamic_bytes(&bytes, &mut response);
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
     }
 
     impl IOOracle for TestOracle {
-        type RawIterator<'a> = std::vec::IntoIter<usize>;
+        type RawIterator<'a> = core::iter::Empty<usize>;
 
         fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
-            _query_type: u32,
+            query_type: u32,
             _input: &I,
         ) -> Result<Self::RawIterator<'a>, InternalError> {
-            self.queries += 1;
-            Ok(self.words.clone().into_iter())
+            panic!("unexpected query {query_type:#x}")
         }
     }
 
@@ -737,7 +766,7 @@ mod tests {
             },
             TestOracle {
                 words: vec![word],
-                queries: 0,
+                ..Default::default()
             },
         )
     }

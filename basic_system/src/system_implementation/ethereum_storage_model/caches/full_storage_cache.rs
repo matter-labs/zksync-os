@@ -17,9 +17,8 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::IOOracle;
-use zk_ee::storage_types::StorageAddress;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{
     system::{errors::system::SystemError, Resources},
@@ -193,12 +192,9 @@ impl<
         if LE {
             query_key.bytereverse();
         }
-        let query_input = StorageAddress::<EthereumIOTypesConfig> {
-            address: *address,
-            key: query_key,
-        };
-        let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
-            .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
+        let data_from_oracle =
+            InitialStorageSlotQuery::<EthereumIOTypesConfig>::get(oracle, (address, &query_key))
+                .map_err(|_| internal_error!("Must get initial slot value from oracle"))?;
         let mut value = data_from_oracle.initial_value;
         if LE {
             value.bytereverse();
@@ -651,6 +647,10 @@ mod tests {
     use std::collections::BTreeMap;
     use zk_ee::common_structs::WarmStorageKey;
     use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
+    use zk_ee::oracle::memory_io::host::{
+        NativeQuerierMemory, ReadQueryInput, ResponseBuffer, WriteQueryOutput,
+    };
+    use zk_ee::oracle::memory_io::MemoryOracle;
     use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
@@ -670,25 +670,18 @@ mod tests {
     struct CountingOracle {
         existing: BTreeMap<(WarmStorageKey, ()), Bytes32>,
         queries: usize,
+        response: ResponseBuffer,
     }
 
-    impl IOOracle for CountingOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
-            query_type: u32,
-            input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            assert_eq!(query_type, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID);
+    impl MemoryOracle for CountingOracle {
+        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+            assert_eq!(query_id, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID);
             self.queries += 1;
-            let address = StorageAddress::<EthereumIOTypesConfig>::from_iter(&mut input.iter())
-                .expect("slot query input");
-            let queried = WarmStorageKey {
-                address: address.address,
-                key: address.key,
-            };
-            let response = match self.existing.get(&(queried, ())) {
+            // SAFETY: the test sends the queries from this process
+            let memory = unsafe { NativeQuerierMemory::new() };
+            let (address, key) = <(B160, Bytes32)>::read_input(&memory, input_word)?;
+            let queried = WarmStorageKey { address, key };
+            let slot_data = match self.existing.get(&(queried, ())) {
                 Some(value) => InitialStorageSlotData::<EthereumIOTypesConfig> {
                     is_new_storage_slot: false,
                     initial_value: *value,
@@ -698,8 +691,23 @@ mod tests {
                     initial_value: Bytes32::ZERO,
                 },
             };
-            let values: Vec<_> = response.iter().collect();
-            Ok(Box::new(values.into_iter()))
+            let mut response = vec![];
+            slot_data.write_output(&mut response);
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
+    impl IOOracle for CountingOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            panic!("unexpected query {query_type:#x}")
         }
     }
 
@@ -731,6 +739,7 @@ mod tests {
                 ((slot_of(B, 3), ()), key(0xcc)),
             ]),
             queries: 0,
+            response: ResponseBuffer::default(),
         };
         Fixture {
             cache,

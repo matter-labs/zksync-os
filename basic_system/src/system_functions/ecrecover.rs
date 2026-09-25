@@ -143,7 +143,26 @@ pub fn ecrecover_inner<O: IOOracle>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::system_implementation::flat_storage_model::TestingTree;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::IOOracle;
+    use zk_ee::system::errors::internal::InternalError;
+
+    /// The paths without advice never query the oracle.
+    enum NoOracle {}
+
+    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {}
+
+    impl IOOracle for NoOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            match *self {}
+        }
+    }
     use hex;
     use zk_ee::reference_implementations::BaseResources;
     use zk_ee::reference_implementations::DecreasingNative;
@@ -167,7 +186,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+        ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -188,7 +207,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+        ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -210,7 +229,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+        ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -232,7 +251,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+        ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -260,7 +279,7 @@ mod test {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 249, 114, 95, 16, 115, 88, 201, 17, 91, 201,
             216, 108, 114, 221, 88, 35, 233, 177, 230,
         ];
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+        ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,

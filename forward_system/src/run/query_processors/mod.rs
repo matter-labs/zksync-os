@@ -39,6 +39,27 @@ pub use self::uart_print::UARTPrintResponder;
 pub use self::zk_proof_data::ZKProofDataResponder;
 
 use crate::run::*;
+use ruint::aliases::B160;
+use zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
+use zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput, WriteQueryOutput};
+use zk_ee::oracle::memory_io::OracleQuery;
+use zk_ee::types_config::EthereumIOTypesConfig;
+use zk_ee::utils::Bytes32;
+
+/// The `(address, key)` input of an [`InitialStorageSlotQuery`], read from the memory of the querier.
+fn read_storage_slot_query(memory: &dyn QuerierMemory, input_word: usize) -> (B160, Bytes32) {
+    <InitialStorageSlotQuery<EthereumIOTypesConfig> as OracleQuery>::Input::read_input(
+        memory, input_word,
+    )
+    .expect("must read the address and the key")
+}
+
+/// The response words of a memory-based query.
+fn memory_response(output: &impl WriteQueryOutput) -> Vec<u32> {
+    let mut response = Vec::new();
+    output.write_output(&mut response);
+    response
+}
 
 /// A collection of oracle query processors for forward running execution with oracle dump.
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]

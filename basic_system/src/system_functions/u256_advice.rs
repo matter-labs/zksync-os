@@ -1,4 +1,5 @@
 use u256::U256;
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
@@ -11,28 +12,26 @@ use zk_ee::system::base_system_functions::{
 static ONE: U256 = U256::ONE;
 static ZERO: U256 = U256::ZERO;
 
-/// Params for U256 div_rem oracle query (pointer-based, like modexp).
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct U256DivRemAdviceParamsGeneric<W> {
-    pub dividend_ptr: W,
-    pub divisor_ptr: W,
+/// Advice for `dividend / divisor` (256-bit operands, passed by address): the quotient.
+pub struct U256DivRemAdviceQuery;
+
+impl OracleQuery for U256DivRemAdviceQuery {
+    const QUERY_ID: u32 = U256_DIV_REM_ADVICE_QUERY_ID;
+    /// `(dividend, divisor)`
+    type Input = (U256, U256);
+    type Output = U256;
 }
 
-pub type U256DivRemAdviceParams = U256DivRemAdviceParamsGeneric<u32>;
-pub type U256DivRemAdviceParams64 = U256DivRemAdviceParamsGeneric<u64>;
+/// Advice for `(dividend_hi * 2^256 + dividend_lo) / divisor` (operands passed by address): the low and
+/// the high halves of the quotient.
+pub struct U256WideDivRemAdviceQuery;
 
-/// Params for U256 wide div_rem oracle query (512-bit dividend, 256-bit divisor).
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct U256WideDivRemAdviceParamsGeneric<W> {
-    pub dividend_lo_ptr: W,
-    pub dividend_hi_ptr: W,
-    pub divisor_ptr: W,
+impl OracleQuery for U256WideDivRemAdviceQuery {
+    const QUERY_ID: u32 = U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
+    /// `(dividend_lo, dividend_hi, divisor)`
+    type Input = (U256, U256, U256);
+    type Output = (U256, U256);
 }
-
-pub type U256WideDivRemAdviceParams = U256WideDivRemAdviceParamsGeneric<u32>;
-pub type U256WideDivRemAdviceParams64 = U256WideDivRemAdviceParamsGeneric<u64>;
 
 /// Verifies a div_rem hint. On success, `dividend` is modified in-place to
 /// hold the remainder. Caller must save q_limbs before calling.
@@ -103,81 +102,23 @@ pub fn verify_wide_div_rem_hint(
     *dividend_lo < *divisor
 }
 
-/// Asks the oracle for `dividend / divisor` (256-bit operands); the answer is the
-/// quotient, 4 limbs.
+/// Asks the oracle for `dividend / divisor` (256-bit operands).
 #[inline(always)]
-fn query_div_rem_hint<'a, O: IOOracle>(
-    dividend: &U256,
-    divisor: &U256,
-    oracle: &'a mut O,
-) -> O::RawIterator<'a> {
-    #[cfg(target_pointer_width = "32")]
-    {
-        let params = U256DivRemAdviceParams {
-            dividend_ptr: (dividend as *const U256).addr() as u32,
-            divisor_ptr: (divisor as *const U256).addr() as u32,
-        };
-        oracle
-            .raw_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256DivRemAdviceParams).addr() as u32),
-            )
-            .expect("div_rem oracle query failed")
-    }
-
-    #[cfg(target_pointer_width = "64")]
-    {
-        let params = U256DivRemAdviceParams64 {
-            dividend_ptr: (dividend as *const U256).addr() as u64,
-            divisor_ptr: (divisor as *const U256).addr() as u64,
-        };
-        oracle
-            .raw_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256DivRemAdviceParams64).addr() as u64),
-            )
-            .expect("div_rem oracle query failed")
-    }
+fn query_div_rem_hint<O: IOOracle>(dividend: &U256, divisor: &U256, oracle: &mut O) -> U256 {
+    U256DivRemAdviceQuery::get(oracle, (dividend, divisor)).expect("div_rem oracle query failed")
 }
 
-/// Asks the oracle for `(dividend_hi * 2^256 + dividend_lo) / divisor`; the answer is
-/// the quotient, 8 limbs (low half first).
+/// Asks the oracle for `(dividend_hi * 2^256 + dividend_lo) / divisor`; the answer is the quotient, low
+/// half first.
 #[inline(always)]
-pub(crate) fn query_wide_div_rem_hint<'a, O: IOOracle>(
+pub(crate) fn query_wide_div_rem_hint<O: IOOracle>(
     dividend_lo: &U256,
     dividend_hi: &U256,
     divisor: &U256,
-    oracle: &'a mut O,
-) -> O::RawIterator<'a> {
-    #[cfg(target_pointer_width = "32")]
-    {
-        let params = U256WideDivRemAdviceParams {
-            dividend_lo_ptr: (dividend_lo as *const U256).addr() as u32,
-            dividend_hi_ptr: (dividend_hi as *const U256).addr() as u32,
-            divisor_ptr: (divisor as *const U256).addr() as u32,
-        };
-        oracle
-            .raw_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256WideDivRemAdviceParams).addr() as u32),
-            )
-            .expect("wide_div_rem oracle query failed")
-    }
-
-    #[cfg(target_pointer_width = "64")]
-    {
-        let params = U256WideDivRemAdviceParams64 {
-            dividend_lo_ptr: (dividend_lo as *const U256).addr() as u64,
-            dividend_hi_ptr: (dividend_hi as *const U256).addr() as u64,
-            divisor_ptr: (divisor as *const U256).addr() as u64,
-        };
-        oracle
-            .raw_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                &((&params as *const U256WideDivRemAdviceParams64).addr() as u64),
-            )
-            .expect("wide_div_rem oracle query failed")
-    }
+    oracle: &mut O,
+) -> (U256, U256) {
+    U256WideDivRemAdviceQuery::get(oracle, (dividend_lo, dividend_hi, divisor))
+        .expect("wide_div_rem oracle query failed")
 }
 
 /// Reduces `dividend` to `dividend mod divisor` in place with an advised quotient
@@ -185,7 +126,7 @@ pub(crate) fn query_wide_div_rem_hint<'a, O: IOOracle>(
 #[inline(always)]
 fn reduce_with_advice<O: IOOracle>(dividend: &mut U256, divisor: &U256, oracle: &mut O) -> U256 {
     debug_assert!(!divisor.is_zero());
-    let q = read_u256_from_oracle_response(&mut query_div_rem_hint(dividend, divisor, oracle));
+    let q = query_div_rem_hint(dividend, divisor, oracle);
     assert!(
         verify_div_rem_hint(dividend, divisor, &q),
         "div_rem hint: wrong quotient"
@@ -275,9 +216,7 @@ fn u256_addmod_nonzero_modulus_with_advice<O: IOOracle>(
         &ZERO
     } else {
         // 257-bit dividend (a, 1): the quotient fits in 256 bits since modulus >= 2
-        let mut it = query_wide_div_rem_hint(a, &ONE, modulus, oracle);
-        let q_lo = read_u256_from_oracle_response(&mut it);
-        let q_hi = read_u256_from_oracle_response(&mut it);
+        let (q_lo, q_hi) = query_wide_div_rem_hint(a, &ONE, modulus, oracle);
         assert!(q_hi.is_zero(), "addmod hint: quotient too large");
         // q * modulus = (qd_lo, qd_hi); remainder = (a, 1) - (qd_lo, qd_hi)
         let mut qd_lo = q_lo.clone();
@@ -347,26 +286,6 @@ impl<const USE_ADVICE: bool> WideDivRemExt for WideDivRemImpl<USE_ADVICE> {
     }
 }
 
-/// Reads one U256 of the hint straight into an aligned slot: the oracle streams the
-/// little-endian words of the value, which is the memory layout of the limbs, so
-/// each word is stored where it belongs instead of being assembled in registers
-/// and copied.
-#[inline(always)]
-pub(crate) fn read_u256_from_oracle_response(
-    it: &mut impl ExactSizeIterator<Item = usize>,
-) -> U256 {
-    const WORDS: usize = core::mem::size_of::<U256>() / core::mem::size_of::<usize>();
-    let mut out = core::mem::MaybeUninit::<U256>::uninit();
-    let dst = out.as_mut_ptr().cast::<usize>();
-    for i in 0..WORDS {
-        let word = it.next().expect("u256 hint word");
-        // SAFETY: `dst` points to the 32 bytes of `out`, `i` stays inside them
-        unsafe { dst.add(i).write(word) };
-    }
-    // SAFETY: all words of `out` were written
-    unsafe { out.assume_init() }
-}
-
 #[inline]
 pub fn u256_div_rem_with_advice<O: IOOracle>(
     dividend_or_quotient: &mut U256,
@@ -401,10 +320,7 @@ fn u256_wide_div_rem_with_advice<O: IOOracle>(
 ) {
     assert!(!divisor.is_zero());
 
-    let mut it = query_wide_div_rem_hint(dividend_lo, dividend_hi, divisor, oracle);
-
-    let q_lo = read_u256_from_oracle_response(&mut it);
-    let q_hi = read_u256_from_oracle_response(&mut it);
+    let (q_lo, q_hi) = query_wide_div_rem_hint(dividend_lo, dividend_hi, divisor, oracle);
 
     // verify modifies dividend_lo in-place to hold the remainder
     assert!(verify_wide_div_rem_hint(
@@ -437,9 +353,7 @@ fn u256_mulmod_nonzero_modulus_with_advice<O: IOOracle>(
     let product_lo = a;
     product_lo.widening_mul_assign_into(&mut product_hi, b);
 
-    let mut it = query_wide_div_rem_hint(product_lo, &product_hi, modulus, oracle);
-    let q_lo = read_u256_from_oracle_response(&mut it);
-    let q_hi = read_u256_from_oracle_response(&mut it);
+    let (q_lo, q_hi) = query_wide_div_rem_hint(product_lo, &product_hi, modulus, oracle);
     reduce_product_with_quotient(product_lo, &mut product_hi, modulus, q_lo, q_hi);
 
     // SAFETY: the modulus slot is a distinct, aligned, initialized U256
@@ -490,6 +404,12 @@ pub(crate) fn reduce_product_with_quotient(
 mod tests {
     use super::*;
     use ruint::aliases::{U256 as HostU256, U512};
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use zk_ee::oracle::memory_io::host::{
+        InProcessMemoryOracle, QuerierMemory, ReadQueryInput, WriteQueryOutput,
+    };
+    use zk_ee::oracle::memory_io::MemoryOracle;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::system::base_system_functions::{
         AddModNonZeroModulusExt, DivNonZeroDivisorExt, MulModNonZeroModulusExt,
@@ -499,6 +419,12 @@ mod tests {
 
     /// The paths without advice never query the oracle.
     struct NoOracle;
+
+    impl MemoryOracle for NoOracle {
+        fn send_query(&mut self, _query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            panic!("the path without advice must not query the oracle")
+        }
+    }
 
     impl IOOracle for NoOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;
@@ -512,55 +438,30 @@ mod tests {
         }
     }
 
-    /// Answers the two division queries the way the host does: reads the operands
-    /// through the pointers of the params struct and returns the quotient limbs.
-    struct HostOracle {
-        queries: usize,
-    }
-
-    fn read_u256(ptr: u64) -> HostU256 {
-        // SAFETY: the tests pass addresses of live U256 values
-        let value: &U256 = unsafe { &*(ptr as usize as *const U256) };
-        host(value)
-    }
-
     fn host(value: &U256) -> HostU256 {
         value.clone().into()
     }
 
-    impl IOOracle for HostOracle {
-        type RawIterator<'a> = std::vec::IntoIter<usize>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
-            query_type: u32,
-            input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            self.queries += 1;
-            let arg_ptr = input.iter().next().expect("params pointer");
-            let quotient: Vec<u64> = if query_type == U256_DIV_REM_ADVICE_QUERY_ID {
-                // SAFETY: the tests pass the address of a live params struct
-                let params: U256DivRemAdviceParams64 =
-                    unsafe { *(arg_ptr as *const U256DivRemAdviceParams64) };
-                let q: HostU256 = read_u256(params.dividend_ptr) / read_u256(params.divisor_ptr);
-                q.as_limbs().to_vec()
-            } else if query_type == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-                // SAFETY: the tests pass the address of a live params struct
-                let params: U256WideDivRemAdviceParams64 =
-                    unsafe { *(arg_ptr as *const U256WideDivRemAdviceParams64) };
-                let dividend = U512::from(read_u256(params.dividend_lo_ptr))
-                    + (U512::from(read_u256(params.dividend_hi_ptr)) << 256);
-                let q: U512 = dividend / U512::from(read_u256(params.divisor_ptr));
-                q.as_limbs().to_vec()
-            } else {
-                panic!("unexpected query {query_type:#x}")
-            };
-            Ok(quotient
-                .into_iter()
-                .map(|limb| limb as usize)
-                .collect::<Vec<_>>()
-                .into_iter())
+    /// Answers the two division queries the way the host does: reads the operands through the input word
+    /// and returns the quotient.
+    fn host_division(query_id: u32, input_word: usize, memory: &dyn QuerierMemory) -> Vec<u32> {
+        let mut response = vec![];
+        if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
+            let (dividend, divisor) = <(U256, U256)>::read_input(memory, input_word).unwrap();
+            let q: U256 = (host(&dividend) / host(&divisor)).into();
+            q.write_output(&mut response);
+        } else if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
+            let (lo, hi, divisor) = <(U256, U256, U256)>::read_input(memory, input_word).unwrap();
+            let dividend = U512::from(host(&lo)) + (U512::from(host(&hi)) << 256);
+            let q: U512 = dividend / U512::from(host(&divisor));
+            let limbs = q.as_limbs();
+            let q_lo: U256 = HostU256::from_limbs(limbs[..4].try_into().unwrap()).into();
+            let q_hi: U256 = HostU256::from_limbs(limbs[4..].try_into().unwrap()).into();
+            (q_lo, q_hi).write_output(&mut response);
+        } else {
+            panic!("unexpected query {query_id:#x}")
         }
+        response
     }
 
     fn samples() -> [HostU256; 12] {
@@ -639,9 +540,16 @@ mod tests {
 
     #[test]
     fn arithmetic_with_advice_matches_reference() {
-        let mut oracle = HostOracle { queries: 0 };
+        let queries = Rc::new(Cell::new(0));
+        let counter = Rc::clone(&queries);
+        let mut oracle = InProcessMemoryOracle::new(
+            move |query_id: u32, input_word: usize, memory: &dyn QuerierMemory| {
+                counter.set(counter.get() + 1);
+                host_division(query_id, input_word, memory)
+            },
+        );
         check_all::<true, _>(&mut oracle);
-        assert!(oracle.queries > 0);
+        assert!(queries.get() > 0);
     }
 
     #[test]
@@ -665,19 +573,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "div_rem hint: wrong quotient")]
     fn wrong_quotient_is_rejected() {
-        struct WrongOracle;
-        impl IOOracle for WrongOracle {
-            type RawIterator<'a> = std::vec::IntoIter<usize>;
-            fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-                &'a mut self,
-                _query_type: u32,
-                _input: &I,
-            ) -> Result<Self::RawIterator<'a>, InternalError> {
-                Ok(vec![3usize, 0, 0, 0].into_iter())
-            }
-        }
+        let mut wrong_oracle =
+            InProcessMemoryOracle::new(|_: u32, _: usize, _: &dyn QuerierMemory| {
+                let mut response = vec![];
+                let wrong_quotient: U256 = HostU256::from(3u64).into();
+                wrong_quotient.write_output(&mut response);
+                response
+            });
         let mut a: U256 = HostU256::from(35u64).into();
         let mut b: U256 = HostU256::from(6u64).into();
-        DivNonZeroDivisorImpl::<true>::execute(&mut a, &mut b, &mut WrongOracle);
+        DivNonZeroDivisorImpl::<true>::execute(&mut a, &mut b, &mut wrong_oracle);
     }
 }

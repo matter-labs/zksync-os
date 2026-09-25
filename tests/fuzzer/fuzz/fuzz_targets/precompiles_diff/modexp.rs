@@ -273,6 +273,9 @@ fuzz_target!(|data: &[u8]| {
 
 struct DummyOracle {}
 
+impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+
+
 impl zk_ee::oracle::IOOracle for DummyOracle {
     type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 

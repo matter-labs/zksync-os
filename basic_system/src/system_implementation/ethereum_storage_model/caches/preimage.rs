@@ -2,8 +2,8 @@ use alloc::{alloc::Global, collections::BTreeMap};
 use core::{alloc::Allocator, marker::PhantomData, mem::MaybeUninit};
 use storage_models::common_structs::{snapshottable_io::SnapshottableIo, PreimageCacheModel};
 use zk_ee::common_structs::history_map::NopSnapshotId;
+use zk_ee::oracle::memory_io::{DynamicOracleQuery, OracleQuery};
 use zk_ee::oracle::query_ids::PREIMAGE_SUBSPACE_MASK;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::{
     common_structs::PreimageType,
@@ -28,10 +28,18 @@ pub const ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID: u32 =
 pub const ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID: u32 =
     PREIMAGE_SUBSPACE_MASK | ETHEREUM_STORAGE_SUBSPACE_MASK | 0x01;
 
-impl SimpleOracleQuery for PreimageLengthQuery {
+impl OracleQuery for PreimageLengthQuery {
     const QUERY_ID: u32 = ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID;
     type Input = Bytes32;
     type Output = u32;
+}
+
+/// The bytecode with the given hash.
+pub struct BytecodePreimageQuery;
+
+impl DynamicOracleQuery for BytecodePreimageQuery {
+    const QUERY_ID: u32 = ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID;
+    type Input = Bytes32;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -266,8 +274,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeKeccakPreimagesStorage<R, A> {
             let mut buffered = BytecodeWithArtifacts::allocate_in(
                 expected_length_in_bytes,
                 |code_dst| {
-                    oracle
-                        .expose_preimage(ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID, hash, code_dst)
+                    BytecodePreimageQuery::get_into(oracle, hash, code_dst)
                         .expect("must get preimage")
                 },
                 self.allocator.clone(),
@@ -380,6 +387,10 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zk_ee::oracle::memory_io::host::{
+        write_dynamic_bytes, NativeQuerierMemory, ReadQueryInput, ResponseBuffer, WriteQueryOutput,
+    };
+    use zk_ee::oracle::memory_io::MemoryOracle;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
     use zk_ee::system::Resource;
@@ -392,6 +403,7 @@ mod tests {
         code: Vec<u8>,
         hash: Bytes32,
         preimage_queries: usize,
+        response: ResponseBuffer,
     }
 
     impl OneCodeOracle {
@@ -402,34 +414,42 @@ mod tests {
                 code,
                 hash,
                 preimage_queries: 0,
+                response: ResponseBuffer::default(),
             }
         }
     }
 
+    impl MemoryOracle for OneCodeOracle {
+        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+            // SAFETY: the test sends the queries from this process
+            let memory = unsafe { NativeQuerierMemory::new() };
+            assert_eq!(Bytes32::read_input(&memory, input_word)?, self.hash);
+            let mut response = vec![];
+            match query_id {
+                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID => {
+                    (self.code.len() as u32).write_output(&mut response)
+                }
+                ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID => {
+                    self.preimage_queries += 1;
+                    write_dynamic_bytes(&self.code, &mut response);
+                }
+                _ => panic!("unexpected query {query_id:#x}"),
+            }
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
     impl IOOracle for OneCodeOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+        type RawIterator<'a> = core::iter::Empty<usize>;
 
         fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
             query_type: u32,
             _input: &I,
         ) -> Result<Self::RawIterator<'a>, InternalError> {
-            let words: Vec<usize> = match query_type {
-                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID => vec![self.code.len()],
-                ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID => {
-                    self.preimage_queries += 1;
-                    self.code
-                        .chunks(USIZE_SIZE)
-                        .map(|chunk| {
-                            let mut word = [0u8; USIZE_SIZE];
-                            word[..chunk.len()].copy_from_slice(chunk);
-                            usize::from_le_bytes(word)
-                        })
-                        .collect()
-                }
-                _ => panic!("unexpected query {query_type:#x}"),
-            };
-            Ok(Box::new(words.into_iter()))
+            panic!("unexpected query {query_type:#x}")
         }
     }
 

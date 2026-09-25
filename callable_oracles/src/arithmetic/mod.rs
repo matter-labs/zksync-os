@@ -1,12 +1,9 @@
 use basic_system::system_functions::modexp::{
     ModExpAdviceParams, ModExpAdviceParams64, MODEXP_ADVICE_QUERY_ID,
 };
-use basic_system::system_functions::u256_advice::{
-    U256DivRemAdviceParams, U256DivRemAdviceParams64, U256WideDivRemAdviceParams,
-    U256WideDivRemAdviceParams64,
-};
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
+use zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput, WriteQueryOutput};
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
 
 use crate::utils::{
@@ -67,52 +64,41 @@ impl ArithmeticQueryOutput {
     }
 }
 
-/// Emit u64 limbs as usizes into a result Vec.
-fn push_limbs(result: &mut Vec<usize>, limbs: &[u64]) {
-    for limb in limbs {
-        result.push(*limb as usize);
+/// Serves the U256 division advice (`u256_advice::U256DivRemAdviceQuery` and
+/// `U256WideDivRemAdviceQuery`): the operands are read through the input word, from the guest memory or
+/// from this process alike, and the answer is the quotient.
+fn process_u256_advice_query(
+    query_id: u32,
+    input_word: usize,
+    memory: &dyn QuerierMemory,
+) -> Vec<u32> {
+    let limbs = |value: &u256::U256| *value.as_limbs();
+    let mut response = Vec::new();
+    match query_id {
+        U256_DIV_REM_ADVICE_QUERY_ID => {
+            let (dividend, divisor) = <(u256::U256, u256::U256)>::read_input(memory, input_word)
+                .expect("must read the div_rem operands");
+            let mut quotient = limbs(&dividend);
+            ruint::algorithms::div(&mut quotient, &mut limbs(&divisor));
+            u256::U256::from_limbs(quotient).write_output(&mut response);
+        }
+        U256_WIDE_DIV_REM_ADVICE_QUERY_ID => {
+            let (dividend_lo, dividend_hi, divisor) =
+                <(u256::U256, u256::U256, u256::U256)>::read_input(memory, input_word)
+                    .expect("must read the wide div_rem operands");
+            let mut quotient = [0u64; 8];
+            quotient[..4].copy_from_slice(&limbs(&dividend_lo));
+            quotient[4..].copy_from_slice(&limbs(&dividend_hi));
+            ruint::algorithms::div(&mut quotient, &mut limbs(&divisor));
+            (
+                u256::U256::from_limbs(quotient[..4].try_into().unwrap()),
+                u256::U256::from_limbs(quotient[4..].try_into().unwrap()),
+            )
+                .write_output(&mut response);
+        }
+        _ => unreachable!("not a U256 advice query: 0x{query_id:08x}"),
     }
-}
-
-fn u256_div_rem_output(
-    mut dividend: [u64; 4],
-    mut divisor: [u64; 4],
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    ruint::algorithms::div(&mut dividend, &mut divisor);
-
-    // Return quotient only (4 limbs), guest derives remainder
-    let mut result = Vec::with_capacity(4);
-    push_limbs(&mut result, &dividend);
-    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
-}
-
-fn u256_wide_div_rem_output(
-    dividend_lo: [u64; 4],
-    dividend_hi: [u64; 4],
-    mut divisor: [u64; 4],
-) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-    let mut dividend = [0u64; 8];
-    dividend[..4].copy_from_slice(&dividend_lo);
-    dividend[4..].copy_from_slice(&dividend_hi);
-
-    ruint::algorithms::div(&mut dividend, &mut divisor);
-
-    // Return quotient only (8 limbs), no remainder
-    let mut result = Vec::with_capacity(8);
-    push_limbs(&mut result, &dividend);
-    Box::new(UsizeSliceIteratorOwned::new(result.into_boxed_slice()))
-}
-
-/// Read a U256 (4 u64 limbs) from guest memory at the given u32 address.
-fn read_u256_from_guest(memory: &dyn RamPeek, ptr: u32) -> [u64; 4] {
-    let limbs = read_memory_as_u64(memory, ptr, 4).unwrap();
-    [limbs[0], limbs[1], limbs[2], limbs[3]]
-}
-
-/// Read a U256 (4 u64 limbs) from host process memory at the given u64 address.
-fn read_u256_from_host(ptr: u64) -> [u64; 4] {
-    let limbs = read_u64_words(ptr, 4);
-    [limbs[0], limbs[1], limbs[2], limbs[3]]
+    response
 }
 
 fn process_modexp_riscv_query(
@@ -180,11 +166,23 @@ pub struct ArithmeticQuery;
 
 impl OracleQueryProcessor for ArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
+        vec![MODEXP_ADVICE_QUERY_ID]
+    }
+
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         vec![
-            MODEXP_ADVICE_QUERY_ID,
             U256_DIV_REM_ADVICE_QUERY_ID,
             U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
         ]
+    }
+
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+    ) -> Vec<u32> {
+        process_u256_advice_query(query_id, input_word, memory)
     }
 
     fn process_buffered_query(
@@ -194,31 +192,6 @@ impl OracleQueryProcessor for ArithmeticQuery {
         memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
-
-        if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            assert!(arg_ptr.is_multiple_of(4));
-            const { assert!(core::mem::align_of::<U256DivRemAdviceParams>() <= 4) }
-            const { assert!(core::mem::size_of::<U256DivRemAdviceParams>().is_multiple_of(4)) }
-            let params: U256DivRemAdviceParams =
-                unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
-            let dividend = read_u256_from_guest(memory, params.dividend_ptr);
-            let divisor = read_u256_from_guest(memory, params.divisor_ptr);
-            return u256_div_rem_output(dividend, divisor);
-        }
-
-        if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            assert!(arg_ptr.is_multiple_of(4));
-            const { assert!(core::mem::align_of::<U256WideDivRemAdviceParams>() <= 4) }
-            const { assert!(core::mem::size_of::<U256WideDivRemAdviceParams>().is_multiple_of(4)) }
-            let params: U256WideDivRemAdviceParams =
-                unsafe { read_struct(memory, arg_ptr as u32) }.unwrap();
-            let dividend_lo = read_u256_from_guest(memory, params.dividend_lo_ptr);
-            let dividend_hi = read_u256_from_guest(memory, params.dividend_hi_ptr);
-            let divisor = read_u256_from_guest(memory, params.divisor_ptr);
-            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
-        }
 
         process_modexp_riscv_query(query, memory)
     }
@@ -233,11 +206,23 @@ pub struct NativeArithmeticQuery;
 
 impl OracleQueryProcessor for NativeArithmeticQuery {
     fn supported_query_ids(&self) -> Vec<u32> {
+        vec![MODEXP_ADVICE_QUERY_ID]
+    }
+
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         vec![
-            MODEXP_ADVICE_QUERY_ID,
             U256_DIV_REM_ADVICE_QUERY_ID,
             U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
         ]
+    }
+
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+    ) -> Vec<u32> {
+        process_u256_advice_query(query_id, input_word, memory)
     }
 
     fn process_buffered_query(
@@ -248,23 +233,6 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
-        if query_id == U256_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            let params: U256DivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
-            let dividend = read_u256_from_host(params.dividend_ptr);
-            let divisor = read_u256_from_host(params.divisor_ptr);
-            return u256_div_rem_output(dividend, divisor);
-        }
-
-        if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID {
-            let arg_ptr = extract_single_ptr(query);
-            let params: U256WideDivRemAdviceParams64 = read_host_struct(arg_ptr as u64);
-            let dividend_lo = read_u256_from_host(params.dividend_lo_ptr);
-            let dividend_hi = read_u256_from_host(params.dividend_hi_ptr);
-            let divisor = read_u256_from_host(params.divisor_ptr);
-            return u256_wide_div_rem_output(dividend_lo, dividend_hi, divisor);
-        }
-
         process_modexp_native_query(query)
     }
 }
@@ -274,9 +242,11 @@ mod tests {
     use super::*;
 
     use crate::test_utils::TestMemorySource;
-    use basic_system::system_functions::u256_advice::U256WideDivRemAdviceParams64;
-    use oracle_provider::DummyMemorySource;
-    use zk_ee::oracle::query_ids::U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
+    use basic_system::system_functions::u256_advice::{
+        U256DivRemAdviceQuery, U256WideDivRemAdviceQuery,
+    };
+    use oracle_provider::{DummyMemorySource, GuestMemory, ZkEENonDeterminismSource};
+    use zk_ee::oracle::memory_io::OracleQuery;
 
     impl TestMemorySource {
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
@@ -448,71 +418,71 @@ mod tests {
         assert_eq!(output[2], 1);
     }
 
+    fn native_oracle() -> ZkEENonDeterminismSource {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(NativeArithmeticQuery);
+        oracle
+    }
+
     #[test]
     fn u256_div_rem_via_native_query() {
-        let dividend = [10u64, 0, 0, 0];
-        let divisor = [3u64, 0, 0, 0];
-        let params = U256DivRemAdviceParams64 {
-            dividend_ptr: dividend.as_ptr().addr() as u64,
-            divisor_ptr: divisor.as_ptr().addr() as u64,
-        };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                U256_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256DivRemAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
-        // Quotient only: 4 limbs
-        assert_eq!(output, vec![3, 0, 0, 0]);
+        let dividend = u256::U256::from_limbs([10, 0, 0, 0]);
+        let divisor = u256::U256::from_limbs([3, 0, 0, 0]);
+        let quotient =
+            U256DivRemAdviceQuery::get(&mut native_oracle(), (&dividend, &divisor)).unwrap();
+        assert_eq!(*quotient.as_limbs(), [3, 0, 0, 0]);
     }
 
     #[test]
     fn u256_wide_div_rem_via_native_query() {
         // 35 / 6: q=5
-        let dividend_lo = [35u64, 0, 0, 0];
-        let dividend_hi = [0u64, 0, 0, 0];
-        let divisor = [6u64, 0, 0, 0];
-        let params = U256WideDivRemAdviceParams64 {
-            dividend_lo_ptr: dividend_lo.as_ptr().addr() as u64,
-            dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
-            divisor_ptr: divisor.as_ptr().addr() as u64,
-        };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
-        // Quotient only: 8 limbs
-        assert_eq!(output.len(), 8);
-        assert_eq!(output[0], 5); // q_lo limb 0
-        assert_eq!(&output[1..], &[0, 0, 0, 0, 0, 0, 0]);
+        let dividend_lo = u256::U256::from_limbs([35, 0, 0, 0]);
+        let dividend_hi = u256::U256::from_limbs([0, 0, 0, 0]);
+        let divisor = u256::U256::from_limbs([6, 0, 0, 0]);
+        let (q_lo, q_hi) = U256WideDivRemAdviceQuery::get(
+            &mut native_oracle(),
+            (&dividend_lo, &dividend_hi, &divisor),
+        )
+        .unwrap();
+        assert_eq!(*q_lo.as_limbs(), [5, 0, 0, 0]);
+        assert_eq!(*q_hi.as_limbs(), [0, 0, 0, 0]);
     }
 
     #[test]
     fn u256_wide_div_rem_large_dividend() {
         // 2^256 / (2^128 + 1): q = 2^128 - 1
-        let dividend_lo = [0u64, 0, 0, 0];
-        let dividend_hi = [1u64, 0, 0, 0];
-        let divisor = [1u64, 0, 1, 0];
-        let params = U256WideDivRemAdviceParams64 {
-            dividend_lo_ptr: dividend_lo.as_ptr().addr() as u64,
-            dividend_hi_ptr: dividend_hi.as_ptr().addr() as u64,
-            divisor_ptr: divisor.as_ptr().addr() as u64,
-        };
-        let output: Vec<usize> = NativeArithmeticQuery
-            .process_buffered_query(
-                U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
-                vec![(&params as *const U256WideDivRemAdviceParams64).addr()],
-                &DummyMemorySource,
-            )
-            .collect();
-        assert_eq!(output.len(), 8);
-        assert_eq!(output[0], u64::MAX as usize);
-        assert_eq!(output[1], u64::MAX as usize);
-        assert_eq!(&output[2..8], &[0, 0, 0, 0, 0, 0]);
+        let dividend_lo = u256::U256::from_limbs([0, 0, 0, 0]);
+        let dividend_hi = u256::U256::from_limbs([1, 0, 0, 0]);
+        let divisor = u256::U256::from_limbs([1, 0, 1, 0]);
+        let (q_lo, q_hi) = U256WideDivRemAdviceQuery::get(
+            &mut native_oracle(),
+            (&dividend_lo, &dividend_hi, &divisor),
+        )
+        .unwrap();
+        assert_eq!(*q_lo.as_limbs(), [u64::MAX, u64::MAX, 0, 0]);
+        assert_eq!(*q_hi.as_limbs(), [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn u256_wide_div_rem_from_guest_memory() {
+        // 2^256 / (2^128 + 1): q = 2^128 - 1, operands at 0x100, 0x200 and 0x300 of a 32-bit guest,
+        // and the address array of the composite input at 0x400
+        let mut memory = TestMemorySource::default();
+        memory.insert_u64_words(0x100, &[0, 0, 0, 0]);
+        memory.insert_u64_words(0x200, &[1, 0, 0, 0]);
+        memory.insert_u64_words(0x300, &[1, 0, 1, 0]);
+        for (i, address) in [0x100, 0x200, 0x300].into_iter().enumerate() {
+            memory.insert_u32(0x400 + 4 * i as u32, address);
+        }
+        let response = ArithmeticQuery.process_memory_query(
+            U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
+            0x400,
+            &GuestMemory(&memory),
+        );
+        // the two halves of the quotient, as the 16 words the guest reads: 2^128 - 1 fills the low 4
+        let mut expected = vec![u32::MAX; 4];
+        expected.extend([0; 12]);
+        assert_eq!(response, expected);
     }
 
     #[test]

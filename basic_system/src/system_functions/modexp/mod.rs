@@ -523,6 +523,8 @@ mod tests {
     struct DummyOracle;
     struct AlwaysFailDst;
 
+    impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+
     impl IOOracle for DummyOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 

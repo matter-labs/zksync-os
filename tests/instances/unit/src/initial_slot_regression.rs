@@ -26,10 +26,9 @@ use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
 };
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
-use rig::zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use rig::zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
-use rig::zk_ee::storage_types::{InitialStorageSlotData, StorageAddress};
+use rig::zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput, WriteQueryOutput};
+use rig::zk_ee::oracle::memory_io::OracleQuery;
+use rig::zk_ee::storage_types::InitialStorageSlotData;
 use rig::zk_ee::system::metadata::chain_config::ChainConfig;
 use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
@@ -56,29 +55,34 @@ impl<S: ReadStorage> MaliciousStorageResponder<S> {
 
 impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
     fn supported_query_ids(&self) -> Vec<u32> {
-        Self::SUPPORTED_QUERY_IDS.to_vec()
-    }
-
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        Self::SUPPORTED_QUERY_IDS.contains(&query_id)
+        vec![]
     }
 
     fn process_buffered_query(
         &mut self,
-        query_id: u32,
-        query: Vec<usize>,
+        _query_id: u32,
+        _query: Vec<usize>,
         _memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        unreachable!()
+    }
+
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
+        Self::SUPPORTED_QUERY_IDS.to_vec()
+    }
+
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+    ) -> Vec<u32> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
-                let StorageAddress { address, key } = <InitialStorageSlotQuery<
-                    EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
-                    &mut query.into_iter()
-                )
-                .expect("must deserialize the address/slot");
+                let (address, key) = <(B160, Bytes32)>::read_input(memory, input_word)
+                    .expect("must read the address/slot");
                 let flat_key = derive_flat_storage_key(&address, &key);
                 let slot_data: InitialStorageSlotData<EthereumIOTypesConfig> =
                     if let Some(cold) = self.storage.read(flat_key) {
@@ -107,7 +111,9 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                             }
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                let mut response = vec![];
+                slot_data.write_output(&mut response);
+                response
             }
             _ => unreachable!(),
         }

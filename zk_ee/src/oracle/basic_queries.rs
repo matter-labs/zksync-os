@@ -1,20 +1,24 @@
 use crate::common_structs::state_root_view::StateRootView;
 use crate::common_structs::ProofData;
+use crate::oracle::memory_io::OracleQuery;
 use crate::oracle::query_ids::{
     DISCONNECT_ORACLE_QUERY_ID, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID, ZK_PROOF_DATA_INIT_QUERY_ID,
 };
 use crate::oracle::simple_oracle_query::SimpleOracleQuery;
-use crate::storage_types::{InitialStorageSlotData, StorageAddress};
+use crate::storage_types::InitialStorageSlotData;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
+use crate::utils::Bytes32;
+use ruint::aliases::B160;
 
 pub struct InitialStorageSlotQuery<IOTypes: SystemIOTypesConfig> {
     _marker: core::marker::PhantomData<IOTypes>,
 }
 
-impl<IOTypes: SystemIOTypesConfig> SimpleOracleQuery for InitialStorageSlotQuery<IOTypes> {
+impl OracleQuery for InitialStorageSlotQuery<EthereumIOTypesConfig> {
     const QUERY_ID: u32 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
-    type Input = StorageAddress<IOTypes>;
-    type Output = InitialStorageSlotData<IOTypes>;
+    /// `(address, key)`
+    type Input = (B160, Bytes32);
+    type Output = InitialStorageSlotData<EthereumIOTypesConfig>;
 }
 
 pub struct DisconnectOracleQuery;

@@ -474,6 +474,8 @@ mod tests {
 
     struct TestOracle;
 
+    impl zk_ee::oracle::memory_io::MemoryOracle for TestOracle {}
+
     impl IOOracle for TestOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 

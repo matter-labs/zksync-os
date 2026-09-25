@@ -193,6 +193,8 @@ mod oracle_provider_stub {
 
     pub enum NoOracle {}
 
+    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {}
+
     impl IOOracle for NoOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;
 

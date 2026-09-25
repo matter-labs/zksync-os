@@ -2488,6 +2488,7 @@ dependencies = [
  "c-kzg",
  "oracle_provider",
  "ruint",
+ "u256",
  "zk_ee",
 ]
 

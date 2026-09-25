@@ -931,6 +931,8 @@ mod tests {
         queries: usize,
     }
 
+    impl zk_ee::oracle::memory_io::MemoryOracle for FundedAccountsOracle {}
+
     impl IOOracle for FundedAccountsOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 

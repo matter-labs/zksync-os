@@ -265,6 +265,8 @@ mod tests {
 
     struct DummyOracle;
 
+    impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+
     impl IOOracle for DummyOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;
 

@@ -11,8 +11,10 @@ compile_error!("ReadWitnessSource host recording requires a 64-bit little-endian
 // Hook zk_ee IOOracle to be NonDeterminismCSRSource
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
+use zk_ee::oracle::memory_io::host::{NativeQuerierMemory, QuerierMemory};
+use zk_ee::oracle::memory_io::MemoryOracle;
 use zk_ee::oracle::query_ids::{DISCONNECT_ORACLE_QUERY_ID, UART_QUERY_ID};
 use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use zk_ee::system::errors::internal::InternalError;
@@ -26,6 +28,25 @@ pub struct DummyMemorySource;
 impl RamPeek for DummyMemorySource {
     fn peek_word(&self, _address: u32) -> u32 {
         unreachable!("DummyMemorySource should not be read from")
+    }
+}
+
+/// The memory of the RISC-V guest, for the processors of memory-based queries (see
+/// [`OracleQueryProcessor::process_memory_query`]).
+pub struct GuestMemory<'a, R: RamPeek + ?Sized>(pub &'a R);
+
+impl<R: RamPeek + ?Sized> QuerierMemory for GuestMemory<'_, R> {
+    fn word_size(&self) -> usize {
+        size_of::<u32>()
+    }
+
+    fn read_u32(&self, address: usize) -> Result<u32, InternalError> {
+        let address = u32::try_from(address)
+            .map_err(|_| internal_error!("guest address does not fit into u32"))?;
+        if !address.is_multiple_of(4) {
+            return Err(internal_error!("unaligned guest address"));
+        }
+        Ok(self.0.peek_word(address))
     }
 }
 
@@ -56,22 +77,50 @@ pub struct ZkEENonDeterminismSource {
     processors: Vec<Box<dyn OracleQueryProcessor + 'static>>,
     /// Mapping from query_id to processor that is handling it (represented as index in processors vector above).
     ranges: BTreeMap<u32, usize>,
+    /// The same for the queries served with the memory-based protocol.
+    memory_query_ranges: BTreeMap<u32, usize>,
+    /// Words of the response to the current memory-based query that the querier did not read yet.
+    memory_response: VecDeque<u32>,
+    /// The memory-based query whose input word the guest sends next, when running as the CSR source.
+    memory_query_awaiting_input: Option<u32>,
 }
 
 impl ZkEENonDeterminismSource {
     #[track_caller]
     pub fn add_external_processor<P: OracleQueryProcessor + 'static>(&mut self, processor: P) {
-        let query_ids = processor.supported_query_ids();
         let processor_id = self.processors.len();
-        for id in query_ids.into_iter() {
+        for id in processor.supported_query_ids() {
             let existing = self.ranges.insert(id, processor_id);
             assert!(
-                existing.is_none(),
+                existing.is_none() && !self.memory_query_ranges.contains_key(&id),
+                "more than one processor for query id 0x{id:08x}"
+            );
+        }
+        for id in processor.supported_memory_query_ids() {
+            let existing = self.memory_query_ranges.insert(id, processor_id);
+            assert!(
+                existing.is_none() && !self.ranges.contains_key(&id),
                 "more than one processor for query id 0x{id:08x}"
             );
         }
         self.processors.push(Box::new(processor));
         self.is_connected_to_external_oracle = true;
+    }
+
+    /// Serves a memory-based query, and keeps its response for the querier to read.
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+    ) -> Result<(), InternalError> {
+        let Some(processor_id) = self.memory_query_ranges.get(&query_id).copied() else {
+            return Err(internal_error!("invalid query ID"));
+        };
+        let response =
+            self.processors[processor_id].process_memory_query(query_id, input_word, memory);
+        self.memory_response = response.into();
+        Ok(())
     }
 
     fn process_buffered_query(&mut self, memory: &dyn RamPeek) {
@@ -105,6 +154,10 @@ impl ZkEENonDeterminismSource {
         // We mocked reads, so it's filtered out before
         if self.is_connected_to_external_oracle == false {
             return 0;
+        }
+
+        if let Some(word) = self.memory_response.pop_front() {
+            return word;
         }
 
         if let Some(iterator_len_to_indicate) = self.iterator_len_to_indicate.take() {
@@ -159,8 +212,19 @@ impl ZkEENonDeterminismSource {
         if self.high_half.is_some() {
             self.high_half = None;
         }
+        if !self.memory_response.is_empty() {
+            println!(
+                "Response to a memory-based query is not consumed in full, but received value 0x{value:08x}"
+            );
+            self.memory_response.clear();
+        }
 
-        if let Some(query_buffer) = self.query_buffer.as_mut() {
+        if let Some(query_id) = self.memory_query_awaiting_input.take() {
+            // a memory-based query is two words: the ID and the input word, which may be a guest
+            // address that the processor reads through while the guest waits
+            self.process_memory_query(query_id, value as usize, &GuestMemory(memory))
+                .expect("query ID is registered");
+        } else if let Some(query_buffer) = self.query_buffer.as_mut() {
             let complete = query_buffer.write(value);
             if complete {
                 self.process_buffered_query(memory);
@@ -168,6 +232,11 @@ impl ZkEENonDeterminismSource {
         } else {
             if self.is_connected_to_external_oracle == false && value != UART_QUERY_ID {
                 // we are not interested in general to start another query
+                return;
+            }
+
+            if self.memory_query_ranges.contains_key(&value) {
+                self.memory_query_awaiting_input = Some(value);
                 return;
             }
 
@@ -205,6 +274,59 @@ impl IOOracle for ZkEENonDeterminismSource {
     }
 }
 
+/// The querier runs in this process (forward mode, and the native run that records the prover input).
+impl MemoryOracle for ZkEENonDeterminismSource {
+    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        if !self.memory_response.is_empty() {
+            self.memory_response.clear();
+            return Err(internal_error!(
+                "previous oracle response was not consumed in full"
+            ));
+        }
+        if self.is_connected_to_external_oracle == false {
+            // as when running as the CSR source, reads return zeroes
+            return Ok(());
+        }
+        // SAFETY: the querier of this process exposes the memory the input word refers to while it sends
+        // the query, i.e. during this call
+        let memory = unsafe { NativeQuerierMemory::new() };
+        self.process_memory_query(query_id, input_word, &memory)
+    }
+
+    fn read_word(&mut self) -> Result<u32, InternalError> {
+        match self.memory_response.pop_front() {
+            Some(word) => Ok(word),
+            None if self.is_connected_to_external_oracle == false => Ok(0),
+            None => Err(internal_error!("oracle response is shorter than expected")),
+        }
+    }
+
+    unsafe fn write_words(&mut self, dst: *mut u32, num_words: usize) -> Result<(), InternalError> {
+        if self.memory_response.len() < num_words {
+            if self.is_connected_to_external_oracle == false {
+                // SAFETY: guaranteed by the caller
+                unsafe { dst.write_bytes(0, num_words) };
+                return Ok(());
+            }
+            return Err(internal_error!("oracle response is shorter than expected"));
+        }
+        for (i, word) in self.memory_response.drain(..num_words).enumerate() {
+            // SAFETY: `i < num_words`, and the caller guarantees `dst` is valid for `num_words` words
+            unsafe { dst.add(i).write(word) };
+        }
+        Ok(())
+    }
+
+    fn finish_query(&mut self) -> Result<(), InternalError> {
+        if self.memory_response.is_empty() {
+            Ok(())
+        } else {
+            self.memory_response.clear();
+            Err(internal_error!("oracle response contains excess data"))
+        }
+    }
+}
+
 pub trait OracleQueryProcessor {
     /// List of different query ids that are supported (for example NextTxSize or BlockLevelMetadataIterator).
     fn supported_query_ids(&self) -> Vec<u32>;
@@ -218,6 +340,23 @@ pub trait OracleQueryProcessor {
         query: Vec<usize>,
         memory: &dyn RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>;
+
+    /// IDs of the queries served with the memory-based protocol (`zk_ee::oracle::memory_io`).
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
+        Vec::new()
+    }
+
+    /// Serves a query of the memory-based protocol. `input_word` is the input word the querier sent, and
+    /// `memory` reads the memory of the querier it may refer to (see `zk_ee::oracle::memory_io::host`).
+    /// Returns the response words, exactly as the querier reads them.
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        _input_word: usize,
+        _memory: &dyn QuerierMemory,
+    ) -> Vec<u32> {
+        panic!("query ID 0x{query_id:08x} is not served with the memory-based protocol")
+    }
 }
 
 struct QueryBuffer {
@@ -360,6 +499,33 @@ impl IOOracle for ReadWitnessSource {
     }
 }
 
+/// Records the words the querier reads: the wire of the memory-based protocol is the same on every target,
+/// so they are the words the RISC-V guest reads.
+impl MemoryOracle for ReadWitnessSource {
+    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        self.original_source.send_query(query_id, input_word)
+    }
+
+    fn read_word(&mut self) -> Result<u32, InternalError> {
+        let word = self.original_source.read_word()?;
+        self.read_items.borrow_mut().push(word);
+        Ok(word)
+    }
+
+    unsafe fn write_words(&mut self, dst: *mut u32, num_words: usize) -> Result<(), InternalError> {
+        // SAFETY: guaranteed by the caller
+        unsafe { self.original_source.write_words(dst, num_words)? };
+        // SAFETY: the words were just written
+        let words = unsafe { core::slice::from_raw_parts(dst, num_words) };
+        self.read_items.borrow_mut().extend_from_slice(words);
+        Ok(())
+    }
+
+    fn finish_query(&mut self) -> Result<(), InternalError> {
+        self.original_source.finish_query()
+    }
+}
+
 fn record_usize_as_u32_words(dst: &mut Vec<u32>, value: usize) {
     {
         let v = value as u64;
@@ -409,5 +575,173 @@ mod tests {
             *source.get_read_items().borrow(),
             vec![4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc,]
         );
+    }
+
+    use zk_ee::oracle::memory_io::host::{write_dynamic_bytes, ReadQueryInput, WriteQueryOutput};
+    use zk_ee::oracle::memory_io::{DynamicOracleQuery, OracleQuery};
+    use zk_ee::utils::Bytes32;
+
+    const SWAP_QUERY_ID: u32 = 0x1234_0001;
+    const BYTES_QUERY_ID: u32 = 0x1234_0002;
+
+    /// A composite input, and a composite output.
+    struct SwapQuery;
+
+    impl OracleQuery for SwapQuery {
+        const QUERY_ID: u32 = SWAP_QUERY_ID;
+        type Input = (Bytes32, Bytes32);
+        type Output = (Bytes32, Bytes32);
+    }
+
+    /// An input passed by address, and a dynamically sized output of the first 13 bytes of it.
+    struct BytesQuery;
+
+    impl DynamicOracleQuery for BytesQuery {
+        const QUERY_ID: u32 = BYTES_QUERY_ID;
+        type Input = Bytes32;
+    }
+
+    struct MemoryProcessor;
+
+    impl OracleQueryProcessor for MemoryProcessor {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            vec![]
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            _query_id: u32,
+            _query: Vec<usize>,
+            _memory: &dyn RamPeek,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            unreachable!()
+        }
+
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            vec![SWAP_QUERY_ID, BYTES_QUERY_ID]
+        }
+
+        fn process_memory_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+        ) -> Vec<u32> {
+            let mut response = vec![];
+            match query_id {
+                SWAP_QUERY_ID => {
+                    let (a, b) = <(Bytes32, Bytes32)>::read_input(memory, input_word).unwrap();
+                    (b, a).write_output(&mut response);
+                }
+                BYTES_QUERY_ID => {
+                    let value = Bytes32::read_input(memory, input_word).unwrap();
+                    write_dynamic_bytes(&value.as_u8_array_ref()[..13], &mut response);
+                }
+                _ => unreachable!(),
+            }
+            response
+        }
+    }
+
+    fn bytes32(seed: u8) -> Bytes32 {
+        Bytes32::from_array(core::array::from_fn(|i| seed.wrapping_add(i as u8)))
+    }
+
+    fn words(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn memory_queries_in_process_record_the_words_the_guest_reads() {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(MemoryProcessor);
+        let mut source = ReadWitnessSource::new(oracle);
+        let (a, b) = (bytes32(1), bytes32(100));
+
+        assert_eq!(SwapQuery::get(&mut source, (&a, &b)).unwrap(), (b, a));
+
+        let mut vector = Vec::with_capacity(4);
+        assert_eq!(
+            BytesQuery::get_into(&mut source, &a, &mut vector).unwrap(),
+            2
+        );
+        let bytes: Vec<u8> = vector.iter().flat_map(|word| word.to_le_bytes()).collect();
+        assert_eq!(bytes[..13], a.as_u8_array_ref()[..13]);
+        assert_eq!(bytes[13..], [0, 0, 0]);
+
+        // no length prefix for the fixed-size output; the claim of the dynamic one counts u32 words
+        let mut padded = a.as_u8_array_ref()[..16].to_vec();
+        padded[13..].fill(0);
+        let expected = [
+            words(b.as_u8_array_ref()),
+            words(a.as_u8_array_ref()),
+            vec![4],
+            words(&padded),
+        ]
+        .concat();
+        assert_eq!(*source.get_read_items().borrow(), expected);
+    }
+
+    #[test]
+    fn memory_queries_as_the_csr_source_of_the_guest() {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(FixedResponseProcessor);
+        oracle.add_external_processor(MemoryProcessor);
+        let (a, b) = (bytes32(1), bytes32(100));
+        // guest memory: `a` at 0x100, `b` at 0x200, and the address array of the composite at 0x300
+        let mut ram = [0u32; 256];
+        ram[0x40..0x48].copy_from_slice(&words(a.as_u8_array_ref()));
+        ram[0x80..0x88].copy_from_slice(&words(b.as_u8_array_ref()));
+        ram[0xc0] = 0x100;
+        ram[0xc1] = 0x200;
+
+        for _ in 0..2 {
+            // a memory-based query: the ID and the input word, then exactly the response words
+            oracle.write_with_memory_access(&ram, SWAP_QUERY_ID);
+            oracle.write_with_memory_access(&ram, 0x300);
+            let response: Vec<u32> = (0..16).map(|_| oracle.read()).collect();
+            assert_eq!(
+                response,
+                [words(b.as_u8_array_ref()), words(a.as_u8_array_ref())].concat()
+            );
+
+            // an iterator-based query in between keeps its framing
+            for word in [TEST_QUERY_ID, 2, 7, 0] {
+                oracle.write_with_memory_access(&ram, word);
+            }
+            let response: Vec<u32> = (0..5).map(|_| oracle.read()).collect();
+            assert_eq!(
+                response,
+                [4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc]
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "more than one processor")]
+    fn a_query_id_is_served_with_one_protocol() {
+        struct IteratorSwap;
+
+        impl OracleQueryProcessor for IteratorSwap {
+            fn supported_query_ids(&self) -> Vec<u32> {
+                vec![SWAP_QUERY_ID]
+            }
+
+            fn process_buffered_query(
+                &mut self,
+                _query_id: u32,
+                _query: Vec<usize>,
+                _memory: &dyn RamPeek,
+            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+                unreachable!()
+            }
+        }
+
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(MemoryProcessor);
+        oracle.add_external_processor(IteratorSwap);
     }
 }

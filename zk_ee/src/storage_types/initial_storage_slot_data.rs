@@ -2,6 +2,8 @@ use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use crate::utils::exact_size_chain::ExactSizeChain;
 use crate::{system::errors::internal::InternalError, types_config::SystemIOTypesConfig};
 
+// `#[repr(C)]`: the oracle can write it memcpy-like, see `oracle::memory_io`
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InitialStorageSlotData<IOTypes: SystemIOTypesConfig> {
     // We need to know what was a value of the storage slot,

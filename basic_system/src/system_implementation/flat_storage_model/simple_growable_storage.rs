@@ -27,8 +27,9 @@ use either::Either;
 use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
+use zk_ee::oracle::memory_io::host::WriteQueryOutput;
+use zk_ee::oracle::memory_io::{ContinuousDeserializable, ContinuousSerializable, OracleQuery};
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
 use zk_ee::{internal_error, logger_log};
 use zk_ee::{
@@ -46,12 +47,32 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
+// `#[repr(C)]`: the oracle passes it memcpy-like (`zk_ee::oracle::memory_io`)
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
     pub value: Bytes32,
     pub next: u64,
+}
+
+// The key, the value and the index of the next leaf, without padding
+const _: () = assert!(
+    core::mem::size_of::<FlatStorageLeaf<0>>() == 72
+        && core::mem::align_of::<FlatStorageLeaf<0>>() == 8
+);
+
+// SAFETY: `#[repr(C)]` of fixed-width fields without padding (see above)
+unsafe impl<const N: usize> ContinuousSerializable for FlatStorageLeaf<N> {}
+
+// SAFETY: as above; any bytes form a valid leaf
+unsafe impl<const N: usize> ContinuousDeserializable for FlatStorageLeaf<N> {
+    #[inline(always)]
+    unsafe fn validate<'a>(this: *mut Self) -> Result<&'a mut Self, InternalError> {
+        // SAFETY: guaranteed by the caller, and any initialized bytes form a valid value
+        Ok(unsafe { &mut *this })
+    }
 }
 
 impl<const N: usize> UsizeSerializable for FlatStorageLeaf<N> {
@@ -797,7 +818,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 /// Query for finding the previous index in the sorted flat storage for a given key
 pub struct PreviousIndexQuery;
 
-impl SimpleOracleQuery for PreviousIndexQuery {
+impl OracleQuery for PreviousIndexQuery {
     const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
     type Input = Bytes32;
     type Output = u64;
@@ -806,7 +827,7 @@ impl SimpleOracleQuery for PreviousIndexQuery {
 /// Query for finding the exact index of a key in the flat storage
 pub struct ExactIndexQuery;
 
-impl SimpleOracleQuery for ExactIndexQuery {
+impl OracleQuery for ExactIndexQuery {
     const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x01;
     type Input = Bytes32;
     type Output = u64;
@@ -824,18 +845,26 @@ fn get_index<O: IOOracle>(oracle: &mut O, flat_key: &Bytes32) -> u64 {
 pub const PROOF_FOR_INDEX_QUERY_ID: u32 =
     STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x02;
 
-/// Query for obtaining a Merkle proof for a value at a specific index in flat storage
-pub struct ProofForIndexQuery<const N: usize, H: FlatStorageHasher, A: Allocator + Clone + Default>
-{
-    _marker: core::marker::PhantomData<(H, A)>,
-}
+/// Query for obtaining a Merkle proof for a value at a specific index in flat storage: the index, the
+/// leaf and the path
+pub struct ProofForIndexQuery<const N: usize>;
 
-impl<const N: usize, H: FlatStorageHasher, A: 'static + Allocator + Clone + Default>
-    SimpleOracleQuery for ProofForIndexQuery<N, H, A>
-{
+impl<const N: usize> OracleQuery for ProofForIndexQuery<N> {
     const QUERY_ID: u32 = PROOF_FOR_INDEX_QUERY_ID;
     type Input = u64;
-    type Output = ValueAtIndexProof<N, H, A>;
+    /// `(index, leaf, path)`
+    type Output = (u64, FlatStorageLeaf<N>, [Bytes32; N]);
+}
+
+/// Oracle side of [`ProofForIndexQuery`]: the response for `proof`.
+pub fn write_proof_for_index_response<const N: usize, H: FlatStorageHasher, A: Allocator>(
+    proof: &LeafProof<N, H, A>,
+    response: &mut Vec<u32>,
+) {
+    // a composite output is the concatenation of its elements
+    proof.index.write_output(response);
+    proof.leaf.write_output(response);
+    proof.path.write_output(response);
 }
 
 fn get_proof_for_index<
@@ -847,13 +876,26 @@ fn get_proof_for_index<
     oracle: &mut O,
     index: u64,
 ) -> ValueAtIndexProof<N, H, A> {
-    // we can not use query here, but almost
-    let proof: ValueAtIndexProof<N, H, A> = oracle
-        .query_serializable(PROOF_FOR_INDEX_QUERY_ID, &index)
-        .expect("must deserialize proof for index");
-    assert_eq!(proof.proof.existing.index, index);
+    let mut proven_index = core::mem::MaybeUninit::uninit();
+    let mut leaf = core::mem::MaybeUninit::uninit();
+    // the oracle writes the path straight into its allocation
+    let mut path = Box::<[Bytes32; N], A>::new_uninit_in(A::default());
+    let (proven_index, leaf, _) = ProofForIndexQuery::<N>::get_into(
+        oracle,
+        &index,
+        (&mut proven_index, &mut leaf, &mut *path),
+    )
+    .expect("must get the proof for index");
+    assert_eq!(*proven_index, index);
+    let leaf = *leaf;
+    // SAFETY: the path was just written and validated
+    let path = unsafe { path.assume_init() };
 
-    proof
+    ValueAtIndexProof {
+        proof: ExistingReadProof {
+            existing: LeafProof::new(index, leaf, path),
+        },
+    }
 }
 
 #[cfg(feature = "testing")]
@@ -1723,9 +1765,9 @@ mod test {
     use ruint::aliases::{B160, U256};
     use std::{collections::HashMap, ops};
     use zk_ee::common_structs::derive_flat_storage_key;
-    use zk_ee::{
-        oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator, system::NullLogger,
-    };
+    use zk_ee::oracle::memory_io::host::{NativeQuerierMemory, ReadQueryInput, ResponseBuffer};
+    use zk_ee::oracle::memory_io::MemoryOracle;
+    use zk_ee::system::NullLogger;
 
     fn hex_bytes(s: &str) -> Bytes32 {
         let s = s.strip_prefix("0x").unwrap_or(s);
@@ -1948,51 +1990,54 @@ mod test {
         );
     }
 
-    impl<const R: bool> IOOracle for TestingTree<R> {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
+    /// Answers the tree queries from a snapshot of a tree.
+    struct TreeOracle<const R: bool> {
+        tree: TestingTree<R>,
+        response: ResponseBuffer,
+    }
+
+    impl<const R: bool> MemoryOracle for TreeOracle<R> {
+        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+            // SAFETY: the test sends the queries from this process
+            let memory = unsafe { NativeQuerierMemory::new() };
+            let mut response = vec![];
+            match query_id {
+                ExactIndexQuery::QUERY_ID => {
+                    let flat_key = Bytes32::read_input(&memory, input_word)?;
+                    self.tree
+                        .get_index_for_existing(&flat_key)
+                        .write_output(&mut response);
+                }
+                PreviousIndexQuery::QUERY_ID => {
+                    let flat_key = Bytes32::read_input(&memory, input_word)?;
+                    self.tree
+                        .get_prev_index(&flat_key)
+                        .write_output(&mut response);
+                }
+                PROOF_FOR_INDEX_QUERY_ID => {
+                    let position = u64::read_input(&memory, input_word)?;
+                    write_proof_for_index_response(
+                        &self.tree.get_proof_for_position(position),
+                        &mut response,
+                    );
+                }
+                _ => panic!("unsupported query type 0x{query_id:08x}"),
+            }
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
+    impl<const R: bool> IOOracle for TreeOracle<R> {
+        type RawIterator<'a> = core::iter::Empty<usize>;
 
         fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
             query_type: u32,
-            input: &I,
+            _input: &I,
         ) -> Result<Self::RawIterator<'a>, InternalError> {
-            unsafe {
-                match query_type {
-                    ExactIndexQuery::QUERY_ID => {
-                        let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_index_for_existing(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PreviousIndexQuery::QUERY_ID => {
-                        let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
-                        let existing = self.get_prev_index(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    PROOF_FOR_INDEX_QUERY_ID => {
-                        let position = ProofForIndexQuery::<
-                            TESTING_TREE_HEIGHT,
-                            Blake2sStorageHasher,
-                            Global,
-                        >::transmute_input_ref_unchecked(
-                            input
-                        );
-                        let existing = self.get_proof_for_position(*position);
-                        let proof = ValueAtIndexProof {
-                            proof: ExistingReadProof { existing },
-                        };
-                        Ok(DynUsizeIterator::from_constructor(proof, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
-                    }
-                    _ => {
-                        panic!("unsupported query type 0x{:08x}", query_type);
-                    }
-                }
-            }
+            panic!("unsupported query type 0x{query_type:08x}")
         }
     }
 
@@ -2025,9 +2070,13 @@ mod test {
         });
         let entries_for_verification: Vec<_> = entries_for_verification.collect();
 
+        let mut oracle = TreeOracle {
+            tree: tree.clone(),
+            response: ResponseBuffer::default(),
+        };
         tree_commitment
             .verify_and_apply_batch(
-                tree,
+                &mut oracle,
                 entries_for_verification.into_iter(),
                 Global,
                 &mut NullLogger,

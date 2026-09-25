@@ -11,13 +11,11 @@ use basic_system::system_implementation::ethereum_storage_model::{
     caches::account_properties::{bytes32_from_rlp_slice, EthereumAccountProperties},
     EMPTY_ROOT_HASH,
 };
-use ruint::aliases::B160;
 use std::alloc::Global;
 use std::collections::BTreeMap;
 use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
 use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::storage_types::StorageAddress;
-use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone)]
 // #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,23 +45,32 @@ impl InMemoryEthereumInitialStorageSlotValueResponder {
 
 impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
     fn supported_query_ids(&self) -> Vec<u32> {
-        Self::SUPPORTED_QUERY_IDS.to_vec()
-    }
-
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        Self::SUPPORTED_QUERY_IDS.contains(&query_id)
+        vec![]
     }
 
     fn process_buffered_query(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
+        _query: Vec<usize>,
         _memory: &dyn oracle_provider::RamPeek,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        unreachable!("query 0x{query_id:08x} is served with the memory-based protocol")
+    }
+
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
+        Self::SUPPORTED_QUERY_IDS.to_vec()
+    }
+
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+    ) -> Vec<u32> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = StorageAddress::<EthereumIOTypesConfig>::from_iter(&mut query.into_iter())
-            .expect("must deserialize address value");
+        let (address, key) = read_storage_slot_query(memory, input_word);
+        let address = StorageAddress::<EthereumIOTypesConfig> { address, key };
 
         // println!("Reading for address 0x{:040x} and key {:?}", address.address.as_uint(), address.key);
 
@@ -109,8 +116,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_constructor(initial_value, |inner_ref| {
-            UsizeSerializable::iter(inner_ref)
-        })
+        memory_response(&initial_value)
     }
 }

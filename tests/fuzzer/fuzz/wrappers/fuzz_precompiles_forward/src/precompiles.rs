@@ -18,6 +18,9 @@ use zk_ee::system::logger::NullLogger;
 
 struct DummyOracle;
 
+impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+
+
 impl zk_ee::oracle::IOOracle for DummyOracle {
     type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 

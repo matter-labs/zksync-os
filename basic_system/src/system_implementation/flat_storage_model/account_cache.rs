@@ -1399,10 +1399,11 @@ mod tests {
     use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
     use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
     use std::alloc::Global;
-    use std::mem::size_of;
     use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use zk_ee::internal_error;
     use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
+    use zk_ee::oracle::memory_io::host::{write_dynamic_bytes, ResponseBuffer, WriteQueryOutput};
+    use zk_ee::oracle::memory_io::MemoryOracle;
     use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::oracle::IOOracle;
@@ -1428,78 +1429,92 @@ mod tests {
         4,
     >;
 
-    struct EmptyAccountOracle;
+    /// Every slot is new, so every account is empty.
+    #[derive(Default)]
+    struct EmptyAccountOracle {
+        response: ResponseBuffer,
+    }
+
+    impl MemoryOracle for EmptyAccountOracle {
+        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            if query_id != INITIAL_STORAGE_SLOT_VALUE_QUERY_ID {
+                return Err(internal_error!("unexpected oracle query in test"));
+            }
+            let slot_data = InitialStorageSlotData::<EthereumIOTypesConfig> {
+                is_new_storage_slot: true,
+                initial_value: Bytes32::ZERO,
+            };
+            let mut response = vec![];
+            slot_data.write_output(&mut response);
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
 
     impl IOOracle for EmptyAccountOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+        type RawIterator<'a> = core::iter::Empty<usize>;
 
         fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
-            query_type: u32,
+            _query_type: u32,
             _input: &I,
         ) -> Result<Self::RawIterator<'a>, InternalError> {
-            match query_type {
-                INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
-                    let response = InitialStorageSlotData::<EthereumIOTypesConfig> {
-                        is_new_storage_slot: true,
-                        initial_value: Bytes32::ZERO,
-                    };
-                    let values: Vec<_> = response.iter().collect();
-                    Ok(Box::new(values.into_iter()))
-                }
-                _ => Err(internal_error!("unexpected oracle query in test")),
-            }
+            Err(internal_error!("unexpected oracle query in test"))
         }
     }
 
+    /// Serves one existing account: its hash as the slot value, and its encoding as the preimage.
     struct ExistingAccountOracle {
         account_hash: Bytes32,
-        preimage_words: Vec<usize>,
+        preimage: Vec<u8>,
         preimage_queries: usize,
+        response: ResponseBuffer,
     }
 
     impl ExistingAccountOracle {
         fn new(account: &AccountProperties) -> Self {
-            let encoded = account.encoding();
-            let mut padded = encoded.to_vec();
-            let word_size = size_of::<usize>();
-            padded.resize(encoded.len().div_ceil(word_size) * word_size, 0);
-            let preimage_words = padded
-                .chunks_exact(word_size)
-                .map(|chunk| usize::from_ne_bytes(chunk.try_into().unwrap()))
-                .collect();
-
             Self {
                 account_hash: account.compute_hash(),
-                preimage_words,
+                preimage: account.encoding().to_vec(),
                 preimage_queries: 0,
+                response: ResponseBuffer::default(),
             }
         }
     }
 
-    impl IOOracle for ExistingAccountOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
-            query_type: u32,
-            _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            match query_type {
+    impl MemoryOracle for ExistingAccountOracle {
+        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            let mut response = vec![];
+            match query_id {
                 INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
-                    let response = InitialStorageSlotData::<EthereumIOTypesConfig> {
+                    let slot_data = InitialStorageSlotData::<EthereumIOTypesConfig> {
                         is_new_storage_slot: false,
                         initial_value: self.account_hash,
                     };
-                    let values: Vec<_> = response.iter().collect();
-                    Ok(Box::new(values.into_iter()))
+                    slot_data.write_output(&mut response);
                 }
                 crate::system_implementation::flat_storage_model::preimage_cache::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
                     self.preimage_queries += 1;
-                    Ok(Box::new(self.preimage_words.clone().into_iter()))
+                    write_dynamic_bytes(&self.preimage, &mut response);
                 }
-                _ => Err(internal_error!("unexpected oracle query in test")),
+                _ => return Err(internal_error!("unexpected oracle query in test")),
             }
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
+    impl IOOracle for ExistingAccountOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            Err(internal_error!("unexpected oracle query in test"))
         }
     }
 
@@ -1514,7 +1529,7 @@ mod tests {
         let mut preimages_cache =
             BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::new_from_parts(Global);
         let mut account_cache = TestAccountCache::new_from_parts(Global);
-        let mut oracle = EmptyAccountOracle;
+        let mut oracle = EmptyAccountOracle::default();
         let address = B160::from_limbs([0x1234, 0, 0]);
 
         storage.begin_new_tx();

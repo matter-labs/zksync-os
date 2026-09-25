@@ -21,6 +21,9 @@ use zk_ee::system::{SystemFunction, SystemFunctionExt};
 /// The bn254 and point evaluation functions run without advice here, so the oracle is unused
 struct DummyOracle;
 
+impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+
+
 impl zk_ee::oracle::IOOracle for DummyOracle {
     type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
