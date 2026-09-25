@@ -53,6 +53,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     #[cfg(target_arch = "riscv32")]
                     {
                         if let Err(code) = $e {
+                            // Close the stopping instruction's marker before leaving the loop:
+                            // the host arm emits `opcode_end!` for it too, and the proving-side
+                            // marker count must match the host-side label count.
+                            cycle_marker::opcode_end!(
+                                opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("UNKNOWN")
+                            );
                             *exit_code = Some(code);
                             break;
                         }
