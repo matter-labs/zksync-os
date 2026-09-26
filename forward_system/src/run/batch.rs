@@ -1,13 +1,14 @@
 use crate::run::BlockOutput;
 use crate::run::StorageCommitment;
 use crate::run::{NextTxResponse, PreimageSource, ReadStorage, ReadStorageTree, TxSource};
-use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
+use oracle_provider::{respond_to_every_target, OracleQueryProcessor, RunMode};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::ProofData;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
+use zk_ee::oracle::memory_io::host::{QuerierMemory, WriteQueryOutput};
 use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
 use zk_ee::oracle::query_ids::DA_COMMITMENT_SCHEME_QUERY_ID;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
@@ -261,21 +262,22 @@ impl BatchDACommitmentSchemeResponder {
 }
 
 impl OracleQueryProcessor for BatchDACommitmentSchemeResponder {
-    fn supported_query_ids(&self) -> Vec<u32> {
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         vec![DA_COMMITMENT_SCHEME_QUERY_ID]
     }
 
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        query_id == DA_COMMITMENT_SCHEME_QUERY_ID
-    }
-
-    fn process_buffered_query(
+    fn process_memory_query(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        _input_word: usize,
+        _memory: &dyn QuerierMemory,
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert_eq!(query_id, DA_COMMITMENT_SCHEME_QUERY_ID);
-        DynUsizeIterator::from_constructor(self.da_commitment_scheme as u8, UsizeSerializable::iter)
+        let mut response = Vec::new();
+        self.da_commitment_scheme.write_output(&mut response);
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }

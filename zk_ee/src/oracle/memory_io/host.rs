@@ -3,9 +3,7 @@
 
 use super::continuous::{continuous_words, ContinuousDeserializable, ContinuousSerializable};
 use super::query::{QueryInput, QueryOutput};
-use super::short::{ShortDeserializable, ShortSerializable};
 use super::MemoryOracle;
-use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::internal_error;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::oracle::IOOracle;
@@ -13,7 +11,9 @@ use crate::storage_types::InitialStorageSlotData;
 use crate::system::errors::internal::InternalError;
 use crate::types_config::SystemIOTypesConfig;
 use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+// for the `impl_short_query_io` macro
+#[doc(hidden)]
+pub use alloc::vec::Vec;
 use core::mem::{size_of, MaybeUninit};
 
 /// Read access of the oracle to the memory of the querier.
@@ -61,8 +61,9 @@ fn offset_address(address: usize, offset: usize) -> Result<usize, InternalError>
         .ok_or_else(|| internal_error!("querier address overflows"))
 }
 
-/// Reads a word of the querier, e.g. an element of the address array of a composite input.
-fn read_querier_word<M: QuerierMemory + ?Sized>(
+/// Reads a word of the querier (`QuerierMemory::word_size` bytes), e.g. an element of the address array of
+/// a composite input, or a field of a request struct of querier words.
+pub fn read_querier_word<M: QuerierMemory + ?Sized>(
     memory: &M,
     address: usize,
 ) -> Result<usize, InternalError> {
@@ -76,6 +77,22 @@ fn read_querier_word<M: QuerierMemory + ?Sized>(
         }
         _ => Err(internal_error!("unsupported querier word size")),
     }
+}
+
+/// Reads `num_words` consecutive `u32` words at `address` of the querier.
+pub fn read_querier_u32_words<M: QuerierMemory + ?Sized>(
+    memory: &M,
+    address: usize,
+    num_words: usize,
+) -> Result<Vec<u32>, InternalError> {
+    (0..num_words)
+        .map(|i| {
+            let offset = i
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| internal_error!("querier address overflows"))?;
+            memory.read_u32(offset_address(address, offset)?)
+        })
+        .collect()
 }
 
 /// Reads the value continuous in memory at `address` of the querier, and validates it.
@@ -124,29 +141,6 @@ impl WriteQueryOutput for () {
     fn write_output(&self, _response: &mut Vec<u32>) {}
 }
 
-macro_rules! impl_host_io_for_short {
-    ($($t:ty),+) => {$(
-        impl ReadQueryInput for $t {
-            fn read_input<M: QuerierMemory + ?Sized>(
-                _memory: &M,
-                input_word: usize,
-            ) -> Result<Self, InternalError> {
-                let word = u32::try_from(input_word)
-                    .map_err(|_| internal_error!("short input word does not fit into u32"))?;
-                <$t>::from_short_word(word)
-            }
-        }
-
-        impl WriteQueryOutput for $t {
-            fn write_output(&self, response: &mut Vec<u32>) {
-                response.push(self.to_short_word());
-            }
-        }
-    )+};
-}
-
-impl_host_io_for_short!(bool, u8, u16, u32, ExecutionEnvironmentType);
-
 impl<T: ContinuousSerializable + ContinuousDeserializable> ReadQueryInput for T {
     fn read_input<M: QuerierMemory + ?Sized>(
         memory: &M,
@@ -154,6 +148,25 @@ impl<T: ContinuousSerializable + ContinuousDeserializable> ReadQueryInput for T 
     ) -> Result<Self, InternalError> {
         read_continuous(memory, input_word)
     }
+}
+
+/// Appends the image of a value with padding bytes, the way the querier receives it memcpy-like:
+/// `write_fields` writes every field of the value into a zeroed image (typically through
+/// `&raw mut (*image).field`), so that the padding bytes are zeroes.
+pub fn write_padded_image<T: ContinuousDeserializable>(
+    response: &mut Vec<u32>,
+    write_fields: impl FnOnce(*mut T),
+) {
+    let num_words = const { continuous_words::<T>() };
+    let mut image = MaybeUninit::<T>::uninit();
+    // zeroed in place: a copy of a `MaybeUninit<T>` would not keep the padding bytes of `T`
+    // SAFETY: the image is valid for writes of one `T`
+    unsafe { image.as_mut_ptr().write_bytes(0, 1) };
+    write_fields(image.as_mut_ptr());
+    // SAFETY: `T` is aligned for `u32` and consists of `num_words` words, all initialized: zeroed, then
+    // partly overwritten with the fields
+    let words = unsafe { core::slice::from_raw_parts(image.as_ptr().cast::<u32>(), num_words) };
+    response.extend_from_slice(words);
 }
 
 /// Appends the words of a value without padding bytes.

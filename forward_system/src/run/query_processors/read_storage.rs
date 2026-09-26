@@ -17,19 +17,6 @@ impl<S: ReadStorage> ReadStorageResponder<S> {
 }
 
 impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        vec![]
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        unreachable!("query 0x{query_id:08x} is served with the memory-based protocol")
-    }
-
     fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -39,7 +26,10 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
         query_id: u32,
         input_word: usize,
         memory: &dyn QuerierMemory,
-    ) -> Vec<u32> {
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let (address, key) = read_storage_slot_query(memory, input_word);
@@ -57,6 +47,11 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
                     is_new_storage_slot: true,
                 }
             };
-        memory_response(&slot_data)
+        respond_to_every_target(
+            mode,
+            memory_response(&slot_data),
+            native_run_responses,
+            guest_run_responses,
+        );
     }
 }

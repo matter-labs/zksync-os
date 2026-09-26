@@ -217,7 +217,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
     // identity must come with a witness that passes the check (a failed check is a broken
     // prover and panics), and a claimed non-identity is settled by the exact final
     // exponentiation, which finds an identity all the same.
-    match curve_hints::bn254_pairing_residue_witness(oracle, &pairs, allocator) {
+    match curve_hints::bn254_pairing_residue_witness(oracle, &pairs) {
         curve_hints::PairingClaim::Identity { c, d, s } => {
             debug_assert_eq!(prepared.len(), pairs.len());
             let l = Bn254::multi_miller_loop_with_initial(&d, &c, g1_iter(), prepared.iter());

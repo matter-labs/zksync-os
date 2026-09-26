@@ -3,8 +3,11 @@
 use super::continuous::{ContinuousDeserializable, ContinuousSerializable};
 use super::dynamic::DynamicDestination;
 use super::MemoryOracle;
+use crate::common_structs::da_commitment_scheme::DACommitmentScheme;
 use crate::execution_environment_type::ExecutionEnvironmentType;
+use crate::internal_error;
 use crate::system::errors::internal::InternalError;
+use crate::utils::{UsizeAlignedByteBox, USIZE_SIZE};
 use alloc::boxed::Box;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
@@ -74,9 +77,8 @@ pub trait OracleQuery {
         Self::Output: 'a,
     {
         Self::Input::send(oracle, Self::QUERY_ID, input)?;
-        let output = Self::Output::receive(oracle, dst)?;
-        oracle.finish_query()?;
-        Ok(output)
+        let output = Self::Output::receive(oracle, dst);
+        finish(oracle, output)
     }
 
     /// Runs the query, and returns the output as a new value.
@@ -86,9 +88,8 @@ pub trait OracleQuery {
         input: <Self::Input as QueryInput>::Ref<'_>,
     ) -> Result<Self::Output, InternalError> {
         Self::Input::send(oracle, Self::QUERY_ID, input)?;
-        let output = Self::Output::receive_value(oracle)?;
-        oracle.finish_query()?;
-        Ok(output)
+        let output = Self::Output::receive_value(oracle);
+        finish(oracle, output)
     }
 }
 
@@ -105,9 +106,8 @@ pub trait DynamicOracleQuery {
         dst: D,
     ) -> Result<usize, InternalError> {
         Self::Input::send(oracle, Self::QUERY_ID, input)?;
-        let len = oracle.write_dynamic(dst)?;
-        oracle.finish_query()?;
-        Ok(len)
+        let len = oracle.write_dynamic(dst);
+        finish(oracle, len)
     }
 
     /// Runs the query, and writes the output into a new allocation of at most `max_len` words.
@@ -118,10 +118,54 @@ pub trait DynamicOracleQuery {
         allocator: A,
     ) -> Result<Box<[usize], A>, InternalError> {
         Self::Input::send(oracle, Self::QUERY_ID, input)?;
-        let output = oracle.write_dynamic_boxed(max_len, allocator)?;
-        oracle.finish_query()?;
-        Ok(output)
+        let output = oracle.write_dynamic_boxed(max_len, allocator);
+        finish(oracle, output)
     }
+}
+
+/// Ends the current query, whether its output was received or rejected: the oracle drops the words of
+/// a rejected output that were not read, and stays in step with the querier (as the proving target's
+/// oracle does when the next query starts).
+#[inline(always)]
+fn finish<O: MemoryOracle, T>(
+    oracle: &mut O,
+    output: Result<T, InternalError>,
+) -> Result<T, InternalError> {
+    let finished = oracle.finish_query();
+    let output = output?;
+    finished?;
+    Ok(output)
+}
+
+/// A byte string from two queries with the same input: the first returns its length in bytes, a `u32`
+/// (`0` for no bytes, then `None` is returned), and the second the bytes, as a dynamically sized response
+/// of whole `usize` words that must cover the length and fit into the length rounded up to whole `u64`
+/// words.
+pub fn get_bytes_with_length_query<O: MemoryOracle, I: QueryInput, A: Allocator>(
+    oracle: &mut O,
+    length_query_id: u32,
+    body_query_id: u32,
+    input: I::Ref<'_>,
+    allocator: A,
+) -> Result<Option<UsizeAlignedByteBox<A>>, InternalError> {
+    I::send(oracle, length_query_id, input)?;
+    let num_bytes = oracle.read_short::<u32>();
+    let num_bytes = finish(oracle, num_bytes)?;
+    if num_bytes == 0 {
+        return Ok(None);
+    }
+    let num_bytes = num_bytes as usize;
+    let mut buffer = UsizeAlignedByteBox::preallocated_in(num_bytes, allocator);
+    I::send(oracle, body_query_id, input)?;
+    let num_words = buffer.init_words(|words| oracle.write_dynamic(words));
+    let num_words = finish(oracle, num_words)?;
+    if num_words * USIZE_SIZE < num_bytes {
+        return Err(internal_error!(
+            "oracle response is shorter than the claimed number of bytes"
+        ));
+    }
+
+    Ok(Some(buffer))
 }
 
 impl QueryInput for () {
@@ -155,42 +199,78 @@ impl QueryOutput for () {
     }
 }
 
-macro_rules! impl_query_io_for_short {
-    ($($t:ty),+) => {$(
-        impl QueryInput for $t {
+/// Implements [`QueryInput`] and [`QueryOutput`], and their oracle side ([`ReadQueryInput`] and
+/// [`WriteQueryOutput`]), for types that implement both [`ShortSerializable`] and
+/// [`ShortDeserializable`]: such a value is passed by value, and received as a single word.
+///
+/// [`ReadQueryInput`]: super::host::ReadQueryInput
+/// [`WriteQueryOutput`]: super::host::WriteQueryOutput
+/// [`ShortSerializable`]: super::ShortSerializable
+/// [`ShortDeserializable`]: super::ShortDeserializable
+#[macro_export]
+macro_rules! impl_short_query_io {
+    ($($t:ty),+ $(,)?) => {$(
+        impl $crate::oracle::memory_io::QueryInput for $t {
             type Ref<'a> = $t;
 
             #[inline(always)]
-            fn send<O: MemoryOracle>(
+            fn send<O: $crate::oracle::memory_io::MemoryOracle>(
                 oracle: &mut O,
                 query_id: u32,
                 input: Self::Ref<'_>,
-            ) -> Result<(), InternalError> {
+            ) -> Result<(), $crate::system::errors::internal::InternalError> {
                 oracle.send_short(query_id, input)
             }
         }
 
-        impl QueryOutput for $t {
+        impl $crate::oracle::memory_io::QueryOutput for $t {
             type Destination<'a> = ();
             type Initialized<'a> = $t;
 
             #[inline(always)]
-            fn receive<'a, O: MemoryOracle>(
+            fn receive<'a, O: $crate::oracle::memory_io::MemoryOracle>(
                 oracle: &mut O,
                 _dst: Self::Destination<'a>,
-            ) -> Result<Self::Initialized<'a>, InternalError> {
+            ) -> Result<Self::Initialized<'a>, $crate::system::errors::internal::InternalError> {
                 oracle.read_short()
             }
 
             #[inline(always)]
-            fn receive_value<O: MemoryOracle>(oracle: &mut O) -> Result<Self, InternalError> {
+            fn receive_value<O: $crate::oracle::memory_io::MemoryOracle>(
+                oracle: &mut O,
+            ) -> Result<Self, $crate::system::errors::internal::InternalError> {
                 oracle.read_short()
+            }
+        }
+
+        impl $crate::oracle::memory_io::host::ReadQueryInput for $t {
+            fn read_input<M: $crate::oracle::memory_io::host::QuerierMemory + ?Sized>(
+                _memory: &M,
+                input_word: usize,
+            ) -> Result<Self, $crate::system::errors::internal::InternalError> {
+                let word = u32::try_from(input_word).map_err(|_| {
+                    $crate::internal_error!("short input word does not fit into u32")
+                })?;
+                <$t as $crate::oracle::memory_io::ShortDeserializable>::from_short_word(word)
+            }
+        }
+
+        impl $crate::oracle::memory_io::host::WriteQueryOutput for $t {
+            fn write_output(&self, response: &mut $crate::oracle::memory_io::host::Vec<u32>) {
+                response.push($crate::oracle::memory_io::ShortSerializable::to_short_word(*self));
             }
         }
     )+};
 }
 
-impl_query_io_for_short!(bool, u8, u16, u32, ExecutionEnvironmentType);
+crate::impl_short_query_io!(
+    bool,
+    u8,
+    u16,
+    u32,
+    ExecutionEnvironmentType,
+    DACommitmentScheme
+);
 
 impl<T: ContinuousSerializable> QueryInput for T {
     type Ref<'a>

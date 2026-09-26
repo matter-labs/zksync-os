@@ -103,36 +103,6 @@ impl<NDS: NonDeterminismCSRSourceImplementation> MemoryOracle for CsrBasedIOOrac
 impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<NDS> {
     type RawIterator<'a> = CsrBasedIOOracleIterator<NDS>;
 
-    /// Direct transfer loop: the iterator adaptors of the default implementation are not
-    /// inlined and cost several times the CSR read itself
-    fn expose_preimage(
-        &mut self,
-        query_type: u32,
-        hash: &zk_ee::utils::Bytes32,
-        destination: &mut [core::mem::MaybeUninit<usize>],
-    ) -> Result<usize, InternalError> {
-        let it = self.raw_query(query_type, hash)?;
-        let words_written = it.len();
-        if words_written > destination.len() {
-            return Err(zk_ee::internal_error!(
-                "preimage from oracle is longer than destination buffer"
-            ));
-        }
-        // unrolled: the loop overhead is comparable to the CSR read itself
-        let (chunks, remainder) = destination[..words_written].as_chunks_mut::<4>();
-        for chunk in chunks.iter_mut() {
-            chunk[0].write(NDS::csr_read_impl());
-            chunk[1].write(NDS::csr_read_impl());
-            chunk[2].write(NDS::csr_read_impl());
-            chunk[3].write(NDS::csr_read_impl());
-        }
-        for word in remainder.iter_mut() {
-            word.write(NDS::csr_read_impl());
-        }
-
-        Ok(words_written)
-    }
-
     fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
         &'a mut self,
         query_type: u32,

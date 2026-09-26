@@ -8,8 +8,8 @@ use basic_bootloader::bootloader::block_flow::ethereum::oracle_queries::{
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::{
-    oracle::query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID,
-    utils::{usize_rw::ReadIterWrapper, Bytes32},
+    oracle::{memory_io::host::write_dynamic_bytes, query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID},
+    utils::Bytes32,
 };
 
 #[derive(Clone, Debug)]
@@ -29,65 +29,58 @@ impl EthereumCLResponder {
     ];
 }
 
+impl EthereumCLResponder {
+    /// The encoding of the header at `depth` (0 for the parent), as the input word of a historical
+    /// header query sends it
+    fn parent_header_encoding(&self, memory: &dyn QuerierMemory, input_word: usize) -> &[u8] {
+        let depth = u32::read_input(memory, input_word).expect("must get historical depth");
+        assert!(depth < 256);
+        &self.parent_headers_encodings_list[depth as usize]
+    }
+}
+
 impl OracleQueryProcessor for EthereumCLResponder {
-    fn supported_query_ids(&self) -> Vec<u32> {
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
 
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        Self::SUPPORTED_QUERY_IDS.contains(&query_id)
-    }
-
-    fn process_buffered_query(
+    fn process_memory_query(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
-        _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
-
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
+        let mut response = Vec::new();
         match query_id {
-            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => DynUsizeIterator::from_constructor(
-                self.withdrawals_list.len() as u32,
-                UsizeSerializable::iter,
-            ),
+            ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => {
+                (self.withdrawals_list.len() as u32).write_output(&mut response)
+            }
             ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID => {
-                DynUsizeIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                write_dynamic_bytes(&self.withdrawals_list, &mut response)
             }
             ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
-                DynUsizeIterator::from_constructor(
-                    self.parent_headers_encodings_list[input as usize].len() as u32,
-                    UsizeSerializable::iter,
-                )
+                (self.parent_header_encoding(memory, input_word).len() as u32)
+                    .write_output(&mut response)
             }
-            ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
-                DynUsizeIterator::from_constructor(
-                    self.parent_headers_encodings_list[input as usize].clone(),
-                    |inner_ref| ReadIterWrapper::from(inner_ref.iter().copied()),
-                )
-            }
+            ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID => write_dynamic_bytes(
+                self.parent_header_encoding(memory, input_word),
+                &mut response,
+            ),
             HISTORICAL_BLOCK_HASH_QUERY_ID => {
-                let input: u32 =
-                    u32::from_iter(&mut query.into_iter()).expect("must get historical depth");
-                assert!(input < 256);
-                let hash: Bytes32 = self
-                    .parent_headers_encodings_list
-                    .get(input as usize)
-                    .map(|el| crypto::sha3::Keccak256::digest(el).into())
-                    .unwrap_or(Bytes32::ZERO);
-                DynUsizeIterator::from_constructor(hash, UsizeSerializable::iter)
+                // the hashes of all 256 previous blocks, by depth, zero where unknown
+                let hashes: [Bytes32; 256] = core::array::from_fn(|depth| {
+                    self.parent_headers_encodings_list
+                        .get(depth)
+                        .map(|el| crypto::sha3::Keccak256::digest(el).into())
+                        .unwrap_or(Bytes32::ZERO)
+                });
+                hashes.write_output(&mut response)
             }
-            _ => {
-                unreachable!()
-            }
+            _ => unreachable!("not a CL query: 0x{query_id:08x}"),
         }
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }

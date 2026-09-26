@@ -4,12 +4,11 @@ use crate::run::NextTxResponse;
 use crate::run::TxSource;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
 use ruint::aliases::B160;
+use zk_ee::oracle::memory_io::host::write_dynamic_bytes;
 use zk_ee::oracle::query_ids::TX_FROM_QUERY_ID;
 use zk_ee::oracle::query_ids::{
     NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
 };
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::utils::usize_rw::ReadIterWrapper;
 
 /// This processor handles four types of queries:
 /// 1. NEXT_TX_SIZE_QUERY_ID - Returns the size of the next transaction
@@ -43,23 +42,22 @@ impl<TS: TxSource> TxDataResponder<TS> {
 }
 
 impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
-    fn supported_query_ids(&self) -> Vec<u32> {
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
 
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        Self::SUPPORTED_QUERY_IDS.contains(&query_id)
-    }
-
-    fn process_buffered_query(
+    fn process_memory_query(
         &mut self,
         query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        _input_word: usize,
+        _memory: &dyn QuerierMemory,
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        match query_id {
+        let response = match query_id {
             NEXT_TX_SIZE_QUERY_ID => {
                 let len = match &self.next_tx {
                     Some(next_tx) => next_tx.len(),
@@ -88,7 +86,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     }
                 } as u32;
 
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                memory_response(&len)
             }
             TX_DATA_WORDS_QUERY_ID => {
                 let Some(tx) = self.next_tx.take() else {
@@ -97,9 +95,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynUsizeIterator::from_constructor(tx, |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                })
+                let mut response = Vec::new();
+                write_dynamic_bytes(&tx, &mut response);
+                response
             }
             TX_ENCODING_FORMAT_QUERY_ID => {
                 let Some(format) = self.next_tx_format.take() else {
@@ -108,7 +106,7 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynUsizeIterator::from_constructor(format, UsizeSerializable::iter)
+                memory_response(&format)
             }
             TX_FROM_QUERY_ID => {
                 let Some(from) = self.next_tx_from.take() else {
@@ -116,9 +114,10 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                         "trying to read next tx from before size query, after seal response or for a zk transaction"
                     );
                 };
-                DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                memory_response(&from)
             }
             _ => unreachable!(),
-        }
+        };
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }

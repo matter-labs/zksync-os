@@ -46,12 +46,13 @@ use basic_bootloader::bootloader::config::{
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use errors::ForwardSubsystemError;
 use oracle_provider::ReadWitnessSource;
+pub use oracle_provider::RunMode;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use std::sync::Arc;
 use zk_ee::common_structs::ProofData;
 use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::system::logger::NullLogger;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -236,7 +237,7 @@ pub fn generate_proof_input<
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
 
-    let mut oracle = ZkEENonDeterminismSource::default();
+    let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
@@ -284,25 +285,14 @@ pub fn generate_proof_input<
 /// whole batch, so the batch input keeps the first response and removes the
 /// duplicate responses after asserting they are byte-for-byte equal.
 ///
+/// The disconnect query that ends a block input has no response, so the input of a
+/// block ends with its blob advice (if any).
+///
 pub fn generate_legacy_batch_proof_input(
     blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
-    fn disconnect_marker_idx(block_proof_input: &[u32]) -> usize {
-        assert!(
-            !block_proof_input.is_empty(),
-            "block proof input must contain a disconnect marker"
-        );
-        let disconnect_marker_idx = block_proof_input.len() - 1;
-        assert_eq!(
-            block_proof_input[disconnect_marker_idx], 0,
-            "expected disconnect query to have an empty response marker"
-        );
-
-        disconnect_marker_idx
-    }
-
     let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
@@ -321,11 +311,10 @@ pub fn generate_legacy_batch_proof_input(
                 blobs_data.extend_from_slice(block_pubdata);
                 let advice_words = (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
                 assert!(
-                    block_proof_input.len() > advice_words,
-                    "block proof input is too short to contain blob advice and disconnect marker"
+                    block_proof_input.len() >= advice_words,
+                    "block proof input is too short to contain blob advice"
                 );
-                let disconnect_marker_idx = disconnect_marker_idx(block_proof_input);
-                let advice_start_idx = disconnect_marker_idx - advice_words;
+                let advice_start_idx = block_proof_input.len() - advice_words;
                 trimmed_blocks_proof_inputs.push(block_proof_input[..advice_start_idx].to_vec());
             }
             let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
@@ -348,12 +337,11 @@ pub fn generate_legacy_batch_proof_input(
             blobs_advice
         }
         _ => {
-            trimmed_blocks_proof_inputs.extend(blocks_proof_inputs.into_iter().map(
-                |block_proof_input| {
-                    let disconnect_marker_idx = disconnect_marker_idx(block_proof_input);
-                    block_proof_input[..disconnect_marker_idx].to_vec()
-                },
-            ));
+            trimmed_blocks_proof_inputs.extend(
+                blocks_proof_inputs
+                    .into_iter()
+                    .map(|block_proof_input| block_proof_input.to_vec()),
+            );
             vec![]
         }
     };
@@ -364,15 +352,13 @@ pub fn generate_legacy_batch_proof_input(
             .map(|block_proof_input| block_proof_input.len())
             .sum::<usize>()
             + 1
-            + blobs_advice.len()
-            + 1,
+            + blobs_advice.len(),
     );
     proof_input.push(trimmed_blocks_proof_inputs.len() as u32);
     for block_proof_input in trimmed_blocks_proof_inputs {
         proof_input.extend_from_slice(block_proof_input.as_slice());
     }
     proof_input.extend_from_slice(blobs_advice.as_slice());
-    proof_input.push(0);
     proof_input
 }
 
@@ -384,11 +370,6 @@ fn keep_single_chain_config_response(blocks_proof_inputs: &mut [Vec<u32>]) {
     assert!(
         first.len() >= prefix_len,
         "block proof input is too short to contain chain config response"
-    );
-    assert_eq!(
-        first[0],
-        (ChainConfig::USIZE_LEN * 2) as u32,
-        "expected block proof input to start with chain config response length"
     );
     let expected_prefix = first[..prefix_len].to_vec();
 
@@ -406,8 +387,9 @@ fn keep_single_chain_config_response(blocks_proof_inputs: &mut [Vec<u32>]) {
     }
 }
 
+/// The chain config is received memcpy-like: its words, without a length.
 fn chain_config_response_len_in_u32_words() -> usize {
-    1 + ChainConfig::USIZE_LEN * 2
+    core::mem::size_of::<ChainConfig>() / core::mem::size_of::<u32>()
 }
 
 /// Execute a whole batch and return canonical batch prover input and pubdata.
@@ -445,7 +427,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     let proof_data = batch::SharedProofData::new(initial_proof_data);
     let batch_state = batch::BatchStateHandle::new(batch_state);
 
-    let mut oracle = ZkEENonDeterminismSource::default();
+    let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
     oracle.add_external_processor(ChainConfigResponder { chain_config });
     oracle.add_external_processor(batch::BatchBlockMetadataResponder::new(
         block_metadata,
@@ -527,7 +509,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
         batch_data.into_public_input_and_output(NullLogger, &mut oracle);
     // Multiblock proving cannot emit the final disconnect from the per-block
     // post-op: only the outer runner knows when the last block has finished.
-    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+    <DisconnectOracleQuery as OracleQuery>::get(&mut oracle, ())
         .expect("disconnect query must not fail");
     let mut prover_input = Vec::with_capacity(1 + oracle.get_read_items().borrow().len());
     prover_input.push(batch_len as u32);
@@ -557,7 +539,7 @@ pub fn make_oracle_for_proofs_and_dumps<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
-    use_native_callable_oracles: bool,
+    mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     make_oracle_for_proofs_and_dumps_with_chain_config(
         ChainConfig::default(),
@@ -570,7 +552,7 @@ pub fn make_oracle_for_proofs_and_dumps<
         proof_data,
         da_commitment_scheme,
         add_uart,
-        use_native_callable_oracles,
+        mode,
     )
 }
 
@@ -590,7 +572,7 @@ pub fn make_oracle_for_proofs_and_dumps_with_chain_config<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
-    use_native_callable_oracles: bool,
+    mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config(
         chain_config,
@@ -603,7 +585,7 @@ pub fn make_oracle_for_proofs_and_dumps_with_chain_config<
         proof_data,
         da_commitment_scheme,
         add_uart,
-        use_native_callable_oracles,
+        mode,
     )
 }
 
@@ -622,7 +604,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
-    use_native_callable_oracles: bool,
+    mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config(
         ChainConfig::default(),
@@ -635,10 +617,12 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
         proof_data,
         da_commitment_scheme,
         add_uart,
-        use_native_callable_oracles,
+        mode,
     )
 }
 
+/// The oracle of a block, for the run `mode`: a native run (that may record the prover input), or a run
+/// of the RISC-V guest in the simulator, which the callable oracles are set up for.
 pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
     T: ReadStorageTree,
     PS: PreimageSource,
@@ -655,7 +639,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
-    use_native_callable_oracles: bool,
+    mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -674,7 +658,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
         da_commitment_scheme,
     };
 
-    let mut oracle = ZkEENonDeterminismSource::default();
+    let mut oracle = ZkEENonDeterminismSource::new(mode);
     oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(chain_config_responder);
     oracle.add_external_processor(tx_data_responder);
@@ -683,7 +667,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data_with_chain_config<
     add_fri_proof_responder(&mut oracle, fri_proof_sidecar, fri_verifier_artifacts);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
-    if use_native_callable_oracles {
+    if mode.produces_native_run_responses() {
         oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
@@ -958,19 +942,21 @@ mod tests {
     use zk_ee::common_structs::DACommitmentScheme;
 
     fn chain_config_response() -> Vec<u32> {
-        let len = chain_config_response_len_in_u32_words();
-        let mut response = vec![0; len];
-        response[0] = (len - 1) as u32;
+        let mut response = vec![];
+        zk_ee::oracle::memory_io::host::WriteQueryOutput::write_output(
+            &ChainConfig::default_for_chain(),
+            &mut response,
+        );
+        assert_eq!(response.len(), chain_config_response_len_in_u32_words());
         response
     }
 
     #[test]
-    fn replaces_per_block_disconnect_with_single_final_disconnect() {
+    fn replaces_per_block_blob_advice_with_batch_blob_advice() {
         let chain_config = chain_config_response();
         let mut block_proof_input = chain_config.clone();
         block_proof_input.extend_from_slice(&[11, 12, 24]);
         block_proof_input.extend(100..124);
-        block_proof_input.push(0);
 
         let batch_input = generate_legacy_batch_proof_input(
             vec![block_proof_input.as_slice()],
@@ -982,7 +968,6 @@ mod tests {
         expected.extend_from_slice(&chain_config);
         expected.extend_from_slice(&[11, 12]);
         expected.extend_from_slice(&blob_advice(&[1, 2, 3]));
-        expected.push(0);
 
         assert_eq!(batch_input, expected);
     }
@@ -1020,7 +1005,6 @@ mod tests {
         let mut single_block_witness = chain_config.clone();
         single_block_witness.extend_from_slice(&block_witness_payload);
         single_block_witness.extend_from_slice(&[100; 25]);
-        single_block_witness.push(0);
 
         let batch_witness = generate_legacy_batch_proof_input(
             vec![single_block_witness.as_slice()],
@@ -1032,7 +1016,6 @@ mod tests {
         expected.extend_from_slice(&chain_config);
         expected.extend_from_slice(&block_witness_payload);
         expected.extend_from_slice(&blob_advice(&[]));
-        expected.push(0);
 
         assert_eq!(batch_witness, expected);
     }
@@ -1041,9 +1024,9 @@ mod tests {
     fn legacy_batch_input_contains_chain_config_once() {
         let chain_config = chain_config_response();
         let mut first = chain_config.clone();
-        first.extend_from_slice(&[11, 12, 0]);
+        first.extend_from_slice(&[11, 12]);
         let mut second = chain_config.clone();
-        second.extend_from_slice(&[21, 22, 0]);
+        second.extend_from_slice(&[21, 22]);
 
         let batch_input = generate_legacy_batch_proof_input(
             vec![first.as_slice(), second.as_slice()],
@@ -1053,7 +1036,7 @@ mod tests {
 
         let mut expected = vec![2];
         expected.extend_from_slice(&chain_config);
-        expected.extend_from_slice(&[11, 12, 21, 22, 0]);
+        expected.extend_from_slice(&[11, 12, 21, 22]);
 
         assert_eq!(batch_input, expected);
     }
@@ -1062,10 +1045,10 @@ mod tests {
     #[should_panic(expected = "multiblock proof input cannot span different chain configs")]
     fn legacy_batch_input_rejects_different_chain_configs() {
         let mut first = chain_config_response();
-        first.extend_from_slice(&[11, 12, 0]);
+        first.extend_from_slice(&[11, 12]);
         let mut second = chain_config_response();
         second[1] = 1;
-        second.extend_from_slice(&[21, 22, 0]);
+        second.extend_from_slice(&[21, 22]);
 
         generate_legacy_batch_proof_input(
             vec![first.as_slice(), second.as_slice()],

@@ -1,9 +1,12 @@
 use crate::common_structs::da_commitment_scheme::PubdataContent;
 use crate::internal_error;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
-use crate::oracle::{query_ids::CHAIN_CONFIG_QUERY_ID, IOOracle};
+use crate::oracle::memory_io::host::{write_padded_image, WriteQueryOutput};
+use crate::oracle::memory_io::{
+    normalize_bool, ContinuousDeserializable, MemoryOracle, OracleQuery,
+};
+use crate::oracle::query_ids::CHAIN_CONFIG_QUERY_ID;
 use crate::system::errors::internal::InternalError;
-use crate::utils::exact_size_chain::ExactSizeChain;
+use alloc::vec::Vec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
@@ -21,8 +24,11 @@ pub const DEFAULT_MAX_TX_GAS_LIMIT: u64 = 1 << 24;
 /// different configurations), but they are not immutable: they can change
 /// between batches via, e.g., a migration (`fri_proof_verification_enabled`)
 /// or a chain admin action (`max_tx_gas_limit`).
+///
+/// `#[repr(C)]`: the oracle writes it memcpy-like (see the `ContinuousDeserializable` impl).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct ChainConfig {
     /// Chain id. This is a static chain-level rule, so it lives here rather
     /// than in per-block metadata.
@@ -56,8 +62,8 @@ impl ChainConfig {
     /// Reads the run-frozen chain config from the oracle. Sourced once per run
     /// and reused by execution and public-input construction. Deserialization
     /// is a pure parse; the limitation is enforced separately via [`Self::validate`].
-    pub fn read_from_oracle(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
-        oracle.query_with_empty_input(CHAIN_CONFIG_QUERY_ID)
+    pub fn read_from_oracle(oracle: &mut impl MemoryOracle) -> Result<Self, InternalError> {
+        ChainConfigQuery::get(oracle, ())
     }
 
     pub fn new(
@@ -158,42 +164,59 @@ impl Default for ChainConfig {
     }
 }
 
-impl UsizeSerializable for ChainConfig {
-    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
-        + <bool as UsizeSerializable>::USIZE_LEN
-        + <u64 as UsizeSerializable>::USIZE_LEN
-        + <PubdataContent as UsizeSerializable>::USIZE_LEN;
+// The same layout on every target: `u64` is aligned to 8 on the proving target as well.
+const _: () = {
+    assert!(core::mem::size_of::<ChainConfig>() == 32);
+    assert!(core::mem::align_of::<ChainConfig>() == 8);
+    assert!(core::mem::offset_of!(ChainConfig, chain_id) == 0);
+    assert!(core::mem::offset_of!(ChainConfig, fri_proof_verification_enabled) == 8);
+    assert!(core::mem::offset_of!(ChainConfig, max_tx_gas_limit) == 16);
+    assert!(core::mem::offset_of!(ChainConfig, pubdata_content) == 24);
+    assert!(core::mem::size_of::<PubdataContent>() == 1);
+};
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.chain_id),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.fri_proof_verification_enabled),
-                ExactSizeChain::new(
-                    UsizeSerializable::iter(&self.max_tx_gas_limit),
-                    UsizeSerializable::iter(&self.pubdata_content),
-                ),
-            ),
-        )
+// The flag is normalized the way a short `bool` is decoded (any non-zero byte is `true`), the pubdata
+// content is checked to be a valid ID of the `#[repr(u8)]` enum before it is read as such, and the padding
+// is ignored. As for the iterator-based protocol, this is a pure parse: the chain-level limitations are
+// checked by `ChainConfig::validate`.
+// SAFETY: see above and the layout assertions
+unsafe impl ContinuousDeserializable for ChainConfig {
+    #[inline(always)]
+    unsafe fn validate<'a>(this: *mut Self) -> Result<&'a mut Self, InternalError> {
+        // SAFETY: the fields are inside the value, and initialized as per the caller contract; the pubdata
+        // content is read as its byte, and only as the enum once checked
+        unsafe {
+            normalize_bool(&raw mut (*this).fri_proof_verification_enabled);
+            let pubdata_content = (&raw const (*this).pubdata_content).cast::<u8>().read();
+            PubdataContent::try_from(pubdata_content)
+                .map_err(|_| internal_error!("Invalid pubdata content"))?;
+            Ok(&mut *this)
+        }
     }
 }
 
-impl UsizeDeserializable for ChainConfig {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let chain_id = UsizeDeserializable::from_iter(src)?;
-        let fri_proof_verification_enabled = UsizeDeserializable::from_iter(src)?;
-        let max_tx_gas_limit = UsizeDeserializable::from_iter(src)?;
-        let pubdata_content = UsizeDeserializable::from_iter(src)?;
-
-        Ok(Self {
-            chain_id,
-            fri_proof_verification_enabled,
-            max_tx_gas_limit,
-            pubdata_content,
-        })
+/// The fields and zeroed padding: the image the querier validates.
+impl WriteQueryOutput for ChainConfig {
+    fn write_output(&self, response: &mut Vec<u32>) {
+        write_padded_image(response, |image: *mut Self| {
+            // SAFETY: the image is a valid, aligned place for `Self`
+            unsafe {
+                (&raw mut (*image).chain_id).write(self.chain_id);
+                (&raw mut (*image).fri_proof_verification_enabled)
+                    .write(self.fri_proof_verification_enabled);
+                (&raw mut (*image).max_tx_gas_limit).write(self.max_tx_gas_limit);
+                (&raw mut (*image).pubdata_content).write(self.pubdata_content);
+            }
+        });
     }
+}
+
+pub struct ChainConfigQuery;
+
+impl OracleQuery for ChainConfigQuery {
+    const QUERY_ID: u32 = CHAIN_CONFIG_QUERY_ID;
+    type Input = ();
+    type Output = ChainConfig;
 }
 
 impl ChainConfigMetadata for ChainConfig {
@@ -206,14 +229,47 @@ impl ChainConfigMetadata for ChainConfig {
 mod tests {
     use super::*;
 
-    #[test]
-    fn chain_config_roundtrips_through_usize_serialization() {
-        let original = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
-        let serialized: Vec<usize> = original.iter().collect();
-        let mut iter = serialized.into_iter();
-        let deserialized = ChainConfig::from_iter(&mut iter).unwrap();
+    /// The response words of the chain config query, as the oracle writes them.
+    fn response(config: &ChainConfig) -> Vec<u32> {
+        let mut response = Vec::new();
+        config.write_output(&mut response);
+        response
+    }
 
-        assert_eq!(original, deserialized);
+    /// The chain config the querier reads from `response`.
+    fn read(response: Vec<u32>) -> Result<ChainConfig, InternalError> {
+        use crate::oracle::memory_io::host::{InProcessMemoryOracle, QuerierMemory};
+        let mut response = Some(response);
+        let mut oracle = InProcessMemoryOracle::new(move |query_id, _, _: &dyn QuerierMemory| {
+            assert_eq!(query_id, CHAIN_CONFIG_QUERY_ID);
+            response.take().unwrap()
+        });
+        ChainConfig::read_from_oracle(&mut oracle)
+    }
+
+    #[test]
+    fn chain_config_roundtrips_through_the_oracle() {
+        let original = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
+        let response = response(&original);
+        assert_eq!(response.len(), 8);
+        assert_eq!(read(response).unwrap(), original);
+    }
+
+    #[test]
+    fn chain_config_from_the_oracle_is_validated() {
+        let original = ChainConfig::default_for_chain();
+        // the flag is the byte at offset 8, the pubdata content the byte at offset 24
+        let mut flag_set = response(&original);
+        flag_set[2] = 0xff;
+        assert!(read(flag_set).unwrap().fri_proof_verification_enabled());
+        let mut invalid_pubdata_content = response(&original);
+        invalid_pubdata_content[6] = 2;
+        assert!(read(invalid_pubdata_content).is_err());
+        // padding is ignored
+        let mut padding_set = response(&original);
+        padding_set[3] = 0xffff_ffff;
+        padding_set[7] = 0xffff_ff00;
+        assert_eq!(read(padding_set).unwrap(), original);
     }
 
     #[test]
@@ -233,10 +289,7 @@ mod tests {
             .unwrap()
             .with_pubdata_content(PubdataContent::LogsOnly);
         assert_eq!(config.pubdata_content(), PubdataContent::LogsOnly);
-
-        let serialized: Vec<usize> = config.iter().collect();
-        let mut iter = serialized.into_iter();
-        assert_eq!(ChainConfig::from_iter(&mut iter).unwrap(), config);
+        assert_eq!(read(response(&config)).unwrap(), config);
     }
 
     #[test]
@@ -257,17 +310,16 @@ mod tests {
     }
 
     #[test]
-    fn usize_deserialization_does_not_validate() {
-        // Validation is enforced at the system boundary, not during
-        // deserialization, so a below-floor value parses successfully and is
-        // only rejected by an explicit `validate()`.
-        let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
-        // Field order is [chain_id, fri, max_tx_gas_limit, pubdata_content], one word each on
-        // the 64-bit test host; drop max_tx_gas_limit (index 2) below the floor.
-        serialized[2] = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
-        let mut iter = serialized.into_iter();
+    fn reading_from_the_oracle_does_not_validate() {
+        // Validation is enforced at the system boundary, not when the config is
+        // received, so a below-floor value is read successfully and is only
+        // rejected by an explicit `validate()`.
+        let mut response = response(&ChainConfig::default_for_chain());
+        // `max_tx_gas_limit` is at offset 16: words 4 (low) and 5 (high)
+        response[4] = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as u32;
+        response[5] = 0;
 
-        let config = ChainConfig::from_iter(&mut iter).expect("deserialization must not validate");
+        let config = read(response).expect("reading must not validate");
         assert!(config.validate().is_err());
     }
 }

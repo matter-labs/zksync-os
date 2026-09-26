@@ -19,10 +19,8 @@ use ruint::aliases::B160;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
+use zk_ee::oracle::memory_io::{OracleQuery, ShortDeserializable, ShortSerializable};
 use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::system::SystemError;
@@ -74,13 +72,13 @@ impl<A: Allocator> Transaction<A> {
         let expected_chain_id = system.get_chain_id();
 
         // query the transaction encoding format from the oracle
-        let format: TxEncodingFormat = TxEncodingFormatQuery::get(system.io.oracle(), &())?;
+        let format: TxEncodingFormat = TxEncodingFormatQuery::get(system.io.oracle(), ())?;
 
         match format {
             TxEncodingFormat::Rlp => {
                 // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
                 // This is so that sequencer can skip ecrecover (for simulation, for example).
-                let from = TxFromQuery::get(system.io.oracle(), &())?;
+                let from = TxFromQuery::get(system.io.oracle(), ())?;
                 let tx = RlpEncodedTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
                 Ok(Self::Rlp(tx))
             }
@@ -354,14 +352,20 @@ pub enum TxEncodingFormat {
     Rlp = 1,
 }
 
-impl UsizeDeserializable for TxEncodingFormat {
-    const USIZE_LEN: usize = <u8 as UsizeDeserializable>::USIZE_LEN;
+/// The format is received as a short word: its ID, range-checked.
+impl ShortSerializable for TxEncodingFormat {
+    #[inline(always)]
+    fn to_short_word(self) -> u32 {
+        u32::from(self as u8)
+    }
+}
 
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
-        if byte == TxEncodingFormat::Abi as u8 {
+impl ShortDeserializable for TxEncodingFormat {
+    #[inline(always)]
+    fn from_short_word(word: u32) -> Result<Self, InternalError> {
+        if word == TxEncodingFormat::Abi as u32 {
             Ok(TxEncodingFormat::Abi)
-        } else if byte == TxEncodingFormat::Rlp as u8 {
+        } else if word == TxEncodingFormat::Rlp as u32 {
             Ok(TxEncodingFormat::Rlp)
         } else {
             Err(internal_error!("Unsupported tx encoding format"))
@@ -369,30 +373,11 @@ impl UsizeDeserializable for TxEncodingFormat {
     }
 }
 
-impl UsizeSerializable for TxEncodingFormat {
-    const USIZE_LEN: usize = <Self as UsizeDeserializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let low = *self as usize;
-                let high = 0;
-                return [low, high].into_iter();
-            } else if #[cfg(target_pointer_width = "64")] {
-                #[allow(clippy::needless_return)]
-                return core::iter::once(*self as usize);
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
-}
+zk_ee::impl_short_query_io!(TxEncodingFormat);
 
 pub struct TxEncodingFormatQuery;
 
-impl SimpleOracleQuery for TxEncodingFormatQuery {
+impl OracleQuery for TxEncodingFormatQuery {
     type Input = ();
     type Output = TxEncodingFormat;
 
@@ -401,7 +386,7 @@ impl SimpleOracleQuery for TxEncodingFormatQuery {
 
 pub struct TxFromQuery;
 
-impl SimpleOracleQuery for TxFromQuery {
+impl OracleQuery for TxFromQuery {
     type Input = ();
     type Output = B160;
 

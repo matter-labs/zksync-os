@@ -14,6 +14,7 @@ use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, Warm
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::{DisconnectOracleQuery, ZKProofDataQuery};
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -262,10 +263,10 @@ where
                 });
             let state_diffs_hash = state_diffs_hasher.finalize().into();
 
-            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            <DisconnectOracleQuery as OracleQuery>::get(&mut io.oracle, ())?;
             Ok((io.oracle, state_diffs_hash, batch_output))
         } else {
-            <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+            <DisconnectOracleQuery as OracleQuery>::get(&mut io.oracle, ())?;
             Ok((io.oracle, public_input_hash, batch_output))
         }
     }

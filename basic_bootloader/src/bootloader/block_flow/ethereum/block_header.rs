@@ -11,6 +11,7 @@ use ruint::aliases::U256;
 use zk_ee::internal_error;
 use zk_ee::system::metadata::dynamic_metadata_responder::DynamicMetadataResponder;
 
+use zk_ee::oracle::memory_io::get_bytes_with_length_query;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -202,10 +203,11 @@ impl HeaderAndHistory {
     ) -> Result<Self, InternalError> {
         let chain_id = 1u64;
         // get buffer
-        let target_header_buffer = oracle.get_bytes_from_query(
+        let target_header_buffer = get_bytes_with_length_query::<_, (), _>(
+            oracle,
             ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
             ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
-            &(),
+            (),
             allocator,
         )?;
         let target_header_buffer = target_header_buffer.expect("target header is not empty slice");
@@ -372,15 +374,15 @@ impl ChainChecker for PectraForkHeader {
             // so we assert here
             assert!(block_number >= PECTRA_EL_FORK_BLOCK_NUMBER);
 
-            let buffer = oracle
-                .get_bytes_from_query(
-                    ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
-                    ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
-                    &(depth as u32),
-                    allocator.clone(),
-                )
-                .expect("must get buffer for historical header")
-                .expect("buffer for historical header is not empty");
+            let buffer = get_bytes_with_length_query::<_, u32, _>(
+                oracle,
+                ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
+                ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
+                depth as u32,
+                allocator.clone(),
+            )
+            .expect("must get buffer for historical header")
+            .expect("buffer for historical header is not empty");
             let historical_header = PectraForkHeaderReflection::decode_list_full(buffer.as_slice())
                 .expect("must parse historical header");
             crypto::MiniDigest::update(&mut block_headers_hasher, buffer.as_slice());

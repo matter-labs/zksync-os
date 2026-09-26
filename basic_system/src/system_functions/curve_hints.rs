@@ -11,30 +11,35 @@
 //! A wrong hint fails an assertion: hints come from the prover's own oracle, never from
 //! external input, so a bad one is a broken prover rather than a case to recover from.
 
-use crate::system_functions::field_ops::{query_field_hint, raw_field_hint_query, FieldHintOp};
+use crate::system_functions::field_ops::{
+    query_field_hint, read_hint_answer, send_field_hint_query, FieldHintOp, HintAnswer, HintTarget,
+};
+use alloc::vec::Vec;
 use core::mem::MaybeUninit;
-use crypto::ark_ff::{Field, One, PrimeField, Zero};
-use zk_ee::oracle::usize_serialization::UsizeDeserializable;
+use crypto::ark_ff::{
+    BigInteger, CubicExtConfig, CubicExtField, Field, One, PrimeField, QuadExtConfig, QuadExtField,
+    Zero,
+};
+use zk_ee::internal_error;
+use zk_ee::oracle::memory_io::MemoryOracle;
 use zk_ee::oracle::IOOracle;
-use zk_ee::utils::Bytes32;
+use zk_ee::system::errors::internal::InternalError;
 
-/// The most components an encoded element has (a degree-12 extension)
-const MAX_COMPONENTS: usize = 12;
-
-/// The hint encoding of a field element: its base prime field components in a fixed order
-/// (for a tower `c0` before `c1` before `c2`, recursively), each as its canonical integer in
-/// `LIMBS` 64-bit little-endian limbs (zero-padded above the modulus). Shared with the host
-/// processors, and independent of the arkworks `to_base_prime_field_elements` order, which
-/// the delegated and the native tower implementations do not agree on.
+/// The base prime field components of a field element in a fixed order (for a tower `c0` before
+/// `c1` before `c2`, recursively), independent of the arkworks `to_base_prime_field_elements`
+/// order, which the delegated and the native tower implementations do not agree on. It is the
+/// order of the components of an element in the memory of the RISC-V guest, which the oracle reads
+/// operands from (see [`guest_layout`]), and of the components of an answer on every target (see
+/// the `HintAnswer` impls below).
 pub trait HintEncoding: Field {
-    /// Limbs per base prime field element: 4 for bn254, 8 for bls12-381 (48 bytes in 64)
+    /// 64-bit limbs of a base prime field element on the RISC-V guest: 4 for bn254, 8 for
+    /// bls12-381 (381 bits in 512)
     const LIMBS: usize;
-    /// Base prime field components of an element, at most `MAX_COMPONENTS`
+    /// Base prime field components of an element
     const COMPONENTS: usize;
-    /// Limbs of a whole element
+    /// Limbs of a whole element on the RISC-V guest
     const TOTAL_LIMBS: usize = Self::LIMBS * Self::COMPONENTS;
 
-    fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]);
     fn from_components(components: &[Self::BasePrimeField]) -> Self;
 }
 
@@ -43,10 +48,6 @@ macro_rules! prime_field_encoding {
         impl HintEncoding for $field {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 1;
-
-            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
-                out[0].write(*self);
-            }
 
             fn from_components(components: &[Self::BasePrimeField]) -> Self {
                 components[0]
@@ -60,17 +61,6 @@ macro_rules! fp12_encoding {
         impl HintEncoding for $field {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 12;
-
-            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
-                let mut i = 0;
-                for fp6 in [&self.c0, &self.c1] {
-                    for fp2 in [&fp6.c0, &fp6.c1, &fp6.c2] {
-                        out[i].write(fp2.c0);
-                        out[i + 1].write(fp2.c1);
-                        i += 2;
-                    }
-                }
-            }
 
             fn from_components(c: &[Self::BasePrimeField]) -> Self {
                 let fp2 = |i: usize| <$fp2>::new(c[i], c[i + 1]);
@@ -87,13 +77,6 @@ macro_rules! fp6_encoding {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 6;
 
-            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
-                for (i, fp2) in [&self.c0, &self.c1, &self.c2].into_iter().enumerate() {
-                    out[2 * i].write(fp2.c0);
-                    out[2 * i + 1].write(fp2.c1);
-                }
-            }
-
             fn from_components(c: &[Self::BasePrimeField]) -> Self {
                 let fp2 = |i: usize| <$fp2>::new(c[i], c[i + 1]);
                 Self::new(fp2(0), fp2(2), fp2(4))
@@ -107,11 +90,6 @@ macro_rules! fp2_encoding {
         impl HintEncoding for $field {
             const LIMBS: usize = $limbs;
             const COMPONENTS: usize = 2;
-
-            fn write_components(&self, out: &mut [MaybeUninit<Self::BasePrimeField>]) {
-                out[0].write(self.c0);
-                out[1].write(self.c1);
-            }
 
             fn from_components(c: &[Self::BasePrimeField]) -> Self {
                 Self::new(c[0], c[1])
@@ -139,93 +117,273 @@ fp12_encoding!(
     8
 );
 
-/// `value` in the hint encoding; `limbs` must hold `F::TOTAL_LIMBS`
-pub fn encode<F: HintEncoding>(value: &F, limbs: &mut [u64]) {
-    debug_assert_eq!(limbs.len(), F::TOTAL_LIMBS);
-    let mut components = [const { MaybeUninit::<F::BasePrimeField>::uninit() }; MAX_COMPONENTS];
-    let components = &mut components[..F::COMPONENTS];
-    value.write_components(components);
-    // SAFETY: `write_components` initializes all `F::COMPONENTS` elements
-    let components = unsafe {
-        &*(components as *const [MaybeUninit<F::BasePrimeField>] as *const [F::BasePrimeField])
-    };
-    for (component, out) in components.iter().zip(limbs.chunks_exact_mut(F::LIMBS)) {
-        let repr = component.into_bigint();
-        let repr = repr.as_ref();
-        debug_assert!(repr.len() <= F::LIMBS);
-        out.fill(0);
-        out[..repr.len()].copy_from_slice(repr);
+/// Where the oracle finds the parts of an operand in the memory of the RISC-V guest (a querier in
+/// this process sends its values, which the oracle reads as such). A base field element is its
+/// `HintEncoding::LIMBS` Montgomery limbs (`R = 2^(64 LIMBS)`), any representative (the
+/// representation is redundant); an extension field element its base field components, back to
+/// back in the `HintEncoding` order; an affine point its coordinates and the flag of the point at
+/// infinity at the offsets below; a pair of the bn254 pairing input its two points. `airbender-crypto`
+/// asserts the order of the components and of the coordinates at compile time, and the numbers
+/// below are asserted on the guest.
+pub mod guest_layout {
+    /// Byte offsets of the coordinates and of the flag of the point at infinity of an affine
+    /// point, and its size in bytes (with padding)
+    #[derive(Clone, Copy, Debug)]
+    pub struct AffinePoint {
+        pub x: usize,
+        pub y: usize,
+        pub infinity: usize,
+        pub size: usize,
     }
+
+    pub const BN254_G1_AFFINE: AffinePoint = AffinePoint {
+        x: 0,
+        y: 32,
+        infinity: 64,
+        size: 96,
+    };
+    pub const BN254_G2_AFFINE: AffinePoint = AffinePoint {
+        x: 0,
+        y: 64,
+        infinity: 128,
+        size: 160,
+    };
+    pub const BLS12_381_G1_AFFINE: AffinePoint = AffinePoint {
+        x: 0,
+        y: 64,
+        infinity: 128,
+        size: 160,
+    };
+
+    /// Byte offsets of the points of a `(G1Affine, G2Affine)` pair of the bn254 pairing input, and
+    /// its size in bytes
+    pub const BN254_PAIR_G1: usize = 0;
+    pub const BN254_PAIR_G2: usize = 96;
+    pub const BN254_PAIR_SIZE: usize = 256;
 }
 
-/// The element encoded in `limbs` (`F::TOTAL_LIMBS` of them), `None` unless every component is
-/// canonical, i.e. below the modulus with zero padding
-pub fn decode<F: HintEncoding>(limbs: &[u64]) -> Option<F> {
-    debug_assert_eq!(limbs.len(), F::TOTAL_LIMBS);
-    let mut components = [const { MaybeUninit::<F::BasePrimeField>::uninit() }; MAX_COMPONENTS];
-    let components = &mut components[..F::COMPONENTS];
-    for (component, chunk) in components.iter_mut().zip(limbs.chunks_exact(F::LIMBS)) {
-        let mut repr = <F::BasePrimeField as PrimeField>::BigInt::default();
-        let width = repr.as_ref().len().min(F::LIMBS);
-        if chunk[width..].iter().any(|limb| *limb != 0) {
-            return None;
+#[cfg(target_arch = "riscv32")]
+const _: () = {
+    use core::mem::{offset_of, size_of};
+    use crypto::{bls12_381, bn254};
+    use guest_layout::*;
+
+    // base field elements: their Montgomery limbs (the rest of the towers is asserted in
+    // `airbender-crypto`)
+    assert!(offset_of!(bn254::Fq, 0) == 0);
+    assert!(size_of::<bn254::Fq>() == 8 * <bn254::Fq as HintEncoding>::LIMBS);
+    assert!(offset_of!(bls12_381::Fq, 0) == 0);
+    assert!(size_of::<bls12_381::Fq>() == 8 * <bls12_381::Fq as HintEncoding>::LIMBS);
+
+    macro_rules! assert_affine {
+        ($point:ty, $layout:expr) => {
+            assert!(offset_of!($point, x) == $layout.x && offset_of!($point, y) == $layout.y);
+            assert!(offset_of!($point, infinity) == $layout.infinity);
+            assert!(size_of::<$point>() == $layout.size);
+        };
+    }
+    assert_affine!(bn254::G1Affine, BN254_G1_AFFINE);
+    assert_affine!(bn254::G2Affine, BN254_G2_AFFINE);
+    assert_affine!(bls12_381::G1Affine, BLS12_381_G1_AFFINE);
+
+    type Bn254Pair = (bn254::G1Affine, bn254::G2Affine);
+    assert!(offset_of!(Bn254Pair, 0) == BN254_PAIR_G1);
+    assert!(offset_of!(Bn254Pair, 1) == BN254_PAIR_G2);
+    assert!(size_of::<Bn254Pair>() == BN254_PAIR_SIZE);
+};
+
+/// Whether the little-endian `value` is below the little-endian `modulus` (zero above the width of
+/// `modulus`)
+fn is_below(value: &[u64], modulus: &[u64]) -> bool {
+    let (low, high) = value.split_at(value.len().min(modulus.len()));
+    if high.iter().any(|limb| *limb != 0) {
+        return false;
+    }
+    for (value, modulus) in low.iter().zip(modulus).rev() {
+        if value != modulus {
+            return value < modulus;
         }
-        repr.as_mut()[..width].copy_from_slice(&chunk[..width]);
-        component.write(F::BasePrimeField::from_bigint(repr)?);
     }
-    // SAFETY: the loop initialized all `F::COMPONENTS` elements (an early return skips this)
-    let components = unsafe {
-        &*(components as *const [MaybeUninit<F::BasePrimeField>] as *const [F::BasePrimeField])
+    false
+}
+
+/// The answer of a hint is a base prime field element `x` in the Montgomery form of the target of the
+/// querier, its representation there: `x R mod p` for `R = 2^(64 limbs)` with the limbs of the
+/// representation, canonical (below the modulus), as its `wire_limbs` little-endian 64-bit limbs (the
+/// width of the modulus). It is written straight into the low limbs of the destination element, whose
+/// limbs above (on the RISC-V guest, bls12-381 elements take 8 limbs for their 6) are zeroed, and checked
+/// to be canonical.
+///
+/// # Safety
+///
+/// `limbs` must point to the limbs of the representation of an `F`, all of its bytes, valid for writes.
+#[inline(always)]
+unsafe fn read_prime_field<F: PrimeField, O: MemoryOracle>(
+    oracle: &mut O,
+    limbs: *mut u64,
+    wire_limbs: usize,
+) -> Result<(), InternalError> {
+    let num_limbs = <F::BigInt as BigInteger>::NUM_LIMBS;
+    debug_assert!(wire_limbs <= num_limbs);
+    // SAFETY: the limbs are aligned for `u32`, and `num_limbs` long
+    unsafe {
+        oracle.write_words(limbs.cast::<u32>(), 2 * wire_limbs)?;
+        limbs.add(wire_limbs).write_bytes(0, num_limbs - wire_limbs);
+    }
+    // SAFETY: just initialized
+    let value = unsafe { core::slice::from_raw_parts(limbs, num_limbs) };
+    if !is_below(value, F::MODULUS.as_ref()) {
+        return Err(internal_error!("the hint is not a canonical field element"));
+    }
+    Ok(())
+}
+
+/// Oracle side of `read_prime_field`, with `limbs` the limbs of the representation of `element` in this
+/// build, and `guest_limbs` those of the representation on the RISC-V guest
+fn write_prime_field<F: PrimeField>(
+    element: &F,
+    limbs: &[u64],
+    wire_limbs: usize,
+    guest_limbs: usize,
+    target: HintTarget,
+    response: &mut Vec<u32>,
+) {
+    let mut push = |limbs: &[u64]| {
+        debug_assert!(limbs[wire_limbs..].iter().all(|limb| *limb == 0));
+        for limb in &limbs[..wire_limbs] {
+            response.push(*limb as u32);
+            response.push((*limb >> 32) as u32);
+        }
     };
-    Some(F::from_components(components))
+    // the Montgomery form of the target: `R = 2^(64 limbs)` with the limbs of its representation
+    let target_limbs = match target {
+        HintTarget::Native => limbs.len(),
+        HintTarget::Guest => guest_limbs,
+    };
+    if limbs.len() == target_limbs && is_below(limbs, F::MODULUS.as_ref()) {
+        // the representation of this build
+        push(limbs);
+    } else {
+        let montgomery_r = F::from(2u64).pow([64 * target_limbs as u64]);
+        push((*element * montgomery_r).into_bigint().as_ref());
+    }
 }
 
-/// The oracle reads and writes operands as words of `Bytes32`, which are also aligned as the
-/// query needs; these are their byte and 64-bit limb views.
-fn as_bytes<const N: usize>(words: &[Bytes32; N]) -> &[u8] {
-    // SAFETY: `Bytes32` is a plain 32-byte value, so `N` of them are `32 N` initialized bytes
-    unsafe { core::slice::from_raw_parts(words.as_ptr().cast::<u8>(), 32 * N) }
+/// `$wire_limbs`: the width of the modulus; `$guest_limbs`: the limbs of the representation on the
+/// RISC-V guest, whose `R` is `2^(64 $guest_limbs)`
+macro_rules! prime_field_answer {
+    ($field:ty, $wire_limbs:expr, $guest_limbs:expr) => {
+        const _: () = {
+            // the answer fits in every representation, and the modulus in the limbs of the answer
+            // (`MODULUS_BIT_SIZE` would not do: the delegated representation counts its bits from
+            // its top limb, zero or not)
+            let modulus = <$field as PrimeField>::MODULUS.0;
+            assert!($wire_limbs <= modulus.len());
+            let mut i = $wire_limbs;
+            while i < modulus.len() {
+                assert!(modulus[i] == 0);
+                i += 1;
+            }
+        };
+
+        impl HintAnswer for $field {
+            #[inline(always)]
+            fn read<'a, O: MemoryOracle>(
+                oracle: &mut O,
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, InternalError> {
+                let this = dst.as_mut_ptr();
+                // SAFETY: the limbs of the representation (the other field is zero-sized) are a place
+                // inside `dst`, which initialize it
+                unsafe {
+                    let limbs = (&raw mut (*this).0 .0).cast::<u64>();
+                    read_prime_field::<Self, O>(oracle, limbs, $wire_limbs)?;
+                    Ok(dst.assume_init_mut())
+                }
+            }
+
+            fn write(&self, target: HintTarget, response: &mut Vec<u32>) {
+                write_prime_field(
+                    self,
+                    &self.0 .0,
+                    $wire_limbs,
+                    $guest_limbs,
+                    target,
+                    response,
+                );
+            }
+        }
+    };
 }
 
-fn as_limbs<const N: usize>(words: &[Bytes32; N]) -> &[u64] {
-    // SAFETY: `Bytes32` is a plain, 8-byte aligned 32-byte value, so `N` of them are `4 N`
-    // initialized `u64`
-    unsafe { core::slice::from_raw_parts(words.as_ptr().cast::<u64>(), 4 * N) }
+prime_field_answer!(crypto::bn254::Fq, 4, 4);
+// 8 limbs of 64 bits for 381 bits on the RISC-V guest, where the delegation works on 256-bit limbs;
+// 6 in a native build
+prime_field_answer!(crypto::bls12_381::Fq, 6, 8);
+
+/// The components in order, as in `HintEncoding` (`c0` before `c1`, recursively).
+impl<P: QuadExtConfig> HintAnswer for QuadExtField<P>
+where
+    P::BaseField: HintAnswer,
+{
+    #[inline(always)]
+    fn read<'a, O: MemoryOracle>(
+        oracle: &mut O,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, InternalError> {
+        let this = dst.as_mut_ptr();
+        // SAFETY: the components are disjoint places inside `dst`, which they initialize, and
+        // `MaybeUninit<E>` has the layout of `E`
+        unsafe {
+            P::BaseField::read(oracle, &mut *(&raw mut (*this).c0).cast())?;
+            P::BaseField::read(oracle, &mut *(&raw mut (*this).c1).cast())?;
+            Ok(dst.assume_init_mut())
+        }
+    }
+
+    fn write(&self, target: HintTarget, response: &mut Vec<u32>) {
+        self.c0.write(target, response);
+        self.c1.write(target, response);
+    }
 }
 
-fn as_limbs_mut<const N: usize>(words: &mut [Bytes32; N]) -> &mut [u64] {
-    // SAFETY: as in `as_limbs`, and the words are exclusively borrowed
-    unsafe { core::slice::from_raw_parts_mut(words.as_mut_ptr().cast::<u64>(), 4 * N) }
-}
+/// The components in order, as in `HintEncoding` (`c0` before `c1` before `c2`, recursively).
+impl<P: CubicExtConfig> HintAnswer for CubicExtField<P>
+where
+    P::BaseField: HintAnswer,
+{
+    #[inline(always)]
+    fn read<'a, O: MemoryOracle>(
+        oracle: &mut O,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, InternalError> {
+        let this = dst.as_mut_ptr();
+        // SAFETY: as for the quadratic extension
+        unsafe {
+            P::BaseField::read(oracle, &mut *(&raw mut (*this).c0).cast())?;
+            P::BaseField::read(oracle, &mut *(&raw mut (*this).c1).cast())?;
+            P::BaseField::read(oracle, &mut *(&raw mut (*this).c2).cast())?;
+            Ok(dst.assume_init_mut())
+        }
+    }
 
-/// `value` as the hint operand
-fn to_words<F: HintEncoding, const N: usize>(value: &F) -> [Bytes32; N] {
-    debug_assert_eq!(4 * N, F::TOTAL_LIMBS);
-    let mut words = [Bytes32::ZERO; N];
-    encode(value, as_limbs_mut(&mut words));
-    words
-}
-
-/// The element the oracle answered with; panics if the answer is not a canonical element
-fn from_words<F: HintEncoding, const N: usize>(words: &[Bytes32; N]) -> F {
-    decode(as_limbs(words)).expect("the hint is a canonical field element")
+    fn write(&self, target: HintTarget, response: &mut Vec<u32>) {
+        self.c0.write(target, response);
+        self.c1.write(target, response);
+        self.c2.write(target, response);
+    }
 }
 
 /// `a^-1` from a hint, `None` for a zero `a`
-fn inverse_from_hint<O: IOOracle, F: HintEncoding, const N: usize>(
+fn inverse_from_hint<O: IOOracle, F: Field + HintAnswer>(
     oracle: &mut O,
     op: FieldHintOp,
     a: &F,
-) -> Option<F>
-where
-    [Bytes32; N]: UsizeDeserializable,
-{
+) -> Option<F> {
     if a.is_zero() {
         return None;
     }
-    let input: [Bytes32; N] = to_words(a);
-    let hint: [Bytes32; N] = query_field_hint(oracle, op, as_bytes(&input));
-    let inverse: F = from_words(&hint);
+    let inverse: F = query_field_hint(oracle, op, a);
     let mut product = *a;
     product *= &inverse;
     assert!(product.is_one(), "the field inverse hint is wrong");
@@ -237,7 +395,7 @@ pub fn bn254_fq_inverse<O: IOOracle>(
     oracle: &mut O,
     a: &crypto::bn254::Fq,
 ) -> Option<crypto::bn254::Fq> {
-    inverse_from_hint::<_, _, 1>(oracle, FieldHintOp::Bn254BaseFieldInverse, a)
+    inverse_from_hint(oracle, FieldHintOp::Bn254BaseFieldInverse, a)
 }
 
 /// `f^-1` in the bn254 degree-12 extension field, `None` for a zero `f`
@@ -245,7 +403,7 @@ pub fn bn254_fq12_inverse<O: IOOracle>(
     oracle: &mut O,
     f: &crypto::bn254::Fq12,
 ) -> Option<crypto::bn254::Fq12> {
-    inverse_from_hint::<_, _, 12>(oracle, FieldHintOp::Bn254Fq12Inverse, f)
+    inverse_from_hint(oracle, FieldHintOp::Bn254Fq12Inverse, f)
 }
 
 /// `a^-1` in the bls12-381 base field, `None` for a zero `a`
@@ -253,7 +411,7 @@ pub fn bls12_381_fq_inverse<O: IOOracle>(
     oracle: &mut O,
     a: &crypto::bls12_381::Fq,
 ) -> Option<crypto::bls12_381::Fq> {
-    inverse_from_hint::<_, _, 2>(oracle, FieldHintOp::Bls12381BaseFieldInverse, a)
+    inverse_from_hint(oracle, FieldHintOp::Bls12381BaseFieldInverse, a)
 }
 
 /// `f^-1` in the bls12-381 degree-12 extension field, `None` for a zero `f`
@@ -261,7 +419,7 @@ pub fn bls12_381_fq12_inverse<O: IOOracle>(
     oracle: &mut O,
     f: &crypto::bls12_381::Fq12,
 ) -> Option<crypto::bls12_381::Fq12> {
-    inverse_from_hint::<_, _, 24>(oracle, FieldHintOp::Bls12381Fq12Inverse, f)
+    inverse_from_hint(oracle, FieldHintOp::Bls12381Fq12Inverse, f)
 }
 
 // The square root check relies on `-1` being a quadratic non-residue, i.e. on `p = 3 mod 4`
@@ -278,10 +436,8 @@ pub fn bls12_381_fq_sqrt<O: IOOracle>(
     if a.is_zero() {
         return Some(Fq::zero());
     }
-    let input: [Bytes32; 2] = to_words(a);
-    let (candidate, is_non_residue): ([Bytes32; 2], bool) =
-        query_field_hint(oracle, FieldHintOp::Bls12381BaseFieldSqrt, as_bytes(&input));
-    let candidate: Fq = from_words(&candidate);
+    let (candidate, is_non_residue): (Fq, bool) =
+        query_field_hint(oracle, FieldHintOp::Bls12381BaseFieldSqrt, a);
     let mut square = candidate;
     square.square_in_place();
     if is_non_residue {
@@ -314,193 +470,169 @@ pub enum PairingClaim<F12, F6> {
 /// started at `d`. `c d = 1` is checked here: the loop multiplies by `c` at the negative digits
 /// of its count, and the check is only sound for `c = d^-1` (otherwise `f s` would be
 /// `d^a c^b` with exponents not divisible by `r`).
-pub fn bn254_pairing_residue_witness<O: IOOracle, A: core::alloc::Allocator>(
+pub fn bn254_pairing_residue_witness<O: IOOracle>(
     oracle: &mut O,
     pairs: &[(crypto::bn254::G1Affine, crypto::bn254::G2Affine)],
-    allocator: A,
 ) -> PairingClaim<crypto::bn254::Fq12, crypto::bn254::Fq6> {
-    // 6 base field elements of 4 limbs per pair
-    let mut input = alloc::vec::Vec::with_capacity_in(6 * pairs.len(), allocator);
-    input.resize(6 * pairs.len(), Bytes32::ZERO);
-    // SAFETY: as in `as_limbs`, `Bytes32` is 8-byte aligned plain data
-    let limbs = unsafe {
-        core::slice::from_raw_parts_mut(input.as_mut_ptr().cast::<u64>(), 24 * pairs.len())
-    };
-    for ((g1, g2), out) in pairs.iter().zip(limbs.as_chunks_mut::<24>().0) {
-        encode(&g1.x, &mut out[0..4]);
-        encode(&g1.y, &mut out[4..8]);
-        encode(&g2.x.c0, &mut out[8..12]);
-        encode(&g2.x.c1, &mut out[12..16]);
-        encode(&g2.y.c0, &mut out[16..20]);
-        encode(&g2.y.c1, &mut out[20..24]);
-    }
-    // identity flag, then `c, d, s` for an identity or `f^-1` and zeros otherwise
-    let (is_identity, (first, (d, s))): (bool, ([Bytes32; 12], ([Bytes32; 12], [Bytes32; 6]))) =
-        query_field_hint(oracle, FieldHintOp::Bn254PairingResidueWitness, unsafe {
-            core::slice::from_raw_parts(input.as_ptr().cast::<u8>(), 32 * input.len())
-        });
-    if is_identity {
-        let (c, d, s): (crypto::bn254::Fq12, crypto::bn254::Fq12, crypto::bn254::Fq6) =
-            (from_words(&first), from_words(&d), from_words(&s));
-        assert!(
-            (c * d).is_one(),
-            "the residue witness hint is not an inverse pair"
-        );
+    use crypto::bn254::{Fq12, Fq6};
+    // the identity flag, then `c, d, s` for an identity or `f^-1` otherwise
+    send_field_hint_query(oracle, FieldHintOp::Bn254PairingResidueWitness, pairs)
+        .expect("must send the field hint query");
+    let is_identity: bool = read_hint_answer(oracle).expect("the hint answer is well-formed");
+    let claim = if is_identity {
+        let (c, d, s): (Fq12, Fq12, Fq6) =
+            read_hint_answer(oracle).expect("the hint answer is well-formed");
         PairingClaim::Identity { c, d, s }
     } else {
         PairingClaim::NotIdentity {
-            f_inverse: from_words(&first),
+            f_inverse: read_hint_answer(oracle).expect("the hint answer is well-formed"),
         }
+    };
+    oracle
+        .finish_query()
+        .expect("the hint answer has no excess data");
+    if let PairingClaim::Identity { c, d, .. } = &claim {
+        assert!(
+            (*c * d).is_one(),
+            "the residue witness hint is not an inverse pair"
+        );
     }
+    claim
 }
 
 /// The hinted inverses of the affine `G2` chains of one point
-/// (`crypto::bn254::curves::g2_affine`), read from the oracle response as the chains consume
-/// them, so that no array of them is ever moved: a flag and the inverses of the membership
-/// test, then a flag and those of the line precomputation. A cleared flag is the prover
-/// reporting an exceptional chain (the caller falls back to the projective computation; the
-/// words of that chain are zeros and are skipped). The hints are not checked here: each chain
-/// checks every inverse against its denominator, and a wrong one is a broken prover. Whatever
-/// is left of the response is drained on drop, so the oracle stays in step on every path.
-pub struct G2InverseHints<I: ExactSizeIterator<Item = usize>> {
-    words: I,
+/// (`crypto::bn254::curves::g2_affine`), received from the oracle as the chains consume them, so
+/// that no array of them is ever moved: a flag and the inverses of the membership test, then a flag
+/// and those of the line precomputation. A cleared flag is the prover reporting an exceptional
+/// chain (the caller falls back to the projective computation; the words of that chain are zeros
+/// and are skipped). The hints are not checked here: each chain checks every inverse against its
+/// denominator, and a wrong one is a broken prover. Whatever is left of the answer is skipped on
+/// drop, and the query ended, so the oracle stays in step on every path.
+pub struct G2InverseHints<'a, O: MemoryOracle> {
+    oracle: &'a mut O,
+    /// Words of the answer not received yet
+    remaining_words: usize,
 }
 
-/// Words of the hinted inverses of the subgroup test and of the line precomputation
+/// Inverses of the subgroup test and of the line precomputation, in base field elements (two per
+/// `Fq2`)
 pub const G2_SUBGROUP_INVERSE_WORDS: usize =
     2 * crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES;
 pub const G2_LINE_INVERSE_WORDS: usize = 2 * crypto::bn254::curves::g2_affine::LINE_INVERSES;
+
+/// Oracle words of one `Fq2` hint: two elements of 4 limbs
+const FQ2_HINT_WORDS: usize = 2 * 2 * 4;
+
+/// Oracle words of the whole answer: two flags and the inverses
+const G2_HINT_WORDS: usize = 2
+    + (crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES
+        + crypto::bn254::curves::g2_affine::LINE_INVERSES)
+        * FQ2_HINT_WORDS;
 
 /// The inverses of the affine `G2` chains of `q` (on the twist, not the point at infinity)
 /// from the oracle
 pub fn bn254_g2_pairing_inverses<'a, O: IOOracle>(
     oracle: &'a mut O,
     q: &crypto::bn254::G2Affine,
-) -> G2InverseHints<O::RawIterator<'a>> {
-    let mut input = [Bytes32::ZERO; 4];
-    {
-        let limbs = as_limbs_mut(&mut input);
-        encode(&q.x, &mut limbs[0..8]);
-        encode(&q.y, &mut limbs[8..16]);
-    }
-    let words = raw_field_hint_query(
+) -> G2InverseHints<'a, O> {
+    send_field_hint_query(oracle, FieldHintOp::Bn254G2PairingInverses, q)
+        .expect("must send the field hint query");
+    G2InverseHints {
         oracle,
-        FieldHintOp::Bn254G2PairingInverses,
-        as_bytes(&input),
-    );
-    G2InverseHints { words }
+        remaining_words: G2_HINT_WORDS,
+    }
 }
 
-impl<I: ExactSizeIterator<Item = usize>> G2InverseHints<I> {
+impl<'a, O: MemoryOracle> G2InverseHints<'a, O> {
     /// The inverses of the membership test, `None` if the prover reports an exceptional chain
-    pub fn subgroup_chain(&mut self) -> Option<HintedChain<'_, I>> {
+    pub fn subgroup_chain(&mut self) -> Option<HintedChain<'_, 'a, O>> {
         self.chain(crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES)
     }
 
     /// The inverses of the line precomputation, `None` if the prover reports an exceptional
     /// chain; after the membership test's
-    pub fn line_chain(&mut self) -> Option<HintedChain<'_, I>> {
+    pub fn line_chain(&mut self) -> Option<HintedChain<'_, 'a, O>> {
         self.chain(crypto::bn254::curves::g2_affine::LINE_INVERSES)
     }
 
-    fn chain(&mut self, inverses: usize) -> Option<HintedChain<'_, I>> {
-        let present: bool = UsizeDeserializable::from_iter(&mut self.words)
-            .expect("the hint response has the flag of the chain");
+    fn chain(&mut self, inverses: usize) -> Option<HintedChain<'_, 'a, O>> {
+        self.remaining_words -= 1;
+        let present: bool =
+            read_hint_answer(self.oracle).expect("the hint response has the flag of the chain");
         if !present {
-            for _ in 0..inverses * FQ2_HINT_WORDS {
-                self.words
-                    .next()
-                    .expect("the hint response has the words of the chain");
-            }
+            self.skip(inverses * FQ2_HINT_WORDS);
             return None;
         }
         Some(HintedChain {
-            words: &mut self.words,
+            hints: self,
             remaining: inverses,
         })
     }
-}
 
-impl<I: ExactSizeIterator<Item = usize>> Drop for G2InverseHints<I> {
-    fn drop(&mut self) {
-        for _ in &mut self.words {}
+    fn skip(&mut self, words: usize) {
+        self.remaining_words -= words;
+        for _ in 0..words {
+            self.oracle
+                .read_word()
+                .expect("the hint response has the words of the chain");
+        }
     }
 }
 
-/// Words of one `Fq2` hint
-const FQ2_HINT_WORDS: usize = 2 * <Bytes32 as UsizeDeserializable>::USIZE_LEN;
+impl<O: MemoryOracle> Drop for G2InverseHints<'_, O> {
+    fn drop(&mut self) {
+        self.skip(self.remaining_words);
+        self.oracle
+            .finish_query()
+            .expect("the hint answer has no excess data");
+    }
+}
 
 /// The hints of one chain, in the chain's order
-pub struct HintedChain<'a, I: ExactSizeIterator<Item = usize>> {
-    words: &'a mut I,
+pub struct HintedChain<'c, 'a, O: MemoryOracle> {
+    hints: &'c mut G2InverseHints<'a, O>,
     remaining: usize,
 }
 
-impl<I: ExactSizeIterator<Item = usize>> crypto::bn254::curves::g2_affine::Inverter
-    for HintedChain<'_, I>
-{
+impl<O: MemoryOracle> crypto::bn254::curves::g2_affine::Inverter for HintedChain<'_, '_, O> {
     fn inverse(&mut self, den: &crypto::bn254::Fq2) -> Option<crypto::bn254::Fq2> {
         debug_assert!(self.remaining > 0, "the chain is longer than its hints");
         self.remaining -= 1;
-        let c0 = read_bn254_fq(self.words);
-        let c1 = read_bn254_fq(self.words);
-        crypto::bn254::curves::g2_affine::verify_inverse(den, crypto::bn254::Fq2::new(c0, c1))
+        self.hints.remaining_words -= FQ2_HINT_WORDS;
+        let inverse: crypto::bn254::Fq2 =
+            read_hint_answer(self.hints.oracle).expect("the hint is a canonical field element");
+        crypto::bn254::curves::g2_affine::verify_inverse(den, inverse)
     }
 }
 
-/// A canonical bn254 base field element from the next words of a hint response (the
-/// `HintEncoding` limbs, read straight into the integer: no intermediate value is moved)
-fn read_bn254_fq(words: &mut impl Iterator<Item = usize>) -> crypto::bn254::Fq {
-    let mut limbs = [0u64; 4];
-    for limb in limbs.iter_mut() {
-        #[cfg(target_pointer_width = "32")]
-        {
-            let low = words.next().expect("the hint response has the element") as u64;
-            let high = words.next().expect("the hint response has the element") as u64;
-            *limb = low | (high << 32);
-        }
-        #[cfg(target_pointer_width = "64")]
-        {
-            *limb = words.next().expect("the hint response has the element") as u64;
-        }
-    }
-    crypto::bn254::Fq::from_bigint(<crypto::bn254::Fq as PrimeField>::BigInt::new(limbs))
-        .expect("the hint is a canonical field element")
-}
-
-/// The claim and witness of `e(p1, G2) e(p2, tau G2)` (the KZG proof check) from the oracle,
-/// for `crypto::residue_witness::bls12_381::check` on the Miller loop started at `d` (`c` is
-/// not needed by that loop and is left zero)
+/// The claim and witness of `e(p1, G2) e(p2, tau G2)` (the KZG proof check, `points` are
+/// `[p1, p2]`) from the oracle, for `crypto::residue_witness::bls12_381::check` on the Miller loop
+/// started at `d` (`c` is not needed by that loop and is left zero)
 pub fn bls12_381_kzg_residue_witness<O: IOOracle>(
     oracle: &mut O,
-    p1: &crypto::bls12_381::G1Affine,
-    p2: &crypto::bls12_381::G1Affine,
+    points: &[crypto::bls12_381::G1Affine; 2],
 ) -> PairingClaim<crypto::bls12_381::Fq12, crypto::bls12_381::Fq6> {
-    let mut input = [Bytes32::ZERO; 8];
-    {
-        let limbs = as_limbs_mut(&mut input);
-        encode(&p1.x, &mut limbs[0..8]);
-        encode(&p1.y, &mut limbs[8..16]);
-        encode(&p2.x, &mut limbs[16..24]);
-        encode(&p2.y, &mut limbs[24..32]);
-    }
-    // identity flag, then `d, s` for an identity or `f^-1` and zeros otherwise
-    let (is_identity, (first, s)): (bool, ([Bytes32; 24], [Bytes32; 12])) = query_field_hint(
-        oracle,
-        FieldHintOp::Bls12381KzgResidueWitness,
-        as_bytes(&input),
-    );
-    if is_identity {
+    use crypto::bls12_381::{Fq12, Fq6};
+    // the identity flag, then `d, s` for an identity or `f^-1` otherwise
+    send_field_hint_query(oracle, FieldHintOp::Bls12381KzgResidueWitness, points)
+        .expect("must send the field hint query");
+    let is_identity: bool = read_hint_answer(oracle).expect("the hint answer is well-formed");
+    let claim = if is_identity {
+        let (d, s): (Fq12, Fq6) = read_hint_answer(oracle).expect("the hint answer is well-formed");
         PairingClaim::Identity {
-            c: crypto::bls12_381::Fq12::zero(),
-            d: from_words(&first),
-            s: from_words(&s),
+            c: Fq12::zero(),
+            d,
+            s,
         }
     } else {
         PairingClaim::NotIdentity {
-            f_inverse: from_words(&first),
+            f_inverse: read_hint_answer(oracle).expect("the hint answer is well-formed"),
         }
-    }
+    };
+    oracle
+        .finish_query()
+        .expect("the hint answer has no excess data");
+    claim
 }
 
 /// The hinted inverse of the Miller loop output `f`, checked
@@ -517,6 +649,7 @@ pub(crate) mod tests {
     use super::*;
     use callable_oracles::field_hints::NativeFieldOpsQuery;
     use oracle_provider::ZkEENonDeterminismSource;
+    use zk_ee::oracle::memory_io::host::QuerierMemory;
 
     fn oracle() -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
@@ -543,25 +676,42 @@ pub(crate) mod tests {
             .collect()
     }
 
+    fn answer_words<T: HintAnswer>(value: &T, target: HintTarget) -> Vec<u32> {
+        let mut response = Vec::new();
+        value.write(target, &mut response);
+        response
+    }
+
+    fn limb_words(limbs: &[u64]) -> Vec<u32> {
+        limbs
+            .iter()
+            .flat_map(|limb| [*limb as u32, (*limb >> 32) as u32])
+            .collect()
+    }
+
     #[test]
-    fn encoding_round_trips_and_rejects_non_canonical() {
+    fn answers_follow_the_target() {
+        for a in elements::<crypto::bn254::Fq>(5) {
+            // `R = 2^256` on every target
+            let montgomery_form = a * crypto::bn254::Fq::from(2u64).pow([256]);
+            let expected = limb_words(montgomery_form.into_bigint().as_ref());
+            assert_eq!(answer_words(&a, HintTarget::Native), expected);
+            assert_eq!(answer_words(&a, HintTarget::Guest), expected);
+        }
         for a in elements::<crypto::bls12_381::Fq>(5) {
-            let mut limbs = [0u64; 8];
-            encode(&a, &mut limbs);
-            assert_eq!(limbs[6], 0);
-            assert_eq!(decode::<crypto::bls12_381::Fq>(&limbs), Some(a));
-            limbs[7] = 1;
-            assert_eq!(decode::<crypto::bls12_381::Fq>(&limbs), None);
+            // `R = 2^384` in this build, `2^512` on the RISC-V guest; 6 limbs on both
+            let r = |bits: u64| crypto::bls12_381::Fq::from(2u64).pow([bits]);
+            let native = limb_words((a * r(384)).into_bigint().as_ref());
+            let guest = limb_words((a * r(512)).into_bigint().as_ref());
+            assert_eq!(answer_words(&a, HintTarget::Native), native);
+            assert_eq!(answer_words(&a, HintTarget::Guest), guest);
+            assert_eq!(guest.len(), 12);
+            let f = crypto::bls12_381::Fq2::new(a, -a);
+            assert_eq!(
+                answer_words(&f, HintTarget::Guest),
+                [guest, limb_words(((-a) * r(512)).into_bigint().as_ref())].concat()
+            );
         }
-        for f in extension_elements::<crypto::bn254::Fq12>(3) {
-            let mut limbs = [0u64; 48];
-            encode(&f, &mut limbs);
-            assert_eq!(decode::<crypto::bn254::Fq12>(&limbs), Some(f));
-        }
-        // the modulus itself is not canonical
-        let mut limbs = [0u64; 4];
-        limbs.copy_from_slice(<crypto::bn254::Fq as PrimeField>::MODULUS.as_ref());
-        assert_eq!(decode::<crypto::bn254::Fq>(&limbs), None);
     }
 
     #[test]
@@ -624,6 +774,15 @@ pub(crate) mod tests {
         );
     }
 
+    /// The op of the hint request at `input_word`, as the type of this crate (`callable_oracles`
+    /// has its own `basic_system`)
+    fn read_op(memory: &dyn QuerierMemory, input_word: usize) -> FieldHintOp {
+        let (op, _, _) =
+            crate::system_functions::field_ops::read_field_hint_request(memory, input_word)
+                .unwrap();
+        FieldHintOp::parse_u32(op).unwrap()
+    }
+
     /// A processor that answers the field hint queries of the given ops with a corrupted value
     /// (the low bit of the first word flipped), and the others honestly
     pub struct FlipLowBit {
@@ -634,26 +793,32 @@ pub(crate) mod tests {
     }
 
     impl oracle_provider::OracleQueryProcessor for FlipLowBit {
-        fn supported_query_ids(&self) -> Vec<u32> {
-            self.inner.supported_query_ids()
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            self.inner.supported_memory_query_ids()
         }
 
-        fn process_buffered_query(
+        fn process_memory_query(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
-            memory: &dyn oracle_provider::RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use crate::system_functions::field_ops::FieldOpsHint64;
-            // SAFETY: the query is the address of the request the caller built
-            let request = unsafe { (query[0] as *const FieldOpsHint64).read() };
-            let op = FieldHintOp::parse_u32(request.op).unwrap();
-            let mut words: Vec<usize> = self
-                .inner
-                .process_buffered_query(query_id, query, memory)
-                .collect();
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: oracle_provider::RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            let op = read_op(memory, input_word);
+            // the response of the native run (the querier of the tests)
+            let mut words = Vec::new();
+            self.inner.process_memory_query(
+                query_id,
+                input_word,
+                memory,
+                mode,
+                &mut words,
+                guest_run_responses,
+            );
             if self.ops.contains(&op) {
-                // the low limb of the first element (past the claim flag of the pairing
+                // the low word of the first element (past the claim flag of the pairing
                 // ops): still a canonical element, so the value check is what fails
                 let index = match op {
                     _ if self.last_word => words.len() - 1,
@@ -663,7 +828,7 @@ pub(crate) mod tests {
                 };
                 words[index] ^= 1;
             }
-            Box::new(words.into_iter())
+            native_run_responses.extend(words);
         }
     }
 
@@ -672,36 +837,33 @@ pub(crate) mod tests {
     pub struct ClaimNotIdentity(NativeFieldOpsQuery);
 
     impl oracle_provider::OracleQueryProcessor for ClaimNotIdentity {
-        fn supported_query_ids(&self) -> Vec<u32> {
-            self.0.supported_query_ids()
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            self.0.supported_memory_query_ids()
         }
 
-        fn process_buffered_query(
+        fn process_memory_query(
             &mut self,
             query_id: u32,
-            query: Vec<usize>,
-            memory: &dyn oracle_provider::RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-            use crate::system_functions::field_ops::FieldOpsHint64;
-            // SAFETY: the query is the address of the request the caller built
-            let request = unsafe { (query[0] as *const FieldOpsHint64).read() };
-            let op = FieldHintOp::parse_u32(request.op).unwrap();
-            let words: Vec<usize> = match op {
-                FieldHintOp::Bn254PairingResidueWitness => {
-                    callable_oracles::field_hints::bn254_pairing_not_identity_claim(
-                        request.src_ptr,
-                        request.src_len_u32_words,
-                    )
-                }
-                FieldHintOp::Bls12381KzgResidueWitness => {
-                    callable_oracles::field_hints::bls12_381_kzg_not_identity_claim(
-                        request.src_ptr,
-                        request.src_len_u32_words,
-                    )
-                }
-                _ => return self.0.process_buffered_query(query_id, query, memory),
-            };
-            Box::new(words.into_iter())
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: oracle_provider::RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            match read_op(memory, input_word) {
+                FieldHintOp::Bn254PairingResidueWitness
+                | FieldHintOp::Bls12381KzgResidueWitness => native_run_responses.extend(
+                    callable_oracles::field_hints::not_identity_claim(memory, input_word),
+                ),
+                _ => self.0.process_memory_query(
+                    query_id,
+                    input_word,
+                    memory,
+                    mode,
+                    native_run_responses,
+                    guest_run_responses,
+                ),
+            }
         }
     }
 

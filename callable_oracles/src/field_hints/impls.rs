@@ -1,8 +1,146 @@
-use basic_system::system_functions::curve_hints::{decode, encode, HintEncoding};
-use crypto::ark_ff::{Field, One, Zero};
-use crypto::k256::{Scalar, U256};
+use super::Responses;
+use basic_system::system_functions::curve_hints::{guest_layout, HintEncoding};
+use basic_system::system_functions::field_ops::{HintTarget, Secp256k1Element};
+use crypto::ark_ec::short_weierstrass::{Affine, SWCurveConfig};
+use crypto::ark_ff::{Field, One, PrimeField, Zero};
 use crypto::secp256k1::field::FieldElement;
-use zk_ee::utils::Bytes32;
+use crypto::secp256k1::scalars::Scalar;
+use zk_ee::oracle::memory_io::host::{read_querier_u32_words, QuerierMemory};
+
+/// The operand of a hint query where the querier keeps it: its address and size in the memory of
+/// the querier, in the representation of the target of the querier (see `FieldHintOp`)
+pub(crate) struct Operand<'m> {
+    memory: &'m dyn QuerierMemory,
+    querier: HintTarget,
+    address: usize,
+    len_u32_words: u32,
+}
+
+impl<'m> Operand<'m> {
+    pub(crate) fn new(
+        memory: &'m dyn QuerierMemory,
+        querier: HintTarget,
+        address: usize,
+        len_u32_words: u32,
+    ) -> Self {
+        assert!(address != 0, "the operand is not at the null address");
+        Self {
+            memory,
+            querier,
+            address,
+            len_u32_words,
+        }
+    }
+
+    /// The size of the operand in bytes
+    fn size(&self) -> usize {
+        self.len_u32_words as usize * size_of::<u32>()
+    }
+
+    /// The operand of a querier in this process, values of `T`
+    fn native_values<T: Copy>(&self) -> Vec<T> {
+        assert_eq!(self.querier, HintTarget::Native);
+        assert!(
+            self.size().is_multiple_of(size_of::<T>()),
+            "the operand is values of the type"
+        );
+        assert!(
+            self.address.is_multiple_of(align_of::<T>()),
+            "the operand is aligned for the type"
+        );
+        let values = core::ptr::with_exposed_provenance::<T>(self.address);
+        // SAFETY: the querier, code of this process, exposes its operand, values of `T`, while it
+        // sends the query, i.e. during this call (see `send_field_hint_query`)
+        unsafe { core::slice::from_raw_parts(values, self.size() / size_of::<T>()) }.to_vec()
+    }
+
+    /// The operand of a querier in this process, a `T`
+    fn native_value<T: Copy>(&self) -> T {
+        assert_eq!(
+            self.size(),
+            size_of::<T>(),
+            "the operand is a value of the type"
+        );
+        self.native_values::<T>()[0]
+    }
+
+    /// `len` words at `offset` bytes into the operand of the RISC-V guest
+    fn guest_words(&self, offset: usize, len: usize) -> Vec<u32> {
+        assert_eq!(self.querier, HintTarget::Guest);
+        assert!(offset + 4 * len <= self.size(), "within the operand");
+        read_querier_u32_words(self.memory, self.address + offset, len)
+            .expect("must read the operand")
+    }
+
+    /// The byte at `offset` into the operand of the RISC-V guest
+    fn guest_byte(&self, offset: usize) -> u8 {
+        self.guest_words(offset & !3, 1)[0].to_le_bytes()[offset & 3]
+    }
+
+    /// The field element at `offset` bytes into the operand of the RISC-V guest (see
+    /// `curve_hints::guest_layout`)
+    fn guest_element<F: HintEncoding>(&self, offset: usize) -> F {
+        let words = self.guest_words(offset, 2 * F::TOTAL_LIMBS);
+        let components: Vec<F::BasePrimeField> = words
+            .chunks(2 * F::LIMBS)
+            .map(from_guest_montgomery)
+            .collect();
+        F::from_components(&components)
+    }
+
+    /// The affine point at `offset` bytes into the operand of the RISC-V guest
+    fn guest_affine<P: SWCurveConfig>(
+        &self,
+        offset: usize,
+        layout: guest_layout::AffinePoint,
+    ) -> Affine<P>
+    where
+        P::BaseField: HintEncoding,
+    {
+        if self.guest_byte(offset + layout.infinity) != 0 {
+            return Affine::identity();
+        }
+        Affine::new_unchecked(
+            self.guest_element(offset + layout.x),
+            self.guest_element(offset + layout.y),
+        )
+    }
+}
+
+/// The base field element of its Montgomery limbs on the RISC-V guest (`R = 2^(32 words)`), any
+/// representative
+fn from_guest_montgomery<F: PrimeField>(words: &[u32]) -> F {
+    let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let r = F::from(2u64).pow([32 * words.len() as u64]);
+    F::from_le_bytes_mod_order(&bytes) * r.inverse().expect("a power of two is invertible")
+}
+
+/// A field element operand
+fn element<F: HintEncoding + Copy>(operand: &Operand) -> F {
+    match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(
+                operand.size(),
+                8 * F::TOTAL_LIMBS,
+                "the operand is an element"
+            );
+            operand.guest_element(0)
+        }
+    }
+}
+
+/// A secp256k1 element operand (see `Secp256k1Element`)
+fn secp256k1_element<T: Secp256k1Element>(operand: &Operand) -> T {
+    match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(operand.size(), 32, "the operand is an element");
+            let words: [u32; 8] = operand.guest_words(0, 8).try_into().expect("8 words");
+            T::from_guest_operand_words(&words)
+        }
+    }
+}
 
 /// Computes the square root candidate for a secp256k1 base field element.
 ///
@@ -12,113 +150,83 @@ use zk_ee::utils::Bytes32;
 ///
 /// When `is_quadratic_non_residue` is false: `candidate² == input`
 /// When `is_quadratic_non_residue` is true:  `candidate² == -input`
-pub(crate) fn secp256k1_base_field_sqrt(input: Bytes32) -> (Bytes32, bool) {
-    // NOTE: input is in normal form
-    let el = FieldElement::from_bytes(input.as_u8_array_ref()).expect("must be normalized");
-    assert!(el.normalizes_to_zero() == false);
+pub(crate) fn secp256k1_base_field_sqrt(operand: &Operand) -> (FieldElement, bool) {
+    let el: FieldElement = secp256k1_element(operand);
+    assert!(!el.is_zero());
     let mut candidate = el;
     // sqrt_in_place returns true if the input is a quadratic residue (has a square root)
     let is_quadratic_residue = candidate.sqrt_in_place();
-    (
-        Bytes32::from_array(candidate.to_bytes().into()),
-        !is_quadratic_residue,
-    )
+    (candidate, !is_quadratic_residue)
 }
 
-pub(crate) fn secp256k1_base_field_inverse(input: Bytes32) -> Bytes32 {
-    // NOTE: input is in normal form
-    let mut el = FieldElement::from_bytes(input.as_u8_array_ref()).expect("must be normalized");
-    assert!(el.normalizes_to_zero() == false);
+pub(crate) fn secp256k1_base_field_inverse(operand: &Operand) -> FieldElement {
+    let mut el: FieldElement = secp256k1_element(operand);
+    assert!(!el.is_zero());
     el.invert_in_place();
-    Bytes32::from_array(el.to_bytes().into())
+    el
 }
 
-pub(crate) fn secp256k1_scalar_field_inverse(input: Bytes32) -> Bytes32 {
-    use crypto::k256::elliptic_curve::ops::Invert;
-    use crypto::k256::elliptic_curve::scalar::FromUintUnchecked;
-    use crypto::k256::elliptic_curve::Curve;
-
-    // NOTE: input is in normal form
-    let el = U256::from_be_slice(input.as_u8_array_ref());
-    assert!(el < crypto::k256::Secp256k1::ORDER);
-    let scalar: Scalar = Scalar::from_uint_unchecked(el);
-    let inverse = scalar.invert_vartime().unwrap();
-
-    Bytes32::from_array(inverse.to_bytes().into())
+pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
+    let mut el: Scalar = secp256k1_element(operand);
+    assert!(!el.is_zero());
+    el.invert_in_place();
+    el
 }
 
-/// The element in the hint encoding, as `N` words
-fn to_words<F: HintEncoding, const N: usize>(value: &F) -> [Bytes32; N] {
-    assert_eq!(4 * N, F::TOTAL_LIMBS);
-    let mut limbs = vec![0u64; F::TOTAL_LIMBS];
-    encode(value, &mut limbs);
-    let mut words = [Bytes32::ZERO; N];
-    for (word, chunk) in words.iter_mut().zip(limbs.as_chunks::<4>().0) {
-        let mut bytes = [0u8; 32];
-        for (dst, limb) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(chunk) {
-            *dst = limb.to_le_bytes();
-        }
-        *word = Bytes32::from_array(bytes);
-    }
-    words
-}
-
-/// The element from its hint encoding at the start of `bytes`. The operand comes from the
-/// guest's own code, so a non-canonical one is a bug.
-fn from_bytes<F: HintEncoding>(bytes: &[u8]) -> F {
-    let limbs: Vec<u64> = bytes[..8 * F::TOTAL_LIMBS]
-        .as_chunks::<8>()
-        .0
-        .iter()
-        .map(|chunk| u64::from_le_bytes(*chunk))
-        .collect();
-    decode(&limbs).expect("the operand is a canonical field element")
-}
-
-/// The inverse of a non-zero field element, in `N` words
-pub(crate) fn inverse<F: HintEncoding, const N: usize>(bytes: &[u8]) -> [Bytes32; N] {
-    let el: F = from_bytes(bytes);
-    let inverse = el.inverse().expect("the operand is non-zero");
-    to_words(&inverse)
+/// The inverse of a non-zero field element
+pub(crate) fn inverse<F: HintEncoding + Copy>(operand: &Operand) -> F {
+    let el: F = element(operand);
+    el.inverse().expect("the operand is non-zero")
 }
 
 /// The square root candidate of a bls12-381 base field element, as `secp256k1_base_field_sqrt`:
 /// `(candidate, is_quadratic_non_residue)` with `candidate² == input` for a square and
 /// `candidate² == -input` otherwise (`p = 3 mod 4`, so exactly one of them is a square)
-pub(crate) fn bls12_381_base_field_sqrt(bytes: &[u8]) -> ([Bytes32; 2], bool) {
-    let el: crypto::bls12_381::Fq = from_bytes(bytes);
+pub(crate) fn bls12_381_base_field_sqrt(operand: &Operand) -> (crypto::bls12_381::Fq, bool) {
+    let el: crypto::bls12_381::Fq = element(operand);
     assert!(!el.is_zero());
     match el.sqrt() {
-        Some(root) => (to_words(&root), false),
+        Some(root) => (root, false),
         None => {
             let root = (-el).sqrt().expect("-1 is not a square, so -el is one");
-            (to_words(&root), true)
+            (root, true)
         }
     }
 }
 
-/// The claim about the bn254 pairing product over the encoded affine pairs (6 base field
-/// elements each), see `curve_hints::PairingClaim`: the identity flag, then `c`, `d = c^-1`
-/// and the scaling factor (`crypto::residue_witness::bn254`) for an identity, or the inverse
-/// of the Miller loop output and zeros otherwise. `claim_not_identity` forces the latter (for
-/// tests of the exact path).
+/// The claim about the bn254 pairing product over the affine pairs of the operand, see
+/// `curve_hints::PairingClaim`: the identity flag, then `c`, `d = c^-1` and the scaling factor
+/// (`crypto::residue_witness::bn254`) for an identity, or the inverse of the Miller loop output
+/// otherwise. `claim_not_identity` forces the latter (for tests of the exact path).
 pub(crate) fn bn254_pairing_residue_witness(
-    bytes: &[u8],
+    operand: &Operand,
     claim_not_identity: bool,
-) -> (bool, ([Bytes32; 12], ([Bytes32; 12], [Bytes32; 6]))) {
+    responses: &mut Responses,
+) {
     use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
     use crypto::bn254::curves::{Bn254, G2PreparedNoAlloc};
-    use crypto::bn254::{Fq, Fq12, Fq2, Fq6, G1Affine, G2Affine};
-    let fq = |i: usize| -> Fq { from_bytes(&bytes[32 * i..]) };
-    let pairs: Vec<(G1Affine, G2Affine)> = (0..bytes.len() / 192)
-        .map(|k| {
-            let e = |i: usize| fq(6 * k + i);
-            (
-                G1Affine::new_unchecked(e(0), e(1)),
-                G2Affine::new_unchecked(Fq2::new(e(2), e(3)), Fq2::new(e(4), e(5))),
-            )
-        })
-        .collect();
+    use crypto::bn254::{G1Affine, G2Affine};
+    use guest_layout::{BN254_G1_AFFINE, BN254_G2_AFFINE, BN254_PAIR_G1, BN254_PAIR_G2};
+    let pairs: Vec<(G1Affine, G2Affine)> = match operand.querier {
+        HintTarget::Native => operand.native_values(),
+        HintTarget::Guest => {
+            let size = guest_layout::BN254_PAIR_SIZE;
+            assert!(
+                operand.size().is_multiple_of(size),
+                "the operand is affine pairs"
+            );
+            (0..operand.size() / size)
+                .map(|k| {
+                    let pair = k * size;
+                    (
+                        operand.guest_affine(pair + BN254_PAIR_G1, BN254_G1_AFFINE),
+                        operand.guest_affine(pair + BN254_PAIR_G2, BN254_G2_AFFINE),
+                    )
+                })
+                .collect()
+        }
+    };
+    assert!(!pairs.is_empty(), "the operand has pairs");
     // the lines as the verifier computes them (projective; the affine ones from hinted
     // inverses, `g2_affine::prepare_as_verifier`, are not in use): the witness equation holds
     // for the verifier's Miller loop output only
@@ -133,36 +241,38 @@ pub(crate) fn bn254_pairing_residue_witness(
             .0
             .is_one();
     if is_identity {
-        let (c, d, s) = crypto::residue_witness::bn254::witness(&f)
+        let witness = crypto::residue_witness::bn254::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");
-        (true, (to_words(&c), (to_words(&d), to_words(&s))))
+        responses.write(&(true, witness));
     } else {
-        let f_inverse = f.inverse().expect("non-zero");
-        (
-            false,
-            (
-                to_words(&f_inverse),
-                (to_words(&Fq12::zero()), to_words(&Fq6::zero())),
-            ),
-        )
+        responses.write(&(false, f.inverse().expect("non-zero")));
     }
 }
 
-/// The claim about `e(p1, G2) e(p2, tau G2)` for the encoded affine `p1, p2`, as
+/// The claim about `e(p1, G2) e(p2, tau G2)` for the affine points `[p1, p2]` of the operand, as
 /// `bn254_pairing_residue_witness`: the identity flag, then `d` and the scaling factor
 /// (`crypto::residue_witness::bls12_381`) for an identity, or the inverse of the Miller loop
-/// output and zeros otherwise
+/// output otherwise
 pub(crate) fn bls12_381_kzg_residue_witness(
-    bytes: &[u8],
+    operand: &Operand,
     claim_not_identity: bool,
-) -> (bool, ([Bytes32; 24], [Bytes32; 12])) {
+    responses: &mut Responses,
+) {
     use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
-    use crypto::ark_ff::One;
     use crypto::bls12_381::curves::Bls12_381;
-    use crypto::bls12_381::{Fq, Fq12, Fq6, G1Affine};
-    let fq = |i: usize| -> Fq { from_bytes(&bytes[64 * i..]) };
-    let p1 = G1Affine::new_unchecked(fq(0), fq(1));
-    let p2 = G1Affine::new_unchecked(fq(2), fq(3));
+    use crypto::bls12_381::{Fq12, G1Affine};
+    use guest_layout::BLS12_381_G1_AFFINE;
+    let [p1, p2]: [G1Affine; 2] = match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            let size = BLS12_381_G1_AFFINE.size;
+            assert_eq!(operand.size(), 2 * size, "the operand is two affine points");
+            [
+                operand.guest_affine(0, BLS12_381_G1_AFFINE),
+                operand.guest_affine(size, BLS12_381_G1_AFFINE),
+            ]
+        }
+    };
     let g2 = [
         &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
         &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
@@ -176,54 +286,42 @@ pub(crate) fn bls12_381_kzg_residue_witness(
         .0
         .is_one();
     if is_identity {
-        let (d, s) = crypto::residue_witness::bls12_381::witness(&f)
+        let witness = crypto::residue_witness::bls12_381::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");
-        (true, (to_words(&d), to_words(&s)))
+        responses.write(&(true, witness));
     } else {
         // the inverse of the output of the plain (conjugated) loop, which the exact path runs
         let mut conjugated = f;
         conjugated.conjugate_in_place();
-        let f_inverse = conjugated.inverse().expect("non-zero");
-        (false, (to_words(&f_inverse), to_words(&Fq6::zero())))
+        responses.write(&(false, conjugated.inverse().expect("non-zero")));
     }
 }
 
-/// The inverses of the two affine `G2` chains of the encoded pairing input point, see
+/// The inverses of the two affine `G2` chains of the pairing input point of the operand, see
 /// `curve_hints::bn254_g2_pairing_inverses`: a flag and the subgroup test inverses, a flag
 /// and the line precomputation inverses (zeros behind a cleared flag)
-pub(crate) fn bn254_g2_pairing_inverses(
-    bytes: &[u8],
-) -> (
-    bool,
-    (
-        [Bytes32; basic_system::system_functions::curve_hints::G2_SUBGROUP_INVERSE_WORDS],
-        (
-            bool,
-            [Bytes32; basic_system::system_functions::curve_hints::G2_LINE_INVERSE_WORDS],
-        ),
-    ),
-) {
-    use basic_system::system_functions::curve_hints::{
-        G2_LINE_INVERSE_WORDS, G2_SUBGROUP_INVERSE_WORDS,
-    };
+pub(crate) fn bn254_g2_pairing_inverses(operand: &Operand, responses: &mut Responses) {
+    use crypto::ark_ff::AdditiveGroup;
     use crypto::bn254::curves::g2_affine::{line_inverses, subgroup_inverses};
     use crypto::bn254::{Fq2, G2Affine};
-    let x: Fq2 = from_bytes(&bytes[..64]);
-    let y: Fq2 = from_bytes(&bytes[64..128]);
-    let q = G2Affine::new_unchecked(x, y);
-    fn chain<const N: usize, const W: usize>(inverses: Option<[Fq2; N]>) -> (bool, [Bytes32; W]) {
-        let mut words = [Bytes32::ZERO; W];
+    use guest_layout::BN254_G2_AFFINE;
+    let q: G2Affine = match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(
+                operand.size(),
+                BN254_G2_AFFINE.size,
+                "the operand is a point"
+            );
+            operand.guest_affine(0, BN254_G2_AFFINE)
+        }
+    };
+    fn chain<const N: usize>(inverses: Option<[Fq2; N]>, responses: &mut Responses) {
         match inverses {
-            Some(inverses) => {
-                for (element, out) in inverses.iter().zip(words.as_chunks_mut::<2>().0) {
-                    *out = to_words(element);
-                }
-                (true, words)
-            }
-            None => (false, words),
+            Some(inverses) => responses.write(&(true, inverses)),
+            None => responses.write(&(false, [Fq2::ZERO; N])),
         }
     }
-    let (subgroup_ok, subgroup) = chain::<_, G2_SUBGROUP_INVERSE_WORDS>(subgroup_inverses(&q));
-    let (lines_ok, lines) = chain::<_, G2_LINE_INVERSE_WORDS>(line_inverses(&q));
-    (subgroup_ok, (subgroup, (lines_ok, lines)))
+    chain(subgroup_inverses(&q), responses);
+    chain(line_inverses(&q), responses);
 }

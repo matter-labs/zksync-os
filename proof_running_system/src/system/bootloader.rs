@@ -196,7 +196,7 @@ pub fn run_proving_inner<
     mut oracle: O,
 ) -> [u32; 8] {
     use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
-    use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+    use zk_ee::oracle::memory_io::OracleQuery;
 
     logger_log!(L::default(), "IO implementer init is complete");
 
@@ -229,7 +229,7 @@ pub fn run_proving_inner<
     // The multiblock post-op is re-entered once per block and cannot know when
     // the batch is complete, so the final disconnect has to be emitted by the
     // outer runner.
-    <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut oracle, &())
+    <DisconnectOracleQuery as OracleQuery>::get(&mut oracle, ())
         .expect("disconnect query must not fail");
 
     unsafe { core::mem::transmute(public_input) }

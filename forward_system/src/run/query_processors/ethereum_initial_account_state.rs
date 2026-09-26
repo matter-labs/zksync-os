@@ -40,23 +40,22 @@ impl InMemoryEthereumInitialAccountStateResponder {
 }
 
 impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
-    fn supported_query_ids(&self) -> Vec<u32> {
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
 
-    fn supports_query_id(&self, query_id: u32) -> bool {
-        Self::SUPPORTED_QUERY_IDS.contains(&query_id)
-    }
-
-    fn process_buffered_query(
+    fn process_memory_query(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
-        _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        input_word: usize,
+        memory: &dyn QuerierMemory,
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = B160::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+        let address = B160::read_input(memory, input_word).expect("must read the address");
 
         let account = if let Some(data) = self.source.get(&address).copied() {
             data
@@ -89,6 +88,11 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
             }
         };
 
-        DynUsizeIterator::from_constructor(account, UsizeSerializable::iter)
+        respond_to_every_target(
+            mode,
+            memory_response(&account),
+            native_run_responses,
+            guest_run_responses,
+        );
     }
 }

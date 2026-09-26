@@ -82,6 +82,23 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         self.byte_capacity
     }
 
+    /// The number of `usize` words of the buffer
+    pub fn word_capacity(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Initializes the buffer with `init`, which gets all its words, and returns how many of them, from
+    /// the start, it initialized. The bytes are accessible once initialized up to the byte capacity.
+    pub fn init_words<E>(
+        &mut self,
+        init: impl FnOnce(&mut [MaybeUninit<usize>]) -> Result<usize, E>,
+    ) -> Result<usize, E> {
+        let num_words = init(&mut self.inner)?;
+        assert!(num_words <= self.inner.len());
+        self.initialized_bytes = core::cmp::max(self.initialized_bytes, num_words * USIZE_SIZE);
+        Ok(num_words)
+    }
+
     /// The whole words of the (initialized) contents, for writing in place
     pub fn as_mut_words(&mut self) -> &mut [usize] {
         assert!(

@@ -121,24 +121,6 @@ fn checked_byte_len(len_units: u64, bytes_per_unit: usize) -> usize {
 }
 
 #[inline(always)]
-pub(crate) fn read_u64_words(ptr_u64: u64, len_words_u64: u64) -> Vec<u64> {
-    if len_words_u64 == 0 {
-        return vec![];
-    }
-    let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<u64>());
-    let len_bytes = checked_byte_len(len_words_u64, core::mem::size_of::<u64>());
-    let len_words = len_bytes / core::mem::size_of::<u64>();
-
-    // Safety: `ptr` was validated to be non-null and aligned for `u64`, and
-    // `len_words` was derived from a checked byte-length computation. The
-    // caller guarantees that the pointed-to region is fully initialized,
-    // readable for `len_words` elements, remains live for the duration of
-    // this read, and is not concurrently mutated while the slice exists.
-    let words = unsafe { core::slice::from_raw_parts(ptr.cast::<u64>(), len_words) };
-    words.to_vec()
-}
-
-#[inline(always)]
 pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64) -> Vec<u8> {
     if len_words_u8 == 0 {
         return vec![];
@@ -153,16 +135,4 @@ pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64) -> Vec<u8> {
     // not concurrently mutated while the slice exists.
     let bytes = unsafe { core::slice::from_raw_parts(ptr, len_bytes) };
     bytes.to_vec()
-}
-
-#[inline(always)]
-pub(crate) fn read_host_struct<T: Copy>(ptr_u64: u64) -> T {
-    let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<T>());
-
-    // Safety: `ptr` was validated to be non-null and aligned for `T`. The
-    // caller guarantees that it points to a fully initialized `T` in the
-    // current process address space, that the value remains live for the
-    // duration of this read, and that the memory is not concurrently
-    // mutated while it is being read.
-    unsafe { ptr.cast::<T>().read() }
 }

@@ -153,31 +153,29 @@ mod block_metadata {
 mod tx_encoding_format {
     //! Unit tests for transaction encoding format oracle validation.
     //!
-    //! TxEncodingFormat::from_iter validates the oracle-provided encoding format byte.
-    //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected
-    //! with an internal error rather than panicking.
+    //! The oracle sends the encoding format as a short word, which
+    //! `TxEncodingFormat::from_short_word` validates. Only values 0 (Abi) and 1 (Rlp)
+    //! are valid. Invalid values should be rejected with an internal error rather
+    //! than panicking.
 
     use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
-    use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+    use rig::zk_ee::oracle::memory_io::ShortDeserializable;
 
     #[test]
     fn test_tx_encoding_format_accepts_abi() {
-        let mut iter = [0usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = TxEncodingFormat::from_short_word(0);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_accepts_rlp() {
-        let mut iter = [1usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = TxEncodingFormat::from_short_word(1);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_2() {
-        let mut iter = [2usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = TxEncodingFormat::from_short_word(2);
         assert!(
             result.is_err(),
             "TxEncodingFormat should reject value 2 (only 0=Abi and 1=Rlp are valid)"
@@ -186,21 +184,20 @@ mod tx_encoding_format {
 
     #[test]
     fn test_tx_encoding_format_rejects_invalid_value_255() {
-        let mut iter = [255usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
+        let result = TxEncodingFormat::from_short_word(255);
         assert!(result.is_err(), "TxEncodingFormat should reject value 255");
     }
 
     #[test]
     fn test_tx_encoding_format_rejects_large_value() {
-        // Values that would be truncated to u8 — the from_iter first deserializes
-        // as u8, so large usize values test the u8 deserialization path too.
-        let mut iter = [256usize].into_iter();
-        let result = TxEncodingFormat::from_iter(&mut iter);
-        assert!(
-            result.is_err(),
-            "TxEncodingFormat should reject value 256 (overflows u8)"
-        );
+        // Values that would be truncated to u8 must be rejected, not wrapped.
+        for word in [256, 257, u32::MAX] {
+            let result = TxEncodingFormat::from_short_word(word);
+            assert!(
+                result.is_err(),
+                "TxEncodingFormat should reject value {word} (not a u8 value)"
+            );
+        }
     }
 }
 
@@ -278,7 +275,9 @@ mod custom_oracle_factories {
     };
     use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
     use rig::forward_system::run::{NextTxResponse, PreimageSource};
-    use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
+    use rig::oracle_provider::{
+        respond_to_every_target, OracleQueryProcessor, RamPeek, RunMode, ZkEENonDeterminismSource,
+    };
     use rig::ruint::aliases::B160;
     use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
     use rig::zk_ee::oracle::memory_io::host::{
@@ -289,11 +288,8 @@ mod custom_oracle_factories {
         NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
         TX_FROM_QUERY_ID,
     };
-    use rig::zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-    use rig::zk_ee::oracle::usize_serialization::UsizeSerializable;
     use rig::zk_ee::system::metadata::chain_config::ChainConfig;
     use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
-    use rig::zk_ee::utils::usize_rw::ReadIterWrapper;
     use rig::zk_ee::utils::Bytes32;
     use rig::zksync_os_interface::traits::{EncodedTx, TxListSource, TxSource};
     use rig::{common_target_address, TestingFramework};
@@ -343,9 +339,9 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-            _use_native_callable_oracles: bool,
+            mode: RunMode,
         ) -> ZkEENonDeterminismSource {
-            (self.0)(
+            let mut oracle = (self.0)(
                 block_metadata,
                 chain_config,
                 state_tree,
@@ -353,7 +349,9 @@ mod custom_oracle_factories {
                 tx_source,
                 proof_data,
                 da_commitment_scheme,
-            )
+            );
+            oracle.set_run_mode(mode);
+            oracle
         }
 
         fn create_proof_oracle(
@@ -368,9 +366,9 @@ mod custom_oracle_factories {
             proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
             da_commitment_scheme: Option<DACommitmentScheme>,
             _add_uart: bool,
-            _use_native_callable_oracles: bool,
+            mode: RunMode,
         ) -> ZkEENonDeterminismSource {
-            (self.0)(
+            let mut oracle = (self.0)(
                 block_metadata,
                 chain_config,
                 state_tree,
@@ -378,7 +376,9 @@ mod custom_oracle_factories {
                 tx_source,
                 proof_data,
                 da_commitment_scheme,
-            )
+            );
+            oracle.set_run_mode(mode);
+            oracle
         }
     }
 
@@ -430,11 +430,11 @@ mod custom_oracle_factories {
         tx_source: TxListSource,
         next_tx: Option<Vec<u8>>,
         next_tx_from: Option<B160>,
-        malicious_format_value: usize,
+        malicious_format_value: u32,
     }
 
     impl MaliciousTxFormatResponder {
-        fn new(tx_source: TxListSource, malicious_format_value: usize) -> Self {
+        fn new(tx_source: TxListSource, malicious_format_value: u32) -> Self {
             Self {
                 tx_source,
                 next_tx: None,
@@ -452,23 +452,22 @@ mod custom_oracle_factories {
     }
 
     impl OracleQueryProcessor for MaliciousTxFormatResponder {
-        fn supported_query_ids(&self) -> Vec<u32> {
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
 
-        fn supports_query_id(&self, query_id: u32) -> bool {
-            Self::SUPPORTED_QUERY_IDS.contains(&query_id)
-        }
-
-        fn process_buffered_query(
+        fn process_memory_query(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
-            _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            _input_word: usize,
+            _memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            match query_id {
+            let response = match query_id {
                 NEXT_TX_SIZE_QUERY_ID => {
                     let len = match &self.next_tx {
                         Some(next_tx) => next_tx.len(),
@@ -490,34 +489,35 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    memory_response(&len)
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    let mut response = vec![];
+                    write_dynamic_bytes(&tx, &mut response);
+                    response
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // MALICIOUS: return an invalid encoding format value
-                    Box::new(core::iter::once(self.malicious_format_value))
+                    vec![self.malicious_format_value]
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    memory_response(&from)
                 }
                 _ => unreachable!(),
-            }
+            };
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
 
     /// Helper: builds a CustomOracleFactory that injects a MaliciousTxFormatResponder.
     fn malicious_tx_format_factory(
-        malicious_format_value: usize,
+        malicious_format_value: u32,
     ) -> CustomOracleFactory<
         impl Fn(
             BlockMetadataFromOracle,
@@ -619,7 +619,7 @@ mod custom_oracle_factories {
         );
     }
 
-    /// Verifies that the system rejects a large TX encoding format value (usize::MAX)
+    /// Verifies that the system rejects a large TX encoding format value (u32::MAX)
     /// from a malicious oracle via a custom oracle factory. Tests the u8 overflow path.
     #[test]
     fn test_malicious_oracle_tx_encoding_format_overflow() {
@@ -641,8 +641,8 @@ mod custom_oracle_factories {
             ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
         };
 
-        // Malicious oracle returns usize::MAX — overflows u8 deserialization
-        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(usize::MAX));
+        // Malicious oracle returns u32::MAX — overflows u8 deserialization
+        tester = tester.with_custom_oracle_factory(malicious_tx_format_factory(u32::MAX));
 
         let result = tester.execute_block_no_panic(vec![tx]);
         assert!(
@@ -703,7 +703,10 @@ mod custom_oracle_factories {
             query_id: u32,
             input_word: usize,
             memory: &dyn QuerierMemory,
-        ) -> Vec<u32> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let hash = Bytes32::read_input(memory, input_word).expect("must read the hash");
@@ -736,7 +739,7 @@ mod custom_oracle_factories {
                 ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
                 ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
             };
-            if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
+            let response = if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 memory_response(&(preimage.len() as u32))
@@ -744,7 +747,8 @@ mod custom_oracle_factories {
                 let mut response = vec![];
                 write_dynamic_bytes(&preimage, &mut response);
                 response
-            }
+            };
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
 
@@ -883,7 +887,10 @@ mod custom_oracle_factories {
             query_id: u32,
             input_word: usize,
             memory: &dyn QuerierMemory,
-        ) -> Vec<u32> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             use rig::zk_ee::storage_types::InitialStorageSlotData;
             use rig::zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -917,7 +924,12 @@ mod custom_oracle_factories {
                     }
                 };
 
-            memory_response(&slot_data)
+            respond_to_every_target(
+                mode,
+                memory_response(&slot_data),
+                native_run_responses,
+                guest_run_responses,
+            );
         }
     }
 
@@ -1023,23 +1035,22 @@ mod custom_oracle_factories {
     }
 
     impl OracleQueryProcessor for MaliciousTxDataCorruptResponder {
-        fn supported_query_ids(&self) -> Vec<u32> {
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
             Self::SUPPORTED_QUERY_IDS.to_vec()
         }
 
-        fn supports_query_id(&self, query_id: u32) -> bool {
-            Self::SUPPORTED_QUERY_IDS.contains(&query_id)
-        }
-
-        fn process_buffered_query(
+        fn process_memory_query(
             &mut self,
             query_id: u32,
-            _query: Vec<usize>,
-            _memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            _input_word: usize,
+            _memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            match query_id {
+            let response = match query_id {
                 NEXT_TX_SIZE_QUERY_ID => {
                     let len = match &self.next_tx {
                         Some(next_tx) => next_tx.len(),
@@ -1063,28 +1074,29 @@ mod custom_oracle_factories {
                             }
                         },
                     } as u32;
-                    DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                    memory_response(&len)
                 }
                 TX_DATA_WORDS_QUERY_ID => {
                     let tx = self.next_tx.take().expect(
                         "trying to read next tx content before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(tx, |inner_ref: &Vec<u8>| {
-                        ReadIterWrapper::from(inner_ref.iter().copied())
-                    })
+                    let mut response = vec![];
+                    write_dynamic_bytes(&tx, &mut response);
+                    response
                 }
                 TX_ENCODING_FORMAT_QUERY_ID => {
                     // Return valid RLP format so parsing is attempted on garbage data
-                    Box::new(core::iter::once(1usize)) // 1 = Rlp
+                    vec![1] // 1 = Rlp
                 }
                 TX_FROM_QUERY_ID => {
                     let from = self.next_tx_from.take().expect(
                         "trying to read next tx from before size query or after seal response",
                     );
-                    DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                    memory_response(&from)
                 }
                 _ => unreachable!(),
-            }
+            };
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
 
@@ -1221,7 +1233,10 @@ mod custom_oracle_factories {
             query_id: u32,
             input_word: usize,
             memory: &dyn QuerierMemory,
-        ) -> Vec<u32> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             use rig::basic_system::system_implementation::flat_storage_model::{
                 write_proof_for_index_response, ExactIndexQuery, PreviousIndexQuery,
                 PROOF_FOR_INDEX_QUERY_ID,
@@ -1232,7 +1247,7 @@ mod custom_oracle_factories {
 
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-            match query_id {
+            let response = match query_id {
                 INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
                     let (address, key) = <(B160, Bytes32)>::read_input(memory, input_word)
                         .expect("must read the address/slot");
@@ -1275,7 +1290,8 @@ mod custom_oracle_factories {
                     response
                 }
                 _ => unreachable!(),
-            }
+            };
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
 
@@ -1423,7 +1439,10 @@ mod custom_oracle_factories {
             query_id: u32,
             input_word: usize,
             memory: &dyn QuerierMemory,
-        ) -> Vec<u32> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
             let hash = Bytes32::read_input(memory, input_word).expect("must read the hash");
@@ -1452,7 +1471,7 @@ mod custom_oracle_factories {
                 ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
                 ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
             };
-            if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
+            let response = if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
                 || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
             {
                 // Length queries return the correct length even for corrupted preimages.
@@ -1462,7 +1481,8 @@ mod custom_oracle_factories {
                 let mut response = vec![];
                 write_dynamic_bytes(&preimage, &mut response);
                 response
-            }
+            };
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
 
@@ -1580,7 +1600,7 @@ mod callable_oracle_tests {
     use rig::callable_oracles::arithmetic::ArithmeticQuery;
     use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
     use rig::callable_oracles::test_utils::TestMemorySource;
-    use rig::oracle_provider::{OracleQueryProcessor, RamPeek};
+    use rig::oracle_provider::{GuestMemory, OracleQueryProcessor, RunMode};
 
     use rig::alloy::consensus::TxEip2930;
     use rig::alloy::primitives::{TxKind, U256};
@@ -1606,11 +1626,6 @@ mod callable_oracle_tests {
     }
 
     impl OracleQueryProcessor for MaliciousArithmeticQuery {
-        fn supported_query_ids(&self) -> Vec<u32> {
-            self.inner.supported_query_ids()
-        }
-
-        // the U256 division advice is answered honestly
         fn supported_memory_query_ids(&self) -> Vec<u32> {
             self.inner.supported_memory_query_ids()
         }
@@ -1620,31 +1635,49 @@ mod callable_oracle_tests {
             query_id: u32,
             input_word: usize,
             memory: &dyn rig::zk_ee::oracle::memory_io::host::QuerierMemory,
-        ) -> Vec<u32> {
-            self.inner
-                .process_memory_query(query_id, input_word, memory)
-        }
-
-        fn process_buffered_query(
-            &mut self,
-            query_id: u32,
-            query: Vec<usize>,
-            memory: &dyn RamPeek,
-        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             // Get the correct result first
-            let correct: Vec<usize> = self
-                .inner
-                .process_buffered_query(query_id, query, memory)
-                .collect();
-
-            // Corrupt the quotient: add 1 to the first quotient word (index 1, after header)
-            let mut corrupted = correct;
-            if corrupted.len() > 1 {
-                corrupted[1] = corrupted[1].wrapping_add(1);
+            self.inner.process_memory_query(
+                query_id,
+                input_word,
+                memory,
+                mode,
+                native_run_responses,
+                guest_run_responses,
+            );
+            // the U256 division advice is answered honestly; for modexp, corrupt the quotient:
+            // add 1 to its first word (index 2, after the two lengths)
+            if query_id == MODEXP_ADVICE_QUERY_ID {
+                for response in [native_run_responses, guest_run_responses] {
+                    if response.len() > 2 {
+                        response[2] = response[2].wrapping_add(1);
+                    }
+                }
             }
-
-            Box::new(corrupted.into_iter())
         }
+    }
+
+    /// The response of `processor` to a query of the RISC-V guest in the simulator
+    fn guest_run_response(
+        processor: &mut impl OracleQueryProcessor,
+        query_id: u32,
+        input_word: usize,
+        memory: &dyn rig::zk_ee::oracle::memory_io::host::QuerierMemory,
+    ) -> Vec<u32> {
+        let (mut native_run, mut guest_run) = (Vec::new(), Vec::new());
+        processor.process_memory_query(
+            query_id,
+            input_word,
+            memory,
+            RunMode::RiscVRun,
+            &mut native_run,
+            &mut guest_run,
+        );
+        assert!(native_run.is_empty());
+        guest_run
     }
 
     /// Helper: builds a CustomOracleFactory with MaliciousArithmeticQuery.
@@ -1715,25 +1748,31 @@ mod callable_oracle_tests {
 
         // Get correct result
         let mut correct_oracle = ArithmeticQuery::default();
-        let correct: Vec<usize> = correct_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let correct = guest_run_response(
+            &mut correct_oracle,
+            MODEXP_ADVICE_QUERY_ID,
+            params_addr as usize,
+            &GuestMemory(&memory),
+        );
 
         // Get malicious result
         let mut malicious_oracle = MaliciousArithmeticQuery::default();
-        let malicious: Vec<usize> = malicious_oracle
-            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
-            .collect();
+        let malicious = guest_run_response(
+            &mut malicious_oracle,
+            MODEXP_ADVICE_QUERY_ID,
+            params_addr as usize,
+            &GuestMemory(&memory),
+        );
 
         // Verify the malicious oracle corrupted the output
         assert_ne!(
             correct, malicious,
             "Malicious oracle should produce different output from correct oracle"
         );
-        // Header should be the same (lengths unchanged)
-        assert_eq!(correct[0], malicious[0], "Header should be unchanged");
+        // The lengths should be the same
+        assert_eq!(correct[..2], malicious[..2], "Lengths should be unchanged");
         // Quotient should be corrupted
-        assert_ne!(correct[1], malicious[1], "Quotient should be corrupted");
+        assert_ne!(correct[2], malicious[2], "Quotient should be corrupted");
     }
 
     /// Integration test: register a malicious callable oracle factory and execute a block.

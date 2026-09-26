@@ -44,7 +44,7 @@ use forward_system::system::system_types::ethereum::{
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::{ReadWitnessSource, RunMode, ZkEENonDeterminismSource};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
@@ -83,7 +83,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource;
 
     #[allow(clippy::too_many_arguments)]
@@ -99,7 +99,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource;
 }
 
@@ -122,7 +122,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
             chain_config,
@@ -135,7 +135,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_callable_oracles,
+            mode,
         )
     }
 
@@ -151,7 +151,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps_with_chain_config(
             chain_config,
@@ -164,7 +164,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_callable_oracles,
+            mode,
         )
     }
 }
@@ -1181,7 +1181,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
-            false,
+            RunMode::NativeRunOnly,
         );
 
         // forward run
@@ -1261,7 +1261,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 Some(proof_data),
                 Some(da_commitment_scheme),
                 false,
-                true,
+                RunMode::NativeRunSavingForRiscV,
             );
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
@@ -1498,32 +1498,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         })
     }
 
+    /// The oracle of an Ethereum block for the run `mode`: a native run (that may record the prover
+    /// input), or a run of the RISC-V guest in the simulator.
     pub fn make_eth_block_oracle(
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource {
-        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, false)
-    }
-
-    /// Build an oracle for the prover-input recording pass.
-    /// Uses native callable oracles that don't require RamPeek (guest memory access).
-    fn make_eth_block_oracle_for_prover_input(
-        transactions: Vec<EncodedTx>,
-        witness: alloy_rpc_types_debug::ExecutionWitness,
-        block_header: Header,
-        withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource {
-        Self::make_eth_block_oracle_inner(transactions, witness, block_header, withdrawals, true)
-    }
-
-    fn make_eth_block_oracle_inner(
-        transactions: Vec<EncodedTx>,
-        witness: alloy_rpc_types_debug::ExecutionWitness,
-        block_header: Header,
-        withdrawals: Vec<u8>,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
@@ -1644,7 +1626,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             parent_headers_encodings_list: headers_encodings,
         };
 
-        let mut oracle = ZkEENonDeterminismSource::default();
+        let mut oracle = ZkEENonDeterminismSource::new(mode);
         oracle.add_external_processor(chain_config_responder);
         oracle.add_external_processor(target_header_responder.clone());
         oracle.add_external_processor(tx_data_responder.clone());
@@ -1653,10 +1635,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(initial_values_responder.clone());
         oracle.add_external_processor(cl_responder.clone());
         oracle.add_external_processor(da_commitment_scheme_responder);
-        if use_native_callable_oracles {
-            // Native callable oracles compute results on the host without reading
-            // guest memory (RamPeek). Required for prover-input recording where
-            // there is no guest memory to read.
+        if mode.produces_native_run_responses() {
+            // the callable oracles set up for a querier in this process (the old-protocol blob
+            // commitment differs, and reads no guest memory)
             oracle.add_external_processor(
                 callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
             );
@@ -1690,11 +1671,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ) {
         use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
 
-        let prover_input_oracle = Self::make_eth_block_oracle_for_prover_input(
+        let prover_input_oracle = Self::make_eth_block_oracle(
             transactions,
             witness,
             block_header,
             withdrawals,
+            RunMode::NativeRunSavingForRiscV,
         );
         let mut copy_source = ReadWitnessSource::new(prover_input_oracle);
         let chain_config =
@@ -1750,7 +1732,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
         use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+        let oracle = Self::make_eth_block_oracle(
+            transactions,
+            witness,
+            block_header,
+            withdrawals,
+            RunMode::NativeRunOnly,
+        );
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_validator = NopTxValidator;
 
@@ -1790,6 +1778,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             witness.clone(),
             block_header.clone(),
             withdrawals.clone(),
+            RunMode::NativeRunOnly,
         );
 
         // Forward run:

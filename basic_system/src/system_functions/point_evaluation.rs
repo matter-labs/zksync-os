@@ -151,8 +151,10 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
         &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
         &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
     ];
+    // the G1 points of the product, which the oracle reads where they are
+    let g1 = [left_g1, proof];
     let Some(oracle) = oracle else {
-        let miller_loop = Bls12_381::multi_miller_loop_prepared([left_g1, proof], g2);
+        let miller_loop = Bls12_381::multi_miller_loop_prepared(g1, g2);
         // the Miller loop of curve points never evaluates to zero
         let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, Field::inverse)
             .expect("the Miller loop output is invertible");
@@ -165,9 +167,9 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     // identity must come with a witness that passes the check (a failed check is a broken
     // prover and panics), and a claimed non-identity is settled by the exact final
     // exponentiation, which finds an identity all the same.
-    match curve_hints::bls12_381_kzg_residue_witness(oracle, &left_g1, &proof) {
+    match curve_hints::bls12_381_kzg_residue_witness(oracle, &g1) {
         curve_hints::PairingClaim::Identity { c: _, d, s } => {
-            let l = Bls12_381::multi_miller_loop_with_initial(&d, [left_g1, proof], g2);
+            let l = Bls12_381::multi_miller_loop_with_initial(&d, g1, g2);
             assert!(
                 crypto::residue_witness::bls12_381::check(&l, &d, &s),
                 "the residue witness of the KZG proof claimed to be valid is wrong"
@@ -175,7 +177,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
             true
         }
         curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            let miller_loop = Bls12_381::multi_miller_loop_prepared([left_g1, proof], g2);
+            let miller_loop = Bls12_381::multi_miller_loop_prepared(g1, g2);
             let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, |f| {
                 curve_hints::checked_inverse(f, f_inverse)
             })

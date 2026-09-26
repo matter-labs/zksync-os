@@ -5,17 +5,19 @@ use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     oracle::{
+        memory_io::{ContinuousDeserializable, ContinuousSerializable, OracleQuery},
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
-        simple_oracle_query::SimpleOracleQuery,
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
     },
-    utils::{exact_size_chain::ExactSizeChain, Bytes32},
+    system::errors::internal::InternalError,
+    utils::Bytes32,
 };
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
+/// `#[repr(C)]`: the oracle writes it memcpy-like (see the `ContinuousDeserializable` impl).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct EthereumAccountProperties {
     pub nonce: u64,
     pub balance: U256,
@@ -29,46 +31,27 @@ impl Default for EthereumAccountProperties {
     }
 }
 
-impl UsizeSerializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
-        + <U256 as UsizeSerializable>::USIZE_LEN
-        + <Bytes32 as UsizeSerializable>::USIZE_LEN * 2
-        + <bool as UsizeSerializable>::USIZE_LEN;
+// The same layout on every target, without padding: `u64`, `U256` (`#[repr(transparent)]` over
+// `[u64; 4]`) and `Bytes32` (32 bytes, `#[repr(align(8))]`) are all aligned to 8 on the proving target
+// as well.
+const _: () = {
+    assert!(core::mem::size_of::<EthereumAccountProperties>() == 104);
+    assert!(core::mem::align_of::<EthereumAccountProperties>() == 8);
+    assert!(core::mem::offset_of!(EthereumAccountProperties, nonce) == 0);
+    assert!(core::mem::offset_of!(EthereumAccountProperties, balance) == 8);
+    assert!(core::mem::offset_of!(EthereumAccountProperties, storage_root) == 40);
+    assert!(core::mem::offset_of!(EthereumAccountProperties, bytecode_hash) == 72);
+};
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.nonce),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.balance),
-                ExactSizeChain::new(
-                    UsizeSerializable::iter(&self.storage_root),
-                    UsizeSerializable::iter(&self.bytecode_hash),
-                ),
-            ),
-        )
-    }
-}
+// SAFETY: see the layout assertions above
+unsafe impl ContinuousSerializable for EthereumAccountProperties {}
 
-impl UsizeDeserializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(
-        src: &mut impl ExactSizeIterator<Item = usize>,
-    ) -> Result<Self, zk_ee::system::errors::internal::InternalError> {
-        let nonce = UsizeDeserializable::from_iter(src)?;
-        let balance = UsizeDeserializable::from_iter(src)?;
-        let storage_root = UsizeDeserializable::from_iter(src)?;
-        let bytecode_hash = UsizeDeserializable::from_iter(src)?;
-
-        // NOTE: we verify basic computed property
-        let new = Self {
-            nonce,
-            balance,
-            bytecode_hash,
-            storage_root,
-        };
-
-        Ok(new)
+// SAFETY: see the layout assertions above; any bytes form a valid value of each field
+unsafe impl ContinuousDeserializable for EthereumAccountProperties {
+    #[inline(always)]
+    unsafe fn validate<'a>(this: *mut Self) -> Result<&'a mut Self, InternalError> {
+        // SAFETY: guaranteed by the caller, and any initialized bytes form a valid value
+        Ok(unsafe { &mut *this })
     }
 }
 
@@ -76,7 +59,7 @@ pub struct EthereumAccountPropertiesQuery;
 
 pub const ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID: u32 = ACCOUNT_AND_STORAGE_SUBSPACE_MASK | 0x80;
 
-impl SimpleOracleQuery for EthereumAccountPropertiesQuery {
+impl OracleQuery for EthereumAccountPropertiesQuery {
     const QUERY_ID: u32 = ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
     type Input = B160;
     type Output = EthereumAccountProperties;

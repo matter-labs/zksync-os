@@ -20,7 +20,9 @@ use rig::forward_system::run::query_processors::{
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
-use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
+use rig::oracle_provider::{
+    respond_to_every_target, OracleQueryProcessor, RunMode, ZkEENonDeterminismSource,
+};
 use rig::ruint::aliases::B160;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
@@ -54,19 +56,6 @@ impl<S: ReadStorage> MaliciousStorageResponder<S> {
 }
 
 impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        vec![]
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        _query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        unreachable!()
-    }
-
     fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -76,10 +65,13 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
         query_id: u32,
         input_word: usize,
         memory: &dyn QuerierMemory,
-    ) -> Vec<u32> {
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        match query_id {
+        let response = match query_id {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let (address, key) = <(B160, Bytes32)>::read_input(memory, input_word)
                     .expect("must read the address/slot");
@@ -116,7 +108,8 @@ impl<S: ReadStorage> OracleQueryProcessor for MaliciousStorageResponder<S> {
                 response
             }
             _ => unreachable!(),
-        }
+        };
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }
 
@@ -187,9 +180,9 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-        _use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
-        self.build_oracle(
+        let mut oracle = self.build_oracle(
             block_metadata,
             chain_config,
             state_tree,
@@ -197,7 +190,9 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
             tx_source,
             proof_data,
             da_commitment_scheme,
-        )
+        );
+        oracle.set_run_mode(mode);
+        oracle
     }
 
     fn create_proof_oracle(
@@ -212,9 +207,9 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-        _use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
-        self.build_oracle(
+        let mut oracle = self.build_oracle(
             block_metadata,
             chain_config,
             state_tree,
@@ -222,7 +217,9 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
             tx_source,
             proof_data,
             da_commitment_scheme,
-        )
+        );
+        oracle.set_run_mode(mode);
+        oracle
     }
 }
 

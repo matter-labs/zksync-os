@@ -29,19 +29,6 @@ impl<T: ReadStorageTree> ReadTreeResponder<T> {
 }
 
 impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        vec![]
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn oracle_provider::RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        unreachable!("query 0x{query_id:08x} is served with the memory-based protocol")
-    }
-
     fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_MEMORY_QUERY_IDS.to_vec()
     }
@@ -51,10 +38,13 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
         query_id: u32,
         input_word: usize,
         memory: &dyn QuerierMemory,
-    ) -> Vec<u32> {
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_MEMORY_QUERY_IDS.contains(&query_id));
 
-        match query_id {
+        let response = match query_id {
             PreviousIndexQuery::QUERY_ID => {
                 let key = Bytes32::read_input(memory, input_word).expect("must read key");
                 memory_response(&self.tree.prev_tree_index(key))
@@ -92,6 +82,7 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
                 response
             }
             _ => unreachable!(),
-        }
+        };
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }

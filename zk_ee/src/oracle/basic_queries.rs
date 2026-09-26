@@ -2,7 +2,8 @@ use crate::common_structs::state_root_view::StateRootView;
 use crate::common_structs::ProofData;
 use crate::oracle::memory_io::OracleQuery;
 use crate::oracle::query_ids::{
-    DISCONNECT_ORACLE_QUERY_ID, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID, ZK_PROOF_DATA_INIT_QUERY_ID,
+    DISCONNECT_ORACLE_QUERY_ID, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID, NEXT_TX_SIZE_QUERY_ID,
+    ZK_PROOF_DATA_INIT_QUERY_ID,
 };
 use crate::oracle::simple_oracle_query::SimpleOracleQuery;
 use crate::storage_types::InitialStorageSlotData;
@@ -21,12 +22,22 @@ impl OracleQuery for InitialStorageSlotQuery<EthereumIOTypesConfig> {
     type Output = InitialStorageSlotData<EthereumIOTypesConfig>;
 }
 
+/// Disconnects the oracle: every later query is answered with zeroes.
 pub struct DisconnectOracleQuery;
 
-impl SimpleOracleQuery for DisconnectOracleQuery {
+impl OracleQuery for DisconnectOracleQuery {
     const QUERY_ID: u32 = DISCONNECT_ORACLE_QUERY_ID;
     type Input = ();
     type Output = ();
+}
+
+/// The length in bytes of the next transaction, `0` if there are no more transactions.
+pub struct NextTxSizeQuery;
+
+impl OracleQuery for NextTxSizeQuery {
+    const QUERY_ID: u32 = NEXT_TX_SIZE_QUERY_ID;
+    type Input = ();
+    type Output = u32;
 }
 
 pub struct ZKProofDataQuery<IOTypes: SystemIOTypesConfig, SR: StateRootView<IOTypes>> {

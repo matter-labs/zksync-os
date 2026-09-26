@@ -29,7 +29,7 @@ use rig::forward_system::run::{
     make_oracle_for_proofs_and_dumps_with_chain_config, FriVerifierArtifacts, PreimageSource,
 };
 use rig::fri::InMemoryFriProofSidecarSource;
-use rig::oracle_provider::ZkEENonDeterminismSource;
+use rig::oracle_provider::{RunMode, ZkEENonDeterminismSource};
 use rig::predeployed_contracts::{
     DEFAULT_BASE_TOKEN_ASSET_ID, L2_ASSET_TRACKER_L1_CHAIN_ID_SLOT,
     SYSTEM_CONTEXT_SETTLEMENT_LAYER_CHAIN_ID_SLOT,
@@ -88,7 +88,7 @@ impl RecordingPreimageFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         make_oracle_for_proofs_and_dumps_with_chain_config(
             chain_config,
@@ -104,7 +104,7 @@ impl RecordingPreimageFactory {
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_callable_oracles,
+            mode,
         )
     }
 }
@@ -122,7 +122,7 @@ impl TestingOracleFactory<false> for RecordingPreimageFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         self.create_oracle(
             block_metadata,
@@ -135,7 +135,7 @@ impl TestingOracleFactory<false> for RecordingPreimageFactory {
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_callable_oracles,
+            mode,
         )
     }
 
@@ -151,7 +151,7 @@ impl TestingOracleFactory<false> for RecordingPreimageFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         self.create_oracle(
             block_metadata,
@@ -164,7 +164,7 @@ impl TestingOracleFactory<false> for RecordingPreimageFactory {
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_callable_oracles,
+            mode,
         )
     }
 }

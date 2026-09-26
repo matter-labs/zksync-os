@@ -61,12 +61,50 @@ impl<R: RamPeek + ?Sized> RamPeek for PeekRef<'_, R> {
     }
 }
 
+/// The run an oracle serves: where the queries come from, and which responses its processors produce
+/// (see [`OracleQueryProcessor::process_memory_query`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RunMode {
+    /// A native run: the queries come from a querier in this process, and are answered for it only.
+    #[default]
+    NativeRunOnly,
+    /// A native run that records the prover input: the queries come from a querier in this process, and
+    /// are also answered for the RISC-V guest, whose responses are saved for its replay (see
+    /// [`ReadWitnessSource`]).
+    NativeRunSavingForRiscV,
+    /// A run of the RISC-V guest in the simulator: the queries, and the memory pointers in them, come from
+    /// the guest, and are answered for it only.
+    RiscVRun,
+}
+
+impl RunMode {
+    /// Whether the queries come from a querier in this process, which the responses of the native run are
+    /// produced for
+    pub const fn produces_native_run_responses(self) -> bool {
+        match self {
+            Self::NativeRunOnly | Self::NativeRunSavingForRiscV => true,
+            Self::RiscVRun => false,
+        }
+    }
+
+    /// Whether the responses of the RISC-V guest run are produced: to serve the guest, or to save them for
+    /// its replay
+    pub const fn produces_guest_run_responses(self) -> bool {
+        match self {
+            Self::NativeRunOnly => false,
+            Self::NativeRunSavingForRiscV | Self::RiscVRun => true,
+        }
+    }
+}
+
 ///
 /// Structure that is responsible for buffering incoming queries till the end,
 /// and then dispatching them to various responders. When constructed it checks
 /// that responders do not try to serve the same query ID.
 #[derive(Default)]
 pub struct ZkEENonDeterminismSource {
+    /// The run the oracle serves, which the processors of memory-based queries respond for.
+    mode: RunMode,
     query_buffer: Option<QueryBuffer>,
     current_query_id: Option<u32>,
     current_iterator: Option<Box<dyn ExactSizeIterator<Item = usize> + 'static>>,
@@ -81,11 +119,28 @@ pub struct ZkEENonDeterminismSource {
     memory_query_ranges: BTreeMap<u32, usize>,
     /// Words of the response to the current memory-based query that the querier did not read yet.
     memory_response: VecDeque<u32>,
+    /// The response of the RISC-V guest run to the current memory-based query of a querier in this process:
+    /// the words the guest reads in place of the querier, for a native run that records them (see
+    /// [`ReadWitnessSource`]).
+    guest_run_response: Vec<u32>,
     /// The memory-based query whose input word the guest sends next, when running as the CSR source.
     memory_query_awaiting_input: Option<u32>,
 }
 
 impl ZkEENonDeterminismSource {
+    /// An oracle without processors for the run `mode` (the default is a native run only).
+    pub fn new(mode: RunMode) -> Self {
+        Self {
+            mode,
+            ..Default::default()
+        }
+    }
+
+    /// Sets the run the oracle serves, before it serves queries.
+    pub fn set_run_mode(&mut self, mode: RunMode) {
+        self.mode = mode;
+    }
+
     #[track_caller]
     pub fn add_external_processor<P: OracleQueryProcessor + 'static>(&mut self, processor: P) {
         let processor_id = self.processors.len();
@@ -107,7 +162,8 @@ impl ZkEENonDeterminismSource {
         self.is_connected_to_external_oracle = true;
     }
 
-    /// Serves a memory-based query, and keeps its response for the querier to read.
+    /// Serves a memory-based query of the querier of the run, and keeps the response for it to read, and in
+    /// a native run that records the prover input the response of the RISC-V guest run.
     fn process_memory_query(
         &mut self,
         query_id: u32,
@@ -117,9 +173,38 @@ impl ZkEENonDeterminismSource {
         let Some(processor_id) = self.memory_query_ranges.get(&query_id).copied() else {
             return Err(internal_error!("invalid query ID"));
         };
-        let response =
-            self.processors[processor_id].process_memory_query(query_id, input_word, memory);
-        self.memory_response = response.into();
+        let mode = self.mode;
+        let mut native_run_responses = Vec::new();
+        let mut guest_run_responses = Vec::new();
+        self.processors[processor_id].process_memory_query(
+            query_id,
+            input_word,
+            memory,
+            mode,
+            &mut native_run_responses,
+            &mut guest_run_responses,
+        );
+        // the responses of the runs of the mode, and only those
+        let responds_for_mode = match mode {
+            RunMode::NativeRunOnly => guest_run_responses.is_empty(),
+            RunMode::NativeRunSavingForRiscV => {
+                native_run_responses.is_empty() == guest_run_responses.is_empty()
+            }
+            RunMode::RiscVRun => native_run_responses.is_empty(),
+        };
+        if !responds_for_mode {
+            return Err(internal_error!(
+                "the query processor does not respond for the run mode"
+            ));
+        }
+        match mode {
+            RunMode::NativeRunOnly => self.memory_response = native_run_responses.into(),
+            RunMode::NativeRunSavingForRiscV => {
+                self.memory_response = native_run_responses.into();
+                self.guest_run_response = guest_run_responses;
+            }
+            RunMode::RiscVRun => self.memory_response = guest_run_responses.into(),
+        }
         Ok(())
     }
 
@@ -129,22 +214,18 @@ impl ZkEENonDeterminismSource {
 
         let buffer = self.query_buffer.take().expect("must exist");
         let query_id = buffer.query_type;
-        if query_id == DISCONNECT_ORACLE_QUERY_ID {
-            self.is_connected_to_external_oracle = false;
-        } else {
-            let buffer = buffer.buffer;
-            let Some(processor_id) = self.ranges.get(&query_id).copied() else {
-                panic!("Can not process query with ID = 0x{query_id:08x}");
-            };
-            let processor = &mut self.processors[processor_id];
-            let new_iterator = processor.process_buffered_query(query_id, buffer, memory);
+        let buffer = buffer.buffer;
+        let Some(processor_id) = self.ranges.get(&query_id).copied() else {
+            panic!("Can not process query with ID = 0x{query_id:08x}");
+        };
+        let processor = &mut self.processors[processor_id];
+        let new_iterator = processor.process_buffered_query(query_id, buffer, memory);
 
-            let result_len = new_iterator.len() * 2; // NOTE for mismatch of 32/64-bit archs
-            self.iterator_len_to_indicate = Some(result_len as u32);
-            if result_len > 0 {
-                self.current_query_id = Some(query_id);
-                self.current_iterator = Some(new_iterator);
-            }
+        let result_len = new_iterator.len() * 2; // NOTE for mismatch of 32/64-bit archs
+        self.iterator_len_to_indicate = Some(result_len as u32);
+        if result_len > 0 {
+            self.current_query_id = Some(query_id);
+            self.current_iterator = Some(new_iterator);
         }
     }
 
@@ -222,8 +303,17 @@ impl ZkEENonDeterminismSource {
         if let Some(query_id) = self.memory_query_awaiting_input.take() {
             // a memory-based query is two words: the ID and the input word, which may be a guest
             // address that the processor reads through while the guest waits
-            self.process_memory_query(query_id, value as usize, &GuestMemory(memory))
-                .expect("query ID is registered");
+            if query_id == DISCONNECT_ORACLE_QUERY_ID {
+                self.is_connected_to_external_oracle = false;
+            } else {
+                assert_eq!(
+                    self.mode,
+                    RunMode::RiscVRun,
+                    "the oracle serves a native run, not the RISC-V guest"
+                );
+                self.process_memory_query(query_id, value as usize, &GuestMemory(memory))
+                    .expect("must serve the memory-based query");
+            }
         } else if let Some(query_buffer) = self.query_buffer.as_mut() {
             let complete = query_buffer.write(value);
             if complete {
@@ -235,7 +325,8 @@ impl ZkEENonDeterminismSource {
                 return;
             }
 
-            if self.memory_query_ranges.contains_key(&value) {
+            if self.memory_query_ranges.contains_key(&value) || value == DISCONNECT_ORACLE_QUERY_ID
+            {
                 self.memory_query_awaiting_input = Some(value);
                 return;
             }
@@ -254,9 +345,6 @@ impl IOOracle for ZkEENonDeterminismSource {
         query_type: u32,
         input: &I,
     ) -> Result<Self::RawIterator<'a>, InternalError> {
-        if query_type == DISCONNECT_ORACLE_QUERY_ID {
-            self.is_connected_to_external_oracle = false;
-        }
         if self.is_connected_to_external_oracle == false {
             return Ok(Box::new([].into_iter()));
         }
@@ -277,11 +365,20 @@ impl IOOracle for ZkEENonDeterminismSource {
 /// The querier runs in this process (forward mode, and the native run that records the prover input).
 impl MemoryOracle for ZkEENonDeterminismSource {
     fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        if !self.mode.produces_native_run_responses() {
+            return Err(internal_error!(
+                "the oracle serves the RISC-V guest, not a querier in this process"
+            ));
+        }
+        self.guest_run_response.clear();
         if !self.memory_response.is_empty() {
             self.memory_response.clear();
             return Err(internal_error!(
                 "previous oracle response was not consumed in full"
             ));
+        }
+        if query_id == DISCONNECT_ORACLE_QUERY_ID {
+            self.is_connected_to_external_oracle = false;
         }
         if self.is_connected_to_external_oracle == false {
             // as when running as the CSR source, reads return zeroes
@@ -328,8 +425,10 @@ impl MemoryOracle for ZkEENonDeterminismSource {
 }
 
 pub trait OracleQueryProcessor {
-    /// List of different query ids that are supported (for example NextTxSize or BlockLevelMetadataIterator).
-    fn supported_query_ids(&self) -> Vec<u32>;
+    /// IDs of the queries served with the iterator-based protocol (for example BlockLevelMetadataIterator).
+    fn supported_query_ids(&self) -> Vec<u32> {
+        Vec::new()
+    }
     fn supports_query_id(&self, query_id: u32) -> bool {
         self.supported_query_ids().contains(&query_id)
     }
@@ -337,9 +436,11 @@ pub trait OracleQueryProcessor {
     fn process_buffered_query(
         &mut self,
         query_id: u32,
-        query: Vec<usize>,
-        memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>;
+        _query: Vec<usize>,
+        _memory: &dyn RamPeek,
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        panic!("query ID 0x{query_id:08x} is not served with the iterator-based protocol")
+    }
 
     /// IDs of the queries served with the memory-based protocol (`zk_ee::oracle::memory_io`).
     fn supported_memory_query_ids(&self) -> Vec<u32> {
@@ -348,14 +449,45 @@ pub trait OracleQueryProcessor {
 
     /// Serves a query of the memory-based protocol. `input_word` is the input word the querier sent, and
     /// `memory` reads the memory of the querier it may refer to (see `zk_ee::oracle::memory_io::host`).
-    /// Returns the response words, exactly as the querier reads them.
+    /// `mode` tells the querier apart: a querier in this process (a native run), or the RISC-V guest in the
+    /// simulator, which the memory pointers of the query then belong to.
+    ///
+    /// Appends the response words, exactly as the querier reads them, for the runs of `mode`: to
+    /// `native_run_responses` as a querier in this process reads them, to `guest_run_responses` as the
+    /// RISC-V guest reads them. The oracle serves the responses of its querier, and a native run that
+    /// records the prover input saves the responses of the guest run, which the guest reads in place of
+    /// the native querier on replay (see [`ReadWitnessSource`]); a run on the RISC-V guest has no
+    /// responses of a native run. A response that is the same on every target goes through
+    /// [`respond_to_every_target`]; the field hints, for example, follow the representation of field
+    /// elements on each target.
     fn process_memory_query(
         &mut self,
         query_id: u32,
         _input_word: usize,
         _memory: &dyn QuerierMemory,
-    ) -> Vec<u32> {
+        _mode: RunMode,
+        _native_run_responses: &mut Vec<u32>,
+        _guest_run_responses: &mut Vec<u32>,
+    ) {
         panic!("query ID 0x{query_id:08x} is not served with the memory-based protocol")
+    }
+}
+
+/// Appends a response that is the same on every target to the responses of the runs of `mode` (see
+/// [`OracleQueryProcessor::process_memory_query`]).
+pub fn respond_to_every_target(
+    mode: RunMode,
+    mut response: Vec<u32>,
+    native_run_responses: &mut Vec<u32>,
+    guest_run_responses: &mut Vec<u32>,
+) {
+    match mode {
+        RunMode::NativeRunOnly => native_run_responses.append(&mut response),
+        RunMode::NativeRunSavingForRiscV => {
+            guest_run_responses.extend_from_slice(&response);
+            native_run_responses.append(&mut response);
+        }
+        RunMode::RiscVRun => guest_run_responses.append(&mut response),
     }
 }
 
@@ -499,25 +631,40 @@ impl IOOracle for ReadWitnessSource {
     }
 }
 
-/// Records the words the querier reads: the wire of the memory-based protocol is the same on every target,
-/// so they are the words the RISC-V guest reads.
+/// Records the responses of the RISC-V guest run, the words the guest reads in place of the querier of this
+/// process, which the processors produce along with the responses they serve in the
+/// [`RunMode::NativeRunSavingForRiscV`] mode (see [`OracleQueryProcessor::process_memory_query`]). A
+/// disconnected oracle does not respond, and the zeroes the querier reads then are recorded as read: the
+/// guest reads zeroes then too.
 impl MemoryOracle for ReadWitnessSource {
     fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
-        self.original_source.send_query(query_id, input_word)
+        if self.original_source.mode != RunMode::NativeRunSavingForRiscV {
+            return Err(internal_error!(
+                "recording the prover input needs the run mode that saves the responses for the RISC-V guest"
+            ));
+        }
+        self.original_source.send_query(query_id, input_word)?;
+        let guest_run_response = core::mem::take(&mut self.original_source.guest_run_response);
+        self.read_items.borrow_mut().extend(guest_run_response);
+        Ok(())
     }
 
     fn read_word(&mut self) -> Result<u32, InternalError> {
         let word = self.original_source.read_word()?;
-        self.read_items.borrow_mut().push(word);
+        if !self.original_source.is_connected_to_external_oracle {
+            self.read_items.borrow_mut().push(word);
+        }
         Ok(word)
     }
 
     unsafe fn write_words(&mut self, dst: *mut u32, num_words: usize) -> Result<(), InternalError> {
         // SAFETY: guaranteed by the caller
         unsafe { self.original_source.write_words(dst, num_words)? };
-        // SAFETY: the words were just written
-        let words = unsafe { core::slice::from_raw_parts(dst, num_words) };
-        self.read_items.borrow_mut().extend_from_slice(words);
+        if !self.original_source.is_connected_to_external_oracle {
+            // SAFETY: the words were just written
+            let words = unsafe { core::slice::from_raw_parts(dst, num_words) };
+            self.read_items.borrow_mut().extend_from_slice(words);
+        }
         Ok(())
     }
 
@@ -626,7 +773,10 @@ mod tests {
             query_id: u32,
             input_word: usize,
             memory: &dyn QuerierMemory,
-        ) -> Vec<u32> {
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
             let mut response = vec![];
             match query_id {
                 SWAP_QUERY_ID => {
@@ -639,9 +789,55 @@ mod tests {
                 }
                 _ => unreachable!(),
             }
-            response
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
         }
     }
+
+    const REPRESENTATION_QUERY_ID: u32 = 0x1234_0003;
+
+    /// Echoes a value, in a representation that depends on the target: as is for a querier in this
+    /// process, with the words in reverse order for the guest.
+    struct RepresentationQuery;
+
+    impl OracleQuery for RepresentationQuery {
+        const QUERY_ID: u32 = REPRESENTATION_QUERY_ID;
+        type Input = Bytes32;
+        type Output = Bytes32;
+    }
+
+    /// Serves [`RepresentationQuery`] for the runs of the mode, or, when it does not follow the mode,
+    /// for a native run only.
+    struct RepresentationProcessor {
+        follows_mode: bool,
+    }
+
+    impl OracleQueryProcessor for RepresentationProcessor {
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            vec![REPRESENTATION_QUERY_ID]
+        }
+
+        fn process_memory_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            assert_eq!(query_id, REPRESENTATION_QUERY_ID);
+            let value = Bytes32::read_input(memory, input_word).unwrap();
+            let words = words(value.as_u8_array_ref());
+            if !self.follows_mode || mode.produces_native_run_responses() {
+                native_run_responses.extend_from_slice(&words);
+            }
+            if self.follows_mode && mode.produces_guest_run_responses() {
+                guest_run_responses.extend(words.iter().rev());
+            }
+        }
+    }
+
+    const REPRESENTATION: RepresentationProcessor = RepresentationProcessor { follows_mode: true };
 
     fn bytes32(seed: u8) -> Bytes32 {
         Bytes32::from_array(core::array::from_fn(|i| seed.wrapping_add(i as u8)))
@@ -656,7 +852,7 @@ mod tests {
 
     #[test]
     fn memory_queries_in_process_record_the_words_the_guest_reads() {
-        let mut oracle = ZkEENonDeterminismSource::default();
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
         oracle.add_external_processor(MemoryProcessor);
         let mut source = ReadWitnessSource::new(oracle);
         let (a, b) = (bytes32(1), bytes32(100));
@@ -687,7 +883,7 @@ mod tests {
 
     #[test]
     fn memory_queries_as_the_csr_source_of_the_guest() {
-        let mut oracle = ZkEENonDeterminismSource::default();
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::RiscVRun);
         oracle.add_external_processor(FixedResponseProcessor);
         oracle.add_external_processor(MemoryProcessor);
         let (a, b) = (bytes32(1), bytes32(100));
@@ -718,6 +914,109 @@ mod tests {
                 [4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc]
             );
         }
+    }
+
+    fn reversed_words(value: &Bytes32) -> Vec<u32> {
+        let mut words = words(value.as_u8_array_ref());
+        words.reverse();
+        words
+    }
+
+    #[test]
+    fn a_native_run_is_served_its_responses_and_records_those_of_the_guest_run() {
+        let (a, b) = (bytes32(1), bytes32(100));
+
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunOnly);
+        oracle.add_external_processor(REPRESENTATION);
+        assert_eq!(RepresentationQuery::get(&mut oracle, &a).unwrap(), a);
+
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
+        oracle.add_external_processor(REPRESENTATION);
+        oracle.add_external_processor(MemoryProcessor);
+        let mut source = ReadWitnessSource::new(oracle);
+        assert_eq!(RepresentationQuery::get(&mut source, &a).unwrap(), a);
+        // a response that is the same on every target
+        assert_eq!(SwapQuery::get(&mut source, (&a, &b)).unwrap(), (b, a));
+        let expected = [
+            reversed_words(&a),
+            words(b.as_u8_array_ref()),
+            words(a.as_u8_array_ref()),
+        ]
+        .concat();
+        assert_eq!(*source.get_read_items().borrow(), expected);
+    }
+
+    #[test]
+    fn the_guest_is_served_the_responses_of_the_guest_run() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::RiscVRun);
+        oracle.add_external_processor(REPRESENTATION);
+        let a = bytes32(1);
+        // guest memory: `a` at 0x100
+        let mut ram = [0u32; 128];
+        ram[0x40..0x48].copy_from_slice(&words(a.as_u8_array_ref()));
+        oracle.write_with_memory_access(&ram, REPRESENTATION_QUERY_ID);
+        oracle.write_with_memory_access(&ram, 0x100);
+        let response: Vec<u32> = (0..8).map(|_| oracle.read()).collect();
+        assert_eq!(response, reversed_words(&a));
+    }
+
+    #[test]
+    fn recording_needs_the_mode_that_saves_the_responses_of_the_guest_run() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunOnly);
+        oracle.add_external_processor(MemoryProcessor);
+        let mut source = ReadWitnessSource::new(oracle);
+        let a = bytes32(1);
+        assert!(SwapQuery::get(&mut source, (&a, &a)).is_err());
+        assert!(source.get_read_items().borrow().is_empty());
+    }
+
+    #[test]
+    fn a_processor_that_does_not_respond_for_the_mode_is_rejected() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
+        oracle.add_external_processor(RepresentationProcessor {
+            follows_mode: false,
+        });
+        oracle.add_external_processor(MemoryProcessor);
+        let mut source = ReadWitnessSource::new(oracle);
+        let a = bytes32(1);
+        assert!(RepresentationQuery::get(&mut source, &a).is_err());
+        // the failed query is over
+        assert_eq!(SwapQuery::get(&mut source, (&a, &a)).unwrap(), (a, a));
+        assert_eq!(
+            *source.get_read_items().borrow(),
+            [words(a.as_u8_array_ref()), words(a.as_u8_array_ref())].concat()
+        );
+    }
+
+    #[test]
+    fn a_querier_in_this_process_is_not_served_in_a_risc_v_run() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::RiscVRun);
+        oracle.add_external_processor(REPRESENTATION);
+        assert!(RepresentationQuery::get(&mut oracle, &bytes32(1)).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "not the RISC-V guest")]
+    fn the_guest_is_not_served_in_a_native_run() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
+        oracle.add_external_processor(REPRESENTATION);
+        let ram = [0u32; 128];
+        oracle.write_with_memory_access(&ram, REPRESENTATION_QUERY_ID);
+        oracle.write_with_memory_access(&ram, 0x100);
+    }
+
+    #[test]
+    fn a_disconnected_oracle_records_the_zeroes_read() {
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
+        oracle.add_external_processor(REPRESENTATION);
+        let mut source = ReadWitnessSource::new(oracle);
+        <zk_ee::oracle::basic_queries::DisconnectOracleQuery as OracleQuery>::get(&mut source, ())
+            .unwrap();
+        assert_eq!(
+            RepresentationQuery::get(&mut source, &bytes32(1)).unwrap(),
+            Bytes32::ZERO
+        );
+        assert_eq!(*source.get_read_items().borrow(), vec![0; 8]);
     }
 
     #[test]

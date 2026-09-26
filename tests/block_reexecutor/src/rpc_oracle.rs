@@ -15,7 +15,9 @@ use rig::forward_system::run::query_processors::{
     ZKProofDataResponder,
 };
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-use rig::oracle_provider::{OracleQueryProcessor, RamPeek, ZkEENonDeterminismSource};
+use rig::oracle_provider::{
+    respond_to_every_target, OracleQueryProcessor, RunMode, ZkEENonDeterminismSource,
+};
 use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
 use rig::zk_ee::oracle::basic_queries::InitialStorageSlotQuery;
 use rig::zk_ee::oracle::memory_io::host::{
@@ -100,19 +102,6 @@ impl RpcStorageResponder {
 }
 
 impl OracleQueryProcessor for RpcStorageResponder {
-    fn supported_query_ids(&self) -> Vec<u32> {
-        vec![]
-    }
-
-    fn process_buffered_query(
-        &mut self,
-        _query_id: u32,
-        _query: Vec<usize>,
-        _memory: &dyn RamPeek,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
-        unreachable!()
-    }
-
     fn supported_memory_query_ids(&self) -> Vec<u32> {
         Self::SUPPORTED_QUERY_IDS.to_vec()
     }
@@ -122,7 +111,10 @@ impl OracleQueryProcessor for RpcStorageResponder {
         query_id: u32,
         input_word: usize,
         memory: &dyn QuerierMemory,
-    ) -> Vec<u32> {
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
         let mut response = vec![];
         match query_id {
@@ -232,7 +224,7 @@ impl OracleQueryProcessor for RpcStorageResponder {
             }
             _ => unreachable!(),
         }
-        response
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
     }
 }
 
@@ -267,7 +259,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-        _use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
         let tx_data_responder = TxDataResponder {
@@ -290,7 +282,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
             da_commitment_scheme,
         };
 
-        let mut oracle = ZkEENonDeterminismSource::default();
+        let mut oracle = ZkEENonDeterminismSource::new(mode);
         oracle.add_external_processor(block_metadata_responder);
         oracle.add_external_processor(ChainConfigResponder { chain_config });
         oracle.add_external_processor(tx_data_responder);
@@ -313,9 +305,9 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         _proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         _da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-        _use_native_callable_oracles: bool,
+        mode: RunMode,
     ) -> ZkEENonDeterminismSource {
         // Note: block reexecutor does not use proof oracle
-        ZkEENonDeterminismSource::default()
+        ZkEENonDeterminismSource::new(mode)
     }
 }

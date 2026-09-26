@@ -1,7 +1,7 @@
-use oracle_provider::OracleQueryProcessor;
+use oracle_provider::{respond_to_every_target, OracleQueryProcessor, RunMode};
 use serde::{Deserialize, Serialize};
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use zk_ee::oracle::usize_serialization::UsizeSerializable;
 
 // Oracle query processors for the forward running system.
 // Each processor handles specific types of oracle queries.

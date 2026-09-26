@@ -19,7 +19,7 @@ use core::alloc::Allocator;
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::DisconnectOracleQuery;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::Resources;
@@ -151,7 +151,7 @@ where
             &metadata.block_level.computed_header_hash
         );
 
-        <DisconnectOracleQuery as SimpleOracleQuery>::get(&mut io.oracle, &())?;
+        <DisconnectOracleQuery as OracleQuery>::get(&mut io.oracle, ())?;
 
         Ok((io.oracle, metadata.block_level.computed_header_hash, ()))
     }

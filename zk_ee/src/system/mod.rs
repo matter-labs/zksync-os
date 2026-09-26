@@ -2,7 +2,6 @@ use arrayvec::ArrayVec;
 use common_structs::system_hooks::HooksStorage;
 use types_config::TryIntoLowAddress;
 use utils::num_usize_words_for_u8_capacity;
-use utils::usize_rw::AsUsizeWritable;
 use utils::UsizeAlignedByteBox;
 
 use super::*;
@@ -314,15 +313,15 @@ where
     }
 
     ///
-    /// Get the next transaction data from the oracle and write it into the provided iterator.
+    /// Get the next transaction data from the oracle and write it into the buffer that
+    /// `buffer_constructor` makes for its length in bytes.
     /// Returns None when there are no more transactions to process.
     /// Returns Some(Err(_)) if there's an encoding or oracle error.
     ///
-    pub fn try_begin_next_tx<B: AsUsizeWritable>(
+    pub fn try_begin_next_tx<A: Allocator>(
         &mut self,
-        buffer_constructor: impl FnOnce(usize) -> B,
-    ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
-        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWritable};
+        buffer_constructor: impl FnOnce(usize) -> UsizeAlignedByteBox<A>,
+    ) -> Option<Result<(usize, UsizeAlignedByteBox<A>), NextTxSubsystemError>> {
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(None) => return None,
             Ok(Some(size)) => size.get() as usize,
@@ -341,48 +340,15 @@ where
 
         // create buffer
         let mut buffer = (buffer_constructor)(next_tx_len_bytes);
-        let mut as_writable = buffer.as_writable();
         let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
-        if as_writable.len() < next_tx_len_usize_words {
+        if buffer.word_capacity() < next_tx_len_usize_words {
             return Some(Err(interface_error!(
                 crate::system::NextTxInterfaceError::DestinationBufferInsufficient
             )));
         }
-        let tx_iterator = match self
-            .io
-            .oracle()
-            .raw_query_with_empty_input(TX_DATA_WORDS_QUERY_ID)
-        {
-            Ok(it) => it,
-            Err(e) => return Some(Err(e.into())),
-        };
-        if tx_iterator.len() > as_writable.len() {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
-            )));
+        if let Err(e) = receive_tx_words(self.io.oracle(), &mut buffer, next_tx_len_bytes) {
+            return Some(Err(e));
         }
-        // We preallocate uninitialized memory; if oracle returns too few words for the declared
-        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
-        let tx_iterator_num_bytes =
-            match tx_iterator.len().checked_mul(core::mem::size_of::<usize>()) {
-                Some(num_bytes) => num_bytes,
-                None => {
-                    return Some(Err(interface_error!(
-                        crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-                    )))
-                }
-            };
-        if tx_iterator_num_bytes < next_tx_len_bytes {
-            return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
-            )));
-        }
-        for word in tx_iterator {
-            unsafe {
-                as_writable.write_usize(word);
-            }
-        }
-        drop(as_writable);
 
         self.io.begin_next_tx();
 
@@ -395,9 +361,13 @@ where
         body_query_id: u32,   // must return
     ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
         let allocator = self.get_allocator();
-        self.io
-            .oracle()
-            .get_bytes_from_query(length_query_id, body_query_id, &(), allocator)
+        crate::oracle::memory_io::get_bytes_with_length_query::<_, (), _>(
+            self.io.oracle(),
+            length_query_id,
+            body_query_id,
+            (),
+            allocator,
+        )
     }
 
     pub fn deploy_bytecode(
@@ -445,6 +415,47 @@ where
             observable_bytecode_len,
         )
     }
+}
+
+/// Receives the words of the next transaction, `len_bytes` long, into `buffer`: a dynamically sized
+/// response that must cover the length and fit into the buffer.
+fn receive_tx_words<O: crate::oracle::memory_io::MemoryOracle, A: Allocator>(
+    oracle: &mut O,
+    buffer: &mut UsizeAlignedByteBox<A>,
+    len_bytes: usize,
+) -> Result<(), NextTxSubsystemError> {
+    use crate::oracle::memory_io::{write_usize_words, U32_WORDS_PER_USIZE};
+    use crate::utils::USIZE_SIZE;
+
+    oracle.send_query(TX_DATA_WORDS_QUERY_ID, 0)?;
+    let received = buffer.init_words(|words| {
+        let claimed_u32_words = oracle.read_word()? as usize;
+        // always a whole number of words on the proving target, where a `usize` is one `u32` word
+        if !claimed_u32_words.is_multiple_of(U32_WORDS_PER_USIZE) {
+            return Err(internal_error!("tx data is not a whole number of usize words").into());
+        }
+        let num_words = claimed_u32_words / U32_WORDS_PER_USIZE;
+        if num_words > words.len() {
+            return Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
+            ));
+        }
+        // We preallocate uninitialized memory; if oracle returns too few words for the declared
+        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
+        if num_words * USIZE_SIZE < len_bytes {
+            return Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+            ));
+        }
+        // SAFETY: the words of the buffer are aligned, and `num_words` of them fit
+        unsafe { write_usize_words(oracle, words.as_mut_ptr().cast::<usize>(), num_words)? };
+        Ok(num_words)
+    });
+    // ends the query also when the data is rejected, so that the oracle stays in step
+    let finished = oracle.finish_query();
+    received?;
+    finished?;
+    Ok(())
 }
 
 define_subsystem!(NextTx,

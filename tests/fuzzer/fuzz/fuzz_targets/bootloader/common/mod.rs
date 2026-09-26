@@ -162,7 +162,7 @@ pub fn mock_oracle() -> (
             init_data,
             None,
             true,
-            false,
+            forward_system::run::RunMode::NativeRunOnly,
         ),
     )
 }
@@ -227,7 +227,7 @@ pub fn mock_oracle_balance(
             init_data,
             None,
             true,
-            false,
+            forward_system::run::RunMode::NativeRunOnly,
         ),
     )
 }

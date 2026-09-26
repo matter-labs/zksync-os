@@ -514,3 +514,32 @@ fn dynamic_response_into_vectors_and_boxes() {
 
     assert!(PreimageQuery::get_boxed(&mut mock_oracle(host), &hash, 2, Global).is_err());
 }
+
+/// A query whose output is rejected midway is still ended: the in-process oracle drops the rest of the
+/// response, as the oracle of the proving target does, and serves the next query.
+#[test]
+fn a_rejected_output_ends_its_query() {
+    struct PairQuery;
+    impl OracleQuery for PairQuery {
+        const QUERY_ID: u32 = TEST_QUERY_ID;
+        type Input = ();
+        type Output = (B160, B160);
+    }
+    struct WordQuery;
+    impl OracleQuery for WordQuery {
+        const QUERY_ID: u32 = TEST_QUERY_ID + 1;
+        type Input = ();
+        type Output = u32;
+    }
+    let mut oracle =
+        host::InProcessMemoryOracle::new(|query_id, _, _: &dyn host::QuerierMemory| {
+            if query_id == PairQuery::QUERY_ID {
+                // the first element does not fit in 160 bits: the second one is not read
+                [vec![0, 0, 0, 0, 0, 1], image(&b160(2))].concat()
+            } else {
+                vec![7]
+            }
+        });
+    assert!(PairQuery::get(&mut oracle, ()).is_err());
+    assert_eq!(WordQuery::get(&mut oracle, ()).unwrap(), 7);
+}

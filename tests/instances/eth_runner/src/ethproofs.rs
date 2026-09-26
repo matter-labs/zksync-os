@@ -16,6 +16,7 @@ use alloy_rpc_types_debug::ExecutionWitness;
 use anyhow::Context;
 use rig::alloy_rlp::Encodable;
 use rig::log::{info, warn};
+use rig::oracle_provider::RunMode;
 use rig::zksync_os_interface::traits::EncodedTx;
 use rig::zksync_os_tests_common::zksync_tx::encoding::encode_alloy_rpc_tx;
 use rig::Chain;
@@ -354,6 +355,7 @@ pub fn ethproofs_flamegraph(block_dir: &Path, options: &FlamegraphOptions) -> an
             inputs.witness.clone(),
             inputs.header.clone(),
             inputs.withdrawals_encoding.clone(),
+            RunMode::RiscVRun,
         );
         runner.run_with_source(oracle)
     } else {
@@ -430,6 +432,7 @@ pub fn ethproofs_simulation_timing(block_dir: &Path, runs: usize, app: &str) -> 
                     inputs.witness.clone(),
                     inputs.header.clone(),
                     inputs.withdrawals_encoding.clone(),
+                    RunMode::RiscVRun,
                 );
                 let source_prep = t.elapsed();
                 let t = Instant::now();
@@ -539,14 +542,15 @@ pub fn ethproofs_compare_oracles(
     let mut oracle_timings = Vec::with_capacity(runs);
     for run in 0..runs {
         let setup_start = Instant::now();
-        // The transpiler runs the guest in its own RAM, so the callable oracles
-        // must read hint structures through `RamPeek` (the "native" variants used
-        // for prover-input recording dereference host pointers instead).
+        // The transpiler runs the guest in its own RAM: the queries, and the memory
+        // pointers in them, come from the guest, which is answered in its own
+        // representation (`RunMode::RiscVRun`).
         let oracle = Chain::<false>::make_eth_block_oracle(
             inputs.transactions.clone(),
             inputs.witness.clone(),
             inputs.header.clone(),
             inputs.withdrawals_encoding.clone(),
+            RunMode::RiscVRun,
         );
         let setup = setup_start.elapsed();
         let exec_start = Instant::now();

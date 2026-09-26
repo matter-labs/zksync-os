@@ -1,7 +1,6 @@
+use core::mem::MaybeUninit;
 use zk_ee::{
-    oracle::{
-        query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID, simple_oracle_query::SimpleOracleQuery, IOOracle,
-    },
+    oracle::{memory_io::OracleQuery, query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID, IOOracle},
     system::{
         errors::internal::InternalError,
         metadata::dynamic_metadata_responder::{DynamicMetadataResponder, MetadataRequest},
@@ -33,23 +32,31 @@ impl Default for BlockHashesCache {
     }
 }
 
-pub struct HistoricalHashQuery;
+/// The hashes of the 256 previous blocks, by depth (the parent first)
+pub struct HistoricalHashesQuery;
 
-impl SimpleOracleQuery for HistoricalHashQuery {
-    type Input = u32;
-    type Output = Bytes32;
+impl OracleQuery for HistoricalHashesQuery {
+    type Input = ();
+    type Output = [Bytes32; 256];
 
     const QUERY_ID: u32 = HISTORICAL_BLOCK_HASH_QUERY_ID;
 }
 
 impl BlockHashesCache {
     pub fn from_oracle(oracle: &mut impl IOOracle) -> Result<Self, InternalError> {
-        let mut new = Self::default();
-        for (depth, dst) in new.cache.iter_mut().enumerate() {
-            *dst = HistoricalHashQuery::get(oracle, &(depth as u32))?;
+        let mut new = MaybeUninit::<Self>::uninit();
+        let this = new.as_mut_ptr();
+        // SAFETY: the fields are disjoint places inside `new`, which they initialize, and
+        // `MaybeUninit<T>` has the layout of `T`
+        unsafe {
+            (&raw mut (*this).deepest_accessed).write(u32::MAX);
+            HistoricalHashesQuery::get_into(
+                oracle,
+                (),
+                &mut *(&raw mut (*this).cache).cast::<MaybeUninit<[Bytes32; 256]>>(),
+            )?;
+            Ok(new.assume_init())
         }
-
-        Ok(new)
     }
 
     pub fn cache_entry(&self, depth: usize) -> &Bytes32 {

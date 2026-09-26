@@ -35,7 +35,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackFactory;
-use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::BalanceSubsystemError;
 use zk_ee::system::Computational;
@@ -910,6 +910,7 @@ mod tests {
     use std::alloc::Global;
     use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use zk_ee::memory::stack_implementations::vec_stack::VecStackFactory;
+    use zk_ee::oracle::memory_io::host::{ResponseBuffer, WriteQueryOutput};
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
     use zk_ee::system::Resource;
@@ -929,26 +930,34 @@ mod tests {
     #[derive(Default)]
     struct FundedAccountsOracle {
         queries: usize,
+        response: ResponseBuffer,
     }
 
-    impl zk_ee::oracle::memory_io::MemoryOracle for FundedAccountsOracle {}
+    impl zk_ee::oracle::memory_io::MemoryOracle for FundedAccountsOracle {
+        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            assert_eq!(query_id, ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID);
+            self.queries += 1;
+            let account = EthereumAccountProperties {
+                balance: U256::from(1_000u64),
+                ..EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT
+            };
+            let mut response = Vec::new();
+            account.write_output(&mut response);
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
 
     impl IOOracle for FundedAccountsOracle {
-        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+        type RawIterator<'a> = core::iter::Empty<usize>;
 
         fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
             query_type: u32,
             _input: &I,
         ) -> Result<Self::RawIterator<'a>, InternalError> {
-            assert_eq!(query_type, ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID);
-            self.queries += 1;
-            let account = EthereumAccountProperties {
-                balance: U256::from(1_000u64),
-                ..EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT
-            };
-            let values: Vec<_> = account.iter().collect();
-            Ok(Box::new(values.into_iter()))
+            panic!("unexpected iterator-based query 0x{query_type:08x}")
         }
     }
 

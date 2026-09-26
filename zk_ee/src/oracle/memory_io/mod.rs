@@ -54,7 +54,10 @@ mod tests;
 pub use self::composite::{CompositeDeserializable, CompositeSerializable};
 pub use self::continuous::{normalize_bool, ContinuousDeserializable, ContinuousSerializable};
 pub use self::dynamic::DynamicDestination;
+pub(crate) use self::dynamic::{write_usize_words, U32_WORDS_PER_USIZE};
 pub use self::oracle::MemoryOracle;
-pub use self::query::{DynamicOracleQuery, OracleQuery, QueryInput, QueryOutput};
+pub use self::query::{
+    get_bytes_with_length_query, DynamicOracleQuery, OracleQuery, QueryInput, QueryOutput,
+};
 pub use self::short::{ShortDeserializable, ShortSerializable};
 pub use self::word_channel::{WordChannel, WordChannelOracle};
