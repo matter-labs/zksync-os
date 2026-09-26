@@ -47,8 +47,11 @@ const _: () = const {
 // generic byte-by-byte `memcmp` — a hot path through `find_key_index` on
 // BTreeMap lookups. We replace it with a word-by-word equality scan over the
 // storage `usize`s (`cmp_word_chunked` below); on the first differing word
-// we resolve byte-lex order by walking the bytes of just that word — cheaper
-// than `swap_bytes()` on RV32 without the Zbb extension.
+// we resolve byte-lex order by walking the bytes of just that word. The walk
+// is cheaper than `swap_bytes()`, which LLVM lowers to a shift-and-mask
+// sequence because Zbb is not enabled for the target. Airbender does execute
+// Zbb `rev8`, available as `u256::byte_order::bswap32`, so comparing the two
+// `bswap32`-reversed words is likely cheaper still; this code does not do so yet.
 //
 // On the host (forward mode), libc's `memcmp` is already SIMD-vectorized
 // (SSE2/AVX/NEON), so the byte path beats a word loop in pure Rust. The
@@ -262,7 +265,20 @@ impl Bytes32 {
         unsafe { &mut *(&mut self.inner as *mut usize).cast::<[u8; 32]>() }
     }
 
+    /// Reverses all 32 bytes in place. RISC-V reverses aligned words with
+    /// `rev8`; other targets retain their machine-word reversal paths.
     pub fn bytereverse(&mut self) {
+        #[cfg(target_arch = "riscv32")]
+        {
+            // `inner` is exactly the eight 4-byte words reversed below.
+            const { assert!(BYTES32_USIZE_SIZE == 8) };
+            // SAFETY: `inner` is initialized, writable, and at least 4-aligned.
+            unsafe {
+                u256::byte_order::bytereverse_words_in_place::<8>(self.inner.as_mut_ptr().cast());
+            }
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         cfg_if::cfg_if!(
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
@@ -429,6 +445,18 @@ mod cmp_tests {
 
     fn reference_cmp(a: &Bytes32, b: &Bytes32) -> Ordering {
         a.as_u8_array_ref().cmp(b.as_u8_array_ref())
+    }
+
+    #[test]
+    fn bytereverse_matches_byte_reversal_and_round_trips() {
+        let original = core::array::from_fn::<_, 32, _>(|i| (i * 37 + 11) as u8);
+        let mut value = Bytes32::from_array(original);
+        value.bytereverse();
+        let mut reversed = original;
+        reversed.reverse();
+        assert_eq!(value.as_u8_array_ref(), &reversed);
+        value.bytereverse();
+        assert_eq!(value.as_u8_array_ref(), &original);
     }
 
     #[test]
