@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 mod arithmetic;
+pub mod byte_order;
 mod copy;
 mod delegation;
 mod utils;
