@@ -7,8 +7,8 @@
 use crate::{
     out_of_native_resources,
     system::{
-        errors::system::SystemError, Computational, Ergs, Resource, Resources,
-        DEFAULT_GAS_TO_ERGS_FACTOR,
+        errors::system::SystemError, resources::sub_with_borrow, Computational, Ergs, Resource,
+        Resources, DEFAULT_GAS_TO_ERGS_FACTOR,
     },
 };
 
@@ -27,13 +27,21 @@ impl Resource for DecreasingNative {
         self.0 == 0
     }
 
+    #[inline(always)]
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
-        if self.0 < to_charge.0 {
-            self.0 = 0;
-            return Err(out_of_native_resources!().into());
+        // Same shape as `Ergs::charge`: the borrow chain keeps the remaining value in place,
+        // while a compare-then-subtract lowers to a double 64-bit compare and a masked select
+        // on the proving target.
+        match sub_with_borrow(self.0, to_charge.0) {
+            Some(remaining) => {
+                self.0 = remaining;
+                Ok(())
+            }
+            None => {
+                self.0 = 0;
+                Err(out_of_native_resources!().into())
+            }
         }
-        self.0 -= to_charge.0;
-        Ok(())
     }
 
     fn charge_unchecked(&mut self, to_charge: &Self) {
@@ -221,6 +229,7 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
 
 #[cfg(test)]
 mod tests {
+    use crate::system::errors::runtime::{FatalRuntimeError, RuntimeError};
     use crate::system::{errors::system::SystemError, Ergs, Resource, Resources};
 
     use super::{BaseResources, DecreasingNative};
@@ -240,5 +249,57 @@ mod tests {
             SystemError::LeafRuntime(crate::system::errors::runtime::RuntimeError::OutOfErgs(_))
         )));
         assert_eq!(resources.native().0, 100);
+    }
+
+    /// `charge` against the compare-then-subtract it replaced, on values around both 32-bit
+    /// word boundaries (the proving target works on the two words)
+    #[test]
+    fn native_charge_matches_compare_then_subtract() {
+        let mut values = vec![
+            0,
+            1,
+            2,
+            49,
+            50,
+            51,
+            u32::MAX as u64 - 1,
+            u32::MAX as u64,
+            1 << 32,
+            (1 << 32) + 1,
+            (1 << 32) + 50,
+            (2 << 32) - 1,
+            i64::MAX as u64,
+            1 << 63,
+            u64::MAX - 1,
+            u64::MAX,
+        ];
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..32 {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            values.extend([x, x >> 32, x & 0xffff_ffff, x & !0xffff_ffff]);
+        }
+        for &value in &values {
+            for &cost in &values {
+                let mut native = DecreasingNative(value);
+                let result = native.charge(&DecreasingNative(cost));
+                if value < cost {
+                    assert!(
+                        result.is_err_and(|e| matches!(
+                            e,
+                            SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(
+                                FatalRuntimeError::OutOfNativeResources(_)
+                            ))
+                        )),
+                        "{value} - {cost}"
+                    );
+                    assert_eq!(native.0, 0, "{value} - {cost}");
+                } else {
+                    assert!(result.is_ok(), "{value} - {cost}");
+                    assert_eq!(native.0, value - cost, "{value} - {cost}");
+                }
+            }
+        }
     }
 }

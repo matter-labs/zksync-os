@@ -118,7 +118,7 @@ impl Computational for () {
 /// product costs into a `mulhsu`, which the proving machine does not have. The chain
 /// keeps everything unsigned, so constant costs still fold into immediates.
 #[inline(always)]
-fn sub_with_borrow(a: u64, b: u64) -> Option<u64> {
+pub(crate) fn sub_with_borrow(a: u64, b: u64) -> Option<u64> {
     #[cfg(target_pointer_width = "32")]
     {
         let (lo, borrow_lo) = (a as u32).overflowing_sub(b as u32);
