@@ -182,6 +182,30 @@ pub fn calculate_tx_intrinsic_gas(
     intrinsic_gas
 }
 
+/// Returns the number of zero bytes in `data`.
+///
+/// Counts the 4-byte-aligned middle of `data` one `u32` word at a time.
+pub(crate) fn count_zero_bytes(data: &[u8]) -> usize {
+    // SAFETY: every bit pattern is a valid `u32`.
+    let (head, words, tail) = unsafe { data.align_to::<u32>() };
+    let mut non_zero_in_words = 0usize;
+    // Each byte lane of `acc` counts up to 255 words.
+    for chunk in words.chunks(255) {
+        let mut acc = 0u32;
+        for &w in chunk {
+            // Bit 7 of a byte lane of `t` is set iff that byte of `w` is non-zero: the low
+            // 7 bits plus 0x7f reach 0x80 iff they are non-zero, without a carry into the
+            // next lane, and `| w` adds the byte's own bit 7.
+            let t = ((w & 0x7f7f_7f7f) + 0x7f7f_7f7f) | w;
+            acc += (t >> 7) & 0x0101_0101;
+        }
+        let pairs = (acc & 0x00ff_00ff) + ((acc >> 8) & 0x00ff_00ff);
+        non_zero_in_words += ((pairs & 0xffff) + (pairs >> 16)) as usize;
+    }
+    let zero_in_edges = head.iter().chain(tail).filter(|b| **b == 0).count();
+    zero_in_edges + words.len() * 4 - non_zero_in_words
+}
+
 pub fn calculate_l2_tx_intrinsic_pubdata(
     authorization_list_num: u64,
     is_service: bool,
@@ -379,7 +403,8 @@ mod tests {
 
     use super::{
         calculate_l1_tx_intrinsic_computational_native_resources,
-        calculate_l2_tx_intrinsic_computational_native_resources, L2TxIntrinsicNativeInput,
+        calculate_l2_tx_intrinsic_computational_native_resources, count_zero_bytes,
+        L2TxIntrinsicNativeInput,
     };
     use crate::bootloader::{
         constants::{
@@ -463,6 +488,102 @@ mod tests {
         assert_eq!(
             calculate_l2_tx_intrinsic_pubdata(0, true, PubdataContent::FullPubdata),
             0
+        );
+    }
+
+    /// Deterministic xorshift32 generator for the `count_zero_bytes` tests.
+    struct XorShift32(u32);
+
+    impl XorShift32 {
+        fn next_u32(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            self.0 = x;
+            x
+        }
+    }
+
+    /// The byte-at-a-time count that `count_zero_bytes` replaces.
+    fn count_zero_bytes_reference(data: &[u8]) -> usize {
+        data.iter().filter(|byte| **byte == 0).count()
+    }
+
+    /// Returns `len` pseudo-random bytes, each zero with probability `zero_percent`%.
+    fn random_bytes(len: usize, zero_percent: u32, seed: u32) -> Vec<u8> {
+        let mut rng = XorShift32(seed);
+        (0..len)
+            .map(|_| {
+                let is_zero = rng.next_u32() % 100 < zero_percent;
+                let non_zero = (rng.next_u32() as u8).max(1);
+                if is_zero {
+                    0
+                } else {
+                    non_zero
+                }
+            })
+            .collect()
+    }
+
+    /// Fill patterns of `len` bytes: constant bytes that stress the per-lane carry trick,
+    /// alternating zero/non-zero bytes, and pseudo-random bytes of several zero densities.
+    fn fill_patterns(len: usize) -> Vec<Vec<u8>> {
+        const NON_ZERO: [u8; 6] = [0x01, 0x7f, 0x80, 0x81, 0xfe, 0xff];
+        let mut patterns: Vec<Vec<u8>> = [0x00, 0xff, 0x01, 0x7f, 0x80, 0x81, 0xfe]
+            .into_iter()
+            .map(|byte| vec![byte; len])
+            .collect();
+        patterns.push(
+            (0..len)
+                .map(|i| {
+                    if i % 2 == 0 {
+                        0
+                    } else {
+                        NON_ZERO[(i / 2) % NON_ZERO.len()]
+                    }
+                })
+                .collect(),
+        );
+        for (seed, zero_percent) in [(1, 0), (2, 10), (3, 50), (4, 90)] {
+            patterns.push(random_bytes(len, zero_percent, seed));
+        }
+        patterns
+    }
+
+    /// Checks `count_zero_bytes` against the reference on `len` bytes of every fill pattern,
+    /// starting at every offset `0..4` from a 4-byte-aligned address.
+    fn check_count_zero_bytes_at_every_alignment(lens: impl Iterator<Item = usize> + Clone) {
+        let max_len = lens.clone().max().unwrap_or(0);
+        // Up to 3 bytes to reach a 4-byte-aligned address, then up to 3 more for the offset.
+        for (pattern, buffer) in fill_patterns(max_len + 6).iter().enumerate() {
+            let aligned = buffer.as_ptr().align_offset(4);
+            assert!(aligned < 4);
+            for offset in 0..4 {
+                for len in lens.clone() {
+                    let data = &buffer[aligned + offset..][..len];
+                    assert_eq!(
+                        count_zero_bytes(data),
+                        count_zero_bytes_reference(data),
+                        "pattern {pattern}, offset {offset}, len {len}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn count_zero_bytes_matches_reference_for_every_length_and_alignment() {
+        // Lengths past 1020 bytes cross the 255-word flush of the per-lane accumulator.
+        check_count_zero_bytes_at_every_alignment(0..=1100);
+    }
+
+    #[test]
+    fn count_zero_bytes_matches_reference_across_several_flushes() {
+        // One flush covers 255 words (1020 bytes); these lengths span several flushes and
+        // end both on and off a flush boundary.
+        check_count_zero_bytes_at_every_alignment(
+            [3 * 1020, 3 * 1020 + 4, 4096 + 3, 16 * 1024 + 1].into_iter(),
         );
     }
 }
