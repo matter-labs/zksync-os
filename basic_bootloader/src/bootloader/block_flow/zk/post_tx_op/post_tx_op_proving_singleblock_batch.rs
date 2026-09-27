@@ -10,7 +10,7 @@ use basic_system::system_implementation::flat_storage_model::{
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
-use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, WarmStorageKey};
+use zk_ee::common_structs::{FlatStorageKeyDeriver, ProofData, WarmStorageKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::{DisconnectOracleQuery, ZKProofDataQuery};
@@ -241,7 +241,7 @@ where
         );
 
         if STATE_DIFFS_HASH {
-            let mut hasher = crypto::blake2s::Blake2s256::new();
+            let mut deriver = FlatStorageKeyDeriver::new();
             let mut state_diffs_hasher = crypto::blake2s::Blake2s256::new();
 
             // Iterate through all modified storage entries and hash them deterministically
@@ -249,8 +249,7 @@ where
                 .storage_cache
                 .net_diffs_iter()
                 .for_each(|(key, value)| {
-                    let derived_key =
-                        derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
+                    let derived_key = deriver.derive(&key.address, &key.key);
                     logger_log!(
                         logger,
                         "State diffs hash - key: {:?}, new value: {:?}\n",

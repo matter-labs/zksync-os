@@ -24,8 +24,8 @@ use alloc::vec::Vec;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use either::Either;
-use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
+use zk_ee::common_structs::FlatStorageKeyDeriver;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
 use zk_ee::oracle::memory_io::host::WriteQueryOutput;
 use zk_ee::oracle::memory_io::{ContinuousDeserializable, ContinuousSerializable, OracleQuery};
@@ -257,9 +257,9 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         let mut num_nonexisting_reads = 0;
 
-        let mut hasher = crypto::blake2s::Blake2s256::new();
+        let mut deriver = FlatStorageKeyDeriver::new();
         for (key, value) in reads_iter {
-            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
+            let flat_key = deriver.derive(&key.address, &key.key);
             // reads
             let expect_new = value.is_new_storage_slot;
             assert!(value.initial_value_used);
@@ -376,7 +376,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         for (key, value) in writes_iter {
             num_total_writes += 1;
-            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
+            let flat_key = deriver.derive(&key.address, &key.key);
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {

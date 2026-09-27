@@ -19,7 +19,6 @@ pub use self::storage_cache::*;
 use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::element_values;
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use core::alloc::Allocator;
-use crypto::MiniDigest;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
@@ -569,7 +568,7 @@ impl<
     ) {
         use zk_ee::common_structs::*;
 
-        let mut flat_storage_key_hasher = crypto::blake2s::Blake2s256::new();
+        let mut flat_storage_key_deriver = FlatStorageKeyDeriver::new();
 
         let encoded_state_diffs_count =
             (self.storage_cache.net_diffs_iter().count() as u32).to_be_bytes();
@@ -589,11 +588,7 @@ impl<
                     return Ok(());
                 }
                 // TODO(EVM-1074): use tree index instead of key for repeated writes
-                let derived_key = derive_flat_storage_key_with_hasher(
-                    &k.address,
-                    &k.key,
-                    &mut flat_storage_key_hasher,
-                );
+                let derived_key = flat_storage_key_deriver.derive(&k.address, &k.key);
                 pubdata_dst.write(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 

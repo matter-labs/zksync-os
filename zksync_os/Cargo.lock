@@ -1313,6 +1313,7 @@ version = "0.1.0"
 dependencies = [
  "airbender-crypto",
  "arrayvec",
+ "blake2s_u32",
  "cfg-if",
  "cycle_marker",
  "hashbrown 0.17.1",

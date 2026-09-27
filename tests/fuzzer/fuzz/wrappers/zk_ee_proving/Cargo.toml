@@ -43,3 +43,5 @@ evm_refunds = []
 delegation = ["u256/delegation"]
 
 [dev-dependencies]
+blake2s_u32 = { path = "../../../../../../zksync-airbender/blake2s_u32", default-features = false }
+proptest = "1.6.0"

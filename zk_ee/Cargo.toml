@@ -39,4 +39,10 @@ delegation = ["u256/delegation"]
 # Selects the BPO2 blob-count schedule; default is base-Osaka.
 fusaka-bpo-2 = []
 
+# the riscv32 flat-key derivation drives the blake round function directly
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+blake2s_u32 = { workspace = true }
+
 [dev-dependencies]
+blake2s_u32 = { workspace = true }
+proptest = { workspace = true }
