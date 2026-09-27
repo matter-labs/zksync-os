@@ -350,9 +350,10 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub fn fetch_and_advance(&mut self) -> u8 {
         self.ip = self.ip.wrapping_add(1);
         if S::CODE_IS_PADDED {
-            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes, and `ip`
-            // never gets further than 33 bytes past its end (a `STOP` is read there at
-            // the latest, see `CODE_PADDING_BYTES`)
+            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes (in the system's
+            // buffer or in a padded copy, see `EthereumLikeTypes::CODE_IS_PADDED`), and `ip`
+            // never gets further than 33 bytes past its end (a `STOP` is read there at the
+            // latest, see `CODE_PADDING_BYTES`)
             unsafe { self.ip.sub(1).read() }
         } else if self.ip <= self.code_end {
             // SAFETY: in bounds of the code

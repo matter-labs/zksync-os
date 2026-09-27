@@ -1835,3 +1835,278 @@ mod callable_oracle_tests {
         assert_eq!(result.proof, result2.proof);
     }
 }
+
+mod eth_code_padding {
+    //! The Ethereum STF (`eth_stf`) lets the EVM interpreter read past the end of a bytecode
+    //! without a bounds check (`EthereumLikeTypes::CODE_IS_PADDED`): PUSH immediates on every
+    //! target, and opcodes on the RISC-V target, are read from the zero padding the preimage cache
+    //! keeps after the code. The padding lives in the buffer the oracle writes the bytecode into,
+    //! and the keccak check covers only the code, so the system must zero it itself: a truncated
+    //! PUSH at the end of the code must push zeros for its missing bytes (Yellow Paper 9.4.1) no
+    //! matter what the oracle wrote after the code.
+    //!
+    //! `TestingFramework` runs the ZK flavour, which does not pad code (`CODE_IS_PADDED = false`),
+    //! so these tests run a call directly on the Ethereum proving system types
+    //! (`PROOF_ENV = true`), with a malicious bytecode responder.
+
+    use rig::alloy::consensus::Header;
+    use rig::alloy::primitives::B256;
+    use rig::alloy_rlp::Encodable;
+    use rig::basic_bootloader::bootloader::block_flow::ethereum::EthereumMetadataOp;
+    use rig::basic_bootloader::bootloader::block_flow::MetadataInitOp;
+    use rig::basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
+    use rig::basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
+    use rig::basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
+    use rig::basic_bootloader::bootloader::{
+        BasicBootloader, MAX_HEAP_BUFFER_SIZE, MAX_RETURN_BUFFER_SIZE,
+    };
+    use rig::basic_system::system_implementation::ethereum_storage_model::caches::account_properties::EthereumAccountProperties;
+    use rig::basic_system::system_implementation::ethereum_storage_model::{
+        ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID, ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+    };
+    use rig::evm_interpreter::opcodes;
+    use rig::forward_system::run::query_processors::{
+        DACommitmentSchemeResponder, EthereumCLResponder, EthereumTargetBlockHeaderResponder,
+        InMemoryEthereumInitialAccountStateResponder,
+    };
+    use rig::forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
+    use rig::forward_system::system::tracers::evm_opcodes_logger::EvmOpcodesLogger;
+    use rig::oracle_provider::{
+        respond_to_every_target, OracleQueryProcessor, RamPeek, RunMode, ZkEENonDeterminismSource,
+    };
+    use rig::ruint::aliases::{B160, U256};
+    use rig::zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+    use rig::zk_ee::common_structs::system_hooks::HooksStorage;
+    use rig::zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput, WriteQueryOutput};
+    use rig::zk_ee::system::metadata::chain_config::ChainConfig;
+    use rig::zk_ee::system::tracer::Tracer;
+    use rig::zk_ee::system::validator::NopTxValidator;
+    use rig::zk_ee::system::{CallResult, IOSubsystemExt, Resource, System, SystemTypes};
+    use rig::zk_ee::utils::{Bytes32, USIZE_SIZE};
+    use std::collections::{BTreeMap, HashMap};
+
+    type EthProvingTypes = EthereumStorageSystemTypesWithPostOps<ZkEENonDeterminismSource>;
+
+    /// Serves one bytecode: its honest length and honest bytes, but `0xFF` instead of zeros after
+    /// the code in the words it claims — the tail of the last code word, and `extra_words` more
+    /// words of the padding. The keccak check over the code passes.
+    struct MaliciousBytecodeResponder {
+        hash: Bytes32,
+        code: Vec<u8>,
+        extra_words: usize,
+    }
+
+    impl OracleQueryProcessor for MaliciousBytecodeResponder {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            vec![]
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            _query_id: u32,
+            _query: Vec<usize>,
+            _memory: &dyn RamPeek,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            unreachable!()
+        }
+
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            vec![
+                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
+                ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+            ]
+        }
+
+        fn process_memory_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            let hash = Bytes32::read_input(memory, input_word).expect("must read the hash");
+            assert_eq!(hash, self.hash, "only the called code is loaded");
+            let mut response = vec![];
+            match query_id {
+                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID => {
+                    (self.code.len() as u32).write_output(&mut response)
+                }
+                ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID => {
+                    // MALICIOUS: the honest responder zeroes everything after the code
+                    let words = self.code.len().div_ceil(USIZE_SIZE) + self.extra_words;
+                    let mut bytes = vec![0xFF; words * USIZE_SIZE];
+                    bytes[..self.code.len()].copy_from_slice(&self.code);
+                    response.push((bytes.len() / size_of::<u32>()) as u32);
+                    response.extend(
+                        bytes
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|w| u32::from_le_bytes(*w)),
+                    );
+                }
+                _ => unreachable!("not a bytecode query: 0x{query_id:08x}"),
+            }
+            respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
+        }
+    }
+
+    /// A header the Ethereum STF parses (it has every field up to `requests_hash`)
+    fn pectra_header(number: u64) -> Header {
+        Header {
+            number,
+            gas_limit: 30_000_000,
+            base_fee_per_gas: Some(7),
+            withdrawals_root: Some(B256::ZERO),
+            blob_gas_used: Some(0),
+            excess_blob_gas: Some(0),
+            parent_beacon_block_root: Some(B256::ZERO),
+            requests_hash: Some(B256::ZERO),
+            ..Default::default()
+        }
+    }
+
+    fn rlp(header: &Header) -> Vec<u8> {
+        let mut out = vec![];
+        header.encode(&mut out);
+        out
+    }
+
+    /// Calls `code` on the Ethereum proving system types, with the code served by
+    /// `MaliciousBytecodeResponder`, and returns the stack the frame had when it stopped by
+    /// running off the end of the code.
+    fn stack_at_code_end(code: &[u8], extra_words: usize) -> Vec<U256> {
+        use rig::crypto::MiniDigest;
+
+        let caller = B160::from_limbs([0x1000, 0, 0]);
+        let callee = B160::from_limbs([0x2000, 0, 0]);
+        let code_hash = Bytes32::from_array(*rig::crypto::sha3::Keccak256::digest(code));
+        let accounts = HashMap::from([
+            (
+                caller,
+                EthereumAccountProperties {
+                    balance: U256::from(1u64 << 40),
+                    ..EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT
+                },
+            ),
+            (
+                callee,
+                EthereumAccountProperties {
+                    nonce: 1,
+                    bytecode_hash: code_hash,
+                    ..EthereumAccountProperties::EMPTY_BUT_EXISTING_ACCOUNT
+                },
+            ),
+        ]);
+        let parent = pectra_header(0);
+        let target = pectra_header(1);
+
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunOnly);
+        oracle.add_external_processor(EthereumTargetBlockHeaderResponder {
+            target_header_encoding: rlp(&target),
+            target_header: target,
+        });
+        oracle.add_external_processor(EthereumCLResponder {
+            withdrawals_list: vec![],
+            parent_headers_encodings_list: vec![rlp(&parent)],
+            parent_headers_list: vec![parent],
+        });
+        oracle.add_external_processor(DACommitmentSchemeResponder {
+            da_commitment_scheme: Some(DACommitmentScheme::None),
+        });
+        oracle.add_external_processor(InMemoryEthereumInitialAccountStateResponder::new(
+            [0u8; 32],
+            accounts,
+            BTreeMap::new(),
+        ));
+        oracle.add_external_processor(MaliciousBytecodeResponder {
+            hash: code_hash,
+            code: code.to_vec(),
+            extra_words,
+        });
+
+        let metadata = <EthereumMetadataOp as MetadataInitOp<EthProvingTypes>>::metadata_op::<
+            BasicBootloaderForwardETHLikeConfig,
+        >(&mut oracle, Default::default(), ChainConfig::default())
+        .expect("block metadata");
+        let mut system = System::<EthProvingTypes>::init_from_metadata_and_oracle(metadata, oracle)
+            .expect("system init");
+        system.io.begin_next_tx();
+        let mut hooks = HooksStorage::new_in(system.get_allocator());
+
+        // every frame's heap must be 32 bytes aligned, as the bootloader sets it up
+        let mut heaps = Box::new_uninit_slice(MAX_HEAP_BUFFER_SIZE + 32);
+        let heaps_start = heaps.as_ptr().addr().next_multiple_of(32) - heaps.as_ptr().addr();
+        let mut return_data = Box::new_uninit_slice(MAX_RETURN_BUFFER_SIZE);
+        let memories = RunnerMemoryBuffers {
+            heaps: &mut heaps[heaps_start..heaps_start + MAX_HEAP_BUFFER_SIZE],
+            return_data: &mut return_data,
+        };
+
+        let mut tracer = EvmOpcodesLogger::<EthProvingTypes>::default();
+        tracer.begin_tx(&[]);
+        let completed = BasicBootloader::<EthProvingTypes, EthereumTransactionFlow<EthProvingTypes>>::run_single_interaction(
+            &mut system,
+            &mut hooks,
+            memories,
+            &[],
+            &caller,
+            &callee,
+            <EthProvingTypes as SystemTypes>::Resources::FORMAL_INFINITE,
+            &U256::ZERO,
+            true,
+            &mut tracer,
+            &mut NopTxValidator,
+        )
+        .expect("the call runs");
+        assert!(
+            matches!(completed.result, CallResult::Successful { .. }),
+            "the call succeeds"
+        );
+
+        let last_step = tracer.transaction_logs[0]
+            .steps
+            .last()
+            .expect("the code runs");
+        assert_eq!(
+            last_step.opcode_raw,
+            opcodes::STOP,
+            "the frame runs off the end of the code"
+        );
+        last_step.stack.clone().expect("the stack is logged")
+    }
+
+    /// `JUMPDEST x8, PUSH1 0x2a, PUSH32` with no immediate bytes: 11 bytes, so the last code word
+    /// has bytes after the code on both targets. The EVM pushes `0x2a` and then `0`.
+    const CODE_ENDING_IN_TRUNCATED_PUSH32: [u8; 11] = [
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::JUMPDEST,
+        opcodes::PUSH1,
+        0x2a,
+        opcodes::PUSH32,
+    ];
+
+    /// EXPLOIT (fails before the fix): the oracle writes the code words only, but puts `0xFF`
+    /// after the code in the last one.
+    #[test]
+    fn truncated_push_ignores_oracle_bytes_in_the_last_code_word() {
+        let stack = stack_at_code_end(&CODE_ENDING_IN_TRUNCATED_PUSH32, 0);
+        assert_eq!(stack, vec![U256::from(0x2a), U256::ZERO]);
+    }
+
+    /// EXPLOIT (fails before the fix): the oracle also writes padding words after the code words,
+    /// all `0xFF`, so the rest of the immediate (all of it on a 64 bit host) comes from the oracle.
+    #[test]
+    fn truncated_push_ignores_oracle_bytes_in_the_padding() {
+        let stack = stack_at_code_end(&CODE_ENDING_IN_TRUNCATED_PUSH32, 4);
+        assert_eq!(stack, vec![U256::from(0x2a), U256::ZERO]);
+    }
+}

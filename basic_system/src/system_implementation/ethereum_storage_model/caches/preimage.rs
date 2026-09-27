@@ -69,6 +69,10 @@ impl<A: Allocator + Clone> BytecodeWithArtifacts<A> {
     /// Allocates `code || padding || zeroed artifacts space` for the code of `code_len` bytes.
     /// `write_code` fills the code words (the first `code_words` of the buffer) and returns how
     /// many of them it wrote; the rest of the buffer is zeroed here.
+    ///
+    /// Invariant: every byte after `code_len` in the code and padding words is zero, whatever
+    /// `write_code` wrote there. The interpreter relies on it when `CODE_IS_PADDED`, and the
+    /// oracle's words are not trusted past the code: the hash check covers only the code.
     fn allocate_in(
         code_len: usize,
         write_code: impl FnOnce(&mut [MaybeUninit<usize>]) -> usize,
@@ -88,10 +92,24 @@ impl<A: Allocator + Clone> BytecodeWithArtifacts<A> {
             code_words + artifacts_words,
             |dst| {
                 let (code_dst, artifacts_dst) = dst.split_at_mut(code_words);
-                let written = write_code(code_dst);
-                // whatever comes after the code in its last words is the padding
+                // Only the words the code occupies are kept: the oracle may claim more (the
+                // honest one does by a word on a 32 bit target, as it pads to 8 bytes), and
+                // those words are padding.
+                let code_len_words = code_len.div_ceil(USIZE_SIZE);
+                let written = write_code(code_dst).min(code_len_words);
                 for word in code_dst.iter_mut().skip(written) {
                     word.write(0);
+                }
+                // The code may end inside its last word, which the oracle wrote whole: keep
+                // only the bytes of the code in it
+                let tail_bytes = code_len % USIZE_SIZE;
+                if tail_bytes != 0 && written == code_len_words {
+                    // SAFETY: `written == code_len_words` means `write_code` reported at least
+                    // `code_len_words` initialized words, so this one is initialized
+                    let last = unsafe { code_dst[code_len_words - 1].assume_init_mut() };
+                    // the first `tail_bytes` bytes of the word in memory order
+                    let keep = usize::MAX >> (8 * (USIZE_SIZE - tail_bytes));
+                    *last = (usize::from_le(*last) & keep).to_le();
                 }
                 for word in artifacts_dst.iter_mut() {
                     word.write(0);
@@ -549,12 +567,198 @@ mod tests {
             )
             .expect("running the recorded code");
         assert_eq!(oracle.preimage_queries, 0, "recorded code is not loaded");
-        assert_eq!(executable.code(), &CODE[..]);
+        assert_code_then_zeros(&CODE, &executable);
         let artifacts = expected_artifacts();
         assert_eq!(executable.artifacts_len as usize, artifacts.len());
         assert_eq!(
             &executable.bytecode[executable.bytecode.len() - artifacts.len()..],
             &artifacts[..]
         );
+    }
+
+    /// Checks the layout the `CODE_IS_PADDED` interpreter relies on: the code is intact, and it
+    /// is followed by at least `CODE_PADDING_BYTES` bytes before the artifacts, all zero.
+    fn assert_code_then_zeros(code: &[u8], executable: &ExecutableBytecode) {
+        let code_len = code.len();
+        assert_eq!(executable.code(), code, "code of {code_len} bytes");
+        let padding_end = executable.bytecode.len() - executable.artifacts_len as usize;
+        let padding = &executable.bytecode[code_len..padding_end];
+        assert!(
+            padding.len() >= evm_interpreter::CODE_PADDING_BYTES,
+            "code of {code_len} bytes has only {} bytes of padding",
+            padding.len()
+        );
+        assert!(
+            padding.iter().all(|b| *b == 0),
+            "code of {code_len} bytes is followed by {} non-zero byte(s) that the CODE_IS_PADDED \
+             interpreter would read: {padding:02x?}",
+            padding.iter().filter(|b| **b != 0).count(),
+        );
+    }
+
+    /// Loads `code` (with the artifacts, as for a run) from `oracle` in PROOF_ENV mode, where the
+    /// hash check over the code is a hard one, and checks the layout
+    fn load_and_check(code: &[u8], oracle: &mut impl IOOracle) {
+        use crypto::MiniDigest;
+        let hash = Bytes32::from_array(*crypto::sha3::Keccak256::digest(code));
+        let mut preimages = TestPreimages::new_from_parts(Global);
+        let mut resources = TestResources::FORMAL_INFINITE;
+        let executable = preimages
+            .get_executable_bytecode::<true>(
+                ExecutionEnvironmentType::EVM,
+                &hash,
+                &mut resources,
+                oracle,
+                true,
+            )
+            .expect("the code passes the hash check");
+        assert_code_then_zeros(code, &executable);
+    }
+
+    /// An oracle that serves the honest code, so the hash check over the code passes, but claims
+    /// `claim_words` words and fills all of them after the code with `injected`. With the words
+    /// the code occupies it writes the tail of the last code word; with more (up to the buffer
+    /// capacity, which is all the length check enforces) it writes padding words too; with fewer
+    /// it leaves out the end of the code.
+    struct MaliciousPaddingOracle {
+        code: Vec<u8>,
+        hash: Bytes32,
+        injected: u8,
+        claim_words: usize,
+        response: ResponseBuffer,
+    }
+
+    impl MaliciousPaddingOracle {
+        fn new(code: Vec<u8>, injected: u8, claim_words: usize) -> Self {
+            use crypto::MiniDigest;
+            let hash = Bytes32::from_array(*crypto::sha3::Keccak256::digest(&code));
+            Self {
+                code,
+                hash,
+                injected,
+                claim_words,
+                response: ResponseBuffer::default(),
+            }
+        }
+    }
+
+    /// The number of `usize` words the code buffer has for `code || padding` (the capacity of the
+    /// oracle's response), as `BytecodeWithArtifacts::allocate_in` computes it
+    fn code_words_for(code_len: usize) -> usize {
+        let code_words = (code_len + evm_interpreter::CODE_PADDING_BYTES)
+            .next_multiple_of(USIZE_SIZE)
+            / USIZE_SIZE;
+        code_words.next_multiple_of(2)
+    }
+
+    impl MemoryOracle for MaliciousPaddingOracle {
+        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+            // SAFETY: the test sends the queries from this process
+            let memory = unsafe { NativeQuerierMemory::new() };
+            assert_eq!(Bytes32::read_input(&memory, input_word)?, self.hash);
+            let mut response = vec![];
+            match query_id {
+                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID => {
+                    (self.code.len() as u32).write_output(&mut response)
+                }
+                ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID => {
+                    // What a malicious prover's non-determinism looks like: the honest
+                    // `write_dynamic_bytes` zeroes everything after the code instead
+                    let mut bytes = vec![self.injected; self.claim_words * USIZE_SIZE];
+                    let code_bytes = self.code.len().min(bytes.len());
+                    bytes[..code_bytes].copy_from_slice(&self.code[..code_bytes]);
+                    response.push((bytes.len() / size_of::<u32>()) as u32);
+                    response.extend(
+                        bytes
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|w| u32::from_le_bytes(*w)),
+                    );
+                }
+                _ => panic!("unexpected query {query_id:#x}"),
+            }
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
+    impl IOOracle for MaliciousPaddingOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            panic!("unexpected query {query_type:#x}")
+        }
+    }
+
+    /// EXPLOIT (fails before the fix): the oracle claims the whole buffer capacity, so it writes
+    /// `0xFF` into the tail of the last code word and into every padding word. `CODE` is 9 bytes,
+    /// so there are tail bytes in its last word on both targets.
+    #[test]
+    fn oracle_cannot_inject_nonzero_bytes_past_code_end() {
+        let mut oracle =
+            MaliciousPaddingOracle::new(CODE.to_vec(), 0xFF, code_words_for(CODE.len()));
+        load_and_check(&CODE, &mut oracle);
+    }
+
+    /// EXPLOIT (fails before the fix): the oracle claims exactly the words the code occupies, and
+    /// writes `0xFF` only after the code in its last word. Clamping the claimed length alone does
+    /// not stop this.
+    #[test]
+    fn oracle_cannot_inject_nonzero_bytes_in_last_code_word_tail() {
+        let mut oracle =
+            MaliciousPaddingOracle::new(CODE.to_vec(), 0xFF, CODE.len().div_ceil(USIZE_SIZE));
+        load_and_check(&CODE, &mut oracle);
+    }
+
+    /// A claim of a word more than the code occupies, with that word zero, is accepted: this is
+    /// what the honest oracle sends on a 32 bit target (it pads the code to 8 bytes) for lengths
+    /// with `len % 8` in `1..=4`, so it must not be rejected.
+    #[test]
+    fn claim_of_an_extra_zero_word_is_accepted() {
+        for code_len in 1..=2 * USIZE_SIZE + 1 {
+            let code: Vec<u8> = (0..code_len).map(|i| 0x80 | i as u8).collect();
+            let claim = code_len.div_ceil(USIZE_SIZE) + 1;
+            load_and_check(
+                &code,
+                &mut MaliciousPaddingOracle::new(code.clone(), 0, claim),
+            );
+        }
+    }
+
+    /// A claim of fewer words than the code occupies leaves the end of the code zero: it passes the
+    /// hash check only when those are zero bytes of the code, and the padding stays zero
+    #[test]
+    fn short_claim_is_accepted_only_for_zero_code_bytes() {
+        // a word of code, then a partial word of zero bytes of the code, which is left out
+        let mut code = vec![evm_interpreter::opcodes::JUMPDEST; USIZE_SIZE];
+        code.extend(core::iter::repeat_n(0u8, USIZE_SIZE - 1));
+        let claim = code.len().div_ceil(USIZE_SIZE) - 1;
+        load_and_check(
+            &code,
+            &mut MaliciousPaddingOracle::new(code.clone(), 0xFF, claim),
+        );
+    }
+
+    /// The code is kept intact, and only zeros follow it, for every length of the code in its last
+    /// word (and empty code), from the honest oracle and from one that fills the whole buffer after
+    /// the code with `0xFF`
+    #[test]
+    fn code_of_every_length_is_kept_and_followed_by_zeros() {
+        for code_len in 0..=3 * USIZE_SIZE + 1 {
+            // non-zero bytes, so a mask that cut into the code would show
+            let code: Vec<u8> = (0..code_len).map(|i| 0x80 | i as u8).collect();
+            load_and_check(&code, &mut OneCodeOracle::new(code.clone()));
+            let capacity = code_words_for(code_len);
+            load_and_check(
+                &code,
+                &mut MaliciousPaddingOracle::new(code.clone(), 0xFF, capacity),
+            );
+        }
     }
 }
