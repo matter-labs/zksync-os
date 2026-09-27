@@ -46,12 +46,11 @@ const _: () = const {
 // On the RISC-V proving target, `<[u8]>::cmp` lowers to `compiler-builtins`'
 // generic byte-by-byte `memcmp` — a hot path through `find_key_index` on
 // BTreeMap lookups. We replace it with a word-by-word equality scan over the
-// storage `usize`s (`cmp_word_chunked` below); on the first differing word
-// we resolve byte-lex order by walking the bytes of just that word. The walk
-// is cheaper than `swap_bytes()`, which LLVM lowers to a shift-and-mask
-// sequence because Zbb is not enabled for the target. Airbender does execute
-// Zbb `rev8`, available as `u256::byte_order::bswap32`, so comparing the two
-// `bswap32`-reversed words is likely cheaper still; this code does not do so yet.
+// storage `usize`s (`cmp_word_chunked` below); the first differing word is
+// resolved by comparing both words read big-endian, which orders them exactly
+// like their bytes in memory order. On RV32 the byte reversal is Zbb `rev8`
+// (`u256::byte_order::bswap32`, one instruction; Airbender executes it although
+// Zbb is not enabled for the whole target).
 //
 // On the host (forward mode), libc's `memcmp` is already SIMD-vectorized
 // (SSE2/AVX/NEON), so the byte path beats a word loop in pure Rust. The
@@ -73,24 +72,29 @@ impl Bytes32 {
             let a = self.inner[i];
             let b = other.inner[i];
             if a != b {
-                // `to_ne_bytes()` returns the bytes of the word in their in-memory
-                // order — identical to the slice produced by `as_u8_array_ref()`
-                // for the same offsets, on either endianness.
-                let a_bytes = a.to_ne_bytes();
-                let b_bytes = b.to_ne_bytes();
-                let mut j = 0;
-                while j < core::mem::size_of::<usize>() {
-                    if a_bytes[j] != b_bytes[j] {
-                        return a_bytes[j].cmp(&b_bytes[j]);
-                    }
-                    j += 1;
-                }
-                // a != b guarantees at least one byte differs; this branch
-                // is dead. Fall through to keep the function panic-free.
-                return core::cmp::Ordering::Equal;
+                // Read big-endian, the first byte in memory order is the most
+                // significant one, so the integer order of the two words is the
+                // byte-lex order of their bytes.
+                return Self::word_as_be(a).cmp(&Self::word_as_be(b));
             }
         }
         core::cmp::Ordering::Equal
+    }
+
+    /// The value of a storage word whose in-memory bytes are read big-endian.
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+    #[inline(always)]
+    fn word_as_be(word: usize) -> usize {
+        #[cfg(target_arch = "riscv32")]
+        {
+            // RV32 is little-endian and `usize` is `u32`
+            u256::byte_order::bswap32(word as u32) as usize
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            usize::from_be(word)
+        }
     }
 }
 
@@ -554,6 +558,43 @@ mod cmp_tests {
                 a,
                 b
             );
+        }
+    }
+
+    #[test]
+    fn cmp_matches_byte_lex_for_every_differing_position_and_byte_pair() {
+        // Equal prefix, then every byte pair at every position of the first
+        // difference, with arbitrary (possibly reversed-order) suffixes, so that
+        // a word compare in the wrong byte order would disagree.
+        let mut prefix = [0u8; 32];
+        for (i, byte) in prefix.iter_mut().enumerate() {
+            *byte = (i as u8).wrapping_mul(29).wrapping_add(7);
+        }
+        for position in 0..32 {
+            for x in 0..=255u8 {
+                for y in (0..=255u8).step_by(3) {
+                    let mut a = prefix;
+                    let mut b = prefix;
+                    a[position] = x;
+                    b[position] = y;
+                    for j in position + 1..32 {
+                        a[j] = x.wrapping_add(j as u8);
+                        b[j] = 255 - a[j];
+                    }
+                    let lhs = Bytes32::from_array(a);
+                    let rhs = Bytes32::from_array(b);
+                    assert_eq!(
+                        lhs.cmp_word_chunked(&rhs),
+                        reference_cmp(&lhs, &rhs),
+                        "mismatch on {a:?} vs {b:?}"
+                    );
+                    assert_eq!(
+                        rhs.cmp_word_chunked(&lhs),
+                        reference_cmp(&rhs, &lhs),
+                        "reverse mismatch on {a:?} vs {b:?}"
+                    );
+                }
+            }
         }
     }
 }
