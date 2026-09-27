@@ -61,6 +61,23 @@ unsafe fn write_immediate_truncated<const N: usize>(ip: *const u8, end: *const u
     }
 }
 
+/// `b = (a < b) as U256`, using `a` (a popped operand) as scratch: `a - b` borrows iff `a < b`.
+/// One subtraction, where a comparison is a copy to scratch, an equality test and a
+/// subtraction; the flag is written with plain word stores.
+#[inline(always)]
+fn less_than_into(a: &mut U256, b: &mut U256) {
+    let less = a.overflowing_sub_assign(b);
+    *b = U256::from_limbs([less as u64, 0, 0, 0]);
+}
+
+/// `b = (a > b) as U256`, using `a` (a popped operand) as scratch: `a = b - a` borrows iff
+/// `b < a`
+#[inline(always)]
+fn greater_than_into(a: &mut U256, b: &mut U256) {
+    let greater = a.overflowing_sub_assign_reversed(b);
+    *b = U256::from_limbs([greater as u64, 0, 0, 0]);
+}
+
 impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     // --- stack ---------------------------------------------------------------------------
 
@@ -220,12 +237,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn lt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, LT_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        if op1.lt(op2) {
-            U256::write_one(op2);
-        } else {
-            U256::write_zero(op2);
-        }
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        less_than_into(op1, op2);
         Ok(())
     }
 
@@ -233,12 +246,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn gt(&mut self) -> InstructionResult {
         charge_step(&mut self.resources, gas_constants::VERYLOW, GT_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        if op1.gt(op2) {
-            U256::write_one(op2);
-        } else {
-            U256::write_zero(op2);
-        }
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        greater_than_into(op1, op2);
         Ok(())
     }
 
@@ -659,5 +668,50 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub fn stop(&mut self) -> InstructionResult {
         spend_native(&mut self.resources, STEP_NATIVE_COST)?;
         Err(ExitCode::Stop)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{greater_than_into, less_than_into};
+    use u256::U256;
+
+    /// The in-place comparisons against `Ord`, around the limb boundaries
+    #[test]
+    fn comparisons_in_place_match_ord() {
+        let mut values = vec![
+            U256::ZERO,
+            U256::ONE,
+            U256::from_limbs([u64::MAX, 0, 0, 0]),
+            U256::from_limbs([0, 1, 0, 0]),
+            U256::from_limbs([0, 0, 1, 0]),
+            U256::from_limbs([u64::MAX, u64::MAX, 0, 0]),
+            U256::from_limbs([0, 0, 0, 1 << 63]),
+            U256::from_limbs([u64::MAX - 1, u64::MAX, u64::MAX, u64::MAX]),
+            U256::from_limbs([u64::MAX; 4]),
+        ];
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            x
+        };
+        for _ in 0..24 {
+            let limbs = [next(), next(), next(), next()];
+            values.push(U256::from_limbs(limbs));
+            // the same high limbs, a different low limb
+            values.push(U256::from_limbs([next(), limbs[1], limbs[2], limbs[3]]));
+        }
+        for a in &values {
+            for b in &values {
+                let (mut scratch, mut result) = (a.clone(), b.clone());
+                less_than_into(&mut scratch, &mut result);
+                assert_eq!(result, if a < b { U256::ONE } else { U256::ZERO });
+                let (mut scratch, mut result) = (a.clone(), b.clone());
+                greater_than_into(&mut scratch, &mut result);
+                assert_eq!(result, if a > b { U256::ONE } else { U256::ZERO });
+            }
+        }
     }
 }
