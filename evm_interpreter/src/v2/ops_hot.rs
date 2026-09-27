@@ -131,14 +131,16 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             if use_rev8 {
                 // SAFETY: the whole immediate is readable, and `slot` is a 32-byte-aligned
                 // stack slot that does not overlap the code. PUSH20 zeroes the high 12 bytes,
-                // the helper writes the low N (a multiple of four, so no partial word).
+                // then the helper writes the low N (a multiple of four, so no partial word).
                 unsafe {
-                    u256::byte_order::read_be_into_words::<N>(self.ip.sub(N), slot.cast());
+                    // Zeroing first keeps PUSH20 from ending in the same stores as
+                    // `push_u64`, which LLVM merges into one tail behind an extra jump.
                     if N == 20 {
                         for i in 5..8 {
                             slot.cast::<u32>().add(i).write(0);
                         }
                     }
+                    u256::byte_order::read_be_into_words::<N>(self.ip.sub(N), slot.cast());
                 };
             } else {
                 for i in 0..N {
