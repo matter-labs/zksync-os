@@ -53,6 +53,15 @@ impl DelegatedU256 {
         let _ = bigint_op_delegation_raw(dst.cast(), Self::zero_ptr().cast(), BigIntOps::MemCpy);
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) unsafe fn from_be_bytes_in_place(input: &[u8; 32], place: &mut MaybeUninit<Self>) {
+        unsafe {
+            // `Self` is 32-byte aligned and `place` is disjoint from `input`.
+            u256::byte_order::read_be_into_words::<32>(input.as_ptr(), place.as_mut_ptr().cast());
+        }
+    }
+
+    #[cfg(not(target_arch = "riscv32"))]
     pub(crate) unsafe fn from_be_bytes_in_place(input: &[u8; 32], place: &mut MaybeUninit<Self>) {
         unsafe {
             let ptr = place.as_mut_ptr().cast::<u64>();
@@ -71,10 +80,20 @@ impl DelegatedU256 {
         unsafe { core::mem::transmute(res) }
     }
 
+    #[cfg(not(target_arch = "riscv32"))]
     pub(crate) const fn as_limbs_mut(&mut self) -> &mut [u64; 4] {
         &mut self.0
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn bytereverse(&mut self) {
+        unsafe {
+            // `Self` is 32-byte aligned and contains eight initialized words.
+            u256::byte_order::bytereverse_words_in_place::<8>(self.0.as_mut_ptr().cast());
+        }
+    }
+
+    #[cfg(not(target_arch = "riscv32"))]
     pub(crate) fn bytereverse(&mut self) {
         let limbs = self.as_limbs_mut();
         unsafe {

@@ -36,6 +36,19 @@ unsafe fn read_immediate_truncated<const N: usize>(ip: *const u8, end: *const u8
     acc
 }
 
+/// Zeroes the uninitialized slot `dst`, then writes the truncated immediate into it as
+/// [`write_immediate_truncated`] does
+#[cold]
+#[inline(never)]
+unsafe fn zero_and_write_immediate_truncated<const N: usize>(
+    ip: *const u8,
+    end: *const u8,
+    dst: *mut u8,
+) {
+    U256::write_zero_into_ptr(dst.cast());
+    write_immediate_truncated::<N>(ip, end, dst);
+}
+
 /// Writes the `N`-byte immediate at `ip`, which runs past the end of the code, into the
 /// zeroed slot `dst` (little-endian, i.e. reversed)
 #[cold]
@@ -101,18 +114,52 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             gas_constants::VERYLOW,
             PUSH_NATIVE_COSTS[N],
         )?;
-        let slot = self.stack.push_slot_zeroed()?;
+        // On the proving target PUSH20 and PUSH32 assemble the immediate with `rev8`: they
+        // carry almost all of the measured saving, other sizes save under a cycle per
+        // push. Misaligned immediates take the helper's shift/glue path; the byte loop
+        // below handles the other PUSH sizes. Their slot is not zeroed up front:
+        // every byte is written below.
+        let use_rev8 = const { cfg!(target_arch = "riscv32") && (N == 20 || N == 32) };
+        let slot = if use_rev8 {
+            self.stack.push_slot_uninit()?
+        } else {
+            self.stack.push_slot_zeroed()?
+        };
         let dst = slot.cast::<u8>();
         self.ip = self.ip.wrapping_add(N);
         if S::CODE_IS_PADDED || self.ip <= self.code_end {
-            for i in 0..N {
-                // SAFETY: the whole immediate is in the code or in its zero padding, `dst`
-                // is a 32-byte slot
-                unsafe { dst.add(N - 1 - i).write(self.ip.sub(N - i).read()) };
+            if use_rev8 {
+                // SAFETY: the whole immediate is readable, and `slot` is a 32-byte-aligned
+                // stack slot that does not overlap the code. PUSH20 zeroes the high 12 bytes,
+                // the helper writes the low N (a multiple of four, so no partial word).
+                unsafe {
+                    u256::byte_order::read_be_into_words::<N>(self.ip.sub(N), slot.cast());
+                    if N == 20 {
+                        for i in 5..8 {
+                            slot.cast::<u32>().add(i).write(0);
+                        }
+                    }
+                };
+            } else {
+                for i in 0..N {
+                    // SAFETY: the whole immediate is in the code or in its zero padding, `dst`
+                    // is a 32-byte slot
+                    unsafe { dst.add(N - 1 - i).write(self.ip.sub(N - i).read()) };
+                }
             }
         } else {
             // SAFETY: bounds checked per byte
-            unsafe { write_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end, dst) };
+            unsafe {
+                if use_rev8 {
+                    zero_and_write_immediate_truncated::<N>(
+                        self.ip.wrapping_sub(N),
+                        self.code_end,
+                        dst,
+                    )
+                } else {
+                    write_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end, dst)
+                }
+            };
         }
         Ok(())
     }

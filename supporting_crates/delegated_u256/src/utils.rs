@@ -19,6 +19,7 @@ impl DelegatedU256 {
         Self(limbs)
     }
 
+    #[inline(always)]
     pub fn from_be_bytes(input: &[u8; 32]) -> Self {
         unsafe {
             let mut result = MaybeUninit::<DelegatedU256>::uninit();
@@ -27,18 +28,33 @@ impl DelegatedU256 {
         }
     }
 
+    /// The big-endian bytes of the value. Without delegation, RISC-V returns the
+    /// `rev8`-reversed words by value, with no branch or scratch buffer, so the
+    /// caller's copy can stay in registers.
+    #[inline(always)]
     pub fn to_be_bytes(&self) -> [u8; 32] {
-        let mut out = MaybeUninit::<[u8; 32]>::uninit();
-        // SAFETY: `out` is 32 writable bytes, fully written below
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        // SAFETY: `self` is an aligned, initialized slot of eight words
         unsafe {
-            self.write_be_bytes_into(&mut *out.as_mut_ptr());
-            out.assume_init()
+            crate::byte_order::words_to_be_bytes_32((self as *const Self).cast::<u32>())
+        }
+
+        #[cfg(not(all(target_arch = "riscv32", not(feature = "bytereverse_delegation"))))]
+        {
+            let mut out = MaybeUninit::<[u8; 32]>::uninit();
+            // SAFETY: `out` is 32 writable bytes, fully written below
+            unsafe {
+                self.write_be_bytes_into(&mut *out.as_mut_ptr());
+                out.assume_init()
+            }
         }
     }
 
-    /// Writes the big-endian bytes of the value into `dst`: with the delegation a
-    /// reversed scratch copy of `self` and a plain copy out, otherwise a reversed
-    /// byte-by-byte copy.
+    /// Writes the big-endian bytes of the value into `dst`. RISC-V uses a reversed
+    /// scratch copy and a plain copy with delegation, or stores the by-value
+    /// [`Self::to_be_bytes`] as a byte-aligned `[u8; 32]` without it. For destinations
+    /// inside heap memory, use [`Self::write_slot_as_be_bytes`] to get word stores
+    /// when aligned. Other targets use a reversed byte-by-byte copy.
     #[inline(always)]
     pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
         #[cfg(all(target_arch = "riscv32", feature = "bytereverse_delegation"))]
@@ -47,17 +63,23 @@ impl DelegatedU256 {
             reversed.bytereverse_and_write_le(dst);
         }
 
-        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        {
+            *dst = self.to_be_bytes();
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         // SAFETY: `self` is 32 initialized bytes, `dst` is 32 writable bytes
         unsafe {
             Self::reversed_byte_copy((self as *const Self).cast::<u8>(), dst.as_mut_ptr());
         }
     }
 
-    /// Writes the big-endian bytes of the value into `dst`. With the delegation `self`
-    /// is byte-reversed in place first and then copied out (no scratch copy), so it is
-    /// for a value the caller no longer needs; otherwise a reversed byte-by-byte copy
-    /// that leaves `self` untouched.
+    /// Writes the big-endian bytes of the value into `dst`. With delegation on
+    /// RISC-V, `self` is reversed in place and copied out, so the caller must no
+    /// longer need it. Without delegation, RISC-V reverses aligned words with
+    /// `rev8` (shifted words for an unaligned `dst`), leaving `self` untouched.
+    /// Other targets also leave `self` untouched and copy bytes in reverse order.
     #[inline(always)]
     pub fn bytereverse_and_write_le(&mut self, dst: &mut [u8; 32]) {
         #[cfg(all(target_arch = "riscv32", feature = "bytereverse_delegation"))]
@@ -67,7 +89,19 @@ impl DelegatedU256 {
             unsafe { Self::copy_slot_to_bytes(self as *const Self, dst.as_mut_ptr()) }
         }
 
-        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        // The callers pass word-aligned `Bytes32` locals, where the alignment test
+        // folds away; the by-value form costs two callee-saved registers in SSTORE.
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        // SAFETY: `self` is an aligned, initialized slot; `dst` is a distinct
+        // writable array, and the helper handles unaligned destinations.
+        unsafe {
+            crate::byte_order::write_words_as_be_32(
+                (self as *const Self).cast::<u32>(),
+                dst.as_mut_ptr(),
+            );
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         // SAFETY: `self` is 32 initialized bytes, `dst` is 32 writable bytes
         unsafe {
             Self::reversed_byte_copy((self as *const Self).cast::<u8>(), dst.as_mut_ptr());
@@ -102,7 +136,9 @@ impl DelegatedU256 {
         unsafe { Self::bytereverse_in_place(self as *mut Self) }
     }
 
-    /// Reverses the 32 bytes of the value at `ptr`.
+    /// Reverses the 32 bytes of the value at `ptr`: by delegation on RISC-V
+    /// when enabled, by word reversal with `rev8` otherwise on RISC-V, and by
+    /// swapping and reversing limbs on other targets.
     ///
     /// # Safety
     /// `ptr` must be 32 bytes aligned and point to 32 bytes of initialized memory.
@@ -116,7 +152,12 @@ impl DelegatedU256 {
             >(ptr, core::ptr::addr_of!(crate::arithmetic::ZERO));
         }
 
-        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        unsafe {
+            crate::byte_order::bytereverse_words_in_place::<8>(ptr.cast::<u32>());
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         unsafe {
             let limbs = (*ptr).as_limbs_mut();
             core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
@@ -187,6 +228,7 @@ impl DelegatedU256 {
     ///
     /// # Safety
     /// `src` must be readable and `dst` writable for 32 bytes; they must not overlap.
+    #[cfg(not(target_arch = "riscv32"))]
     #[inline(always)]
     unsafe fn reversed_byte_copy(src: *const u8, dst: *mut u8) {
         unsafe {
@@ -198,8 +240,10 @@ impl DelegatedU256 {
 
     /// Writes the slot `src` as 32 big-endian bytes at `dst` (any alignment). With the
     /// `bytereverse_delegation` feature on RISC-V the slot is byte-reversed in place
-    /// and copied out, so it must be one the caller no longer needs; otherwise a
-    /// reversed byte-by-byte copy that leaves the slot untouched.
+    /// and copied out, so it must be one the caller no longer needs. Without
+    /// delegation, RISC-V uses `rev8` on aligned destination words (shifted words
+    /// and edge bytes for unaligned `dst`); other targets use a reversed byte copy.
+    /// Both non-delegation paths leave the slot untouched.
     ///
     /// # Safety
     /// `src` must be 32 bytes aligned and initialized, `dst` must be writable for 32
@@ -212,7 +256,12 @@ impl DelegatedU256 {
             Self::copy_slot_to_bytes(src, dst);
         }
 
-        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        unsafe {
+            crate::byte_order::write_words_as_be_32(src.cast::<u32>(), dst);
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         unsafe {
             Self::reversed_byte_copy(src.cast::<u8>(), dst);
         }
@@ -220,10 +269,13 @@ impl DelegatedU256 {
 
     /// Writes the big-endian integer at `src` into the slot `dst`. With the
     /// `bytereverse_delegation` feature on RISC-V this is a plain copy and one
-    /// in-place reversal delegation; otherwise a reversed byte-by-byte copy.
+    /// in-place reversal delegation. Without delegation, RISC-V reads source
+    /// words using `rev8` (shifting aligned words together if `src` is unaligned);
+    /// other targets use a reversed byte-by-byte copy.
     ///
     /// # Safety
-    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable.
+    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable;
+    /// source and destination must not overlap.
     #[inline(always)]
     pub unsafe fn write_be_bytes_into_slot(src: *const u8, dst: *mut Self) {
         #[cfg(all(target_arch = "riscv32", feature = "bytereverse_delegation"))]
@@ -232,7 +284,12 @@ impl DelegatedU256 {
             Self::bytereverse_in_place(dst);
         }
 
-        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        #[cfg(all(target_arch = "riscv32", not(feature = "bytereverse_delegation")))]
+        unsafe {
+            crate::byte_order::read_be_into_words::<32>(src, dst.cast::<u32>());
+        }
+
+        #[cfg(not(target_arch = "riscv32"))]
         unsafe {
             Self::reversed_byte_copy(src, dst.cast::<u8>());
         }
@@ -336,7 +393,7 @@ mod byte_order_tests {
         twice.bytereverse();
         twice.bytereverse();
         assert_eq!(twice.as_limbs(), value.as_limbs());
-        // an unaligned source takes the byte path
+        // An unaligned source takes the byte path on the host and the glue path on riscv32.
         let mut buf = [0u8; 40];
         buf[3..35].copy_from_slice(&be);
         let unaligned: &[u8; 32] = buf[3..35].try_into().unwrap();
@@ -344,5 +401,42 @@ mod byte_order_tests {
             DelegatedU256::from_be_bytes(unaligned).as_limbs(),
             value.as_limbs()
         );
+    }
+
+    #[test]
+    fn raw_be_conversions_handle_all_byte_alignments() {
+        let be = core::array::from_fn::<_, 32, _>(|i| (i * 37 + 11) as u8);
+        let expected = DelegatedU256::from_be_bytes(&be);
+
+        for offset in 0..=3 {
+            let mut source = [0u8; 36];
+            source[offset..offset + 32].copy_from_slice(&be);
+            let mut slot = DelegatedU256::default();
+            // SAFETY: `source` contains 32 bytes from `offset`; `slot` is a
+            // distinct, 32-aligned writable value.
+            unsafe {
+                DelegatedU256::write_be_bytes_into_slot(source.as_ptr().add(offset), &mut slot);
+            }
+            assert_eq!(slot.as_limbs(), expected.as_limbs());
+
+            let mut output = [0xA5u8; 36];
+            // SAFETY: `slot` is initialized and aligned; the separate output
+            // array has 32 writable bytes from `offset`.
+            unsafe {
+                DelegatedU256::write_slot_as_be_bytes(&mut slot, output.as_mut_ptr().add(offset));
+            }
+            assert_eq!(&output[offset..offset + 32], &be);
+            assert!(output[..offset].iter().all(|&byte| byte == 0xA5));
+            assert!(output[offset + 32..].iter().all(|&byte| byte == 0xA5));
+            #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+            assert_eq!(slot.as_limbs(), expected.as_limbs());
+        }
+
+        let mut slot = expected.clone();
+        let mut out = [0u8; 32];
+        slot.bytereverse_and_write_le(&mut out);
+        assert_eq!(out, be);
+        #[cfg(not(all(target_arch = "riscv32", feature = "bytereverse_delegation")))]
+        assert_eq!(slot.as_limbs(), expected.as_limbs());
     }
 }

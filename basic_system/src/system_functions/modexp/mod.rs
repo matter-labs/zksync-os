@@ -24,6 +24,26 @@ use crate::cost_constants::{
     MODEXP_PER_OP_OVERHEAD_NATIVE_COST,
 };
 
+#[cfg(target_arch = "riscv32")]
+#[repr(align(4))]
+struct AlignedBytes([u8; 32]);
+
+#[cfg(target_arch = "riscv32")]
+impl core::ops::Deref for AlignedBytes {
+    type Target = [u8; 32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl core::ops::DerefMut for AlignedBytes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Count the bit length and popcount of a big-endian byte slice,
 /// skipping leading zero bytes.
 fn exp_bit_len_and_popcount(exp: &[u8]) -> (u64, u64) {
@@ -263,20 +283,38 @@ fn modexp_as_system_function_inner<
 
     // Extract the header
     let mut input_it = input.iter();
+    #[cfg(target_arch = "riscv32")]
+    let mut base_len = AlignedBytes([0u8; 32]);
+    #[cfg(not(target_arch = "riscv32"))]
     let mut base_len = [0u8; 32];
     for (dst, src) in base_len.iter_mut().zip(&mut input_it) {
         *dst = *src;
     }
+    #[cfg(target_arch = "riscv32")]
+    let mut exp_len = AlignedBytes([0u8; 32]);
+    #[cfg(not(target_arch = "riscv32"))]
     let mut exp_len = [0u8; 32];
     for (dst, src) in exp_len.iter_mut().zip(&mut input_it) {
         *dst = *src;
     }
+    #[cfg(target_arch = "riscv32")]
+    let mut mod_len = AlignedBytes([0u8; 32]);
+    #[cfg(not(target_arch = "riscv32"))]
     let mut mod_len = [0u8; 32];
     for (dst, src) in mod_len.iter_mut().zip(&mut input_it) {
         *dst = *src;
     }
+    #[cfg(target_arch = "riscv32")]
+    let base_len = U256::from_limbs(u256::byte_order::be_bytes_to_le_limbs(&base_len));
+    #[cfg(not(target_arch = "riscv32"))]
     let base_len = U256::from_be_bytes(base_len);
+    #[cfg(target_arch = "riscv32")]
+    let exp_len = U256::from_limbs(u256::byte_order::be_bytes_to_le_limbs(&exp_len));
+    #[cfg(not(target_arch = "riscv32"))]
     let exp_len = U256::from_be_bytes(exp_len);
+    #[cfg(target_arch = "riscv32")]
+    let mod_len = U256::from_limbs(u256::byte_order::be_bytes_to_le_limbs(&mod_len));
+    #[cfg(not(target_arch = "riscv32"))]
     let mod_len = U256::from_be_bytes(mod_len);
 
     // Cast base and modulus to usize, it does not make sense to handle larger values
@@ -325,11 +363,21 @@ fn modexp_as_system_function_inner<
         // get right padded bytes so if data.len is less then exp_len we will get right padded zeroes.
         let exp_it = input.get(base_len..).unwrap_or_default().iter();
         // If exp_len is less then 32 bytes get only exp_len bytes and do left padding.
+        #[cfg(target_arch = "riscv32")]
+        let mut out = AlignedBytes([0u8; 32]);
+        #[cfg(not(target_arch = "riscv32"))]
         let mut out = [0u8; 32];
         for (dst, src) in out[32 - exp_highp_len..].iter_mut().zip(exp_it) {
             *dst = *src;
         }
-        U256::from_be_bytes(out)
+        #[cfg(target_arch = "riscv32")]
+        {
+            U256::from_limbs(u256::byte_order::be_bytes_to_le_limbs(&out))
+        }
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            U256::from_be_bytes(out)
+        }
     };
 
     // Gate the operand allocations on available resources *before* allocating

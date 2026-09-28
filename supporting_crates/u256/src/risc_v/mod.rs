@@ -260,6 +260,7 @@ impl U256 {
         }
     }
 
+    #[inline(always)]
     pub fn from_be_bytes(input: &[u8; 32]) -> Self {
         Self(DelegatedU256::from_be_bytes(input))
     }
@@ -276,7 +277,8 @@ impl U256 {
     /// Writes the big-endian integer at `src` into the slot `dst`.
     ///
     /// # Safety
-    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable.
+    /// `src` must be readable for 32 bytes, `dst` must be 32 bytes aligned and writable;
+    /// source and destination must not overlap.
     #[inline(always)]
     pub unsafe fn write_be_bytes_into_slot(src: *const u8, dst: *mut Self) {
         unsafe { DelegatedU256::write_be_bytes_into_slot(src, dst.cast()) }
@@ -303,7 +305,8 @@ impl U256 {
     /// Writes the slot `src` as 32 big-endian bytes at `dst`; the slot may be mangled.
     ///
     /// # Safety
-    /// `src` must be 32 bytes aligned and initialized, `dst` must be writable for 32 bytes.
+    /// `src` must be 32 bytes aligned and initialized, `dst` must be writable for 32 bytes;
+    /// they must not overlap.
     #[inline(always)]
     pub unsafe fn write_slot_as_be_bytes(src: *mut Self, dst: *mut u8) {
         unsafe { DelegatedU256::write_slot_as_be_bytes(src.cast(), dst) }
@@ -326,10 +329,12 @@ impl U256 {
         self.0.to_le_bytes()
     }
 
+    #[inline(always)]
     pub fn to_be_bytes(&self) -> [u8; 32] {
         self.0.to_be_bytes()
     }
 
+    #[inline(always)]
     pub fn write_be_bytes_into(&self, dst: &mut [u8; 32]) {
         self.0.write_be_bytes_into(dst);
     }

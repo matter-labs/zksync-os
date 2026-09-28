@@ -4,6 +4,8 @@
 
 mod conversions;
 
+pub use delegated_u256::byte_order;
+
 #[cfg(any(not(feature = "delegation"), not(target_arch = "riscv32"), test))]
 mod naive;
 

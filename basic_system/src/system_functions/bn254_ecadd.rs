@@ -107,6 +107,12 @@ pub fn bn254_ecadd_inner<O: IOOracle>(
 }
 
 /// The integer encoded big-endian in `bytes`
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn bigint_from_be(bytes: &[u8; 32]) -> <crypto::bn254::Fq as PrimeField>::BigInt {
+    <crypto::bn254::Fq as PrimeField>::BigInt::new(u256::byte_order::be_bytes_to_le_limbs(bytes))
+}
+
+#[cfg(not(target_arch = "riscv32"))]
 pub(crate) fn bigint_from_be(bytes: &[u8; 32]) -> <crypto::bn254::Fq as PrimeField>::BigInt {
     let mut limbs = [0u64; 4];
     for (limb, chunk) in limbs.iter_mut().zip(bytes.as_chunks::<8>().0.iter().rev()) {
@@ -116,6 +122,12 @@ pub(crate) fn bigint_from_be(bytes: &[u8; 32]) -> <crypto::bn254::Fq as PrimeFie
 }
 
 /// `value` big-endian in `out`
+#[cfg(target_arch = "riscv32")]
+fn write_bigint_be(value: &<crypto::bn254::Fq as PrimeField>::BigInt, out: &mut [u8; 32]) {
+    u256::byte_order::le_limbs_to_be_bytes(&value.0, out);
+}
+
+#[cfg(not(target_arch = "riscv32"))]
 fn write_bigint_be(value: &<crypto::bn254::Fq as PrimeField>::BigInt, out: &mut [u8; 32]) {
     for (chunk, limb) in out
         .as_chunks_mut::<8>()

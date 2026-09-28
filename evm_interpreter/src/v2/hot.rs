@@ -46,6 +46,13 @@ impl StackTop {
         Ok(self.sp.wrapping_sub(1))
     }
 
+    /// Reserves the next slot for a push without initializing it; the caller must write all
+    /// 32 bytes before the slot is read
+    #[inline(always)]
+    pub(crate) fn push_slot_uninit(&mut self) -> Result<*mut U256, ExitCode> {
+        self.push_slot()
+    }
+
     /// Reserves the next slot for a push and zeroes it
     #[inline(always)]
     pub fn push_slot_zeroed(&mut self) -> Result<*mut U256, ExitCode> {
@@ -490,7 +497,7 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
 /// Copies 32 bytes at `src` (unaligned, big-endian) into the slot `dst` as a `U256`
 ///
 /// # Safety
-/// `src` must be readable for 32 bytes, `dst` must be a valid slot.
+/// `src` must be readable for 32 bytes, `dst` must be a valid slot; they must not overlap.
 #[inline(always)]
 pub(crate) unsafe fn read_be_word(src: *const u8, dst: *mut U256) {
     // a copy (by words when the source is aligned) and one byte-reversal delegation
@@ -502,7 +509,8 @@ pub(crate) unsafe fn read_be_word(src: *const u8, dst: *mut U256) {
 /// operand).
 ///
 /// # Safety
-/// `dst` must be writable for 32 bytes, `src` must be an initialized slot.
+/// `dst` must be writable for 32 bytes, `src` must be an initialized slot; they must not
+/// overlap.
 #[inline(always)]
 pub(crate) unsafe fn write_be_word(src: *mut U256, dst: *mut u8) {
     U256::write_slot_as_be_bytes(src, dst);
