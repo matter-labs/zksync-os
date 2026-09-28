@@ -17,6 +17,7 @@ use rig::basic_bootloader::bootloader::constants::{
 };
 use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR;
 use rig::chain::RunConfig;
+use rig::constants::{PRIORITY_TX_MAX_GAS_LIMIT, UPGRADE_TX_MAX_GAS_LIMIT};
 use rig::crypto::sha3::Keccak256;
 use rig::crypto::MiniDigest;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
@@ -1002,6 +1003,47 @@ fn test_upgrade_tx_succeeds() {
     // make sure that it didn't produce l1 log with upgrade tx result
     // (such logs were present in the past, but we removed them)
     assert!(tx_output.l2_to_l1_logs.is_empty());
+}
+
+#[test]
+fn test_upgrade_tx_retains_72m_gas_limit() {
+    use rig::evm_bytecode::BytecodeBuilder;
+    use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
+
+    let contract_address = common_target_address();
+    // Return the gas available on entry to detect any runtime clamping to the priority ceiling.
+    let bytecode = BytecodeBuilder::new()
+        .gas()
+        .push0()
+        .mstore()
+        .push_u8(32)
+        .push0()
+        .return_()
+        .finish();
+    let mut tester = TestingFramework::new().with_evm_contract(contract_address, &bytecode);
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("0000000000000000000000000000000000008007"),
+        to: contract_address,
+        gas_limit: UPGRADE_TX_MAX_GAS_LIMIT.into(),
+        gas_per_pubdata_byte_limit: 800,
+        ..Default::default()
+    });
+    let expected_upgrade_hash = l1_tx_hash(upgrade_tx.clone());
+
+    let result = tester.execute_block(vec![upgrade_tx]);
+    let tx_output = result.tx_results[0].as_ref().expect("upgrade must execute");
+    match &tx_output.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(output)) => {
+            let available_gas = U256::from_be_slice(output);
+            assert!(available_gas > U256::from(PRIORITY_TX_MAX_GAS_LIMIT));
+            assert!(available_gas < U256::from(UPGRADE_TX_MAX_GAS_LIMIT));
+        }
+        other => panic!("upgrade must succeed, got: {other:?}"),
+    }
+    assert!(tx_output.l2_to_l1_logs.is_empty());
+    let batch_output = last_prover_input_batch_output(&tester);
+    assert_eq!(batch_output.upgrade_tx_hash, expected_upgrade_hash);
+    assert_eq!(batch_output.number_of_layer_1_txs, U256::ZERO);
 }
 
 #[test]
