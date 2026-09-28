@@ -265,6 +265,64 @@ fn oversized_returndatacopy_charges_native_consistently() {
     );
 }
 
+/// Pins that a copy length whose byte-linear native cost fits in a `u64`, but
+/// overflows once the opcode's base native cost is added, fails the copy with
+/// out-of-gas instead of overflowing. Builds with overflow checks (such as the
+/// sequencer) used to panic here, while builds without them (such as the
+/// proving binary) wrapped the sum and still failed on the gas charge.
+#[test]
+fn copy_native_cost_overflow_is_out_of_gas() {
+    // `COPY_BYTE_NATIVE_COST * COPY_LEN + COPY_BASE_NATIVE_COST` is
+    // `u64::MAX - 1`, so adding any opcode base native cost overflows.
+    const COPY_LEN: u64 = (u64::MAX - COPY_BASE_NATIVE_COST) / COPY_BYTE_NATIVE_COST;
+    const _: () = assert!(
+        COPY_BYTE_NATIVE_COST * COPY_LEN + COPY_BASE_NATIVE_COST
+            > u64::MAX - RETURNDATACOPY_NATIVE_COST
+    );
+
+    const CALLDATACOPY: u8 = 0x37;
+    const CODECOPY: u8 = 0x39;
+    const RETURNDATACOPY: u8 = 0x3e;
+    const MCOPY: u8 = 0x5e;
+    let opcodes = [CALLDATACOPY, CODECOPY, RETURNDATACOPY, MCOPY];
+
+    let signer = testing_signer(0);
+    let mut tester = new_tester().with_balance(signer.address(), U256::from(DEFAULT_BALANCE));
+    let mut txs = Vec::new();
+    for (nonce, opcode) in opcodes.into_iter().enumerate() {
+        let contract = rig::alloy::primitives::Address::with_last_byte(0x30 + nonce as u8);
+        // Operands: len=COPY_LEN, then two zero offsets.
+        let mut bytecode = BytecodeBuilder::new()
+            .push_bytes(&COPY_LEN.to_be_bytes())
+            .push0()
+            .push0()
+            .finish();
+        bytecode.push(opcode);
+        tester = tester.with_evm_contract(contract, &bytecode);
+        txs.push(call_tx_with(
+            signer.clone(),
+            contract,
+            nonce as u64,
+            CALL_GAS_LIMIT,
+            AlloyU256::ZERO,
+            vec![],
+            DEFAULT_MAX_FEE,
+            DEFAULT_PRIORITY_FEE,
+            TEST_CHAIN_ID,
+        ));
+    }
+
+    let output = tester.execute_block(txs);
+    for (i, opcode) in opcodes.into_iter().enumerate() {
+        assert_tx_reverted!(output, i);
+        assert_eq!(
+            output.tx_results[i].as_ref().unwrap().gas_used,
+            CALL_GAS_LIMIT,
+            "copy opcode {opcode:#04x} must fail out of gas and consume the full gas limit"
+        );
+    }
+}
+
 /// Regression: running out of native while copying a callee's returndata into
 /// the caller's heap (`copy_returndata_to_heap`, which charges native but no
 /// gas) must revert the transaction like any other out-of-native, rather than
