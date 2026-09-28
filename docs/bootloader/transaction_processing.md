@@ -54,3 +54,14 @@ To summarize, the lifecycle of an L2 transaction can be visualized as follows:
 ## L1 -> L2 transactions
 
 The main difference in the processing of L1 transactions is that there is no validation step. The `TxValidator` hooks (`begin_tx`/`finish_tx`) that every L2 transaction goes through are also skipped for L1 transactions, unless the chain opts in via `ChainConfig::l1_tx_filtering_enabled`, in which case priority transactions are subject to them (upgrade transactions never are). A rejected priority transaction is not dropped but force-reverted: it stays in the block, its body is skipped or rolled back depending on which hook rejected it, its full gas limit is charged and its L1 result log reports failure. See [L1 integration](../l1_integration.md#l1---l2-transactions) for how the decision is replayed in proving. The value for this transaction is transferred from the treasury ("minted"), as those funds are now locked in the L1 bridge. For now, deployment transactions from L1 transactions are not supported.
+
+Starting with 0.6.0, settlement contracts cap newly admitted L1 transactions at
+2²⁴ gas (16,777,216), including genesis and protocol-upgrade transactions. A chain
+may configure a lower admission limit. This ceiling is independent of the
+chain-configured L2 transaction gas limit.
+
+The bootloader continues processing L1 transactions queued under older, higher
+limits. Applying the new admission ceiling during execution would make those
+priority operations unprocessable. Gas pricing and native-resource budgets are
+unchanged. At the standard 800 gas per pubdata byte, the new ceiling implies at
+most 20,971 pubdata bytes before intrinsic and execution costs.
