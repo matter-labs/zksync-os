@@ -62,6 +62,6 @@ chain-configured L2 transaction gas limit.
 
 The bootloader continues processing L1 transactions queued under older, higher
 limits. Applying the new admission ceiling during execution would make those
-priority operations unprocessable. Gas pricing and native-resource budgets are
-unchanged. At the standard 800 gas per pubdata byte, the new ceiling implies at
+priority operations unprocessable. Gas pricing and the computational-native
+ceiling are unchanged. At the standard 800 gas per pubdata byte, the new ceiling implies at
 most 20,971 pubdata bytes before intrinsic and execution costs.
