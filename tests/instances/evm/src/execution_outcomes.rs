@@ -264,3 +264,82 @@ fn oversized_returndatacopy_charges_native_consistently() {
         "the copy charge must remain gated by the available gas"
     );
 }
+
+/// Regression: running out of native while copying a callee's returndata into
+/// the caller's heap (`copy_returndata_to_heap`, which charges native but no
+/// gas) must revert the transaction like any other out-of-native, rather than
+/// surfacing as an internal error that fails the whole block.
+#[test]
+fn out_of_native_during_returndata_copy_reverts_tx() {
+    // Returndata copied into the caller's heap on every call.
+    const RET_LEN: u64 = 8192;
+    // Low native-per-gas ratio (1000 / 100 = 10), so native runs out before gas.
+    const NATIVE_PRICE: u64 = 100;
+    // Each loop iteration costs a few thousand gas. Stepping the gas limit
+    // across more than one iteration moves the out-of-native point through
+    // the whole iteration, so some of the transactions run out inside the
+    // returndata copy, which dominates the per-iteration native cost.
+    const BASE_GAS_LIMIT: u64 = 1_000_000;
+    const GAS_LIMIT_STEP: u64 = 500;
+    const NUM_TXS: u64 = 10;
+
+    let returner_addr = address!("000000000000000000000000000000000000020b");
+    let caller_addr = address!("000000000000000000000000000000000000020c");
+
+    // RETURN(0, RET_LEN)
+    let returner_bytecode = BytecodeBuilder::new()
+        .push_bytes(&RET_LEN.to_be_bytes())
+        .push0()
+        .return_()
+        .finish();
+
+    // Loops forever: STATICCALL(gas, returner, 0, 0, 0, RET_LEN); POP.
+    // STATICCALL operands: ret_size=RET_LEN, ret_offset=0, in_size=0,
+    // in_offset=0, callee, gas.
+    let mut caller_bytecode = BytecodeBuilder::new()
+        .jumpdest()
+        .push_bytes(&RET_LEN.to_be_bytes())
+        .push0_n(3)
+        .push_address(returner_addr)
+        .gas()
+        .finish();
+    caller_bytecode.push(0xfa); // STATICCALL
+    caller_bytecode.extend(BytecodeBuilder::new().pop().push0().jump().finish());
+
+    let signer = testing_signer(0);
+    let mut tester = new_tester()
+        .with_balance(signer.address(), U256::from(DEFAULT_BALANCE))
+        .with_evm_contract(returner_addr, &returner_bytecode)
+        .with_evm_contract(caller_addr, &caller_bytecode)
+        .with_block_context(BlockContext {
+            native_price: U256::from(NATIVE_PRICE),
+            ..Default::default()
+        });
+
+    let txs = (0..NUM_TXS)
+        .map(|nonce| {
+            call_tx_with(
+                signer.clone(),
+                caller_addr,
+                nonce,
+                BASE_GAS_LIMIT + nonce * GAS_LIMIT_STEP,
+                AlloyU256::ZERO,
+                vec![],
+                DEFAULT_MAX_FEE,
+                DEFAULT_PRIORITY_FEE,
+                TEST_CHAIN_ID,
+            )
+        })
+        .collect();
+    let output = tester.execute_block(txs);
+
+    for (i, tx_result) in output.tx_results.iter().enumerate() {
+        assert_tx_reverted!(output, i);
+        let tx_out = tx_result.as_ref().unwrap();
+        assert_eq!(
+            tx_out.gas_used,
+            BASE_GAS_LIMIT + i as u64 * GAS_LIMIT_STEP,
+            "out-of-native tx {i} must consume its full gas limit"
+        );
+    }
+}
