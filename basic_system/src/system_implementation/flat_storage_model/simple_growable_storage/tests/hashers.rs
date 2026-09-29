@@ -16,7 +16,9 @@ fn direct_hasher_is_used_by_fold() {
     assert_eq!(runs.reference.counts[Counter::DirectLeaf as usize], 0);
     assert_eq!(runs.reference.counts[Counter::DirectNode as usize], 0);
     assert!(runs.hardened.counts[Counter::DirectLeaf as usize] > 1);
-    assert!(runs.hardened.counts[Counter::DirectNode as usize] > 63);
+    // the empty-subtree hashes come from the table, so these are all the fold's own: at least
+    // the read hash at each of the 64 levels
+    assert!(runs.hardened.counts[Counter::DirectNode as usize] >= 64);
 }
 
 pub(super) fn software_node(left: &Bytes32, right: &Bytes32) -> Bytes32 {
@@ -136,5 +138,28 @@ proptest! {
         prop_assert_eq!(direct.hash_node(&left, &right), software_node(&left, &right));
         prop_assert_eq!(direct.hash_leaf(&leaf), reference.hash_leaf(&leaf));
         prop_assert_eq!(direct.hash_leaf(&leaf), software_leaf(&leaf));
+    }
+}
+
+/// The table holds the same hash constants as the recurrence, with either hasher of the fold, as
+/// the host tree, and as an independent blake2s.
+#[test]
+fn blake2s_empty_subtree_hashes_match_the_recurrence() {
+    let table = &BLAKE2S_EMPTY_SUBTREE_HASHES;
+    let mut reference = Blake2sStorageHasher::new();
+    let computed = compute_empty_hashes::<64, Blake2sStorageHasher, Global>(&mut reference, Global);
+    assert_eq!(*computed, *table);
+    let mut direct = DirectBlake2sStorageHasher::new();
+    let computed =
+        compute_empty_hashes::<64, DirectBlake2sStorageHasher, Global>(&mut direct, Global);
+    assert_eq!(*computed, *table);
+    // the host tree keeps them from the root down, with the empty leaf last
+    let tree = TestingTree::<false>::new_in(Global);
+    for (height, hash) in table.as_slice().iter().enumerate() {
+        assert_eq!(tree.empty_hashes[TESTING_TREE_HEIGHT - height], *hash);
+    }
+    assert_eq!(table[0], software_leaf(&FlatStorageLeaf::empty()));
+    for [below, above] in table.array_windows::<2>() {
+        assert_eq!(*above, software_node(below, below));
     }
 }

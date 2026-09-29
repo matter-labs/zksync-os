@@ -813,6 +813,77 @@ pub fn recompute_root_from_proof<const N: usize, H: FlatStorageHasher, A: Alloca
     current
 }
 
+/// The empty-subtree hashes of the flat storage tree with blake2s: entry `i` is the root of an empty
+/// subtree of height `i`, i.e. entry 0 is the hash of the empty leaf, and entry `i + 1` the hash of
+/// entry `i` with itself. It is [`compute_empty_hashes`] with a blake2s hasher at height 64, which the
+/// unit tests check. A `static`, so that it is read in place.
+static BLAKE2S_EMPTY_SUBTREE_HASHES: [Bytes32; 64] = [
+    Bytes32::from_hex("e3cdc93b3c2beb30f6a7c7cc45a32da012df9ae1be880e2c074885cb3f4e1e53"), // 0
+    Bytes32::from_hex("c45bfaf4bb5d0fee27d3178b8475155a07a1fa8ada9a15133a9016f7d0435f0f"), // 1
+    Bytes32::from_hex("6494c26aef108cefd4af645099311b34f8e28c3941f3a50d83c5ef4d806d302a"), // 2
+    Bytes32::from_hex("7e33ae2bae08165296b0f1bc86ab239d40182c75b1aa49b3a457c9af2d140ac9"), // 3
+    Bytes32::from_hex("361e83fb81447385704a04b701acaf2b462a69cf83af3fec52d432c5cb26afeb"), // 4
+    Bytes32::from_hex("3453a4da3fbe780699501f72d3b67a24f281fa51f74d735961e3c527a0947ed2"), // 5
+    Bytes32::from_hex("01306a1c828e76a1121b4097bcb1d35ad36dee1c4736d7b42d439d8893362134"), // 6
+    Bytes32::from_hex("c717122072da764d773fa315dcdfdab987308adfd3dd1e8730a965bef95eb64e"), // 7
+    Bytes32::from_hex("aeeaa76244fb460dfed609137be3c1024581e41389413f344d53f34757f6319d"), // 8
+    Bytes32::from_hex("8a02802f44bc6f7d06fe4e761495a401a2831f4865841289c56bb72dd5ce0486"), // 9
+    Bytes32::from_hex("f00a51e8cf5122a341df0627a199d49df33af67683847b90dd7f5229607d433d"), // 10
+    Bytes32::from_hex("50960aa6c8a93380c75a94ebcd104f71b48d0b1ba5ccac650461fed7c1a90b47"), // 11
+    Bytes32::from_hex("f92dd16857fbf4d867aa6a28e588685b6c3cf3d3c3e56b9198e86e359efc3456"), // 12
+    Bytes32::from_hex("efbe0b681a1e1d77f7f6f870dd7c7c9e743cc7655123086b2928bec88841ab0e"), // 13
+    Bytes32::from_hex("71f012aa3ac80fc8efc47bb930d814d5025470c43975f1bcfcf56f475d29e032"), // 14
+    Bytes32::from_hex("7f6ca50a2f4bec35ab931d992914ff8032a9926973db5a04254b650cc138044b"), // 15
+    Bytes32::from_hex("d512fa549c482e316488e1df5645c52c3fd82d37bc72ee481d5055866376b343"), // 16
+    Bytes32::from_hex("250432ebaa8ac771ecd44a30b7366516240b8fece3b327c36f0164009afda680"), // 17
+    Bytes32::from_hex("daa90aae20c1067bb6a6ec2fd7f28f8f72eb5b14fcdf041ac8257a88bbee6e6a"), // 18
+    Bytes32::from_hex("5f761f0fcccfb5d7710947462656eac07cef89ab0e8e2ec22033644002446011"), // 19
+    Bytes32::from_hex("e2cbc2649b5a2ae4e71d37aa9dd808eb3dc01d07a56cbac68866040123d1e321"), // 20
+    Bytes32::from_hex("5d939474aba84cb02df3dbccce0e41e577ddf53cb9a238098ab178339f54a644"), // 21
+    Bytes32::from_hex("bb96a6d325aed3053acb4a0cb6d7c6fead87bcefd2444103345ee5cb796778db"), // 22
+    Bytes32::from_hex("04de11061d5178c14c9739ba0ca50ca23645c23893effeaba79573856dcd9a8d"), // 23
+    Bytes32::from_hex("45bec4898eb08ccb86eb4d44f56a8d8c899075ce4ffc0cdc3a6bf1123bbfdb68"), // 24
+    Bytes32::from_hex("a6f5643d2a1cd82261eab0489cd778d85bc4aed0d75cf60678ae5b2e3bcf5056"), // 25
+    Bytes32::from_hex("292193f796879566c8cb80e46bf003be5922e153ff0656e4e1ca28ca9b997aad"), // 26
+    Bytes32::from_hex("5a483255eed65181b6b1a0f04b0485858fe7b10438eb022b1c89905581f5d9b6"), // 27
+    Bytes32::from_hex("c470726ce544bd7c739534ce6f413bebbda3cd9da76e4e5f7821689efd163ded"), // 28
+    Bytes32::from_hex("953b63ef7b1408761d2e8c49c9520cde0ed174c9f81cf8d2750efec59be26691"), // 29
+    Bytes32::from_hex("cf20d03ec503278240483bbc3b086349a71f5f2d398b35d9bfa21a6aded16213"), // 30
+    Bytes32::from_hex("cf73dcde7d2b782ab922d5d5b051968539267aa3e199315a414f291100a12d40"), // 31
+    Bytes32::from_hex("08a3ba568fbf54b2ef15b2f3811edd6d97ee910bba42aee7a64be2d697cf4812"), // 32
+    Bytes32::from_hex("21a0be1fa39e675472e32665a2c9bfbe6801533609818faab4433d67cb063d57"), // 33
+    Bytes32::from_hex("9523d7515bb23672b4dafc6cee2d42e40e83df250b056fd313ce233ed6b0d6a8"), // 34
+    Bytes32::from_hex("bba04616fc8ba3aabc142e93327c74ad74bcd83e850065305c7d4fc11cf5eb3f"), // 35
+    Bytes32::from_hex("720ba87948687df03d3e16c799344a068cf0b4624d65cc081524bfbb52cfc022"), // 36
+    Bytes32::from_hex("2258e06f60a5cf6ba859b826a600371909e71bea46f3f58d53034d5101587b49"), // 37
+    Bytes32::from_hex("630c5f49985347aeccb2caca57160a9ea334622f00963c99103e225d602da653"), // 38
+    Bytes32::from_hex("883938880af25b88f6e725ddd4d755cf512492c7a13c72673d6ab9490edeae7c"), // 39
+    Bytes32::from_hex("3ec82e88bc94126b51eb5191415de92e1f2630fa200e30bfbd72edb686281b7e"), // 40
+    Bytes32::from_hex("cf9cc32202c1b922b8ca99eb1ecd296bd071afd45f7ad8483ce908ece85d5acd"), // 41
+    Bytes32::from_hex("c2eabc43bf31148d063f0225d2d72367ad320c24df15038193c51afa7b037f1b"), // 42
+    Bytes32::from_hex("8597faf6c408128e55e0774ee9aad1b6296eee3bbad2339096ac90da1232608c"), // 43
+    Bytes32::from_hex("288d47fc4eb1c34c0de470811f7a05772b5f0505109f9cc08951b54ed73d3258"), // 44
+    Bytes32::from_hex("671c1c72be1b30c4e13c0be50a4ece865b26628ecd039286d7244ab1a6fe123c"), // 45
+    Bytes32::from_hex("258aa28235eb7f2c59ba5afed4820a0594fcb3799fe4888e1a355a0cf807af97"), // 46
+    Bytes32::from_hex("cec5b7a53d7715216f08ba56d139de6dba77059d94c75f03d41ccca6546c214f"), // 47
+    Bytes32::from_hex("d6a32278aecae9016ec1a3c7f8735298f51384f21555260d0e8577768b88c3e3"), // 48
+    Bytes32::from_hex("5640e169ea7269dcf641519cfd89dcc0d8f398eb944a4038109f5baca99fc81d"), // 49
+    Bytes32::from_hex("d6f81d7549148f6f8a11eb4a39c85c2fe4d1d14607d044bda2d66cc6cad0235b"), // 50
+    Bytes32::from_hex("023010cd7b690e26baacfa197343d432175c3e3359723bd8c2f370784d2f4067"), // 51
+    Bytes32::from_hex("f5f46f88ac33193f9b9eca7072ee83999b423795ad9ca51475625e9b3afc3856"), // 52
+    Bytes32::from_hex("8e3314333549e8bc6440ff3e2458f69bfc10c015514810a2621a7b0ae65279f4"), // 53
+    Bytes32::from_hex("77a8f2cadfc093c19606d8a012d840661bcd8e45dde69710deeab4faca331ad6"), // 54
+    Bytes32::from_hex("fedaa3b273bd49922a29bc01f636e8aa53b3ffec87680bb3355509920ac8f21c"), // 55
+    Bytes32::from_hex("2a0ffe0b30bbebb8648153a79f2993fc5d8e277b78515d4ed6afde17909fdd1c"), // 56
+    Bytes32::from_hex("93a5635311fe641f7325ba156469cf888e2bfb71affc6943cb3ef3c91ff2f935"), // 57
+    Bytes32::from_hex("b6ad1fe5555e4a07e39f2e03770de2c327d2086277ad29b65c32beb9b0cd3024"), // 58
+    Bytes32::from_hex("51bc598c43c42208d43b2e5492f321d43eb3fcedc8b0a4d2a9fa31c42f0894a1"), // 59
+    Bytes32::from_hex("641ceb828b8ab1b675a2b851f5149221dc2794959e9940bb34a9803a07a288aa"), // 60
+    Bytes32::from_hex("45a31ff359136bd8df34a4f17ba82b2782eda77c38622b8e8d5af7bce197908a"), // 61
+    Bytes32::from_hex("afea761dafb1f8a66cec928eca614cc424afaa0582939a1727f531782e7afd32"), // 62
+    Bytes32::from_hex("b720fe53e6bd4e997d967b8649e10036802a4fd3aca6d7dcc43ed9671f41cb31"), // 63
+];
+
 pub fn compute_empty_hashes<const N: usize, H: FlatStorageHasher, A: Allocator>(
     hasher: &mut H,
     allocator: A,

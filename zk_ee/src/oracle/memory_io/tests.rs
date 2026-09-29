@@ -543,3 +543,123 @@ fn a_rejected_output_ends_its_query() {
     assert!(PairQuery::get(&mut oracle, ()).is_err());
     assert_eq!(WordQuery::get(&mut oracle, ()).unwrap(), 7);
 }
+
+/// Serves `response_word(i)` at the `i`-th read, and counts the reads. The read at `bad_read`, if any,
+/// gets a word that does not fit into `u32` on 64-bit targets.
+struct CountingChannel {
+    reads: usize,
+    bad_read: Option<usize>,
+}
+
+impl WordChannel for CountingChannel {
+    fn write_word(&mut self, _word: usize) {
+        panic!("no query is sent");
+    }
+
+    fn read_word(&mut self) -> usize {
+        let read = self.reads;
+        self.reads += 1;
+        if self.bad_read == Some(read) {
+            usize::MAX
+        } else {
+            response_word(read) as usize
+        }
+    }
+}
+
+fn counting_oracle(bad_read: Option<usize>) -> WordChannelOracle<CountingChannel> {
+    WordChannelOracle::new(CountingChannel { reads: 0, bad_read })
+}
+
+fn response_word(i: usize) -> u32 {
+    (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5a5a_5a5a
+}
+
+/// A destination word that was not written.
+const SENTINEL: u32 = 0xdead_beef;
+
+/// Every length, and those around the unrolled block sizes: the `i`-th word read goes to word `i` of
+/// the destination, and nothing is read or written past the length.
+#[test]
+fn write_words_writes_every_length_in_order() {
+    for num_words in (0..=70).chain([127, 128, 129, 511, 512, 513, 1000]) {
+        let mut oracle = counting_oracle(None);
+        let mut buffer = vec![SENTINEL; num_words + 3];
+        // SAFETY: the buffer holds more than `num_words` words
+        unsafe { oracle.write_words(buffer.as_mut_ptr(), num_words) }.unwrap();
+        assert_eq!(oracle.channel().reads, num_words);
+        for (i, word) in buffer.iter().enumerate() {
+            let expected = if i < num_words {
+                response_word(i)
+            } else {
+                SENTINEL
+            };
+            assert_eq!(*word, expected, "word {i} of {num_words}");
+        }
+    }
+}
+
+/// A word that does not fit into `u32` stops the transfer: the words before it are written, it is read
+/// and not written, and nothing after it is read.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn write_words_stops_at_the_first_word_that_does_not_fit() {
+    for num_words in [1, 5, 16, 17, 32, 33, 40, 64, 65] {
+        for bad_read in 0..num_words {
+            let mut oracle = counting_oracle(Some(bad_read));
+            let mut buffer = vec![SENTINEL; num_words];
+            // SAFETY: the buffer holds `num_words` words
+            assert!(unsafe { oracle.write_words(buffer.as_mut_ptr(), num_words) }.is_err());
+            assert_eq!(oracle.channel().reads, bad_read + 1);
+            for (i, word) in buffer.iter().enumerate() {
+                let expected = if i < bad_read {
+                    response_word(i)
+                } else {
+                    SENTINEL
+                };
+                assert_eq!(
+                    *word, expected,
+                    "word {i} of {num_words}, bad read {bad_read}"
+                );
+            }
+        }
+    }
+}
+
+/// Dynamically sized responses around the unrolled block sizes, through the whole protocol: one query
+/// each, the claimed words land at the start of the destination, and the response is consumed in full.
+#[test]
+fn dynamic_responses_around_the_block_sizes() {
+    let hash = bytes32(22);
+    for len in [0, 1, 2, 3, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 100] {
+        let preimage: Vec<usize> = (0..len as u64)
+            .map(|i| i.wrapping_mul(0x9e37_79b9_7f4a_7c15) as usize)
+            .collect();
+        let response = dynamic_response(&preimage);
+        let mut oracle = mock_oracle(move |query_id, input| {
+            assert_eq!(query_id, GENERIC_PREIMAGE_QUERY_ID);
+            // SAFETY: the querier passes the address of a live `Bytes32`
+            assert_eq!(unsafe { read_exposed::<Bytes32>(input) }, hash);
+            response.clone()
+        });
+        for spare in [0, 5] {
+            let mut buffer = vec![MaybeUninit::new(usize::MAX); len + spare];
+            assert_eq!(
+                PreimageQuery::get_into(&mut oracle, &hash, &mut buffer[..]).unwrap(),
+                len
+            );
+            assert!(oracle.channel().response.is_empty());
+            // SAFETY: every word was initialized, with `usize::MAX` or by the oracle
+            let buffer: Vec<usize> = buffer
+                .iter()
+                .map(|word| unsafe { word.assume_init() })
+                .collect();
+            assert_eq!(buffer[..len], preimage);
+            assert!(buffer[len..].iter().all(|&word| word == usize::MAX));
+        }
+        assert_eq!(
+            oracle.channel().queries,
+            [(GENERIC_PREIMAGE_QUERY_ID, address_of(&hash)); 2]
+        );
+    }
+}

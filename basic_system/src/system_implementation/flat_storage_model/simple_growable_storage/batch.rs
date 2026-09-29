@@ -423,8 +423,19 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         // and now we join
         let mut hasher = CommitmentHasher::new();
-        let empty_hashes =
-            compute_empty_hashes::<N, CommitmentHasher, A>(&mut hasher, allocator.clone());
+        // the fold hashes with blake2s, so the table serves the height in use
+        let computed_empty_hashes;
+        let empty_hashes: &[Bytes32; N] =
+            match <&[Bytes32; N]>::try_from(&BLAKE2S_EMPTY_SUBTREE_HASHES[..]) {
+                Ok(table) => table,
+                Err(_) => {
+                    computed_empty_hashes = compute_empty_hashes::<N, CommitmentHasher, A>(
+                        &mut hasher,
+                        allocator.clone(),
+                    );
+                    &computed_empty_hashes
+                }
+            };
 
         // now we should have fun and join the paths
         let buffer_size = by_index.len() + num_new_writes;
@@ -532,6 +543,8 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             );
         };
 
+        // the level also indexes the paths
+        #[allow(clippy::needless_range_loop)]
         for level in 0..N {
             assert!(!current_hashes_buffer.is_empty());
             if current_hashes_buffer.len() == 1 {

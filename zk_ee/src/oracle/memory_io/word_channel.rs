@@ -60,8 +60,17 @@ impl<C: WordChannel> MemoryOracle for WordChannelOracle<C> {
         // SAFETY: guaranteed by the caller
         let dst =
             unsafe { core::slice::from_raw_parts_mut(dst.cast::<MaybeUninit<u32>>(), num_words) };
-        // unrolled: for long responses the loop overhead is comparable to the channel read itself
-        let (chunks, remainder) = dst.as_chunks_mut::<4>();
+        // unrolled: for long responses (preimages, Merkle paths) the loop overhead is comparable to
+        // the channel read itself. On the proving target a word is a `csrrw` and a `sw`, and an
+        // iteration adds an `addi` and a `bne`, so a word costs 2 + 1/16 instructions in blocks of 32
+        // words, and 2 + 1/2 in chunks of 4, which take the rest
+        let (blocks, rest) = dst.as_chunks_mut::<32>();
+        for block in blocks.iter_mut() {
+            for word in block.iter_mut() {
+                word.write(channel_word_to_u32(self.channel.read_word())?);
+            }
+        }
+        let (chunks, remainder) = rest.as_chunks_mut::<4>();
         for chunk in chunks.iter_mut() {
             chunk[0].write(channel_word_to_u32(self.channel.read_word())?);
             chunk[1].write(channel_word_to_u32(self.channel.read_word())?);
