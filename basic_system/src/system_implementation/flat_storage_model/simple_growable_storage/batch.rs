@@ -422,9 +422,9 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         }
 
         // and now we join
-        let mut hasher = Blake2sStorageHasher::new();
+        let mut hasher = CommitmentHasher::new();
         let empty_hashes =
-            compute_empty_hashes::<N, Blake2sStorageHasher, A>(&mut hasher, allocator.clone());
+            compute_empty_hashes::<N, CommitmentHasher, A>(&mut hasher, allocator.clone());
 
         // now we should have fun and join the paths
         let buffer_size = by_index.len() + num_new_writes;
@@ -490,7 +490,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         let process_single = |a: &FoldNode,
                               level: u32,
                               dst: &mut Vec<FoldNode, A>,
-                              hasher: &mut Blake2sStorageHasher| {
+                              hasher: &mut CommitmentHasher| {
             let is_left = a.index & 1 == 0;
             let proof = if a.path != NO_PATH {
                 &paths.get(a.path)[level as usize]

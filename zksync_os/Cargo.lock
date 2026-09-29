@@ -279,6 +279,7 @@ version = "0.1.0"
 dependencies = [
  "airbender-crypto",
  "arrayvec",
+ "blake2s_u32",
  "cc-traits",
  "const-hex",
  "cycle_marker",

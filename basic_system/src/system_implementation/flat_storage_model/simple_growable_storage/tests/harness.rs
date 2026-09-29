@@ -15,9 +15,11 @@ pub(in super::super) enum Counter {
     NewWriteAliasPath,
     /// Two keys of `KeyIndex::overflow` were compared
     OverflowKeyCmp,
+    DirectLeaf,
+    DirectNode,
 }
 
-pub(super) const NUM_COUNTERS: usize = 3;
+pub(super) const NUM_COUNTERS: usize = 5;
 
 pub(in super::super) fn count(counter: Counter) {
     COUNTERS.with_borrow_mut(|counters| counters[counter as usize] += 1);

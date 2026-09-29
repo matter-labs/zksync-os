@@ -21,6 +21,11 @@ use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::{btree_map, BTreeMap};
 use alloc::vec::Vec;
+#[cfg(any(target_arch = "riscv32", test))]
+use blake2s_u32::{
+    state_with_extended_control::Blake2RoundFunctionEvaluator, AlignedArray64,
+    BLAKE2S_BLOCK_SIZE_U32_WORDS,
+};
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use crypto::MiniDigest;
@@ -165,6 +170,81 @@ impl FlatStorageHasher for Blake2sStorageHasher {
         Bytes32::from_array(self.hasher.finalize_reset())
     }
 }
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Debug)]
+pub struct DirectBlake2sStorageHasher {
+    evaluator: Blake2RoundFunctionEvaluator,
+    leaf_tail: AlignedArray64<u32, BLAKE2S_BLOCK_SIZE_U32_WORDS>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl DirectBlake2sStorageHasher {
+    #[inline]
+    fn compress_first_block(&mut self, left: &Bytes32, right: &Bytes32, last: bool) {
+        // SAFETY: Bytes32 consists of 32 initialized bytes; every u32 bit pattern is valid.
+        let left = unsafe { core::mem::transmute::<Bytes32, [u32; 8]>(*left) }.map(u32::from_le);
+        let right = unsafe { core::mem::transmute::<Bytes32, [u32; 8]>(*right) }.map(u32::from_le);
+        *self.evaluator.get_witness_buffer() = [
+            left[0], left[1], left[2], left[3], left[4], left[5], left[6], left[7], right[0],
+            right[1], right[2], right[3], right[4], right[5], right[6], right[7],
+        ];
+        self.evaluator.reset();
+        // SAFETY: the complete 64-byte input block was written above.
+        unsafe {
+            self.evaluator
+                .run_round_function_with_byte_len::<false>(64, last);
+        }
+    }
+
+    #[inline]
+    fn digest(&self) -> Bytes32 {
+        let words = self.evaluator.read_state_for_output().map(u32::to_le);
+        // SAFETY: both types are 32 bytes and every byte pattern is a valid Bytes32.
+        unsafe { core::mem::transmute::<[u32; 8], Bytes32>(words) }
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl FlatStorageHasher for DirectBlake2sStorageHasher {
+    fn new() -> Self {
+        // `Blake2RoundFunctionEvaluator::new()` leaves fields uninitialized on riscv32.
+        // SAFETY: its fields are integer arrays and a zero-sized alignment marker.
+        let mut evaluator =
+            unsafe { MaybeUninit::<Blake2RoundFunctionEvaluator>::zeroed().assume_init() };
+        evaluator.reset();
+        Self {
+            evaluator,
+            leaf_tail: AlignedArray64::from_value(0),
+        }
+    }
+
+    fn hash_leaf<const N: usize>(&mut self, leaf: &FlatStorageLeaf<N>) -> Bytes32 {
+        #[cfg(test)]
+        test::count(test::Counter::DirectLeaf);
+        self.compress_first_block(&leaf.key, &leaf.value, false);
+        self.leaf_tail[0] = leaf.next as u32;
+        self.leaf_tail[1] = (leaf.next >> 32) as u32;
+        // SAFETY: the tail is 64-byte aligned; words 2..16 remain zero.
+        unsafe {
+            self.evaluator
+                .run_round_function_with_input_and_byte_len::<false>(&self.leaf_tail, 8, true);
+        }
+        self.digest()
+    }
+
+    fn hash_node(&mut self, left_node: &Bytes32, right_node: &Bytes32) -> Bytes32 {
+        #[cfg(test)]
+        test::count(test::Counter::DirectNode);
+        self.compress_first_block(left_node, right_node, true);
+        self.digest()
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+type CommitmentHasher = DirectBlake2sStorageHasher;
+#[cfg(not(any(target_arch = "riscv32", test)))]
+type CommitmentHasher = Blake2sStorageHasher;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]

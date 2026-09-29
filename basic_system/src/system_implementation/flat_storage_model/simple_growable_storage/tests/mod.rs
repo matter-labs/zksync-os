@@ -1,4 +1,5 @@
 use super::*;
+use crypto::blake2_ext::Digest;
 use proptest::{prelude::*, sample::Index};
 use ruint::aliases::{B160, U256};
 use std::cell::{Cell, RefCell};

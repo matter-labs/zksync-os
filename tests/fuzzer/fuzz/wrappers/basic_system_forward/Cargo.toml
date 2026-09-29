@@ -48,6 +48,7 @@ multiblock-batch = []
 state-diffs-pi = []
 
 [dev-dependencies]
+blake2s_u32 = { path = "../../../../../../zksync-airbender/blake2s_u32", default-features = false }
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
 crypto = { git = "https://github.com/matter-labs/airbender-platform", tag = "v0.2.4", package = "airbender-crypto", default-features = false, features = ["secp256k1-static-context", "testing"] }

@@ -2158,6 +2158,7 @@ dependencies = [
  "alloy-rpc-types-debug",
  "arbitrary",
  "arrayvec",
+ "blake2s_u32",
  "callable_oracles",
  "cc-traits",
  "const-hex",
