@@ -238,10 +238,11 @@ This three-value model is essential for:
 #### Pubdata computation
 
 At the end of each transaction, `NewStorageWithAccountPropertiesUnderHash::calculate_pubdata_used_by_tx()`
-iterates all elements altered since the last commit via `HistoryMap::iter_altered_since_commit()` and sums
-up the net pubdata bytes:
+iterates all elements altered since the last commit via `HistoryMap::iter_distinct_altered_since_commit()`
+and sums up the net pubdata bytes:
 
-1. **Deduplication** — multiple writes to the same key count once.
+1. **Deduplication** — multiple writes to the same key count once: the walk marks
+   each element it visits and skips the elements it has marked.
 2. **Skip account properties** — slots under `ACCOUNT_PROPERTIES_STORAGE_ADDRESS`
    are published as preimages, not as storage diffs.
 3. **Elimination** — if `current == initial`, the change nets to zero and is free.

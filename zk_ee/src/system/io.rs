@@ -200,7 +200,7 @@ pub trait IOSubsystem: Sized {
         DeconstructionSubsystemError,
     >;
 
-    fn net_pubdata_used(&self) -> Result<u64, InternalError>;
+    fn net_pubdata_used(&mut self) -> Result<u64, InternalError>;
 
     /// Net pubdata this tx commits in `LogsOnly` mode: only the mandatory L2->L1 log *records* (the
     /// bytes always published to DA), excluding state diffs and message payloads. See

@@ -121,6 +121,9 @@ struct HistoryMapState<K, V, A: Allocator + Clone, KP> {
     /// Chronological list of pointers to elements updated since the last commit.
     pending_updated_elements:
         PagedStack<(ElementPtr<K, V, A, KP>, CacheSnapshotId), PENDING_PAGE, A>,
+    /// Mark of the latest walk by `HistoryMap::iter_distinct_altered_since_commit`.
+    /// No element's `walk_mark` exceeds it.
+    last_walk_mark: u64,
 }
 
 impl<K, V, A, KP> HistoryMap<K, V, A, KP>
@@ -172,6 +175,7 @@ where
                 next_snapshot_id: CacheSnapshotId(1),
                 frozen_snapshot_id: CacheSnapshotId(0),
                 pending_updated_elements: PagedStack::empty(alloc.clone()),
+                last_walk_mark: 0,
             },
             records_memory_pool: HistoryRecordPool::new(alloc.clone()),
             elements_arena: PtrArena::new_in(alloc),
@@ -424,6 +428,42 @@ where
             .map(|(ptr, _)| HistoryMapItemRef {
                 // Safety: pointer is valid for the lifetime of `&self`.
                 history: unsafe { ptr.as_ref() },
+            })
+    }
+
+    /// Iterate over the elements that changed since last commit, each once, newest change
+    /// first, i.e. in the order in which `iter_altered_since_commit` first reaches them.
+    ///
+    /// The walk stamps each element it yields with a mark that no element carried when the
+    /// walk started, and skips the elements that carry it, so it is exact whatever the
+    /// pending list holds. The iterator keeps the map borrowed mutably, which rules out a
+    /// second walk or any change of the map while it runs. For the same reason it must never
+    /// be `Clone`: two cursors with one mark would skip the elements the other one yielded.
+    pub fn iter_distinct_altered_since_commit(
+        &'_ mut self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A, KP>> {
+        // A mark above every element's mark. The counter is never reset, and it can't wrap
+        // because that takes 2^64 walks.
+        self.state.last_walk_mark += 1;
+        let walk_mark = self.state.last_walk_mark;
+        self.state
+            .pending_updated_elements
+            .iter()
+            .filter_map(move |(ptr, _)| {
+                let element = ptr.as_ptr();
+                // Safety: the pointer is valid until `clear`, which the `&mut self` borrow
+                // held by the iterator rules out, as it rules out every reference to an
+                // element from outside the walk. The mark is read and written in place
+                // through the arena pointer, as `commit` writes, and it is written only
+                // before the walk hands out the element's one shared reference. So no live
+                // reference covers a write: the ones handed out before are to other elements.
+                unsafe {
+                    if (*element).walk_mark == walk_mark {
+                        return None;
+                    }
+                    (*element).walk_mark = walk_mark;
+                    Some(HistoryMapItemRef { history: &*element })
+                }
             })
     }
 
@@ -1178,6 +1218,210 @@ mod tests {
             } else {
                 assert_eq!(*item.current(), k);
                 assert_eq!(*item.key_properties(), k as u32);
+            }
+        }
+    }
+
+    fn set(map: &mut HistoryMap<usize, usize, Global>, key: usize, value: usize) {
+        map.get_or_insert::<InternalError>(&key, || Ok((key, ())))
+            .unwrap()
+            .update::<_, ()>(|x| {
+                *x = value;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    fn distinct_altered(
+        map: &mut HistoryMap<usize, usize, Global>,
+    ) -> std::vec::Vec<(usize, usize)> {
+        map.iter_distinct_altered_since_commit()
+            .map(|item| (*item.key(), *item.current()))
+            .collect()
+    }
+
+    /// Exercises `iter_distinct_altered_since_commit`, which writes each element's
+    /// mark through the arena pointer from the pending list while the references it
+    /// yielded before are alive. The elements span several arena pages and the pending
+    /// list spans two of its pages.
+    #[test]
+    fn miri_iter_distinct_altered_since_commit() {
+        use super::ELEMENT_PAGE_CAPACITY;
+
+        let count = ELEMENT_PAGE_CAPACITY * 3 + 1;
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        for k in 0..count {
+            map.get_or_insert::<InternalError>(&k, || Ok((k, ())))
+                .unwrap();
+        }
+        let before_updates = map.snapshot();
+        for k in 0..count {
+            set(&mut map, k, k + 100);
+        }
+        map.snapshot();
+        set(&mut map, 2, 202);
+        set(&mut map, 1, 201);
+
+        // Newest change first, each element once
+        let expected: std::vec::Vec<(usize, usize)> = [(1, 201), (2, 202)]
+            .into_iter()
+            .chain(
+                (0..count)
+                    .rev()
+                    .filter(|&k| k != 1 && k != 2)
+                    .map(|k| (k, k + 100)),
+            )
+            .collect();
+        // Keep every yielded reference alive until the walk is over
+        let items: std::vec::Vec<_> = map.iter_distinct_altered_since_commit().collect();
+        let seen: std::vec::Vec<(usize, usize)> = items
+            .iter()
+            .map(|item| (*item.key(), *item.current()))
+            .collect();
+        assert_eq!(seen, expected);
+
+        assert_eq!(distinct_altered(&mut map), expected);
+        map.rollback(before_updates).unwrap();
+        assert_eq!(distinct_altered(&mut map), std::vec![]);
+        set(&mut map, 5, 7);
+        assert_eq!(distinct_altered(&mut map), std::vec![(5, 7)]);
+    }
+
+    /// The marks left by earlier walks, finished or not, hide nothing from later ones
+    #[test]
+    fn stale_walk_marks_do_not_hide_elements() {
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+        map.snapshot();
+        set(&mut map, 1, 11);
+        set(&mut map, 2, 12);
+        let inner = map.snapshot();
+        set(&mut map, 3, 13);
+        assert_eq!(
+            distinct_altered(&mut map),
+            std::vec![(3, 13), (2, 12), (1, 11)]
+        );
+
+        // a walk dropped after one element
+        assert_eq!(map.iter_distinct_altered_since_commit().take(1).count(), 1);
+        map.rollback(inner).unwrap();
+        assert_eq!(distinct_altered(&mut map), std::vec![(2, 12), (1, 11)]);
+
+        // an element yielded by earlier walks, rolled back and changed again
+        set(&mut map, 3, 23);
+        assert_eq!(
+            distinct_altered(&mut map),
+            std::vec![(3, 23), (2, 12), (1, 11)]
+        );
+
+        map.commit();
+        assert_eq!(distinct_altered(&mut map), std::vec![]);
+        set(&mut map, 1, 31);
+        assert_eq!(distinct_altered(&mut map), std::vec![(1, 31)]);
+
+        map.clear();
+        set(&mut map, 3, 33);
+        assert_eq!(distinct_altered(&mut map), std::vec![(3, 33)]);
+    }
+
+    /// xorshift64, so that the randomised test needs no dependency and runs under Miri
+    struct XorShift(u64);
+
+    impl XorShift {
+        fn below(&mut self, n: u64) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0 % n
+        }
+    }
+
+    type Entry = (u8, u32, u32, u32);
+
+    /// The dedup the walk replaces: the first entry of every key in the pending list
+    fn first_entry_of_each_key(map: &HistoryMap<u8, u32, Global>) -> std::vec::Vec<Entry> {
+        let mut seen = std::collections::BTreeSet::new();
+        map.iter_altered_since_commit()
+            .filter(|item| seen.insert(*item.key()))
+            .map(|item| {
+                (
+                    *item.key(),
+                    *item.current(),
+                    *item.initial(),
+                    *item.committed(),
+                )
+            })
+            .collect()
+    }
+
+    fn distinct_entries(map: &mut HistoryMap<u8, u32, Global>) -> std::vec::Vec<Entry> {
+        map.iter_distinct_altered_since_commit()
+            .map(|item| {
+                (
+                    *item.key(),
+                    *item.current(),
+                    *item.initial(),
+                    *item.committed(),
+                )
+            })
+            .collect()
+    }
+
+    /// Random histories of writes, nested snapshots, rollbacks, commits, clears and
+    /// partial walks. After every step the walk yields exactly the first entry of every
+    /// key, in order, twice in a row.
+    #[test]
+    fn distinct_altered_matches_first_entry_of_each_key() {
+        // Miri runs every history map test in CI, so it gets a short run
+        let (seeds, steps) = if cfg!(miri) { (2, 150) } else { (8, 20_000) };
+        for seed in 0..seeds {
+            let mut rng = XorShift(0x9e37_79b9_7f4a_7c15 + seed);
+            let mut map = HistoryMap::<u8, u32, Global>::new(Global);
+            // The snapshots since the last commit, which are the valid rollback targets
+            let mut snapshots = std::vec::Vec::new();
+            for _ in 0..steps {
+                match rng.below(100) {
+                    0..45 => {
+                        // Half of the writes go to 8 keys, so that keys repeat. The 40
+                        // keys span two arena pages.
+                        let key = match rng.below(2) {
+                            0 => rng.below(8),
+                            _ => rng.below(40),
+                        } as u8;
+                        let value = rng.below(u64::MAX) as u32;
+                        map.get_or_insert::<InternalError>(&key, || Ok((u32::from(key), ())))
+                            .unwrap()
+                            .update::<_, ()>(|x| {
+                                *x = value;
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+                    45..65 => snapshots.push(map.snapshot()),
+                    65..77 => {
+                        if !snapshots.is_empty() {
+                            let i = rng.below(snapshots.len() as u64) as usize;
+                            map.rollback(snapshots[i]).unwrap();
+                            snapshots.truncate(i + 1);
+                        }
+                    }
+                    77..79 => {
+                        map.commit();
+                        snapshots.clear();
+                    }
+                    79 => {
+                        map.clear();
+                        snapshots.clear();
+                    }
+                    80..90 => {
+                        let limit = rng.below(8) as usize;
+                        let partial = map.iter_distinct_altered_since_commit().take(limit);
+                        assert!(partial.count() <= limit);
+                    }
+                    _ => {}
+                }
+                let expected = first_entry_of_each_key(&map);
+                assert_eq!(distinct_entries(&mut map), expected);
+                assert_eq!(distinct_entries(&mut map), expected);
             }
         }
     }

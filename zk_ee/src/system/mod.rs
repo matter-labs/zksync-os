@@ -205,7 +205,7 @@ impl<S: SystemTypes> System<S> {
         self.metadata.set_transaction_metadata(tx_level_metadata);
     }
 
-    pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
+    pub fn net_pubdata_used(&mut self) -> Result<u64, InternalError> {
         // The pubdata content decides what is committed, and therefore what is charged: `FullPubdata` commits the
         // whole pubdata; `LogsOnly` commits only the mandatory L2->L1 log records (see `write_pubdata`
         // and `PubdataContent`), so state diffs and message payloads are not charged.

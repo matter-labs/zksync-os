@@ -4,7 +4,6 @@ use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::{
 };
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
-use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
@@ -278,12 +277,10 @@ impl<
             .filter(|(_, v)| v.current_value != v.initial_value)
     }
 
-    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
-        let mut visited_elements = BTreeSet::new_in(self.0.alloc.clone());
-
+    pub fn calculate_pubdata_used_by_tx(&mut self) -> u32 {
         let mut pubdata_used = 0u32;
-        for element_history in self.0.cache.iter_altered_since_commit() {
-            // Elements are sorted chronologically
+        for element_history in self.0.cache.iter_distinct_altered_since_commit() {
+            // Each element changed in the tx once: its pubdata depends only on its records
 
             let element_key = element_history.key();
 
@@ -291,12 +288,6 @@ impl<
             if element_key.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
                 continue;
             }
-
-            // Skip if already calculated pubdata for this element
-            if visited_elements.contains(element_key) {
-                continue;
-            }
-            visited_elements.insert(element_key);
 
             // this model reads every slot it touches, so the values are known
             let (Some(current_value), Some(initial_value), Some(at_tx_start_value)) = (
@@ -328,3 +319,6 @@ impl<
         pubdata_used
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -32,6 +32,10 @@ pub struct ElementWithHistory<K, V, A: Allocator + Clone, EP = ()> {
     /// Record that has been committed, or initial if not commit has been
     /// performed.
     pub committed: HistoryRecordLink<V>,
+    /// Mark of the last walk of the pending list that yielded this element (see
+    /// `HistoryMap::iter_distinct_altered_since_commit`), 0 before the first one.
+    /// It is not part of the history: snapshots, rollbacks and commits leave it alone.
+    pub(super) walk_mark: u64,
     marker: PhantomData<A>,
 }
 
@@ -53,6 +57,7 @@ impl<K, V, A: Allocator + Clone, KP> ElementWithHistory<K, V, A, KP> {
             initial: elem,
             first: elem,
             committed: elem,
+            walk_mark: 0,
             marker: Default::default(),
         }
     }

@@ -172,7 +172,7 @@ impl<
         }
     }
 
-    fn pubdata_used_by_tx(&self) -> u32 {
+    fn pubdata_used_by_tx(&mut self) -> u32 {
         0
     }
 

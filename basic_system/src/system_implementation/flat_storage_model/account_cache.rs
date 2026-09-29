@@ -12,7 +12,6 @@ use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
 use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
-use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::errors::EvmSubsystemError;
@@ -544,20 +543,10 @@ impl<
         })
     }
 
-    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
-        let mut visited_elements = BTreeSet::new_in(self.alloc.clone());
-
+    pub fn calculate_pubdata_used_by_tx(&mut self) -> u32 {
         let mut pubdata_used = 0u32;
-        for element_history in self.cache.iter_altered_since_commit() {
-            // Elements are sorted chronologically
-
-            let element_key = element_history.key();
-
-            // Skip if already calculated pubdata for this element
-            if visited_elements.contains(element_key) {
-                continue;
-            }
-            visited_elements.insert(element_key);
+        for element_history in self.cache.iter_distinct_altered_since_commit() {
+            // Each account changed in the tx once: its pubdata depends only on its records
 
             let current = element_history.current();
             let initial = element_history.initial();
@@ -1398,6 +1387,7 @@ mod tests {
     use super::*;
     use crate::system_implementation::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
     use crate::system_implementation::system::EthereumLikeStorageAccessCostModel;
+    use proptest::prelude::*;
     use std::alloc::Global;
     use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use zk_ee::internal_error;
@@ -1736,5 +1726,321 @@ mod tests {
             "an accepted account preimage must not be charged again"
         );
         assert_eq!(oracle.preimage_queries, 1);
+    }
+
+    /// `calculate_pubdata_used_by_tx` as it was with a set of the keys already
+    /// counted, i.e. the first entry of every key in the pending list
+    fn reference(account_cache: &TestAccountCache) -> u32 {
+        let mut visited_elements = std::collections::BTreeSet::new();
+
+        let mut pubdata_used = 0u32;
+        for element_history in account_cache.cache.iter_altered_since_commit() {
+            let element_key = element_history.key();
+
+            if visited_elements.contains(element_key) {
+                continue;
+            }
+            visited_elements.insert(element_key);
+
+            let current = element_history.current();
+            let initial = element_history.initial();
+            let at_tx_start = element_history.committed();
+
+            if current.value() == initial.value() && !current.metadata().not_compress_balance {
+                continue;
+            }
+
+            if current.value() != at_tx_start.value() || current.metadata().not_compress_balance {
+                pubdata_used += 32;
+                pubdata_used += AccountProperties::diff_compression_length(
+                    at_tx_start.value(),
+                    current.value(),
+                    current.metadata().not_publish_bytecode,
+                    current.metadata().not_compress_balance,
+                )
+                .unwrap();
+            }
+        }
+
+        pubdata_used
+    }
+
+    const BYTECODE: &[u8] = &[0x60, 0x01, 0x60, 0x02, 0x01, 0x5b, 0x00];
+
+    /// Every account is new, and the one preimage it serves is `BYTECODE`
+    #[derive(Default)]
+    struct NewAccountsOracle {
+        response: ResponseBuffer,
+    }
+
+    impl MemoryOracle for NewAccountsOracle {
+        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            let mut response = vec![];
+            match query_id {
+                INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {
+                    let slot_data = InitialStorageSlotData::<EthereumIOTypesConfig> {
+                        is_new_storage_slot: true,
+                        initial_value: Bytes32::ZERO,
+                    };
+                    slot_data.write_output(&mut response);
+                }
+                crate::system_implementation::flat_storage_model::preimage_cache::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID => {
+                    write_dynamic_bytes(BYTECODE, &mut response);
+                }
+                _ => return Err(internal_error!("unexpected oracle query in test")),
+            }
+            self.response.set(response)
+        }
+
+        zk_ee::memory_oracle_response_methods!(response);
+    }
+
+    impl IOOracle for NewAccountsOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            Err(internal_error!("unexpected oracle query in test"))
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    enum AccountOp {
+        Touch(u8),
+        IncrementNonce(u8),
+        /// Adds to the balance, or takes away at most all of it
+        UpdateBalance {
+            account: u8,
+            add: bool,
+            amount: u8,
+            fee_payment_in_simulation: bool,
+        },
+        DeployCode(u8),
+        /// Sets the code without publishing it, as a protocol upgrade does
+        SetBytecodeDetails(u8),
+        Open,
+        Close {
+            rollback: bool,
+        },
+        NextTx,
+    }
+
+    const ACCOUNTS: u8 = 6;
+
+    fn account_op() -> impl Strategy<Value = AccountOp> {
+        prop_oneof![
+            2 => (0..ACCOUNTS).prop_map(AccountOp::Touch),
+            2 => (0..ACCOUNTS).prop_map(AccountOp::IncrementNonce),
+            6 => (0..ACCOUNTS, any::<bool>(), 0..4u8, any::<bool>()).prop_map(
+                |(account, add, amount, fee_payment_in_simulation)| AccountOp::UpdateBalance {
+                    account,
+                    add,
+                    amount,
+                    fee_payment_in_simulation,
+                }
+            ),
+            1 => (0..ACCOUNTS).prop_map(AccountOp::DeployCode),
+            1 => (0..ACCOUNTS).prop_map(AccountOp::SetBytecodeDetails),
+            2 => Just(AccountOp::Open),
+            2 => any::<bool>().prop_map(|rollback| AccountOp::Close { rollback }),
+            1 => Just(AccountOp::NextTx),
+        ]
+    }
+
+    struct AccountHarness {
+        storage: TestStorage,
+        preimages_cache: BytecodeAndAccountDataPreimagesStorage<TestResources, Global>,
+        account_cache: TestAccountCache,
+        oracle: NewAccountsOracle,
+        frames: Vec<(
+            <TestStorage as SnapshottableIo>::StateSnapshot,
+            CacheSnapshotId,
+            CacheSnapshotId,
+        )>,
+    }
+
+    impl AccountHarness {
+        fn new() -> Self {
+            let mut harness = Self {
+                storage: NewStorageWithAccountPropertiesUnderHash(
+                    GenericPubdataAwarePlainStorage::new_from_parts(
+                        Global,
+                        EthereumLikeStorageAccessCostModel,
+                    ),
+                ),
+                preimages_cache:
+                    BytecodeAndAccountDataPreimagesStorage::<TestResources, Global>::new_from_parts(
+                        Global,
+                    ),
+                account_cache: TestAccountCache::new_from_parts(Global),
+                oracle: NewAccountsOracle::default(),
+                frames: Vec::new(),
+            };
+            harness.begin_new_tx();
+            harness
+        }
+
+        fn begin_new_tx(&mut self) {
+            self.storage.begin_new_tx();
+            self.preimages_cache.begin_new_tx();
+            self.account_cache.begin_new_tx();
+        }
+
+        fn apply(&mut self, op: &AccountOp) {
+            let address = |account: u8| B160::from_limbs([0x1000 + u64::from(account), 0, 0]);
+            let mut resources = TestResources::FORMAL_INFINITE;
+            match *op {
+                AccountOp::Touch(account) => self
+                    .account_cache
+                    .touch_account::<false>(
+                        ExecutionEnvironmentType::NoEE,
+                        &mut resources,
+                        &address(account),
+                        &mut self.storage,
+                        &mut self.preimages_cache,
+                        &mut self.oracle,
+                    )
+                    .expect("touch"),
+                AccountOp::IncrementNonce(account) => {
+                    self.account_cache
+                        .increment_nonce::<false>(
+                            ExecutionEnvironmentType::NoEE,
+                            &mut resources,
+                            &address(account),
+                            1,
+                            &mut self.storage,
+                            &mut self.preimages_cache,
+                            &mut self.oracle,
+                        )
+                        .expect("increment nonce");
+                }
+                AccountOp::UpdateBalance {
+                    account,
+                    add,
+                    amount,
+                    fee_payment_in_simulation,
+                } => {
+                    let amount = U256::from(amount);
+                    self.account_cache
+                        .update_nominal_token_value::<false>(
+                            ExecutionEnvironmentType::NoEE,
+                            &mut resources,
+                            &address(account),
+                            |balance| {
+                                Ok(if add {
+                                    *balance + amount
+                                } else {
+                                    balance.saturating_sub(amount)
+                                })
+                            },
+                            &mut self.storage,
+                            &mut self.preimages_cache,
+                            &mut self.oracle,
+                            fee_payment_in_simulation,
+                        )
+                        .expect("update balance");
+                }
+                AccountOp::DeployCode(account) => {
+                    self.account_cache
+                        .deploy_code::<false>(
+                            ExecutionEnvironmentType::EVM,
+                            &mut resources,
+                            &address(account),
+                            BYTECODE,
+                            &mut self.storage,
+                            &mut self.preimages_cache,
+                            &mut self.oracle,
+                        )
+                        .expect("deploy code");
+                }
+                AccountOp::SetBytecodeDetails(account) => {
+                    use crypto::{blake2s::Blake2s256, sha3::Keccak256, MiniDigest};
+                    self.account_cache
+                        .set_bytecode_details::<false>(
+                            &mut resources,
+                            &address(account),
+                            ExecutionEnvironmentType::EVM,
+                            Bytes32::from_array(Blake2s256::digest(BYTECODE)),
+                            BYTECODE.len() as u32,
+                            0,
+                            Bytes32::from_array(*Keccak256::digest(BYTECODE)),
+                            BYTECODE.len() as u32,
+                            &mut self.storage,
+                            &mut self.preimages_cache,
+                            &mut self.oracle,
+                        )
+                        .expect("set bytecode details");
+                }
+                AccountOp::Open => self.frames.push((
+                    self.storage.start_frame(),
+                    self.preimages_cache.start_frame(),
+                    self.account_cache.start_frame(),
+                )),
+                AccountOp::Close { rollback } => {
+                    if let Some((storage, preimages, accounts)) = self.frames.pop() {
+                        self.storage
+                            .finish_frame(rollback.then_some(&storage))
+                            .expect("finish storage frame");
+                        self.preimages_cache
+                            .finish_frame(rollback.then_some(&preimages))
+                            .expect("finish preimages frame");
+                        self.account_cache
+                            .finish_frame(rollback.then_some(&accounts))
+                            .expect("finish account frame");
+                    }
+                }
+                AccountOp::NextTx => {
+                    self.frames.clear();
+                    self.account_cache
+                        .finish_tx(&mut self.storage)
+                        .expect("finish account tx");
+                    self.storage.finish_tx().expect("finish storage tx");
+                    self.preimages_cache
+                        .finish_tx()
+                        .expect("finish preimages tx");
+                    self.begin_new_tx();
+                }
+            }
+        }
+
+        /// Checks the account pubdata against the reference: the same accounts in the
+        /// same order, and the same sum twice in a row
+        fn check(&mut self) {
+            let mut seen = std::collections::BTreeSet::new();
+            let first_entries: Vec<BitsOrd160> = self
+                .account_cache
+                .cache
+                .iter_altered_since_commit()
+                .map(|item| *item.key())
+                .filter(|key| seen.insert(*key))
+                .collect();
+            let distinct: Vec<BitsOrd160> = self
+                .account_cache
+                .cache
+                .iter_distinct_altered_since_commit()
+                .map(|item| *item.key())
+                .collect();
+            assert_eq!(distinct, first_entries);
+
+            let expected = reference(&self.account_cache);
+            assert_eq!(self.account_cache.calculate_pubdata_used_by_tx(), expected);
+            assert_eq!(self.account_cache.calculate_pubdata_used_by_tx(), expected);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn account_pubdata_matches_key_set_dedup(
+            ops in proptest::collection::vec(account_op(), 1..100)
+        ) {
+            let mut harness = AccountHarness::new();
+            for op in &ops {
+                harness.apply(op);
+                harness.check();
+            }
+        }
     }
 }

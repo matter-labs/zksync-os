@@ -245,7 +245,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self;
 
     /// Get amount of pubdata needed to encode current tx diff in bytes.
-    fn pubdata_used_by_tx(&self) -> u32;
+    fn pubdata_used_by_tx(&mut self) -> u32;
 
     /// Returns whether the current transaction attempted to grow a
     /// block-scoped cache past its safe retained-memory limit.
