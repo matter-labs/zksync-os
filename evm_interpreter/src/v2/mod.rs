@@ -330,7 +330,8 @@ impl<'v> EvmStackInterface for StackView<'v> {
 pub struct FrameView<'v, S: EthereumLikeTypes> {
     instruction_pointer: usize,
     stack: StackView<'v>,
-    resources: &'v S::Resources,
+    /// A joined copy: during a run the holder has only the high parts
+    resources: S::Resources,
     cold: &'v ColdFrameParts<'v, S>,
     #[allow(dead_code)]
     system: &'v System<S>,
@@ -351,7 +352,7 @@ impl<'v, S: EthereumLikeTypes> FrameView<'v, S> {
                 depth: hot.stack.depth,
                 _borrow: core::marker::PhantomData,
             },
-            resources: &hot.resources,
+            resources: hot.joined_resources(),
             cold,
             system,
         }
@@ -371,7 +372,7 @@ impl<'v, S: EthereumLikeTypes> FrameView<'v, S> {
                 depth: hot.stack.depth(),
                 _borrow: core::marker::PhantomData,
             },
-            resources: &hot.resources,
+            resources: hot.resources.clone(),
             cold,
             system,
         }
@@ -384,7 +385,7 @@ impl<'v, S: EthereumLikeTypes> EvmFrameInterface<S> for FrameView<'v, S> {
     }
 
     fn resources(&self) -> &<S as SystemTypes>::Resources {
-        self.resources
+        &self.resources
     }
 
     fn stack(&self) -> &impl EvmStackInterface {

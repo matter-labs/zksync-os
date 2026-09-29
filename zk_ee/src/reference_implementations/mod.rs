@@ -8,7 +8,7 @@ use crate::{
     out_of_native_resources,
     system::{
         errors::system::SystemError, resources::sub_with_borrow, Computational, Ergs, Resource,
-        Resources, DEFAULT_GAS_TO_ERGS_FACTOR,
+        Resources, ScalarCharging, SplitForm, DEFAULT_GAS_TO_ERGS_FACTOR,
     },
 };
 
@@ -161,11 +161,18 @@ impl<Native: Resource, const GAS_TO_ERGS_FACTOR: u64> Resource
     }
 }
 
-impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
+impl<Native: Resource + Computational + ScalarCharging, const GAS_TO_ERGS_FACTOR: u64> Resources
     for BaseResources<Native, GAS_TO_ERGS_FACTOR>
 {
     type Native = Native;
     type Ergs = Ergs<GAS_TO_ERGS_FACTOR>;
+    // (C1): two fields with plain accessors and constructors. (C2): `charge` is
+    // `Ergs::charge`, then `Native::charge`, and each succeeds and subtracts when it can pay
+    // (what their `CHARGING` states).
+    const SPLIT_FORM: SplitForm<Self> = SplitForm::of_scalars(
+        <Ergs<GAS_TO_ERGS_FACTOR> as ScalarCharging>::CHARGING,
+        Native::CHARGING,
+    );
 
     #[inline(always)]
     fn from_ergs(ergs: Self::Ergs) -> Self {
@@ -227,12 +234,18 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
     }
 }
 
+impl ScalarCharging for DecreasingNative {
+    const CHARGING: crate::system::ScalarCharge<Self> = crate::system::ScalarCharge::COUNTS_DOWN;
+}
+
 #[cfg(test)]
 mod tests {
     use crate::system::errors::runtime::{FatalRuntimeError, RuntimeError};
-    use crate::system::{errors::system::SystemError, Ergs, Resource, Resources};
+    use crate::system::{
+        errors::system::SystemError, Computational, Ergs, Resource, Resources, ScalarCharging,
+    };
 
-    use super::{BaseResources, DecreasingNative};
+    use super::{BaseResources, DecreasingNative, GasOnlyResources};
 
     #[test]
     fn test_oog_does_not_charge_native() {
@@ -301,5 +314,171 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A native resource that says nothing about its charging
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct OpaqueNative(u64);
+
+    impl Resource for OpaqueNative {
+        const FORMAL_INFINITE: Self = Self(u64::MAX);
+        fn empty() -> Self {
+            Self(0)
+        }
+        fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
+            DecreasingNative(self.0).charge(&DecreasingNative(to_charge.0))
+        }
+        fn charge_unchecked(&mut self, to_charge: &Self) {
+            self.0 -= to_charge.0
+        }
+        fn has_enough(&self, to_spend: &Self) -> bool {
+            self.0 >= to_spend.0
+        }
+        fn reclaim(&mut self, to_reclaim: Self) {
+            self.0 += to_reclaim.0
+        }
+        fn reclaim_withheld(&mut self, to_reclaim: Self) {
+            self.0 += to_reclaim.0
+        }
+        fn diff(&self, other: Self) -> Self {
+            Self(self.0.abs_diff(other.0))
+        }
+        fn remaining(&self) -> Self {
+            self.clone()
+        }
+    }
+
+    impl Computational for OpaqueNative {
+        fn from_computational(value: u64) -> Self {
+            Self(value)
+        }
+        fn as_u64(&self) -> u64 {
+            self.0
+        }
+    }
+
+    impl ScalarCharging for OpaqueNative {}
+
+    fn form<R: Resources>() -> (bool, bool) {
+        (R::SPLIT_FORM.ergs(), R::SPLIT_FORM.native())
+    }
+
+    #[test]
+    fn split_forms() {
+        assert_eq!(form::<BaseResources<DecreasingNative>>(), (true, true));
+        assert_eq!(form::<BaseResources<DecreasingNative, 1>>(), (true, true));
+        assert_eq!(form::<GasOnlyResources>(), (true, false));
+        assert_eq!(form::<BaseResources<(), 256>>(), (true, false));
+        assert_eq!(form::<BaseResources<OpaqueNative>>(), (false, false));
+    }
+
+    fn grid() -> Vec<u64> {
+        let mut values = vec![
+            0,
+            1,
+            19,
+            20,
+            767,
+            768,
+            769,
+            (1 << 31) - 1,
+            1 << 31,
+            (1 << 31) + 1,
+            u32::MAX as u64,
+            1 << 32,
+            (1 << 32) + 1,
+            3 << 31,
+            i64::MAX as u64,
+            1 << 63,
+            u64::MAX - (1 << 31),
+            u64::MAX - 1,
+            u64::MAX,
+        ];
+        let mut x = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..8 {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            values.extend([x, x >> 33]);
+        }
+        values
+    }
+
+    /// The scalars' `CHARGING`: a charge fails iff the amount is short (and then leaves 0),
+    /// else it subtracts; the amount is `as_u64`
+    fn check_counts_down<T: Resource + Computational + ScalarCharging>() {
+        for &amount in &grid() {
+            assert_eq!(T::from_computational(amount).as_u64(), amount);
+            for &cost in &grid() {
+                let mut value = T::from_computational(amount);
+                let result = value.charge(&T::from_computational(cost));
+                if amount < cost {
+                    assert!(result.is_err());
+                    assert_eq!(value.as_u64(), 0);
+                } else {
+                    assert!(result.is_ok());
+                    assert_eq!(value.as_u64(), amount - cost);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_charging_holds() {
+        check_counts_down::<Ergs<1>>();
+        check_counts_down::<Ergs<256>>();
+        check_counts_down::<DecreasingNative>();
+        for &cost in &grid() {
+            let mut unit = ();
+            assert!(unit.charge(&<()>::from_computational(cost)).is_ok());
+        }
+    }
+
+    /// (C1) and (C2) of `Resources::SPLIT_FORM` for the forms that split
+    fn check_split_contract<R: Resources>() {
+        let form = R::SPLIT_FORM;
+        assert!(form.ergs());
+        for &ergs in &grid() {
+            for &native in &grid() {
+                let r = R::from_ergs_and_native(
+                    R::Ergs::from_computational(ergs),
+                    R::Native::from_computational(native),
+                );
+                assert_eq!(R::from_ergs_and_native(r.ergs(), r.native()), r);
+                assert_eq!(r.ergs().as_u64(), ergs);
+                if form.native() {
+                    assert_eq!(r.native().as_u64(), native);
+                }
+                for &ce in &grid() {
+                    for cn in [0, 1, 20, 1 << 31, native, native / 2] {
+                        if ergs < ce || (form.native() && native < cn) {
+                            continue;
+                        }
+                        let mut charged = r.clone();
+                        let cost = R::from_ergs_and_native(
+                            R::Ergs::from_computational(ce),
+                            R::Native::from_computational(cn),
+                        );
+                        assert!(charged.charge(&cost).is_ok());
+                        assert_eq!(charged.ergs().as_u64(), ergs - ce);
+                        if form.native() {
+                            assert_eq!(charged.native().as_u64(), native - cn);
+                        } else {
+                            assert_eq!(charged.native(), r.native());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn split_contract_holds() {
+        check_split_contract::<BaseResources<DecreasingNative>>();
+        check_split_contract::<BaseResources<DecreasingNative, 1>>();
+        check_split_contract::<GasOnlyResources>();
     }
 }

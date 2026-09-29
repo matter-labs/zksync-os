@@ -140,19 +140,7 @@ impl WordCopy {
 /// Grows the heap to cover `..max_offset` (the end of the accessed range, computed once by
 /// the caller with a saturating add), charging the expansion.
 ///
-/// The resources travel by value: the caller keeps its state in registers, and taking the
-/// address of the resources for a call would pin them in memory for the whole run.
-#[inline(never)]
-pub(crate) fn resize_heap_by_value<S: EthereumLikeTypes>(
-    cold: &mut ColdFrameParts<'_, S>,
-    mut resources: S::Resources,
-    max_offset: usize,
-) -> (S::Resources, InstructionResult) {
-    let result = resize_heap(cold, &mut resources, max_offset);
-    (resources, result)
-}
-
-/// [`resize_heap_by_value`] for the outlined instructions, whose state is in memory anyway
+/// The inlined instructions run it on the joined resources (see `LowResources::suspended`).
 #[inline(never)]
 pub(crate) fn resize_heap<S: EthereumLikeTypes>(
     cold: &mut ColdFrameParts<'_, S>,
@@ -219,7 +207,7 @@ pub(crate) fn copy_returndata_to_heap<'ee, S: EthereumLikeTypes>(
 impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn invalid_opcode(&mut self, opcode: u8) -> InstructionResult {
-        spend_native(&mut self.resources, STEP_NATIVE_COST)?;
+        spend_native(self.resources.whole(), STEP_NATIVE_COST)?;
         Err(EvmError::InvalidOpcode(opcode).into())
     }
 
@@ -230,7 +218,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::LOW, DIV_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             S::SystemFunctionsExt::u256_div_nonzero_divisor(op1, op2, env.system.io.oracle());
@@ -243,7 +231,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::LOW, SDIV_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::LOW, SDIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         i256_div(op1, op2, |a, b| {
             S::SystemFunctionsExt::u256_div_nonzero_divisor(a, b, env.system.io.oracle())
@@ -256,7 +244,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::LOW, MOD_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             S::SystemFunctionsExt::u256_rem_nonzero_divisor(op1, op2, env.system.io.oracle());
@@ -271,7 +259,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::LOW, SMOD_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::LOW, SMOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if !op2.is_zero() {
             i256_mod(op1, op2, |a, b| {
@@ -286,7 +274,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::MID, ADDMOD_NATIVE_COST)?;
+        charge_step(
+            self.resources.whole(),
+            gas_constants::MID,
+            ADDMOD_NATIVE_COST,
+        )?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
         if op3.is_zero() {
             return Ok(());
@@ -301,7 +293,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, gas_constants::MID, MULMOD_NATIVE_COST)?;
+        charge_step(
+            self.resources.whole(),
+            gas_constants::MID,
+            MULMOD_NATIVE_COST,
+        )?;
         let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
         if op3.is_zero() {
             return Ok(());
@@ -328,7 +324,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub(crate) fn exp(&mut self) -> InstructionResult {
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some((gas_cost, native_cost)) = exp_cost(op2) {
-            charge_step(&mut self.resources, gas_cost, native_cost)?;
+            charge_step(self.resources.whole(), gas_cost, native_cost)?;
         } else {
             return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
@@ -340,7 +336,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn signextend(&mut self) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::LOW,
             SIGNEXTEND_NATIVE_COST,
         )?;
@@ -364,7 +360,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn clz(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::LOW, CLZ_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::LOW, CLZ_NATIVE_COST)?;
         let op = self.stack.top_mut()?;
         *op = if op.is_zero() {
             U256::from(256u64)
@@ -394,7 +390,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         cycle_marker::wrap!("keccak_execution_environment", {
             // `len` stays on the stack: that is the slot the hash goes to
             let (memory_offset, len) = self.stack.pop_1_and_peek_mut()?;
-            charge_step(&mut self.resources, 0, KECCAK256_NATIVE_COST)?;
+            charge_step(self.resources.whole(), 0, KECCAK256_NATIVE_COST)?;
             let len = cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
             let memory_offset: Option<usize> = if len > 0 {
                 Some(cast_to_usize(
@@ -407,18 +403,22 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
             match memory_offset {
                 None => {
-                    spend_gas(&mut self.resources, gas_constants::SHA3)?;
+                    spend_gas(self.resources.whole(), gas_constants::SHA3)?;
                     *self.stack.top_mut()? = Self::EMPTY_SLICE_SHA3;
                 }
                 Some(memory_offset) => {
-                    resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+                    resize_heap(
+                        cold,
+                        self.resources.whole(),
+                        memory_offset.saturating_add(len),
+                    )?;
                     let allocator = env.system.get_allocator();
                     let input = &cold.heap[memory_offset..(memory_offset + len)];
                     let dst = self.stack.top_mut()?;
                     S::SystemFunctions::keccak256_with_closure(
                         input,
                         |hash| dst.assign_from_be_bytes(hash),
-                        &mut self.resources,
+                        self.resources.whole(),
                         allocator,
                     )
                     .map_err(SystemError::from)
@@ -445,7 +445,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                 let (gas_cost, native_cost) =
                     gas_utils::copy_cost_plus_very_low_gas(WORD_COPY_LEN as u64)?;
                 charge_step(
-                    &mut self.resources,
+                    self.resources.whole(),
                     gas_cost,
                     native_cost + CODECOPY_NATIVE_COST,
                 )?;
@@ -463,7 +463,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_cost,
             native_cost + CODECOPY_NATIVE_COST,
         )?;
@@ -473,7 +473,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
+            memory_offset.saturating_add(len),
+        )?;
         let source = source_offset
             .and_then(|offset| cold.bytecode.get(offset..))
             .unwrap_or(&[]);
@@ -487,7 +491,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_cost,
             CALLDATACOPY_NATIVE_COST + native_cost,
         )?;
@@ -497,7 +501,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
+            memory_offset.saturating_add(len),
+        )?;
         let source = source_offset
             .and_then(|offset| cold.calldata.get(offset..))
             .unwrap_or(&[]);
@@ -519,7 +527,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                 let (gas_cost, native_cost) =
                     gas_utils::copy_cost_plus_very_low_gas(WORD_COPY_LEN as u64)?;
                 charge_step(
-                    &mut self.resources,
+                    self.resources.whole(),
                     gas_cost,
                     RETURNDATACOPY_NATIVE_COST + native_cost,
                 )?;
@@ -537,7 +545,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_cost,
             RETURNDATACOPY_NATIVE_COST + native_cost,
         )?;
@@ -552,7 +560,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             return Ok(());
         }
         let memory_offset = cast_to_usize(memory_offset, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
+            memory_offset.saturating_add(len),
+        )?;
         copy_and_zeropad_nonoverlapping(
             cold.returndata.get(source_offset..).unwrap_or(&[]),
             &mut cold.heap[memory_offset..memory_offset + len],
@@ -566,7 +578,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_cost,
             native_cost + MCOPY_NATIVE_COST,
         )?;
@@ -578,7 +590,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let src_offset = cast_to_usize(src_offset, EvmError::InvalidOperandOOG.into())?;
         resize_heap(
             cold,
-            &mut self.resources,
+            self.resources.whole(),
             core::cmp::max(dst_offset, src_offset).saturating_add(len),
         )?;
         // SAFETY: both ranges are in the heap; they may overlap
@@ -604,18 +616,22 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (memory_offset, len) =
             cast_offset_and_len(memory_offset, len, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
-        resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
+            memory_offset.saturating_add(len),
+        )?;
         let bytecode = env
             .system
             .io
-            .get_observable_bytecode(THIS_EE_TYPE, &mut self.resources, &address)
+            .get_observable_bytecode(THIS_EE_TYPE, self.resources.whole(), &address)
             .map_err(system_error_exit)?;
         let source = source_offset
             .and_then(|offset| bytecode.get(offset..))
             .unwrap_or(&[]);
         let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_cost,
             native_cost + EXTCODECOPY_NATIVE_COST,
         )?;
@@ -633,7 +649,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             cold.returndata_location = 0..0;
         } else {
             let offset = cast_to_usize(offset, EvmError::InvalidOperandOOG.into())?;
-            resize_heap(cold, &mut self.resources, offset.saturating_add(len))?;
+            resize_heap(cold, self.resources.whole(), offset.saturating_add(len))?;
             let (end, of) = offset.overflowing_add(len);
             if of {
                 return Err(EvmError::InvalidOperandOOG.into());
@@ -645,14 +661,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn ret(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, 0, RETURN_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, RETURN_NATIVE_COST)?;
         self.set_return_range(cold)?;
         Err(ExitCode::Return)
     }
 
     #[inline(never)]
     pub(crate) fn revert(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, 0, REVERT_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, REVERT_NATIVE_COST)?;
         self.set_return_range(cold)?;
         Err(EvmError::Revert.into())
     }
@@ -662,7 +678,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn chainid<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             CHAINID_NATIVE_COST,
         )?;
@@ -672,7 +688,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn coinbase<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             COINBASE_NATIVE_COST,
         )?;
@@ -682,7 +698,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn timestamp<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             TIMESTAMP_NATIVE_COST,
         )?;
@@ -691,7 +707,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn number<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, NUMBER_NATIVE_COST)?;
+        charge_step(
+            self.resources.whole(),
+            gas_constants::BASE,
+            NUMBER_NATIVE_COST,
+        )?;
         self.stack.push_u64(env.system.get_block_number())
     }
 
@@ -701,7 +721,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         env: &mut Env<'_, S, T>,
     ) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             DIFFICULTY_NATIVE_COST,
         )?;
@@ -717,14 +737,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn gaslimit<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, GAS_NATIVE_COST)?;
+        charge_step(self.resources.whole(), gas_constants::BASE, GAS_NATIVE_COST)?;
         self.stack.push_u64(env.system.get_gas_limit())
     }
 
     #[inline(never)]
     pub(crate) fn gasprice<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             GASPRICE_NATIVE_COST,
         )?;
@@ -735,7 +755,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn basefee<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             BASEFEE_NATIVE_COST,
         )?;
@@ -752,13 +772,21 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         #[cfg(feature = "eip-7645")]
         {
             let _ = env;
-            charge_step(&mut self.resources, gas_constants::BASE, CALLER_NATIVE_COST)?;
+            charge_step(
+                self.resources.whole(),
+                gas_constants::BASE,
+                CALLER_NATIVE_COST,
+            )?;
             self.stack.push_b160(cold.caller)
         }
         #[cfg(not(feature = "eip-7645"))]
         {
             let _ = cold;
-            charge_step(&mut self.resources, gas_constants::BASE, ORIGIN_NATIVE_COST)?;
+            charge_step(
+                self.resources.whole(),
+                gas_constants::BASE,
+                ORIGIN_NATIVE_COST,
+            )?;
             self.stack.push_b160(env.system.get_tx_origin())
         }
     }
@@ -766,7 +794,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn blockhash<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BLOCKHASH,
             BLOCKHASH_NATIVE_COST,
         )?;
@@ -783,7 +811,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[inline(never)]
     pub(crate) fn blobhash<T: Tracer<S>>(&mut self, env: &mut Env<'_, S, T>) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BLOBHASH,
             BLOBHASH_NATIVE_COST,
         )?;
@@ -804,7 +832,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         env: &mut Env<'_, S, T>,
     ) -> InstructionResult {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::BASE,
             BLOBBASEFEE_NATIVE_COST,
         )?;
@@ -819,13 +847,13 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, 0, BALANCE_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, BALANCE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
         let value = env
             .system
             .io
-            .get_nominal_token_balance(THIS_EE_TYPE, &mut self.resources, &address)
+            .get_nominal_token_balance(THIS_EE_TYPE, self.resources.whole(), &address)
             .map_err(system_error_exit)?;
         *stack_top = U256::from(value);
         Ok(())
@@ -840,11 +868,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, 0, SELFBALANCE_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, SELFBALANCE_NATIVE_COST)?;
         let value = env
             .system
             .io
-            .get_selfbalance(THIS_EE_TYPE, &mut self.resources, &cold.address)
+            .get_selfbalance(THIS_EE_TYPE, self.resources.whole(), &cold.address)
             .map_err(system_error_exit)?;
         let value = U256::from(value);
         self.stack.push(&value)
@@ -855,13 +883,13 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, 0, EXTCODESIZE_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, EXTCODESIZE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
         let value = env
             .system
             .io
-            .get_observable_bytecode_size(THIS_EE_TYPE, &mut self.resources, &address)
+            .get_observable_bytecode_size(THIS_EE_TYPE, self.resources.whole(), &address)
             .map_err(system_error_exit)?;
         *stack_top = U256::from(value as u64);
         Ok(())
@@ -872,13 +900,13 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        charge_step(&mut self.resources, 0, EXTCODEHASH_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, EXTCODEHASH_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = stack_top.to_b160();
         let value = env
             .system
             .io
-            .get_observable_bytecode_hash(THIS_EE_TYPE, &mut self.resources, &address)
+            .get_observable_bytecode_hash(THIS_EE_TYPE, self.resources.whole(), &address)
             .map_err(system_error_exit)?;
         // SAFETY: `stack_top` is a slot of the stack
         unsafe {
@@ -902,7 +930,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         S::IO: IOSubsystemExt,
     {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             0,
             if TRANSIENT {
                 TLOAD_NATIVE_COST
@@ -933,7 +961,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             .io
             .storage_read_raw_and_place::<TRANSIENT>(
                 THIS_EE_TYPE,
-                &mut self.resources,
+                self.resources.whole(),
                 &cold.address,
                 key,
                 |value| {
@@ -976,7 +1004,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         S::IO: IOSubsystemExt,
     {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             0,
             if TRANSIENT {
                 TSTORE_NATIVE_COST
@@ -1019,7 +1047,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             .io
             .storage_write_raw::<TRANSIENT>(
                 THIS_EE_TYPE,
-                &mut self.resources,
+                self.resources.whole(),
                 &cold.address,
                 index,
                 value,
@@ -1054,7 +1082,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         S::IO: IOSubsystemExt,
     {
         assert!(N <= MAX_EVENT_TOPICS);
-        charge_step(&mut self.resources, 0, LOG_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, LOG_NATIVE_COST)?;
         if cold.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
@@ -1068,7 +1096,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             topic_val.write_be_bytes_into(&mut buf);
             topics.push(Bytes32::from_array(buf));
         }
-        resize_heap(cold, &mut self.resources, mem_offset.saturating_add(len))?;
+        resize_heap(cold, self.resources.whole(), mem_offset.saturating_add(len))?;
         let data = &cold.heap[mem_offset..mem_offset + len];
         trace!(env, |t| t.on_event(
             THIS_EE_TYPE,
@@ -1080,7 +1108,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             .emit_event(
                 env.hooks,
                 ExecutionEnvironmentType::EVM,
-                &mut self.resources,
+                self.resources.whole(),
                 &cold.address,
                 &topics,
                 data,
@@ -1099,7 +1127,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         S::IO: IOSubsystemExt,
     {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::SELFDESTRUCT,
             SELFDESTRUCT_NATIVE_COST,
         )?;
@@ -1112,7 +1140,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             .io
             .mark_for_deconstruction(
                 THIS_EE_TYPE,
-                &mut self.resources,
+                self.resources.whole(),
                 &cold.address,
                 &beneficiary,
             )
@@ -1143,7 +1171,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         S::IO: IOSubsystemExt,
     {
         charge_step(
-            &mut self.resources,
+            self.resources.whole(),
             gas_constants::CREATE,
             if IS_CREATE2 {
                 CREATE2_NATIVE_COST
@@ -1160,7 +1188,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let value: ruint::aliases::U256 = ruint::aliases::U256::from_limbs(*value.as_limbs());
         let (code_offset, len) =
             cast_offset_and_len(code_offset, len, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, code_offset.saturating_add(len))?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
+            code_offset.saturating_add(len),
+        )?;
 
         if len > MAX_INITCODE_SIZE {
             return Err(EvmError::CreateInitcodeSizeLimit.into());
@@ -1171,7 +1203,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             INITCODE_WORD_COST
         };
         let initcode_cost = cost_per_word * (len as u64).div_ceil(32);
-        spend_gas(&mut self.resources, initcode_cost)?;
+        spend_gas(self.resources.whole(), initcode_cost)?;
         // can not overflow: the heap was resized with the same values
         let deployment_code = code_offset..code_offset + len;
 
@@ -1179,7 +1211,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             let salt = self.stack.pop_1()?;
             V1::<S>::derive_address_for_deployment_create2(
                 env.system,
-                &mut self.resources,
+                self.resources.whole(),
                 salt,
                 &cold.address,
                 &cold.heap[deployment_code.clone()],
@@ -1188,6 +1220,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         } else {
             let deployer_nonce = self
                 .resources
+                .whole()
                 .with_infinite_ergs(|inf_resources| {
                     env.system
                         .io
@@ -1195,7 +1228,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                 })
                 .map_err(system_error_exit)?;
             V1::<S>::derive_address_for_deployment_create(
-                &mut self.resources,
+                self.resources.whole(),
                 &cold.address,
                 deployer_nonce,
             )
@@ -1203,7 +1236,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         };
 
         // at this preemption point all resources go to the system
-        let all_resources = self.resources.take();
+        let all_resources = self.resources.whole().take();
         cold.pending_os_request = Some(PendingOsRequest::Create(deployed_address));
         trace!(env, |t| t.evm_tracer().on_create_request(IS_CREATE2));
         cold.pending_call = Some(EVMCallRequest {
@@ -1223,7 +1256,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         cold: &mut ColdFrameParts<'_, S>,
         scheme: CallScheme,
     ) -> InstructionResult {
-        charge_step(&mut self.resources, 0, CALL_NATIVE_COST)?;
+        charge_step(self.resources.whole(), 0, CALL_NATIVE_COST)?;
         cold.clear_last_returndata();
         let (gas_to_pass, to) = self.stack.pop_2()?;
         let to: B160 = to.to_b160();
@@ -1252,10 +1285,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             cast_offset_and_len(in_offset, in_len, EvmError::InvalidOperandOOG.into())?;
         let (out_offset, out_len) =
             cast_offset_and_len(out_offset, out_len, EvmError::InvalidOperandOOG.into())?;
-        resize_heap(cold, &mut self.resources, in_offset.saturating_add(in_len))?;
         resize_heap(
             cold,
-            &mut self.resources,
+            self.resources.whole(),
+            in_offset.saturating_add(in_len),
+        )?;
+        resize_heap(
+            cold,
+            self.resources.whole(),
             out_offset.saturating_add(out_len),
         )?;
         let calldata = in_offset..(in_offset + in_len);
@@ -1281,7 +1318,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         cold.returndata_location = out_offset..(out_offset + out_len);
         cold.pending_os_request = Some(PendingOsRequest::Call);
         // at this preemption point all resources go to the system
-        let all_resources = self.resources.take();
+        let all_resources = self.resources.whole().take();
         cold.pending_call = Some(EVMCallRequest {
             ergs_to_pass: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
                 gas_to_pass,

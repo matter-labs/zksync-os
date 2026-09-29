@@ -29,6 +29,8 @@ mod execution_outcomes;
 mod historical_block_hash;
 // State rollback guarantees for reverted frames.
 mod rollback_semantics;
+// Ergs and native budgets at and around multiples of 2^31.
+mod resource_boundaries;
 
 fn constructor_selfdestruct_delegatecall_bytecode(
     contract_b_addr: rig::alloy::primitives::Address,

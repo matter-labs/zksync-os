@@ -432,6 +432,135 @@ pub trait Resources:
     fn charge_native(&mut self, native: u64) -> Result<(), SystemError> {
         self.charge(&Self::from_native(Self::Native::from_computational(native)))
     }
+
+    /// Which amounts a caller may keep split while charging (the EVM interpreter keeps
+    /// their low 31 bits in registers for a run). Anything but [SplitForm::NONE] asserts,
+    /// for every state `r`:
+    /// - (C1) the state is exactly its amounts: `from_ergs_and_native(r.ergs(), r.native())
+    ///   == r`, `Ergs::from_computational(e).as_u64() == e`, and the same for `Native` if
+    ///   [SplitForm::native];
+    /// - (C2) a charge that every split part can pay succeeds and subtracts: if
+    ///   `r.ergs() >= e` and (native not split, or `r.native() >= n`), then
+    ///   `r.charge(&from_ergs_and_native(e, n))` is `Ok` and leaves `(r.ergs() - e,
+    ///   r.native() - n)` (native unchanged if not split).
+    ///
+    /// Nothing is asserted about failing charges: callers run `charge` itself for those.
+    /// Only this crate can make a value other than [SplitForm::NONE].
+    const SPLIT_FORM: SplitForm<Self> = SplitForm::NONE;
+}
+
+/// How the `charge` of a scalar resource treats its `u64` amount ([Computational]).
+///
+/// A value describes the type `T` it is for, and only this crate can make one other than
+/// [ScalarCharge::UNKNOWN], so an implementation elsewhere can't claim what it hasn't been
+/// audited for. Neither by naming a value:
+///
+/// ```compile_fail,E0624
+/// use zk_ee::system::{ScalarCharge, ScalarCharging};
+/// struct Mine;
+/// impl ScalarCharging for Mine {
+///     const CHARGING: ScalarCharge<Self> = ScalarCharge::COUNTS_DOWN;
+/// }
+/// ```
+///
+/// nor by taking one of another type:
+///
+/// ```compile_fail,E0308
+/// use zk_ee::reference_implementations::DecreasingNative;
+/// use zk_ee::system::{ScalarCharge, ScalarCharging};
+/// struct Mine;
+/// impl ScalarCharging for Mine {
+///     const CHARGING: ScalarCharge<Self> = <DecreasingNative as ScalarCharging>::CHARGING;
+/// }
+/// ```
+pub struct ScalarCharge<T: ?Sized>(ScalarKind, core::marker::PhantomData<fn() -> T>);
+
+#[derive(Clone, Copy)]
+enum ScalarKind {
+    Unknown,
+    CountsDown,
+    Untracked,
+}
+
+impl<T: ?Sized> ScalarCharge<T> {
+    /// Nothing is known
+    pub const UNKNOWN: Self = Self(ScalarKind::Unknown, core::marker::PhantomData);
+    /// The amount is `as_u64()`, `from_computational(v).as_u64() == v`, and a charge of
+    /// `c <= amount` succeeds and leaves `amount - c`
+    pub(crate) const COUNTS_DOWN: Self = Self(ScalarKind::CountsDown, core::marker::PhantomData);
+    /// Every charge succeeds and changes nothing
+    pub(crate) const UNTRACKED: Self = Self(ScalarKind::Untracked, core::marker::PhantomData);
+}
+
+/// A scalar resource that says how it charges (see [ScalarCharge]). The default says
+/// nothing, which keeps the resources that contain it whole (see [Resources::SPLIT_FORM]):
+///
+/// ```
+/// use zk_ee::system::ScalarCharging;
+/// struct Mine;
+/// impl ScalarCharging for Mine {}
+/// ```
+pub trait ScalarCharging {
+    const CHARGING: ScalarCharge<Self> = ScalarCharge::UNKNOWN;
+}
+
+impl ScalarCharging for () {
+    const CHARGING: ScalarCharge<Self> = ScalarCharge::UNTRACKED;
+}
+
+impl<const GAS_TO_ERGS_FACTOR: u64> ScalarCharging for Ergs<GAS_TO_ERGS_FACTOR> {
+    const CHARGING: ScalarCharge<Self> = ScalarCharge::COUNTS_DOWN;
+}
+
+/// The value of [Resources::SPLIT_FORM] for `R`. Like [ScalarCharge], it describes `R` and
+/// only this crate can make one other than [SplitForm::NONE], so a value of another type
+/// doesn't fit:
+///
+/// ```compile_fail,E0308
+/// use zk_ee::reference_implementations::GasOnlyResources;
+/// use zk_ee::system::{Resources, SplitForm};
+/// struct Mine;
+/// const FORM: SplitForm<Mine> = <GasOnlyResources as Resources>::SPLIT_FORM;
+/// ```
+pub struct SplitForm<R: ?Sized> {
+    ergs: bool,
+    native: bool,
+    _for: core::marker::PhantomData<fn() -> R>,
+}
+
+impl<R: ?Sized> SplitForm<R> {
+    /// Nothing is split
+    pub const NONE: Self = Self {
+        ergs: false,
+        native: false,
+        _for: core::marker::PhantomData,
+    };
+
+    /// The ergs may be split
+    pub const fn ergs(&self) -> bool {
+        self.ergs
+    }
+
+    /// The native resource may be split (only if the ergs may)
+    pub const fn native(&self) -> bool {
+        self.native
+    }
+
+    /// For a composite of the scalars `ergs` and `native` whose `Resources` impl has been
+    /// checked against (C1) and (C2) given what the scalars state
+    pub(crate) const fn of_scalars<E, N>(ergs: ScalarCharge<E>, native: ScalarCharge<N>) -> Self {
+        let (ergs, native) = match (ergs.0, native.0) {
+            (ScalarKind::CountsDown, ScalarKind::CountsDown) => (true, true),
+            (ScalarKind::CountsDown, ScalarKind::Untracked) => (true, false),
+            (ScalarKind::Unknown | ScalarKind::Untracked, _)
+            | (ScalarKind::CountsDown, ScalarKind::Unknown) => (false, false),
+        };
+        Self {
+            ergs,
+            native,
+            _for: core::marker::PhantomData,
+        }
+    }
 }
 
 #[cfg(test)]
