@@ -14,7 +14,7 @@ use zk_ee::{
         IOResultKeeper, Resources,
     },
     types_config::EthereumIOTypesConfig,
-    utils::{num_usize_words_for_u8_capacity, Bytes32, UsizeAlignedByteBox},
+    utils::{num_usize_words_for_u8_capacity, Block64AlignedByteBox, Bytes32},
 };
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
@@ -33,8 +33,10 @@ impl DynamicOracleQuery for GenericPreimageQuery {
     type Input = Bytes32;
 }
 
-/// On the 32-bit proving target, `UsizeAlignedByteBox` rounds allocations to
-/// pairs of four-byte native words.
+/// Allocation rounding assumed by the cache size estimate. It stays at eight
+/// bytes because the estimate is part of the cache admission accounting, so
+/// changing it would change behaviour. The buffer really allocates whole
+/// 64-byte blocks, so the estimate is less conservative about real memory.
 const PREIMAGE_CACHE_ALLOCATION_ALIGNMENT: usize = 8;
 /// Conservative allowance for the key, value, B-tree node, and allocator
 /// metadata retained by each raw cache entry.
@@ -67,7 +69,7 @@ enum PreimageAdmission {
 }
 
 struct CachedPreimage<A: Allocator> {
-    bytes: UsizeAlignedByteBox<A>,
+    bytes: Block64AlignedByteBox<A>,
     admission: PreimageAdmission,
 }
 
@@ -139,8 +141,9 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         self.block_limit_hit_for_current_tx
     }
 
-    /// Estimates the bytes a new entry would retain, including allocation
-    /// rounding and conservative map/allocator overhead.
+    /// Estimates the bytes a new entry would retain, including rounding to
+    /// `PREIMAGE_CACHE_ALLOCATION_ALIGNMENT` and conservative map/allocator
+    /// overhead.
     pub(super) fn estimated_entry_bytes(preimage_len: usize) -> Option<usize> {
         let aligned_allocation = preimage_len
             .checked_add(PREIMAGE_CACHE_ALLOCATION_ALIGNMENT - 1)?
@@ -429,14 +432,18 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // IMPORTANT: the oracle can not claim more than the capacity for the expected length,
             // which also limits the number of cycles spent below.
             let mut received = Ok(0);
-            let mut buffered = UsizeAlignedByteBox::from_init_fn_in(
-                num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes),
-                |dst| {
-                    received = GenericPreimageQuery::get_into(oracle, hash, dst);
-                    *received.as_ref().unwrap_or(&0)
-                },
-                self.allocator.clone(),
-            );
+            // SAFETY: `get_into` initializes every word it reports on success; on error the
+            // callback reports zero, and the constructor initializes the remaining words.
+            let mut buffered = unsafe {
+                Block64AlignedByteBox::from_init_fn_in(
+                    num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes),
+                    |dst| {
+                        received = GenericPreimageQuery::get_into(oracle, hash, dst);
+                        *received.as_ref().unwrap_or(&0)
+                    },
+                    self.allocator.clone(),
+                )
+            };
             if received.is_err() {
                 return Err(
                     internal_error!("Oracle preimage exceeds expected preimage length").into(),
@@ -448,20 +455,14 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             if PROOF_ENV {
                 match preimage_type {
                     PreimageType::AccountData => {
-                        use crypto::blake2s::Blake2s256;
-                        use crypto::MiniDigest;
-                        let recomputed_hash =
-                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
+                        let recomputed_hash = preimage_blake2s(&buffered);
 
                         if recomputed_hash != *hash {
                             return Err(internal_error!("Account hash mismatch").into());
                         }
                     }
                     PreimageType::Bytecode => {
-                        use crypto::blake2s::Blake2s256;
-                        use crypto::MiniDigest;
-                        let recomputed_hash =
-                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
+                        let recomputed_hash = preimage_blake2s(&buffered);
 
                         if recomputed_hash != *hash {
                             return Err(internal_error!("Bytecode hash mismatch").into());
@@ -472,18 +473,12 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 debug_assert!({
                     match preimage_type {
                         PreimageType::AccountData => {
-                            use crypto::blake2s::Blake2s256;
-                            use crypto::MiniDigest;
-                            let recomputed_hash =
-                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
+                            let recomputed_hash = preimage_blake2s(&buffered);
 
                             recomputed_hash == *hash
                         }
                         PreimageType::Bytecode => {
-                            use crypto::blake2s::Blake2s256;
-                            use crypto::MiniDigest;
-                            let recomputed_hash =
-                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
+                            let recomputed_hash = preimage_blake2s(&buffered);
 
                             recomputed_hash == *hash
                         }
@@ -597,7 +592,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 self.estimated_retained_bytes,
             )
         };
-        let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
+        let boxed_data = Block64AlignedByteBox::from_slices_in(preimage, self.allocator.clone());
         self.publication_storage
             .add_preimage(hash, preimage_len, *preimage_type)?;
         let inserted = self.storage.entry(*hash).or_insert(CachedPreimage {
@@ -701,6 +696,63 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
     }
 }
 
+fn preimage_blake2s<A: Allocator>(preimage: &Block64AlignedByteBox<A>) -> Bytes32 {
+    #[cfg(any(
+        all(test, not(target_arch = "riscv32"), target_endian = "little"),
+        all(target_arch = "riscv32", feature = "proving")
+    ))]
+    {
+        Bytes32::from_array(blake2s_256_in_place(preimage))
+    }
+    #[cfg(not(any(
+        all(test, not(target_arch = "riscv32"), target_endian = "little"),
+        all(target_arch = "riscv32", feature = "proving")
+    )))]
+    {
+        use crypto::{blake2s::Blake2s256, MiniDigest};
+        Bytes32::from_array(Blake2s256::digest(preimage.as_slice()))
+    }
+}
+
+/// Hash full leading blocks at their cached addresses; copy only the final block.
+#[cfg(any(
+    all(test, not(target_arch = "riscv32"), target_endian = "little"),
+    all(target_arch = "riscv32", feature = "proving")
+))]
+fn blake2s_256_in_place<A: Allocator>(preimage: &Block64AlignedByteBox<A>) -> [u8; 32] {
+    use blake2s_u32::{
+        state_with_extended_control::Blake2RoundFunctionEvaluator, BLAKE2S_BLOCK_SIZE_BYTES,
+        BLAKE2S_BLOCK_SIZE_U32_WORDS,
+    };
+    let bytes = preimage.as_slice();
+    let leading_blocks = bytes.len().saturating_sub(1) / BLAKE2S_BLOCK_SIZE_BYTES;
+    // `Blake2RoundFunctionEvaluator::new()` leaves fields uninitialized on riscv32.
+    // SAFETY: its fields are integer arrays and a zero-sized alignment marker.
+    let mut state =
+        unsafe { core::mem::MaybeUninit::<Blake2RoundFunctionEvaluator>::zeroed().assume_init() };
+    state.reset();
+    for input in &preimage.full_blocks()[..leading_blocks] {
+        // SAFETY: `input` is aligned, initialized, and remains live for the round function.
+        unsafe {
+            state.run_round_function_with_input_and_byte_len::<false>(
+                input,
+                BLAKE2S_BLOCK_SIZE_BYTES,
+                false,
+            );
+        }
+    }
+    let last = &bytes[leading_blocks * BLAKE2S_BLOCK_SIZE_BYTES..];
+    let buffer = state.get_witness_buffer();
+    *buffer = [0; BLAKE2S_BLOCK_SIZE_U32_WORDS];
+    // SAFETY: the final slice is at most 64 bytes and does not overlap the evaluator buffer.
+    unsafe {
+        core::ptr::copy_nonoverlapping(last.as_ptr(), buffer.as_mut_ptr().cast::<u8>(), last.len());
+        state.run_round_function_with_byte_len::<false>(last.len(), true);
+    }
+    // SAFETY: both arrays are 32 bytes, and this path only builds on little-endian targets.
+    unsafe { core::mem::transmute::<[u32; 8], [u8; 32]>(state.read_state_for_output()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,13 +778,21 @@ mod tests {
     struct TestOracle {
         words: Vec<usize>,
         queries: usize,
+        query_words: Vec<usize>,
         response: ResponseBuffer,
     }
 
     impl MemoryOracle for TestOracle {
-        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
             assert_eq!(query_id, FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID);
             self.queries += 1;
+            // SAFETY: the query passes a live, aligned `Bytes32` by address.
+            self.query_words.extend_from_slice(unsafe {
+                core::slice::from_raw_parts(
+                    input_word as *const usize,
+                    core::mem::size_of::<Bytes32>() / core::mem::size_of::<usize>(),
+                )
+            });
             let bytes: Vec<u8> = self.words.iter().flat_map(|w| w.to_ne_bytes()).collect();
             let mut response = vec![];
             write_dynamic_bytes(&bytes, &mut response);
@@ -1235,5 +1295,177 @@ mod tests {
         cache.finish_frame(Some(&rollback_handle)).unwrap();
 
         assert_eq!(cache.estimated_retained_bytes, estimated_entry_bytes);
+    }
+
+    #[cfg(any(
+        all(test, not(target_arch = "riscv32"), target_endian = "little"),
+        all(target_arch = "riscv32", feature = "proving")
+    ))]
+    #[test]
+    fn in_place_blake2s_matches_independent_digest() {
+        use crypto::blake2_ext::{Blake2s256 as Reference, Digest};
+
+        let lengths = (0usize..=300).chain((1..=64).flat_map(|k| [64 * k - 1, 64 * k, 64 * k + 1]));
+        let lengths = lengths.chain([8191, 8192, 8193, 70_000]);
+        // Miri is too slow for the long inputs, so it checks up to three blocks and one byte
+        for len in lengths.filter(|&len| !cfg!(miri) || len <= 3 * 64 + 1) {
+            let bytes: Vec<u8> = (0..len)
+                .map(|i| (i.wrapping_mul(73) ^ (i >> 3)) as u8)
+                .collect();
+            let reference: [u8; 32] = Reference::digest(&bytes).into();
+            let box_from_slices = Block64AlignedByteBox::from_slices_in(
+                &[&bytes[..len / 2], &bytes[len / 2..]],
+                Global,
+            );
+            assert_eq!(
+                blake2s_256_in_place(&box_from_slices),
+                reference,
+                "length {len}"
+            );
+            assert_eq!(box_from_slices.as_slice(), bytes.as_slice());
+
+            let words = num_usize_words_for_u8_capacity(len);
+            // SAFETY: the callback initializes every word it reports.
+            let mut box_from_oracle = unsafe {
+                Block64AlignedByteBox::from_init_fn_in(
+                    words,
+                    |dst| {
+                        let written = len.div_ceil(core::mem::size_of::<usize>());
+                        for (i, word) in dst[..written].iter_mut().enumerate() {
+                            let mut chunk = [0xA5; core::mem::size_of::<usize>()];
+                            let start = i * chunk.len();
+                            let count = (len - start).min(chunk.len());
+                            chunk[..count].copy_from_slice(&bytes[start..start + count]);
+                            word.write(usize::from_ne_bytes(chunk));
+                        }
+                        written
+                    },
+                    Global,
+                )
+            };
+            box_from_oracle.truncated_to_byte_length(len);
+            assert_eq!(
+                blake2s_256_in_place(&box_from_oracle),
+                reference,
+                "oracle length {len}"
+            );
+            assert_eq!(box_from_oracle.as_slice(), bytes.as_slice());
+        }
+        for (input, expected) in [
+            (
+                &b""[..],
+                "69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9",
+            ),
+            (
+                &b"abc"[..],
+                "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982",
+            ),
+        ] {
+            let preimage = Block64AlignedByteBox::from_slices_in(&[input], Global);
+            assert_eq!(hex::encode(blake2s_256_in_place(&preimage)), expected);
+            assert_eq!(hex::encode(Reference::digest(input)), expected);
+        }
+    }
+
+    #[test]
+    fn proof_preimage_hash_keeps_query_and_cached_bytes() {
+        use crypto::blake2_ext::{Blake2s256 as Reference, Digest};
+
+        for preimage_type in [PreimageType::Bytecode, PreimageType::AccountData] {
+            for len in [0, 13, 64, 65, 124, 125, 4097] {
+                let bytes: Vec<u8> = (0..len).map(|i| i as u8).collect();
+                let hash = Bytes32::from_array(Reference::digest(&bytes).into());
+                let request = PreimageRequest {
+                    hash,
+                    expected_preimage_len_in_bytes: len as u32,
+                    preimage_type,
+                };
+                let mut oracle = TestOracle {
+                    words: bytes
+                        .chunks(core::mem::size_of::<usize>())
+                        .map(|chunk| {
+                            let mut word = [0xA5; core::mem::size_of::<usize>()];
+                            word[..chunk.len()].copy_from_slice(chunk);
+                            usize::from_ne_bytes(word)
+                        })
+                        .collect(),
+                    ..Default::default()
+                };
+                let mut cache = TestCache::new_from_parts(Global);
+                cache.begin_new_tx();
+                let mut resources = resources_with_native(decommitment_native_cost(len));
+                let got = cache
+                    .get_preimage::<true>(
+                        ExecutionEnvironmentType::EVM,
+                        &request,
+                        &mut resources,
+                        &mut oracle,
+                    )
+                    .unwrap();
+                assert_eq!(got, bytes.as_slice());
+                assert_eq!(oracle.queries, 1);
+                assert_eq!(oracle.query_words, hash.iter().collect::<Vec<_>>());
+            }
+        }
+    }
+
+    #[test]
+    fn proof_preimage_rejects_wrong_hash_and_oversized_oracle_response() {
+        use crypto::blake2_ext::{Blake2s256 as Reference, Digest};
+
+        let bytes = [0x37u8; 13];
+        let hash = Bytes32::from_array(Reference::digest(bytes).into());
+        for preimage_type in [PreimageType::Bytecode, PreimageType::AccountData] {
+            let request = PreimageRequest {
+                hash,
+                expected_preimage_len_in_bytes: bytes.len() as u32,
+                preimage_type,
+            };
+            let mut oracle = TestOracle {
+                words: vec![0usize; bytes.len().div_ceil(core::mem::size_of::<usize>())],
+                ..Default::default()
+            };
+            let mut cache = TestCache::new_from_parts(Global);
+            cache.begin_new_tx();
+            let mut resources = resources_with_native(decommitment_native_cost(bytes.len()));
+            assert!(cache
+                .get_preimage::<true>(
+                    ExecutionEnvironmentType::EVM,
+                    &request,
+                    &mut resources,
+                    &mut oracle,
+                )
+                .is_err());
+            assert_eq!(oracle.queries, 1);
+            assert_eq!(oracle.query_words, hash.iter().collect::<Vec<_>>());
+
+            let mut oversized = TestOracle {
+                words: vec![0usize; num_usize_words_for_u8_capacity(bytes.len()) + 1],
+                ..Default::default()
+            };
+            let mut resources = resources_with_native(decommitment_native_cost(bytes.len()));
+            assert!(cache
+                .get_preimage::<true>(
+                    ExecutionEnvironmentType::EVM,
+                    &request,
+                    &mut resources,
+                    &mut oversized,
+                )
+                .is_err());
+            assert_eq!(oversized.queries, 1);
+
+            let mut short = TestOracle::default();
+            let mut resources = resources_with_native(decommitment_native_cost(bytes.len()));
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = cache.get_preimage::<true>(
+                    ExecutionEnvironmentType::EVM,
+                    &request,
+                    &mut resources,
+                    &mut short,
+                );
+            }))
+            .is_err());
+            assert_eq!(short.queries, 1);
+        }
     }
 }

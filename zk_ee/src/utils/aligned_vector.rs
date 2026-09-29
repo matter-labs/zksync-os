@@ -1,6 +1,7 @@
 use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWritable};
 
 use super::USIZE_SIZE;
+use blake2s_u32::AlignedArray64;
 use core::{alloc::Allocator, mem::MaybeUninit};
 
 pub const fn num_usize_words_for_u8_capacity(u8_capacity: usize) -> usize {
@@ -24,6 +25,90 @@ pub fn allocate_vec_usize_aligned<A: Allocator>(
     let new_ptr = ptr.cast::<u8>();
 
     unsafe { alloc::vec::Vec::from_raw_parts_in(new_ptr, new_len, new_capacity, allocator) }
+}
+
+const USIZE_WORDS_PER_BLOCK: usize = 64 / USIZE_SIZE;
+
+fn checked_total_len(lens: impl IntoIterator<Item = usize>) -> usize {
+    lens.into_iter()
+        .try_fold(0usize, usize::checked_add)
+        .expect("total slice length must fit in usize")
+}
+
+/// A byte buffer whose complete 64-byte blocks can be read in place.
+pub struct Block64AlignedByteBox<A: Allocator> {
+    inner: alloc::boxed::Box<[MaybeUninit<AlignedArray64<u32, 16>>], A>,
+    byte_len: usize,
+}
+
+impl<A: Allocator> Block64AlignedByteBox<A> {
+    /// Calls `init_fn` with exactly `buffer_size` words and zeroes any unwritten words.
+    ///
+    /// # Safety
+    /// The callback must return at most `buffer_size` and initialize every word in that prefix.
+    pub unsafe fn from_init_fn_in(
+        buffer_size: usize,
+        init_fn: impl FnOnce(&mut [MaybeUninit<usize>]) -> usize,
+        allocator: A,
+    ) -> Self {
+        let mut inner = alloc::boxed::Box::new_uninit_slice_in(
+            buffer_size.div_ceil(USIZE_WORDS_PER_BLOCK),
+            allocator,
+        );
+        // SAFETY: each block contains `USIZE_WORDS_PER_BLOCK` words, and the slice
+        // stops at `buffer_size`.
+        let words = unsafe {
+            core::slice::from_raw_parts_mut(
+                inner.as_mut_ptr().cast::<MaybeUninit<usize>>(),
+                buffer_size,
+            )
+        };
+        let written_words = init_fn(words);
+        assert!(written_words <= buffer_size);
+        for word in words.iter_mut().skip(written_words) {
+            word.write(0);
+        }
+        Self {
+            inner,
+            byte_len: written_words * USIZE_SIZE,
+        }
+    }
+
+    pub fn from_slices_in(srcs: &[&[u8]], allocator: A) -> Self {
+        // A wrapped total would allocate less than the copies below write.
+        let byte_len = checked_total_len(srcs.iter().map(|src| src.len()));
+        let mut inner = alloc::boxed::Box::new_uninit_slice_in(byte_len.div_ceil(64), allocator);
+        // SAFETY: the allocation holds at least `byte_len` bytes, and the copies stay in it.
+        unsafe {
+            let mut dst = inner.as_mut_ptr().cast::<u8>();
+            for src in srcs {
+                core::ptr::copy_nonoverlapping(src.as_ptr(), dst, src.len());
+                dst = dst.add(src.len());
+            }
+        }
+        Self { inner, byte_len }
+    }
+
+    #[track_caller]
+    pub fn truncated_to_byte_length(&mut self, byte_len: usize) {
+        assert!(
+            byte_len <= self.byte_len,
+            "trying to truncate to {} bytes, while capacity is just {} bytes",
+            byte_len,
+            self.byte_len
+        );
+        self.byte_len = byte_len;
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: constructors initialize at least `byte_len` bytes.
+        unsafe { core::slice::from_raw_parts(self.inner.as_ptr().cast::<u8>(), self.byte_len) }
+    }
+
+    pub fn full_blocks(&self) -> &[AlignedArray64<u32, 16>] {
+        // SAFETY: these blocks are entirely within the initialized prefix.
+        unsafe { core::slice::from_raw_parts(self.inner.as_ptr().cast(), self.byte_len / 64) }
+    }
 }
 
 // Clone preserves both the raw buffer bytes and initialization accounting.
@@ -275,8 +360,8 @@ mod tests {
     use std::alloc::Global;
 
     use super::{
-        allocate_vec_usize_aligned, num_usize_words_for_u8_capacity, UsizeAlignedByteBox,
-        USIZE_SIZE,
+        allocate_vec_usize_aligned, checked_total_len, num_usize_words_for_u8_capacity,
+        Block64AlignedByteBox, UsizeAlignedByteBox, USIZE_SIZE,
     };
     use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWritable};
 
@@ -489,5 +574,58 @@ mod tests {
         }))
         .is_err();
         assert!(panicked);
+    }
+
+    #[test]
+    fn block64_buffer_alignment_and_initialized_blocks() {
+        for len in 0..=300 {
+            let src: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            let split = len / 2;
+            let buffer =
+                Block64AlignedByteBox::from_slices_in(&[&src[..split], &src[split..]], Global);
+            assert_eq!(buffer.as_slice(), src.as_slice());
+            assert_eq!((buffer.as_slice().as_ptr() as usize) % 64, 0);
+            assert_eq!(buffer.full_blocks().len(), len / 64);
+            for (block, chunk) in buffer.full_blocks().iter().zip(src.as_chunks::<64>().0) {
+                // SAFETY: a block contains exactly 64 initialized bytes.
+                let bytes = unsafe { core::slice::from_raw_parts(block.as_ptr().cast::<u8>(), 64) };
+                assert_eq!(bytes, chunk);
+            }
+        }
+    }
+
+    #[test]
+    fn block64_total_len_rejects_overflow() {
+        assert_eq!(checked_total_len([2, 0, 3]), 5);
+        assert_eq!(checked_total_len([usize::MAX - 1, 1]), usize::MAX);
+        // On a 64-bit host a wrapping total needs about 32 GiB of slices and slice references,
+        // so this checks the sum `from_slices_in` uses directly.
+        assert!(std::panic::catch_unwind(|| checked_total_len([usize::MAX, 1])).is_err());
+    }
+
+    #[test]
+    fn block64_oracle_capacity_and_truncation() {
+        let mut seen_capacity = 0;
+        // SAFETY: the callback initializes exactly the two words it reports.
+        let mut buffer = unsafe {
+            Block64AlignedByteBox::from_init_fn_in(
+                5,
+                |words| {
+                    seen_capacity = words.len();
+                    words[0].write(11);
+                    words[1].write(22);
+                    2
+                },
+                Global,
+            )
+        };
+        assert_eq!(seen_capacity, 5);
+        assert_eq!(buffer.as_slice().len(), 2 * USIZE_SIZE);
+        buffer.truncated_to_byte_length(USIZE_SIZE + 1);
+        assert_eq!(buffer.as_slice().len(), USIZE_SIZE + 1);
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| {
+            buffer.truncated_to_byte_length(2 * USIZE_SIZE + 1);
+        }))
+        .is_err());
     }
 }
