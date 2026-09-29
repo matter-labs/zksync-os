@@ -148,10 +148,10 @@ pub const SELFDESTRUCT: u8 = 0xff;
 ///
 /// `stack_in` is the number of items that must already be on the stack, and
 /// `stack_out` is the number left in their place. For DUP and SWAP this uses
-/// the usual accounting convention: DUPn reads n items and leaves n+1 (a net
-/// gain of one), SWAPn reads and leaves n+1 (a net change of zero). Modeling
-/// them this way lets a single "pop stack_in, push stack_out" rule cover every
-/// opcode.
+/// the usual accounting convention: DUP with index n reads n items and leaves
+/// n+1 (a net gain of one); SWAP with index n reads and leaves n+1 (no net change).
+/// Modeling them this way lets a single "pop stack_in, push stack_out" rule
+/// cover every opcode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OpSpec {
     pub byte: u8,

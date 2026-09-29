@@ -1,6 +1,6 @@
 //! Wrapping a runtime program as initcode that deploys it.
 //!
-//! A deployment transaction runs initcode, and whatever the initcode RETURNs
+//! A deployment transaction runs initcode, and whatever the initcode returns
 //! becomes the account's runtime code. To deploy an already-decided runtime
 //! program we prepend a tiny, fixed preamble that copies the trailing runtime
 //! bytes into memory and returns them.
