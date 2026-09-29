@@ -142,7 +142,9 @@ fn process_field_hint_query(
             .then_some(guest_run_responses),
     };
     let (op, operand) = read_request(memory, input_word, querier);
+    let started = oracle_provider::query_timing::start();
     answer(op, &operand, &mut responses);
+    oracle_provider::query_timing::record(query_id, Some(op as u32), started);
 }
 
 /// Serves the field hints, set up for the RISC-V guest in the simulated machine.

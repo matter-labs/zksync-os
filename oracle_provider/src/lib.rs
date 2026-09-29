@@ -130,10 +130,9 @@ pub struct ZkEENonDeterminismSource {
 impl ZkEENonDeterminismSource {
     /// An oracle without processors for the run `mode` (the default is a native run only).
     pub fn new(mode: RunMode) -> Self {
-        Self {
-            mode,
-            ..Default::default()
-        }
+        let mut source = Self::default();
+        source.mode = mode;
+        source
     }
 
     /// Sets the run the oracle serves, before it serves queries.
@@ -176,6 +175,7 @@ impl ZkEENonDeterminismSource {
         let mode = self.mode;
         let mut native_run_responses = Vec::new();
         let mut guest_run_responses = Vec::new();
+        let started = query_timing::start();
         self.processors[processor_id].process_memory_query(
             query_id,
             input_word,
@@ -184,6 +184,7 @@ impl ZkEENonDeterminismSource {
             &mut native_run_responses,
             &mut guest_run_responses,
         );
+        query_timing::record(query_id, None, started);
         // the responses of the runs of the mode, and only those
         let responds_for_mode = match mode {
             RunMode::NativeRunOnly => guest_run_responses.is_empty(),
@@ -219,7 +220,9 @@ impl ZkEENonDeterminismSource {
             panic!("Can not process query with ID = 0x{query_id:08x}");
         };
         let processor = &mut self.processors[processor_id];
+        let started = query_timing::start();
         let new_iterator = processor.process_buffered_query(query_id, buffer, memory);
+        query_timing::record(query_id, None, started);
 
         let result_len = new_iterator.len() * 2; // NOTE for mismatch of 32/64-bit archs
         self.iterator_len_to_indicate = Some(result_len as u32);
@@ -532,6 +535,79 @@ impl QueryBuffer {
             } else {
                 false
             }
+        }
+    }
+}
+
+impl Drop for ZkEENonDeterminismSource {
+    fn drop(&mut self) {
+        query_timing::report_and_reset();
+    }
+}
+
+/// Opt-in accounting of the host time spent answering oracle queries, per query ID and, for
+/// processors that report it, per operation inside the query. Enabled by the environment
+/// variable `ORACLE_QUERY_TIMING`; the table is printed to stderr when an oracle is dropped.
+pub mod query_timing {
+    use std::collections::BTreeMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    type Key = (u32, Option<u32>);
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    static STATS: Mutex<BTreeMap<Key, (u64, Duration)>> = Mutex::new(BTreeMap::new());
+
+    pub fn enabled() -> bool {
+        *ENABLED.get_or_init(|| std::env::var_os("ORACLE_QUERY_TIMING").is_some())
+    }
+
+    /// The start of a timed section, `None` when the accounting is off
+    pub fn start() -> Option<Instant> {
+        enabled().then(Instant::now)
+    }
+
+    /// Adds the time since `started` to the query `query_id` (`operation` = a kind inside it)
+    pub fn record(query_id: u32, operation: Option<u32>, started: Option<Instant>) {
+        let Some(started) = started else { return };
+        let elapsed = started.elapsed();
+        let mut stats = STATS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entry = stats.entry((query_id, operation)).or_default();
+        entry.0 += 1;
+        entry.1 += elapsed;
+    }
+
+    pub fn report_and_reset() {
+        if !enabled() {
+            return;
+        }
+        let stats = core::mem::take(
+            &mut *STATS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        if stats.is_empty() {
+            return;
+        }
+        let mut rows: Vec<_> = stats.into_iter().collect();
+        rows.sort_by_key(|(_, (_, time))| core::cmp::Reverse(*time));
+        let total: Duration = rows
+            .iter()
+            .filter(|((_, operation), _)| operation.is_none())
+            .map(|(_, (_, time))| *time)
+            .sum();
+        eprintln!("oracle query timing, {total:?} in total:");
+        for ((query_id, operation), (count, time)) in rows {
+            let kind = match operation {
+                Some(operation) => format!("0x{query_id:08x} op {operation}"),
+                None => format!("0x{query_id:08x}"),
+            };
+            eprintln!(
+                "  {kind:<22} {count:>9} queries {:>12.3} ms {:>10.2} us/query",
+                time.as_secs_f64() * 1e3,
+                time.as_secs_f64() * 1e6 / count as f64
+            );
         }
     }
 }
