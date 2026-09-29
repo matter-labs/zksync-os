@@ -7,6 +7,7 @@ use zk_ee::common_structs::{
     GenericEventContent, GenericEventContentWithTxRef, GenericLogContent,
     GenericLogContentWithTxRef, PreimageType,
 };
+use zk_ee::system::validator::L1TxOperatorDecision;
 use zk_ee::system::IOResultKeeper;
 use zk_ee::system::MAX_EVENT_TOPICS;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -14,6 +15,17 @@ use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 
 // Use interface type as the direct place-in, can be changed in the future.
 pub use zksync_os_interface::types::TxProcessingOutputOwned;
+
+fn into_interface_decision(
+    decision: L1TxOperatorDecision,
+) -> zksync_os_interface::types::L1TxOperatorDecision {
+    use zksync_os_interface::types::L1TxOperatorDecision as Iface;
+    match decision {
+        L1TxOperatorDecision::Accepted => Iface::Accepted,
+        L1TxOperatorDecision::RejectedBeforeExecution => Iface::RejectedBeforeExecution,
+        L1TxOperatorDecision::RejectedAfterExecution => Iface::RejectedAfterExecution,
+    }
+}
 
 pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
     pub block_header: Option<T>,
@@ -108,6 +120,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
             computational_native_used: output.computational_native_used,
             native_used: output.native_used,
             pubdata_used: output.pubdata_used,
+            l1_tx_operator_decision: output.l1_tx_operator_decision.map(into_interface_decision),
         });
         self.tx_result_callback.tx_executed(owned_result.clone());
         self.tx_results.push(owned_result);
@@ -227,5 +240,62 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
 
     fn get_gas_used(&self) -> u64 {
         self.forward_running_rk.get_gas_used()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::run::test_impl::NoopTxCallback;
+    use basic_bootloader::bootloader::errors::InvalidTransaction;
+    use zksync_os_interface::types::L1TxOperatorDecision as IfaceDecision;
+
+    fn output(decision: Option<L1TxOperatorDecision>) -> TxProcessingOutput<'static> {
+        TxProcessingOutput {
+            status: decision != Some(L1TxOperatorDecision::RejectedBeforeExecution),
+            output: &[],
+            contract_address: None,
+            gas_used: 0,
+            gas_refunded: 0,
+            computational_native_used: 0,
+            native_used: 0,
+            pubdata_used: 0,
+            l1_tx_operator_decision: decision,
+        }
+    }
+
+    fn keeper_with_all_decisions<T: 'static + Sized>(
+    ) -> ForwardRunningResultKeeper<NoopTxCallback, T> {
+        let mut keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+        keeper.tx_processed(Ok(output(Some(
+            L1TxOperatorDecision::RejectedAfterExecution,
+        ))));
+        keeper.tx_processed(Ok(output(None))); // an L2 tx
+        keeper.tx_processed(Err(InvalidTransaction::FilteredByValidator)); // a dropped L2 tx
+        keeper.tx_processed(Ok(output(Some(L1TxOperatorDecision::Accepted))));
+        keeper.tx_processed(Ok(output(Some(
+            L1TxOperatorDecision::RejectedBeforeExecution,
+        ))));
+        keeper
+    }
+
+    #[test]
+    fn owned_outputs_carry_the_operator_decision_of_priority_txs() {
+        let keeper = keeper_with_all_decisions::<()>();
+        let decisions: Vec<Option<Option<IfaceDecision>>> = keeper
+            .tx_results
+            .iter()
+            .map(|r| r.as_ref().ok().map(|o| o.l1_tx_operator_decision))
+            .collect();
+        assert_eq!(
+            decisions,
+            vec![
+                Some(Some(IfaceDecision::RejectedAfterExecution)),
+                Some(None),
+                None,
+                Some(Some(IfaceDecision::Accepted)),
+                Some(Some(IfaceDecision::RejectedBeforeExecution)),
+            ]
+        );
     }
 }

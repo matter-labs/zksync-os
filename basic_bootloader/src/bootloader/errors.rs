@@ -194,10 +194,13 @@ impl From<SystemError> for TxError {
     }
 }
 
-impl From<TxValidationError> for InvalidTransaction {
+impl From<TxValidationError> for TxError {
     fn from(err: TxValidationError) -> Self {
         match err {
-            TxValidationError::FilteredByValidator => InvalidTransaction::FilteredByValidator,
+            TxValidationError::FilteredByValidator => {
+                TxError::Validation(InvalidTransaction::FilteredByValidator)
+            }
+            TxValidationError::Internal(e) => TxError::Internal(e.into()),
         }
     }
 }

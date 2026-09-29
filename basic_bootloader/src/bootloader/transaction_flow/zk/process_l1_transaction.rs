@@ -30,7 +30,10 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::{NopTracer, Tracer};
-use zk_ee::system::validator::{NopTxValidator, TxValidator};
+use zk_ee::system::validator::{
+    BeginTxContext, L1TxOperatorDecision, NopTxValidator, TxValidationError, TxValidationResult,
+    TxValidator, ValidatedTxKind,
+};
 use zk_ee::system::Resource;
 use zk_ee::system::System;
 use zk_ee::system::{AccountDataRequest, CompletedExecution, Computational};
@@ -74,6 +77,25 @@ where
     S::Metadata: ZkSpecificMetadata
         + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
+    // Operator-side filtering of priority transactions (opt-in via
+    // `ChainConfig::l1_tx_filtering_enabled`, never for upgrade txs): a rejected
+    // one is force-reverted, not dropped, and charged its full gas limit. See
+    // `L1TxOperatorDecision` for how the decision is replayed in proving.
+    let operator_filtering = is_priority_op && system.get_chain_config().l1_tx_filtering_enabled();
+    let rejected_before_execution = if operator_filtering {
+        let ctx = BeginTxContext {
+            kind: ValidatedTxKind::L1Priority,
+            from: transaction.from.read(),
+            to: Some(transaction.to.read()),
+            value: transaction.value.read(),
+            calldata: transaction.calldata(),
+            gas_limit: transaction.gas_limit.read(),
+        };
+        operator_rejects(system, validator.begin_tx(&ctx), "begin_tx")?
+    } else {
+        false
+    };
+
     // The work done by the bootloader (outside of EE or EOA specific
     // computation) is charged as part of the intrinsic gas cost.
     let gas_limit = transaction.gas_limit.read();
@@ -190,8 +212,30 @@ where
     // to used in the refund step only if the execution succeeded.
     // Otherwise, this value needs to be recomputed after reverting
     // state changes.
-    let (is_success, saved_returndata, pubdata_info, resources_before_refund, mut memories) =
-        if !preparation_out_of_resources {
+    let (body_status, saved_returndata, pubdata_info, resources_before_refund, mut memories) =
+        if preparation_out_of_resources {
+            (
+                L1BodyStatus::Failed,
+                Vec::new_in(system.get_allocator()),
+                None,
+                S::Resources::empty(),
+                memories,
+            )
+        } else if rejected_before_execution {
+            // Force-reverted before execution: the body never runs and the
+            // transaction is processed as failed. Native usage is just the
+            // intrinsic part, so the current resources are the "before refund"
+            // snapshot.
+            (
+                // The pre-execution flag determines the operator decision below;
+                // RejectedByOperator is reserved for rejection after execution.
+                L1BodyStatus::Failed,
+                Vec::new_in(system.get_allocator()),
+                None,
+                resources.clone(),
+                memories,
+            )
+        } else {
             // Take a snapshot in case we need to revert due to out of native.
             let rollback_handle = system.start_global_frame()?;
 
@@ -212,9 +256,10 @@ where
                 withheld_resources,
                 tracer,
                 validator,
+                operator_filtering,
             ) {
                 Ok(outcome) => {
-                    let pubdata_info = if outcome.is_success {
+                    let pubdata_info = if outcome.status == L1BodyStatus::Succeeded {
                         system.finish_global_frame(None)?;
                         Some((outcome.pubdata_used, outcome.to_charge_for_pubdata))
                     } else {
@@ -222,7 +267,7 @@ where
                         None
                     };
                     (
-                        outcome.is_success,
+                        outcome.status,
                         outcome.returndata,
                         pubdata_info,
                         outcome.resources_before_refund,
@@ -235,13 +280,13 @@ where
                         // revert so post-execution L1 accounting can still run.
                         RootCause::Runtime(runtime @ RuntimeError::FatalRuntimeError(_)) => {
                             system_log!(
-                                system,
-                                "L1 transaction ran out of native resources or memory {runtime:?}\n"
-                            );
+                            system,
+                            "L1 transaction ran out of native resources or memory {runtime:?}\n"
+                        );
                             resources.exhaust_ergs();
                             system.finish_global_frame(Some(&rollback_handle))?;
                             (
-                                false,
+                                L1BodyStatus::Failed,
                                 Vec::new_in(system.get_allocator()),
                                 None,
                                 S::Resources::empty(),
@@ -255,15 +300,21 @@ where
                     }
                 }
             }
-        } else {
-            (
-                false,
-                Vec::new_in(system.get_allocator()),
-                None,
-                S::Resources::empty(),
-                memories,
-            )
         };
+
+    let is_success = body_status == L1BodyStatus::Succeeded;
+    let operator_decision = if rejected_before_execution {
+        L1TxOperatorDecision::RejectedBeforeExecution
+    } else if body_status == L1BodyStatus::RejectedByOperator {
+        L1TxOperatorDecision::RejectedAfterExecution
+    } else {
+        L1TxOperatorDecision::Accepted
+    };
+    // A force-reverted transaction is charged its full gas limit, whichever
+    // hook rejected it.
+    if operator_decision != L1TxOperatorDecision::Accepted {
+        resources.exhaust_ergs();
+    }
 
     // Compute gas to refund
     // TODO: consider operator refund
@@ -460,6 +511,7 @@ where
         native_used,
         pubdata_used: pubdata_used + intrinsic_pubdata,
         blob_gas_used: 0,
+        l1_tx_operator_decision: is_priority_op.then_some(operator_decision),
     })
 }
 
@@ -602,11 +654,38 @@ where
 /// the main tx call is saved in `returndata` so it can be restored
 /// into the return buffer after the asset-tracker calls complete.
 struct L1ExecutionOutcome<S: EthereumLikeTypes> {
-    is_success: bool,
+    status: L1BodyStatus,
     returndata: Vec<u8, S::Allocator>,
     pubdata_used: u64,
     to_charge_for_pubdata: S::Resources,
     resources_before_refund: S::Resources,
+}
+
+/// How the L1 transaction body ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum L1BodyStatus {
+    Succeeded,
+    /// Reverted, ran out of resources, or could not pay for its pubdata.
+    Failed,
+    /// Rolled back because the operator rejected it after execution.
+    RejectedByOperator,
+}
+
+/// Maps a validator verdict: `Ok(false)` accepted, `Ok(true)` rejected (logged),
+/// `Err` when the validator itself failed.
+fn operator_rejects<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    verdict: TxValidationResult,
+    hook: &str,
+) -> Result<bool, BootloaderSubsystemError> {
+    match verdict {
+        Ok(()) => Ok(false),
+        Err(TxValidationError::FilteredByValidator) => {
+            system_log!(system, "L1 tx rejected by validator during {hook}\n");
+            Ok(true)
+        }
+        Err(TxValidationError::Internal(e)) => Err(e.into()),
+    }
 }
 
 /// Executes the mandatory non-zero L1 finalization path once before the first
@@ -763,6 +842,7 @@ fn execute_l1_transaction_and_notify_result<
     withheld_resources: S::Resources,
     tracer: &mut impl Tracer<S>,
     validator: &mut impl TxValidator<S>,
+    operator_filtering: bool,
 ) -> Result<L1ExecutionOutcome<S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -848,7 +928,7 @@ where
 
     // TODO: add support for deployment transactions,
     // probably unify with execution logic for EOA
-    let (reverted, mut returndata) =
+    let (reverted, mut returndata, rejected_by_operator) =
         match BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
             system,
             system_functions,
@@ -866,16 +946,28 @@ where
                 resources_returned,
                 result,
             }) => {
-                let reverted = result.failed();
+                let body_failed = result.failed();
+                // The operator may still reject after seeing the execution;
+                // that rolls the body back like a revert, with no returndata.
+                let rejected_by_operator = if operator_filtering {
+                    operator_rejects(system, validator.finish_tx(), "finish_tx")?
+                } else {
+                    false
+                };
+                let reverted = body_failed || rejected_by_operator;
                 // Save the returndata before asset-tracker calls overwrite
                 // the runner memory buffer. Use the system allocator (not
                 // global) to avoid panics in proving mode.
-                let rd = result.return_values().returndata;
+                let rd = if rejected_by_operator {
+                    &[][..]
+                } else {
+                    result.return_values().returndata
+                };
                 let mut returndata = Vec::with_capacity_in(rd.len(), system.get_allocator());
                 returndata.extend_from_slice(rd);
                 *resources = resources_returned;
                 system.finish_global_frame(reverted.then_some(&rollback_handle))?;
-                (reverted, returndata)
+                (reverted, returndata, rejected_by_operator)
             }
             Err(e) => {
                 system.finish_global_frame(Some(&rollback_handle))?;
@@ -896,7 +988,13 @@ where
 
     let (enough, to_charge_for_pubdata, pubdata_used) =
         check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)?;
-    let is_success = !reverted && enough;
+    let status = if rejected_by_operator {
+        L1BodyStatus::RejectedByOperator
+    } else if !reverted && enough {
+        L1BodyStatus::Succeeded
+    } else {
+        L1BodyStatus::Failed
+    };
     if !enough {
         system_log!(system, "Not enough gas for pubdata after execution\n");
         // Burn all remaining ergs.
@@ -906,7 +1004,7 @@ where
     }
 
     Ok(L1ExecutionOutcome {
-        is_success,
+        status,
         returndata,
         pubdata_used,
         to_charge_for_pubdata,

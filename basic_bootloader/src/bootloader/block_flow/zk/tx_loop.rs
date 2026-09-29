@@ -264,6 +264,8 @@ where
                                     computational_native_used,
                                     native_used: tx_processing_result.native_used,
                                     pubdata_used: tx_processing_result.pubdata_used,
+                                    l1_tx_operator_decision: tx_processing_result
+                                        .l1_tx_operator_decision,
                                 }));
 
                                 // Only bump tx number when tx is successful

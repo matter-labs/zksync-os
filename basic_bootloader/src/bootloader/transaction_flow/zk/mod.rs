@@ -30,7 +30,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::TxValidator;
+use zk_ee::system::validator::{L1TxOperatorDecision, TxValidator};
 use zk_ee::system::{
     errors::runtime::RuntimeError, logger::Logger, EthereumLikeTypes, System, SystemTypes, *,
 };
@@ -64,6 +64,10 @@ pub struct ZkTxResult<'a> {
     pub native_used: u64,
     pub pubdata_used: u64,
     pub blob_gas_used: u64,
+    /// For priority (L1 -> L2) transactions: whether and where the operator's
+    /// validator rejected it (`Accepted` unless the chain has
+    /// `ChainConfig::l1_tx_filtering_enabled`). `None` for every other kind.
+    pub l1_tx_operator_decision: Option<L1TxOperatorDecision>,
 }
 
 impl<'a> MinimalTransactionOutput<'a> for ZkTxResult<'a> {
@@ -103,6 +107,7 @@ impl<'a> MinimalTransactionOutput<'a> for ZkTxResult<'a> {
             computational_native_used: self.computational_native_used,
             pubdata_used: self.pubdata_used,
             native_used: self.native_used,
+            l1_tx_operator_decision: self.l1_tx_operator_decision,
         }
     }
 }
@@ -615,6 +620,7 @@ where
             computational_native_used,
             pubdata_used: context.total_pubdata,
             blob_gas_used,
+            l1_tx_operator_decision: None,
         }
     }
 

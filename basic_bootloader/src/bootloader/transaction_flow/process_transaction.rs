@@ -91,6 +91,7 @@ where
     {
         // Pre-execution validation hook for L2 transactions only
         let ctx = BeginTxContext {
+            kind: ValidatedTxKind::L2,
             from: *transaction.from(),
             to: transaction.to(),
             value: *transaction.value(),
@@ -105,7 +106,7 @@ where
                 "Tx rejected by validator during begin_tx: {:?}\n",
                 validation_err
             );
-            return Err(TxError::Validation(validation_err.into()));
+            return Err(validation_err.into());
         }
 
         F::before_validation(system, &transaction, tracer)?;
@@ -193,9 +194,7 @@ where
         );
 
         // Validate after L2 transaction execution
-        validator
-            .finish_tx()
-            .map_err(|e| TxError::Validation(e.into()))?;
+        validator.finish_tx()?;
 
         Ok(execution_result)
     }

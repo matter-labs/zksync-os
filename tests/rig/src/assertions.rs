@@ -428,6 +428,7 @@ mod tests {
             logs: vec![],
             l2_to_l1_logs: vec![],
             storage_writes: vec![],
+            l1_tx_operator_decision: None,
         }
     }
 

@@ -84,6 +84,8 @@ Where chain state commitments are the same `blake2s` hashes of the state before 
 - `chain_id`
 - `fri_proof_verification_enabled`
 - `max_tx_gas_limit`
+- `pubdata_content`
+- `l1_tx_filtering_enabled`
 
 The chain config is committed as a hash (rather than inlined) so the batch public input layout stays fixed as the `ChainConfig` field set evolves.
 
@@ -140,6 +142,10 @@ During block processing on the settlement layer, we'll verify that processed cor
 
 L1 -> L2 txs validated and paid on the settlement layer, it's also possible to deposit base tokens using it.
 See [transaction processing](bootloader/transaction_processing.md) for more details.
+
+By default priority transactions bypass the sequencer's `TxValidator` hooks (`begin_tx`/`finish_tx`) that every L2 transaction goes through. A chain can opt in with `ChainConfig::l1_tx_filtering_enabled` (committed in `chain_config_hash`, since it grants the operator discretion over the state transition). Priority transactions are then subject to the same hooks, but a rejected one is not dropped: priority operations must be processed and proven, so it is *force-reverted* instead. Its body is not executed (rejection in `begin_tx`) or rolled back (rejection in `finish_tx`), the full gas limit is charged, the rest of the deposit is refunded, and the L1 tx result log reports failure. Upgrade transactions are never subject to filtering.
+
+The operator's validator only exists in the sequencing run. Each priority transaction's output records its `L1TxOperatorDecision`, including accepted transactions. The sequencer collects these decisions in transaction order into an `L1TxOperatorDecisionResponder` for witness generation. The witness-generation and proving runs use `OracleTxValidator`, a `TxValidator` that replays that decision from the oracle (`L1_TX_OPERATOR_DECISION_QUERY_ID`), so the revert happens at exactly the same point in every run.
 
 ## Pubdata
 

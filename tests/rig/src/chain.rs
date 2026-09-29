@@ -27,6 +27,7 @@ use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
 use forward_system::run::query_processors::GenericPreimageResponder;
 use forward_system::run::query_processors::InMemoryEthereumInitialAccountStateResponder;
 use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotValueResponder;
+use forward_system::run::query_processors::L1TxOperatorDecisionResponder;
 use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
@@ -724,7 +725,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         )
         .unwrap()
         // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
-        .with_pubdata_content(self.chain_config.pubdata_content());
+        .with_pubdata_content(self.chain_config.pubdata_content())
+        // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
+        .with_l1_tx_filtering(self.chain_config.l1_tx_filtering_enabled());
     }
 
     pub fn block_hashes(&self) -> [U256; 256] {
@@ -765,7 +768,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         )
         .unwrap()
         // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
-        .with_pubdata_content(self.chain_config.pubdata_content());
+        .with_pubdata_content(self.chain_config.pubdata_content())
+        // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
+        .with_l1_tx_filtering(self.chain_config.l1_tx_filtering_enabled());
     }
 
     /// Build the batch pre-state passed to the batch prover-input runner.
@@ -1265,7 +1270,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             );
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
-            let mut validator = NopTxValidator;
+            let l1_tx_operator_decisions: L1TxOperatorDecisionResponder = block_output
+                .tx_results
+                .iter()
+                .filter_map(|result| result.as_ref().ok()?.l1_tx_operator_decision)
+                .collect();
+            // Replays the recorded operator decisions on priority txs,
+            // recording into the same witness.
+            let mut validator = l1_tx_operator_decisions.into_witness_validator(&copy_source);
             let (prover_input_forward, prover_input_batch_output) = {
                 // This run uses ProverInputSystem (proving STF) — its labels
                 // are exactly what RISC-V will fire markers for, so we keep
@@ -1300,8 +1312,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             if has_filtered_by_validator {
                 warn!(
                     "Skipping forward/prover-input output equivalence checks because the custom \
-                 validator filtered at least one transaction, and prover-input replay uses \
-                 NopTxValidator"
+                 validator filtered at least one L2 transaction, which the prover-input replay \
+                 never sees"
                 );
             } else {
                 assert_block_outputs_match(&block_output, &prover_input_block_output);
@@ -2046,13 +2058,14 @@ mod tests {
     #[test]
     fn chain_config_mutators_preserve_pubdata_content() {
         // Regression: these mutators rebuild the config via `ChainConfig::new`,
-        // which defaults to `FullPubdata` — they must not silently drop a
-        // configured `LogsOnly` content.
+        // which defaults to `FullPubdata` and no L1 tx filtering — they must
+        // not silently drop a configured `LogsOnly` content or an enabled flag.
         let mut chain = Chain::<false>::empty(Some(37));
         chain.set_chain_config(
             ChainConfig::new(37, false, DEFAULT_MAX_TX_GAS_LIMIT)
                 .unwrap()
-                .with_pubdata_content(PubdataContent::LogsOnly),
+                .with_pubdata_content(PubdataContent::LogsOnly)
+                .with_l1_tx_filtering(true),
         );
 
         chain.set_fri_proof_verification_enabled(true);
@@ -2060,6 +2073,7 @@ mod tests {
             chain.chain_config().pubdata_content(),
             PubdataContent::LogsOnly
         );
+        assert!(chain.chain_config().l1_tx_filtering_enabled());
         assert!(chain.chain_config().fri_proof_verification_enabled());
 
         chain.set_chain_id(42);
@@ -2067,6 +2081,7 @@ mod tests {
             chain.chain_config().pubdata_content(),
             PubdataContent::LogsOnly
         );
+        assert!(chain.chain_config().l1_tx_filtering_enabled());
         assert_eq!(chain.chain_config().chain_id(), 42);
     }
 

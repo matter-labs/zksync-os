@@ -23,6 +23,7 @@ mod validator_impl;
 #[cfg(feature = "fri_precompile")]
 use crate::run::query_processors::FriProofResponder;
 use crate::run::query_processors::GenericPreimageResponder;
+use crate::run::query_processors::L1TxOperatorDecisionResponder;
 use crate::run::query_processors::ReadStorageResponder;
 use crate::run::query_processors::ReadTreeResponder;
 use crate::run::query_processors::TxDataResponder;
@@ -61,7 +62,6 @@ pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
-use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -216,6 +216,7 @@ pub fn generate_proof_input<
     fri_proof_sidecar: FS,
     fri_verifier_artifacts: Option<Arc<FriVerifierArtifacts>>,
     tx_result_callback: TR,
+    l1_tx_operator_decisions: L1TxOperatorDecisionResponder,
 ) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -253,6 +254,9 @@ pub fn generate_proof_input<
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(oracle);
+    // Replays the recorded operator decisions on priority txs, recording into
+    // the same witness.
+    let mut validator = l1_tx_operator_decisions.into_witness_validator(&copy_source);
 
     let mut tracer = NopTracer::default();
     let mut result_keeper = ProverInputResultKeeper::new(tx_result_callback);
@@ -261,7 +265,7 @@ pub fn generate_proof_input<
         copy_source,
         &mut result_keeper,
         &mut tracer,
-        &mut NopTxValidator,
+        &mut validator,
     )
     .map_err(|e| wrap_error!(e))?;
     let pubdata = std::mem::take(&mut result_keeper.pubdata);
@@ -426,6 +430,7 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     blocks: Vec<BatchBlockInput<TS>>,
     da_commitment_scheme: DACommitmentScheme,
     chain_config: ChainConfig,
+    l1_tx_operator_decisions: L1TxOperatorDecisionResponder,
 ) -> Result<BatchRunOutput, ForwardSubsystemError> {
     assert!(
         !blocks.is_empty(),
@@ -476,11 +481,13 @@ pub fn generate_batch_proof_input<BS: BatchState, TS: TxSource>(
     // Keep a single witness stream across all block re-entries so the final
     // prover input matches the guest-side multiblock flow.
     let mut oracle = ReadWitnessSource::new(oracle);
+    // Replays the recorded operator decisions on priority txs, recording into
+    // the same witness.
+    let mut validator = l1_tx_operator_decisions.into_witness_validator(&oracle);
     let chain_config = ChainConfig::read_from_oracle(&mut oracle)
         .map_err(BootloaderSubsystemError::from)
         .map_err(wrap_error!())?;
     let mut tracer = NopTracer::default();
-    let mut validator = NopTxValidator;
     let mut result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     let mut block_outputs = Vec::with_capacity(batch_len);
