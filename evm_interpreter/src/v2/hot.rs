@@ -162,6 +162,22 @@ impl StackTop {
         self.pop_3_ptr().map(|(a, b, c)| unsafe { (&*a, &*b, &*c) })
     }
 
+    /// The top three values in pop order, without changing the stack
+    #[inline(always)]
+    pub fn peek_3(&self) -> Option<(&U256, &U256, &U256)> {
+        if self.depth < 3 {
+            return None;
+        }
+        // SAFETY: these are initialized slots of the stack
+        unsafe {
+            Some((
+                &*self.sp.wrapping_sub(1),
+                &*self.sp.wrapping_sub(2),
+                &*self.sp.wrapping_sub(3),
+            ))
+        }
+    }
+
     #[inline(always)]
     pub fn pop_4(&mut self) -> Result<(&U256, &U256, &U256, &U256), ExitCode> {
         // SAFETY: initialized slots of the stack
