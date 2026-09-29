@@ -347,7 +347,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 return_values.returndata = &self.heap[self.returndata_location.clone()];
             }
             ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
-            ExitCode::ExternalCall | ExitCode::FatalError(_) => {
+            ExitCode::FatalError(e) => return Err(e),
+            ExitCode::ExternalCall => {
                 return Err(internal_error!("Invalid exit code passed").into())
             }
         };

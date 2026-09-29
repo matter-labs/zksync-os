@@ -75,6 +75,24 @@ mod tests {
     }
 
     #[test]
+    fn try_to_u32_is_bounded_and_matches_between_implementations() {
+        delegated_u256::init();
+        let cases: [([u64; 4], Option<u32>); 6] = [
+            ([0, 0, 0, 0], Some(0)),
+            ([u32::MAX as u64, 0, 0, 0], Some(u32::MAX)),
+            ([u32::MAX as u64 + 1, 0, 0, 0], None),
+            ([u64::MAX, 0, 0, 0], None),
+            ([1, 1, 0, 0], None),
+            ([1, 0, 0, 1], None),
+        ];
+        for (limbs, expected) in cases {
+            let (naive, risc_v) = from_limbs(limbs);
+            assert_eq!(naive.try_to_u32(), expected, "naive {limbs:?}");
+            assert_eq!(risc_v.try_to_u32(), expected, "risc_v {limbs:?}");
+        }
+    }
+
+    #[test]
     fn compare_arithmetic() {
         delegated_u256::init();
 

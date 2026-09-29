@@ -88,8 +88,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         // Charge for copy cost
         let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
-        self.gas
-            .spend_gas_and_native(gas_cost, native_cost + EXTCODECOPY_NATIVE_COST)?;
+        let native_cost = native_cost
+            .checked_add(EXTCODECOPY_NATIVE_COST)
+            .ok_or(EvmError::OutOfGas)?;
+        self.gas.spend_gas_and_native(gas_cost, native_cost)?;
 
         copy_and_zeropad_nonoverlapping(source, &mut self.heap[memory_offset..memory_offset + len]);
 
