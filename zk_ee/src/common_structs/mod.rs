@@ -10,6 +10,7 @@ pub mod logs_storage;
 pub mod merkle_tree;
 pub mod new_preimages_publication_storage;
 pub mod new_settlement_layer_chain_id_storage;
+pub mod precompile_caches;
 pub mod proof_data;
 pub mod pubdata_compression;
 pub mod skip_list_quasi_vec;

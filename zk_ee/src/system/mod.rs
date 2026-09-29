@@ -1,4 +1,5 @@
 use arrayvec::ArrayVec;
+use common_structs::precompile_caches::PrecompileCaches;
 use common_structs::system_hooks::HooksStorage;
 use types_config::TryIntoLowAddress;
 use utils::num_usize_words_for_u8_capacity;
@@ -94,6 +95,8 @@ pub struct System<S: SystemTypes> {
     pub io: S::IO,
     pub metadata: S::Metadata,
     allocator: S::Allocator,
+    /// See `PrecompileCaches`. Inline, so the mechanism allocates nothing at all
+    precompile_caches: PrecompileCaches,
 }
 
 pub struct SystemFrameSnapshot<S: SystemTypes> {
@@ -300,6 +303,18 @@ where
         self.io.finish_tx()
     }
 
+    /// The oracle and the caches of the precompile results, for a call of a precompile hook.
+    /// For the precompile hooks only: the bootloader's own calls of system functions do not
+    /// use the caches
+    pub fn oracle_and_precompile_caches(
+        &mut self,
+    ) -> (
+        &mut <S::IO as IOSubsystemExt>::IOOracle,
+        &mut PrecompileCaches,
+    ) {
+        (self.io.oracle(), &mut self.precompile_caches)
+    }
+
     pub fn init_from_metadata_and_oracle(
         metadata: S::Metadata,
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
@@ -310,6 +325,7 @@ where
             io,
             metadata,
             allocator: S::Allocator::default(),
+            precompile_caches: PrecompileCaches::default(),
         };
 
         Ok(system)

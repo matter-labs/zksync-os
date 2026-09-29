@@ -87,6 +87,50 @@ fn run_multiblock_batch_proof_run(
 ) {
     let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
+    let mint_tx = {
+        let mint_tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 80_000,
+            to: TxKind::Call(to),
+            value: Default::default(),
+            input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
+    };
+    let transfer_tx = {
+        let transfer_tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 1,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 60_000,
+            to: TxKind::Call(to),
+            value: Default::default(),
+            access_list: Default::default(),
+            input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone())
+    };
+    run_two_block_batch_proof_run(
+        [vec![mint_tx], vec![transfer_tx]],
+        da_commitment_scheme,
+        pubdata_content,
+    );
+}
+
+/// Proves the batch of two blocks of `block_txs`, from the state of
+/// `new_multiblock_batch_tester`, both through the batch prover input and through the
+/// legacy concatenation of independently recorded per-block inputs, which must be equal,
+/// and runs the multiblock proving binary on it. Returns the outputs and the lengths of
+/// the independently recorded per-block prover inputs
+fn run_two_block_batch_proof_run(
+    block_txs: [Vec<ZKsyncTxEnvelope>; 2],
+    da_commitment_scheme: DACommitmentScheme,
+    pubdata_content: PubdataContent,
+) -> ([BlockOutput; 2], [usize; 2]) {
+    let [block1_txs, block2_txs] = block_txs;
     // The DA mode is a chain-level rule carried in the chain config (and thereby committed via the
     // public input's chain config hash), so both the batch run and the per-block legacy runs must use
     // a config with this mode.
@@ -106,25 +150,12 @@ fn run_multiblock_batch_proof_run(
     batch_tester.ensure_account_exists(block1_context.coinbase);
     batch_tester.ensure_account_exists(block2_context.coinbase);
 
-    let mint_tx = {
-        let mint_tx = TxLegacy {
-            chain_id: 37u64.into(),
-            nonce: 0,
-            gas_price: 1000,
-            gas_limit: 80_000,
-            to: TxKind::Call(to),
-            value: Default::default(),
-            input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
-        };
-        ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
-    };
-
     // Batch proving starts from the batch pre-state before block 1 and
     // receives the per-block metadata/tx streams separately.
     let initial_proof_data = batch_tester.prepare_batch_initial_proof_data();
     let batch_state = batch_tester.prepare_batch_state();
     let block1_batch_input =
-        batch_tester.prepare_batch_block_input(vec![mint_tx.clone()], Some(block1_context.clone()));
+        batch_tester.prepare_batch_block_input(block1_txs.clone(), Some(block1_context.clone()));
 
     // Legacy multiblock proving still runs `singleblock_batch` once per block
     // and stitches the resulting witnesses/pubdata together afterwards.
@@ -133,7 +164,7 @@ fn run_multiblock_batch_proof_run(
         .with_chain_config(chain_config)
         .with_run_config(legacy_singleblock_run_config());
     legacy_tester.set_block_context(Some(block1_context.clone()));
-    let _ = legacy_tester.execute_block(vec![mint_tx]);
+    let _ = legacy_tester.execute_block(block1_txs);
     let block1_run = legacy_tester
         .last_executed_block_info()
         .expect("legacy block1 run must record proof input");
@@ -145,24 +176,10 @@ fn run_multiblock_batch_proof_run(
         "block1 proof input must be non-empty; proving run is required"
     );
 
-    let transfer_tx = {
-        let transfer_tx = TxEip1559 {
-            chain_id: 37u64,
-            nonce: 1,
-            max_fee_per_gas: 1000,
-            max_priority_fee_per_gas: 1000,
-            gas_limit: 60_000,
-            to: TxKind::Call(to),
-            value: Default::default(),
-            access_list: Default::default(),
-            input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
-        };
-        ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone())
-    };
-    let block2_batch_input = legacy_tester
-        .prepare_batch_block_input(vec![transfer_tx.clone()], Some(block2_context.clone()));
+    let block2_batch_input =
+        legacy_tester.prepare_batch_block_input(block2_txs.clone(), Some(block2_context.clone()));
     legacy_tester.set_block_context(Some(block2_context.clone()));
-    let _ = legacy_tester.execute_block(vec![transfer_tx]);
+    let _ = legacy_tester.execute_block(block2_txs);
     let block2_run = legacy_tester
         .last_executed_block_info()
         .expect("legacy block2 run must record proof input");
@@ -279,6 +296,10 @@ fn run_multiblock_batch_proof_run(
         batch_output.batch_public_input.hash(),
         "RISC-V batch proof output mismatch"
     );
+    (
+        [block1_output, block2_output],
+        [block1_proof_input.len(), block2_proof_input.len()],
+    )
 }
 
 fn run_singleblock_batch_proof_run(
@@ -449,6 +470,106 @@ fn run_multiblock_batch_proof_run_validium_blobs() {
                 DACommitmentScheme::BlobsZKsyncOS,
                 PubdataContent::LogsOnly,
             )
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// The valid input of the point evaluation precompile of the precompile instance tests, and
+/// the precompile's output for it
+const POINT_EVALUATION_INPUT: &str = "016685e172a749f7426a45259a2f0ca6382072faf89dc058fba39ad2792242eb55db09df7484b85d7e2870dc3e526e87b12ef1716bc52ffcf82aa07743a5d4f512d1aa968cf5c88d44a2a5815242082a27f99d2fa816838338b9532bf3cee22d91c1ac59fdf344e2a9098eb2c3699b9652a9a8efc006c4bda8a1d764b4a0fada3c34e72a0cc4d151a6dd137dde534af29517ca718c450eed935603cd5985ee6bbcfbe2da87e24e64be8fa2d81733e0de9b8a11efd7c73f39898d158fd0c4867e";
+const POINT_EVALUATION_OUTPUT: &str = "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+
+#[test]
+fn run_multiblock_batch_proof_run_point_evaluation_cache() {
+    // Two blocks of two calls of the point evaluation precompile with the same input: the
+    // second call of each block hits the cache of verified inputs, and the cache of block 2
+    // starts empty, in the batch run as in the independently recorded per-block runs (whose
+    // concatenation the batch prover input must equal)
+    std::thread::Builder::new()
+        .name("multiblock_batch_point_evaluation".to_owned())
+        .stack_size(TEST_STACK_SIZE)
+        .spawn(|| {
+            let wallet = testing_signer(0);
+            let point_evaluation_tx = |nonce: u64, input: &[u8]| {
+                let tx = TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce,
+                    gas_price: 1000,
+                    gas_limit: 1_000_000,
+                    to: TxKind::Call(address!("000000000000000000000000000000000000000a")),
+                    value: Default::default(),
+                    input: input.to_vec().into(),
+                };
+                ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+            };
+            let valid = hex::decode(POINT_EVALUATION_INPUT).unwrap();
+            let mut invalid_hash = valid.clone();
+            invalid_hash[1] ^= 1;
+            let hit_txs = [
+                vec![
+                    point_evaluation_tx(0, &valid),
+                    point_evaluation_tx(1, &valid),
+                ],
+                vec![
+                    point_evaluation_tx(2, &valid),
+                    point_evaluation_tx(3, &valid),
+                ],
+            ];
+            let no_hint_txs = [
+                vec![
+                    point_evaluation_tx(0, &valid),
+                    point_evaluation_tx(1, &invalid_hash),
+                ],
+                vec![
+                    point_evaluation_tx(2, &valid),
+                    point_evaluation_tx(3, &invalid_hash),
+                ],
+            ];
+            let hit_recovery = hit_txs
+                .each_ref()
+                .map(|txs| rig::signature_tape::legacy_sender_recovery_tape_len(txs));
+            let no_hint_recovery = no_hint_txs
+                .each_ref()
+                .map(|txs| rig::signature_tape::legacy_sender_recovery_tape_len(txs));
+            let (outputs, hit_tape_lengths) = run_two_block_batch_proof_run(
+                hit_txs,
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                PubdataContent::FullPubdata,
+            );
+            // A bad versioned hash stops before KZG hints, just as a cache hit does.
+            // Remove the signature-dependent sender recovery tape before comparing.
+            // This still detects a hook that stops using the cache in either block.
+            let (_, no_hint_tape_lengths) = run_two_block_batch_proof_run(
+                no_hint_txs,
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                PubdataContent::FullPubdata,
+            );
+            for block in 0..2 {
+                assert_eq!(
+                    hit_tape_lengths[block]
+                        .checked_sub(hit_recovery[block])
+                        .expect("sender recovery fits the block tape"),
+                    no_hint_tape_lengths[block]
+                        .checked_sub(no_hint_recovery[block])
+                        .expect("sender recovery fits the block tape"),
+                    "block {block}"
+                );
+            }
+            let expected = hex::decode(POINT_EVALUATION_OUTPUT).unwrap();
+            for (block, output) in outputs.iter().enumerate() {
+                assert_eq!(output.tx_results.len(), 2, "block {block}");
+                for (index, result) in output.tx_results.iter().enumerate() {
+                    let result = result.as_ref().expect("the transaction is valid");
+                    assert!(result.is_success(), "block {block} tx {index}: {result:?}");
+                    assert_eq!(
+                        result.as_returned_bytes(),
+                        expected,
+                        "block {block} tx {index}"
+                    );
+                }
+            }
         })
         .unwrap()
         .join()

@@ -31,6 +31,7 @@ use call_hooks::precompiles::{
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use evm_interpreter::precompile_addresses::*;
+use zk_ee::common_structs::precompile_caches::PrecompileCaches;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::internal_error;
@@ -61,6 +62,7 @@ where
 {
     fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        precompile_caches: &mut PrecompileCaches,
         logger: &mut S::Logger,
         input: &[u8],
         output: &mut D,
@@ -87,6 +89,7 @@ where
 {
     fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         _oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        _precompile_caches: &mut PrecompileCaches,
         _logger: &mut S::Logger,
         input: &[u8],
         output: &mut D,
@@ -104,13 +107,22 @@ where
 {
     fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        precompile_caches: &mut PrecompileCaches,
         logger: &mut S::Logger,
         input: &[u8],
         output: &mut D,
         resources: &mut S::Resources,
         allocator: A,
     ) -> Result<(), SubsystemError<E>> {
-        F::execute(input, output, resources, oracle, logger, allocator)
+        F::execute_with_precompile_caches(
+            input,
+            output,
+            resources,
+            oracle,
+            precompile_caches,
+            logger,
+            allocator,
+        )
     }
 }
 
@@ -133,6 +145,7 @@ where
 {
     fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        _precompile_caches: &mut PrecompileCaches,
         logger: &mut S::Logger,
         input: &[u8],
         output: &mut D,

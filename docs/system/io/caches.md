@@ -203,6 +203,14 @@ about who paid for it and must never select a charge amount. The preimage cache
 follows the same principle by charging the full decommitment cost on every
 access, cache hit or not.
 
+The point-evaluation precompile has a separate exact-input cache for each
+`System` (one block or simulation). Its successful entries survive frame and
+transaction rollback. A transaction dropped by the sequencer can therefore
+warm it, but every call pays the same gas and native charge regardless of a
+hit. A hit changes only the computation: it skips the input-dependent hint
+queries in both the native prover-input recorder and the RISC-V guest. The
+recorder and guest must use matching builds so they take the same hit path.
+
 Regression tests: `test_dropped_tx_does_not_discount_new_slot_read` and
 `test_dropped_tx_does_not_discount_new_account_access` in
 [`tests/instances/transactions/src/storage_charging.rs`](../../../tests/instances/transactions/src/storage_charging.rs).

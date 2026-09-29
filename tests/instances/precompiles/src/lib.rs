@@ -1290,6 +1290,287 @@ fn test_kzg_regression() {
     run_test_vectors(&KZG_TESTS);
 }
 
+/// Runtime code that calls the point evaluation precompile with the calldata (192 bytes) as
+/// the input and all the gas, then reverts with the output of the call (64 bytes) and its
+/// success flag (a word)
+const POINT_EVAL_THEN_REVERT_BYTECODE: &str = concat!(
+    "365f5f37",             // CALLDATACOPY(0, 0, CALLDATASIZE)
+    "604060c0365f600a5afa", // STATICCALL(GAS, 0x0a, 0, CALLDATASIZE, 192, 64)
+    "61010052",             // MSTORE(256, success)
+    "606060c0fd",           // REVERT(192, 96)
+);
+
+/// Runtime code that calls the point evaluation precompile with the gas of the first word of
+/// the calldata and the next 192 bytes as the input, then returns the output of the call (64
+/// bytes) and its success flag (a word)
+const POINT_EVAL_WITH_GAS_BYTECODE: &str = concat!(
+    "60c060205f37",             // CALLDATACOPY(0, 32, 192)
+    "604060c060c05f600a5f35fa", // STATICCALL(CALLDATALOAD(0), 0x0a, 0, 192, 192, 64)
+    "61010052",                 // MSTORE(256, success)
+    "606060c0f3",               // RETURN(192, 96)
+);
+
+const POINT_EVAL_THEN_REVERT: Address = address!("0x2000000000000000000000000000000000000000");
+const POINT_EVAL_WITH_GAS: Address = address!("0x3000000000000000000000000000000000000000");
+const POINT_EVAL: Address = address!("0x000000000000000000000000000000000000000a");
+const FORWARDER: Address = address!("0x1000000000000000000000000000000000000000");
+
+/// Executes one block of transactions `(to, calldata)` of one signer, with the contracts
+/// above deployed. The same list gives the same transactions (the signer is fixed and its
+/// signatures are deterministic), from the same pre-state. Returns the output and the length
+/// of the recorded prover input and its sender recovery contribution. The input lacks
+/// the KZG hints of every call that hits the cache
+fn run_point_evaluation_block(calls: &[(Address, Vec<u8>)]) -> (BlockOutput, usize, usize) {
+    let txs: Vec<_> = calls
+        .iter()
+        .enumerate()
+        .map(|(nonce, (to, calldata))| (nonce as u64, *to, calldata.clone()))
+        .collect();
+    run_point_evaluation_block_with_pubdata_limit(u64::MAX, &txs)
+}
+
+/// `run_point_evaluation_block` of transactions `(nonce, to, calldata)`, in a block with the
+/// given pubdata limit, and with the forwarder deployed too
+fn run_point_evaluation_block_with_pubdata_limit(
+    pubdata_limit: u64,
+    txs: &[(u64, Address, Vec<u8>)],
+) -> (BlockOutput, usize, usize) {
+    let wallet = rig::testing_signer(0);
+    let mut tester = TestingFramework::new()
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(
+            POINT_EVAL_THEN_REVERT,
+            &hex::decode(POINT_EVAL_THEN_REVERT_BYTECODE).unwrap(),
+        )
+        .with_evm_contract(
+            POINT_EVAL_WITH_GAS,
+            &hex::decode(POINT_EVAL_WITH_GAS_BYTECODE).unwrap(),
+        )
+        .with_evm_contract(FORWARDER, &hex::decode(FORWARDER_BYTECODE).unwrap())
+        .with_block_context(BlockContext {
+            native_price: U256::ZERO,
+            eip1559_basefee: U256::from(25_000),
+            pubdata_limit,
+            ..Default::default()
+        });
+    let txs: Vec<_> = txs
+        .iter()
+        .map(|(nonce, to, calldata)| {
+            ZKsyncTxEnvelope::from_eth_tx(
+                TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce: *nonce,
+                    gas_price: 25_000,
+                    gas_limit: 1_000_000,
+                    to: TxKind::Call(*to),
+                    value: Default::default(),
+                    input: calldata.clone().into(),
+                },
+                wallet.clone(),
+            )
+        })
+        .collect();
+    let recovery_tape = rig::signature_tape::legacy_sender_recovery_tape_len(&txs);
+    let output = tester.execute_block(txs);
+    let tape = tester
+        .last_executed_block_info()
+        .expect("the block was executed")
+        .proof_input
+        .len();
+    (output, tape, recovery_tape)
+}
+
+/// The output of transaction `index` of the block
+fn tx_output(block: &BlockOutput, index: usize) -> rig::zksync_os_interface::types::TxOutput {
+    block.tx_results[index]
+        .clone()
+        .unwrap_or_else(|error| panic!("tx {index} is invalid: {error:?}"))
+}
+
+/// The 64-byte output and the success word the point evaluation contracts report
+fn point_eval_report(success: bool) -> Vec<u8> {
+    let mut report = vec![0u8; 96];
+    if success {
+        report[..64].copy_from_slice(&hex::decode(KZG_TESTS[0].expected).unwrap());
+        report[95] = 1;
+    }
+    report
+}
+
+/// The valid input of `KZG_TESTS` (A), and A with a wrong evaluation, which fails
+fn point_eval_inputs() -> (Vec<u8>, Vec<u8>) {
+    let valid = hex::decode(KZG_TESTS[0].input).unwrap();
+    let mut mismatch = valid.clone();
+    mismatch[95] ^= 1;
+    (valid, mismatch)
+}
+
+/// A with a wrong versioned hash, which fails before any KZG hint query, so a call of it adds
+/// the same KZG hints to the prover input as a cache hit: none
+fn point_eval_bad_hash_input() -> Vec<u8> {
+    let mut bad_hash = hex::decode(KZG_TESTS[0].input).unwrap();
+    bad_hash[1] ^= 1;
+    bad_hash
+}
+
+/// Asserts that a transaction that calls the point evaluation precompile with an input
+/// verified earlier in the block (a cache hit) has exactly the output of the same transaction
+/// when the input was not verified before (a miss): result, gas, native and pubdata
+fn assert_hit_matches_miss(
+    hit: &rig::zksync_os_interface::types::TxOutput,
+    miss: &rig::zksync_os_interface::types::TxOutput,
+) {
+    assert!(hit.computational_native_used > 0);
+    assert_eq!(hit.gas_used, miss.gas_used);
+    assert_eq!(hit.native_used, miss.native_used);
+    assert_eq!(
+        hit.computational_native_used,
+        miss.computational_native_used
+    );
+    assert_eq!(format!("{hit:?}"), format!("{miss:?}"));
+}
+
+#[test]
+fn kzg_cache_hit_after_reverted_frame() {
+    let (valid, mismatch) = point_eval_inputs();
+    // the first transaction verifies A in a frame it then reverts, so the second one hits
+    let (warm, warm_tape, warm_recovery) = run_point_evaluation_block(&[
+        (POINT_EVAL_THEN_REVERT, valid.clone()),
+        (POINT_EVAL, valid.clone()),
+    ]);
+    // the first transaction fails to verify, so the second one misses
+    let (cold, _, _) = run_point_evaluation_block(&[
+        (POINT_EVAL_THEN_REVERT, mismatch),
+        (POINT_EVAL, valid.clone()),
+    ]);
+    // the second call queries no KZG hints, so it adds as much to the prover input as a hit
+    let (_, no_hints_tape, no_hints_recovery) = run_point_evaluation_block(&[
+        (POINT_EVAL_THEN_REVERT, valid.clone()),
+        (POINT_EVAL, point_eval_bad_hash_input()),
+    ]);
+    // Sender recovery has a signature-dependent hint count.
+    assert_eq!(
+        warm_tape
+            .checked_sub(warm_recovery)
+            .expect("sender recovery fits the block tape"),
+        no_hints_tape
+            .checked_sub(no_hints_recovery)
+            .expect("sender recovery fits the block tape"),
+    );
+    let (warm_first, cold_first) = (tx_output(&warm, 0), tx_output(&cold, 0));
+    assert_matches!(warm_first.execution_result, Revert(..));
+    assert_eq!(warm_first.as_returned_bytes(), point_eval_report(true));
+    assert_matches!(cold_first.execution_result, Revert(..));
+    assert_eq!(cold_first.as_returned_bytes(), point_eval_report(false));
+    let (hit, miss) = (tx_output(&warm, 1), tx_output(&cold, 1));
+    assert!(hit.is_success());
+    assert_eq!(hit.as_returned_bytes(), &point_eval_report(true)[..64]);
+    assert_hit_matches_miss(&hit, &miss);
+}
+
+#[test]
+fn kzg_cache_entry_of_excluded_tx() {
+    // The sequencer executes a transaction that verifies A and is then excluded from the
+    // block by the pubdata limit, which leaves A cached for the next transaction (a hit). The
+    // block must be exactly the block without the excluded transaction, in which the next
+    // transaction misses: that is what a prover input recorded without it proves
+    let (valid, _) = point_eval_inputs();
+    // the forwarder stores a hash of the output, which costs pubdata the direct call does not
+    let excluded = (0, FORWARDER, calldata_for_forwarder(POINT_EVAL, &valid));
+    let included = (0, POINT_EVAL, valid.clone());
+    // the pubdata of the block of the transaction alone (the limit counts the block's own
+    // pubdata too)
+    let pubdata_of = |tx: &(u64, Address, Vec<u8>)| {
+        run_point_evaluation_block_with_pubdata_limit(u64::MAX, std::slice::from_ref(tx))
+            .0
+            .pubdata_used
+    };
+    let pubdata_limit = pubdata_of(&included);
+    assert!(pubdata_of(&excluded) > pubdata_limit);
+    let (with_excluded, _, _) =
+        run_point_evaluation_block_with_pubdata_limit(pubdata_limit, &[excluded, included.clone()]);
+    assert_matches!(
+        with_excluded.tx_results[0],
+        Err(rig::zksync_os_interface::error::InvalidTransaction::BlockPubdataLimitReached)
+    );
+    let (without, _, _) = run_point_evaluation_block_with_pubdata_limit(
+        pubdata_limit,
+        std::slice::from_ref(&included),
+    );
+    let (hit, miss) = (tx_output(&with_excluded, 1), tx_output(&without, 0));
+    assert_eq!(hit.as_returned_bytes(), &point_eval_report(true)[..64]);
+    assert_hit_matches_miss(&hit, &miss);
+    assert_eq!(with_excluded.header.inner(), without.header.inner());
+    assert_eq!(
+        with_excluded.computational_native_used,
+        without.computational_native_used
+    );
+    assert_eq!(with_excluded.pubdata_used, without.pubdata_used);
+    assert_eq!(
+        format!("{:?}", with_excluded.storage_writes),
+        format!("{:?}", without.storage_writes)
+    );
+    assert_eq!(
+        format!("{:?}", with_excluded.account_diffs),
+        format!("{:?}", without.account_diffs)
+    );
+}
+
+#[test]
+fn kzg_cache_charge_failure_then_hit() {
+    let (valid, mismatch) = point_eval_inputs();
+    let with_gas =
+        |gas: u64, input: &[u8]| [&U256::from(gas).to_be_bytes::<32>()[..], input].concat();
+    // a call short of the charge verifies nothing, the next call verifies A, and the last
+    // one hits
+    let (warm, warm_tape, warm_recovery) = run_point_evaluation_block(&[
+        (POINT_EVAL_WITH_GAS, with_gas(49_999, &valid)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &valid)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &valid)),
+    ]);
+    // the same, but the middle call fails to verify, so the last one misses
+    let (cold, _, _) = run_point_evaluation_block(&[
+        (POINT_EVAL_WITH_GAS, with_gas(49_999, &valid)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &mismatch)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &valid)),
+    ]);
+    // the last call queries no KZG hints, so it adds as much to the prover input as a hit
+    let bad_hash = point_eval_bad_hash_input();
+    let (_, no_hints_tape, no_hints_recovery) = run_point_evaluation_block(&[
+        (POINT_EVAL_WITH_GAS, with_gas(49_999, &valid)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &valid)),
+        (POINT_EVAL_WITH_GAS, with_gas(50_000, &bad_hash)),
+    ]);
+    // Sender recovery has a signature-dependent hint count.
+    assert_eq!(
+        warm_tape
+            .checked_sub(warm_recovery)
+            .expect("sender recovery fits the block tape"),
+        no_hints_tape
+            .checked_sub(no_hints_recovery)
+            .expect("sender recovery fits the block tape"),
+    );
+    assert_ne!(
+        warm_recovery, no_hints_recovery,
+        "signatures exercise different recovery tape lengths"
+    );
+    let expected_reports = [(&warm, [false, true, true]), (&cold, [false, false, true])];
+    for (block, reports) in expected_reports {
+        for (index, success) in reports.into_iter().enumerate() {
+            let output = tx_output(block, index);
+            assert!(output.is_success(), "tx {index}");
+            assert_eq!(
+                output.as_returned_bytes(),
+                point_eval_report(success),
+                "tx {index}"
+            );
+        }
+    }
+    let (miss, hit) = (tx_output(&warm, 1), tx_output(&warm, 2));
+    assert_eq!(hit.gas_used, miss.gas_used);
+    assert_hit_matches_miss(&hit, &tx_output(&cold, 2));
+}
+
 #[test]
 fn test_precompiles() {
     run_test_vectors(&TESTS);

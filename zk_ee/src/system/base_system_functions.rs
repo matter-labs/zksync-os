@@ -1,4 +1,7 @@
-use crate::{define_subsystem, internal_error, oracle::IOOracle, system::logger::Logger};
+use crate::{
+    common_structs::precompile_caches::PrecompileCaches, define_subsystem, internal_error,
+    oracle::IOOracle, system::logger::Logger,
+};
 
 use super::{
     common_traits::TryExtend,
@@ -181,6 +184,32 @@ pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
         logger: &mut L,
         allocator: A,
     ) -> Result<(), SubsystemError<E>>;
+
+    /// `execute`, for a call of the precompile from an execution environment, given the caches
+    /// of precompile results of the `System`. A system function that is a pure function of its
+    /// input may answer an input found there without recomputing it. The resources charged,
+    /// the output and the errors are exactly those of `execute`, and a call not answered from
+    /// the cache also makes exactly the oracle queries of `execute`. A hit must depend only on
+    /// the input and cache state, must make no oracle queries, and may only use an entry inserted
+    /// after a full successful computation. The cache must not be cleared or bypassed between
+    /// calls in the same `System`, so the native recorder and RISC-V guest take the same path.
+    fn execute_with_precompile_caches<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        precompile_caches: &mut PrecompileCaches,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>> {
+        let _ = precompile_caches;
+        Self::execute(input, output, resources, oracle, logger, allocator)
+    }
 }
 
 pub struct MissingSystemFunction;

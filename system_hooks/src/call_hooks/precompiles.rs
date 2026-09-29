@@ -66,8 +66,10 @@ where
 
     let mut return_vec = SliceVec::new(return_memory);
     let mut logger = system.get_logger();
+    let (oracle, precompile_caches) = system.oracle_and_precompile_caches();
     let result = F::invoke(
-        system.io.oracle(),
+        oracle,
+        precompile_caches,
         &mut logger,
         &calldata,
         &mut return_vec,
