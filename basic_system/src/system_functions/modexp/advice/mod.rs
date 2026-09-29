@@ -361,17 +361,17 @@ mod test {
     }
 
     /// A small deterministic generator (xorshift64*) for the randomized comparisons
-    struct Rng(u64);
+    pub(super) struct Rng(pub(super) u64);
 
     impl Rng {
-        fn next_u64(&mut self) -> u64 {
+        pub(super) fn next_u64(&mut self) -> u64 {
             self.0 ^= self.0 >> 12;
             self.0 ^= self.0 << 25;
             self.0 ^= self.0 >> 27;
             self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
         }
 
-        fn bytes(&mut self, len: usize) -> std::vec::Vec<u8> {
+        pub(super) fn bytes(&mut self, len: usize) -> std::vec::Vec<u8> {
             (0..len).map(|_| self.next_u64() as u8).collect()
         }
     }
@@ -449,6 +449,109 @@ mod test {
         let mut padded = vec![0u8; 40];
         padded.extend_from_slice(&m);
         assert_matches_reference(&[0xab; 33], &[0xcd; 9], &padded);
+        // nor do leading zero bytes of all three, and a modulus of 0 or 1 gives no output
+        assert_matches_reference(&[0, 0, 0xab, 0xcd], &[0, 0, 0, 0x81], &[0, 0, 0xf1]);
+        let no_output: [&[u8]; 4] = [&[], &[0, 0], &[1], &[0, 0, 1]];
+        for modulus in no_output {
+            assert!(invoke_precompile_no_prepadding(modulus, &[3], &[5]).is_empty());
+        }
+    }
+
+    /// Vectors of the single-digit path (checked with Python's `pow`): every product site of the
+    /// exponent walk (table, squarings, window and bit multiplications), the largest quotients, a
+    /// power of two modulus, an advised reduction of a long base, and a zero product in both walks
+    #[test]
+    fn single_digit_modulus_vectors() {
+        let vectors = [
+            (
+                "bn254_fr_inverse",
+                "01c9d6f3b0e2a4d5c8b7a69584736251403f2e1d0c9b8a79685746352413021f",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593efffffff",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                "0b0ac06db689162d9adc1cfc93a31d872126d8956026f73a73602e36ac4fee4b",
+            ),
+            (
+                "max_quotient",
+                "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe",
+            ),
+            (
+                "pow2_modulus_2p255",
+                "0000000000000000000000000000000000000000000000000000000000000003",
+                "ffffffffffffffffff",
+                "8000000000000000000000000000000000000000000000000000000000000000",
+                "317740bdc3c59647553d2efb7fa12ce397d3a10b864da6aaaaaaaaaaaaaaaaab",
+            ),
+            (
+                "prime_2p256m189_inverse_of_minus1",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff42",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff41",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff43",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff42",
+            ),
+            (
+                "two_limb_modulus",
+                "000000000000000000000000000000000000000000000001000000000000000c",
+                "ababababababababababababababababababababababababababababababababab",
+                "000000000000000000000000000000000000000000000001000000000000000d",
+                "000000000000000000000000000000000000000000000001000000000000000c",
+            ),
+            (
+                "binary_5bit",
+                "01c9d6f3b0e2a4d5c8b7a69584736251403f2e1d0c9b8a79685746352413021f",
+                "18",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                "2da4791011b2612fc09ec9e6ff1fe6862364281f8a16ed83c3122738a4c7a5cc",
+            ),
+            (
+                "binary_63bit",
+                "01c9d6f3b0e2a4d5c8b7a69584736251403f2e1d0c9b8a79685746352413021f",
+                "7fffffffffffffff",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                "26488ada9f1845f9f373643657d18d1c03d796269cf8da459856c91127d4cdcd",
+            ),
+            (
+                "windowed_64bit",
+                "01c9d6f3b0e2a4d5c8b7a69584736251403f2e1d0c9b8a79685746352413021f",
+                "8000000000000001",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                "2f7b3db51f0c63294a478fb5b227b6d1dd0771db53f45d5f640d0e388d298b1d",
+            ),
+            (
+                "oversized_base_100B",
+                "3e1ffbe3eeb1c97efe1932a285b94cdffe55088b01f282cb7627070a14d138affd22bb4222527dbda43e7740604d45f265aec90a0c68ec5541dce77ffa17fea535c3212dd3b9c9d9a754ac3e9f3344d507b07fa39c6ab7104a08c720cede24428a013fda",
+                "010001",
+                "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+                "262edce06f77e6bd4de7494bfd91bae7697ac9983ee81666da06c543c40ae9fe",
+            ),
+            (
+                "zero_absorption_windowed",
+                "0000000000000000000000000000000000000010000000000000000000000000",
+                "ffffffffffffffffff",
+                "0000000000000100000000000000000000000000000000000000000000000000",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            (
+                "zero_absorption_binary",
+                "0000000000000000000000000000000000000010000000000000000000000000",
+                "0f",
+                "0000000000000100000000000000000000000000000000000000000000000000",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+        ];
+        for (name, base, exp, modulus, output) in vectors {
+            let [base, exp, modulus, output] =
+                [base, exp, modulus, output].map(|digits| hex::decode(digits).unwrap());
+            let result = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+            assert_eq!(
+                BigUint::from_bytes_be(&result),
+                BigUint::from_bytes_be(&output),
+                "{name}"
+            );
+            assert_matches_reference(&base, &exp, &modulus);
+        }
     }
 
     /// The multi-digit modulus path against the reference: 2 to 5 digit moduli, bases up to

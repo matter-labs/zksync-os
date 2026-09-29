@@ -1836,6 +1836,268 @@ mod callable_oracle_tests {
     }
 }
 
+mod forged_wide_quotient_tape {
+    //! A forged answer to the wide quotient query of single-digit modexp on the prover input tape.
+    //!
+    //! The native run that records the tape gets the right answers and succeeds, so the forgery
+    //! reaches only the RISC-V run, whose quotient checks (on the bigint delegation) must reject
+    //! it.
+
+    use super::custom_oracle_factories::{
+        add_standard_processors, build_oracle, CustomOracleFactory,
+    };
+    use rig::alloy::consensus::TxLegacy;
+    use rig::alloy::primitives::{address, TxKind, U256};
+    use rig::callable_oracles::arithmetic::ArithmeticQuery;
+    use rig::chain::RunConfig;
+    use rig::oracle_provider::{OracleQueryProcessor, RunMode};
+    use rig::zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput};
+    use rig::zk_ee::oracle::query_ids::U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
+    use rig::{BlockContext, TestingFramework};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+    /// A forgery of the quotient `(q_lo, q_hi)`, as the 16 words the guest reads
+    #[derive(Clone, Copy, Debug)]
+    enum Forgery {
+        /// adds to `q_lo`
+        Low(u64),
+        /// adds to `q_hi`
+        High(u64),
+    }
+
+    impl Forgery {
+        fn apply(self, response: &mut [u32]) {
+            assert_eq!(response.len(), 16, "a wide quotient is 16 words");
+            let (half, delta) = match self {
+                Self::Low(delta) => (&mut response[..8], delta),
+                Self::High(delta) => (&mut response[8..], delta),
+            };
+            let mut limbs = [0u64; 4];
+            for (limb, [low, high]) in limbs.iter_mut().zip(half.as_chunks::<2>().0) {
+                *limb = u64::from(*low) | (u64::from(*high) << 32);
+            }
+            let forged = U256::from_limbs(limbs).wrapping_add(U256::from(delta));
+            for ([low, high], limb) in half
+                .as_chunks_mut::<2>()
+                .0
+                .iter_mut()
+                .zip(forged.as_limbs())
+            {
+                *low = *limb as u32;
+                *high = (*limb >> 32) as u32;
+            }
+        }
+    }
+
+    /// Answers the arithmetic queries honestly, but saves `forgery` of the right answer on the
+    /// tape for the RISC-V run as the answer to the wide quotient query number `forged_query`
+    /// (counted from 0) with the divisor `modulus`
+    struct ForgedWideQuotientQuery {
+        inner: ArithmeticQuery,
+        modulus: U256,
+        forged_query: usize,
+        forgery: Forgery,
+        queries: usize,
+    }
+
+    impl OracleQueryProcessor for ForgedWideQuotientQuery {
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            self.inner.supported_memory_query_ids()
+        }
+
+        fn process_memory_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            let mut guest_run = Vec::new();
+            self.inner.process_memory_query(
+                query_id,
+                input_word,
+                memory,
+                mode,
+                native_run_responses,
+                &mut guest_run,
+            );
+            if query_id == U256_WIDE_DIV_REM_ADVICE_QUERY_ID
+                && mode == RunMode::NativeRunSavingForRiscV
+            {
+                let (_, _, divisor) = <(U256, U256, U256)>::read_input(memory, input_word)
+                    .expect("must read the wide quotient operands");
+                if divisor == self.modulus {
+                    if self.queries == self.forged_query {
+                        self.forgery.apply(&mut guest_run);
+                    }
+                    self.queries += 1;
+                }
+            }
+            guest_run_responses.append(&mut guest_run);
+        }
+    }
+
+    /// Calls the modexp precompile in a block run with `run_config` and the forged tape: the
+    /// output, or the panic message of the run
+    fn run_modexp(
+        (base, exp, modulus): (&str, &str, &str),
+        forged_query: usize,
+        forgery: Forgery,
+        run_config: RunConfig,
+    ) -> Result<Vec<u8>, String> {
+        let [base, exp, modulus] = [base, exp, modulus].map(|digits| hex::decode(digits).unwrap());
+        let mut input = Vec::new();
+        for field in [&base, &exp, &modulus] {
+            input.extend_from_slice(&U256::from(field.len()).to_be_bytes::<32>());
+        }
+        for field in [&base, &exp, &modulus] {
+            input.extend_from_slice(field);
+        }
+        let modulus = U256::from_be_slice(&modulus);
+
+        catch_unwind(AssertUnwindSafe(|| {
+            let mut tester = TestingFramework::new();
+            let wallet = tester.random_signer();
+            tester = tester
+                .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+                .with_block_context(BlockContext {
+                    // unlimited native
+                    native_price: U256::ZERO,
+                    eip1559_basefee: U256::from(1000),
+                    ..Default::default()
+                })
+                .with_custom_oracle_factory(CustomOracleFactory(
+                    move |block_metadata,
+                          chain_config,
+                          state_tree,
+                          preimage_source,
+                          tx_source,
+                          proof_data,
+                          da_commitment_scheme| {
+                        build_oracle(
+                            block_metadata,
+                            chain_config,
+                            proof_data,
+                            da_commitment_scheme,
+                            |oracle| {
+                                add_standard_processors(
+                                    oracle,
+                                    state_tree,
+                                    preimage_source,
+                                    tx_source,
+                                );
+                                oracle.add_external_processor(ForgedWideQuotientQuery {
+                                    inner: ArithmeticQuery,
+                                    modulus,
+                                    forged_query,
+                                    forgery,
+                                    queries: 0,
+                                });
+                            },
+                        )
+                    },
+                ))
+                .with_run_config(run_config);
+            let tx = ZKsyncTxEnvelope::from_eth_tx(
+                TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce: 0,
+                    gas_price: 1000,
+                    gas_limit: 1_000_000,
+                    to: TxKind::Call(address!("0000000000000000000000000000000000000005")),
+                    value: Default::default(),
+                    input: input.into(),
+                },
+                wallet,
+            );
+            let output = tester.execute_block(vec![tx]);
+            let result = output.tx_results[0]
+                .clone()
+                .expect("the transaction is valid");
+            assert!(result.is_success(), "{result:?}");
+            result.as_returned_bytes().to_vec()
+        }))
+        .map_err(|payload| match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_owned(),
+            Err(payload) => *payload.downcast::<String>().expect("a panic message"),
+        })
+    }
+
+    const BN254_R: &str = "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001";
+    const BN254_R_MINUS_2: &str =
+        "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593efffffff";
+    const BN254_BASE: &str = "01c9d6f3b0e2a4d5c8b7a69584736251403f2e1d0c9b8a79685746352413021f";
+    const POW2_255: &str = "8000000000000000000000000000000000000000000000000000000000000000";
+
+    /// A quotient one too large, or with a non-zero high half (for the modulus 2^255, the high
+    /// half 2, whose product with the modulus is right modulo 2^512), at a table product, a
+    /// squaring and a window multiplication of the windowed walk, and a squaring and a bit
+    /// multiplication of the binary walk: the native runs succeed, the RISC-V run fails. With
+    /// honest answers the RISC-V run succeeds. The RISC-V run only runs when the environment
+    /// enables it (`ZKSYNC_RISC_V_RUN` or `CI`), otherwise only the native runs are checked.
+    #[test]
+    fn forged_wide_quotient_on_tape_fails_riscv_run() {
+        let windowed = (BN254_BASE, BN254_R_MINUS_2, BN254_R);
+        let windowed_output = "0b0ac06db689162d9adc1cfc93a31d872126d8956026f73a73602e36ac4fee4b";
+        let binary = (BN254_BASE, "18", BN254_R);
+        let binary_output = "2da4791011b2612fc09ec9e6ff1fe6862364281f8a16ed83c3122738a4c7a5cc";
+        let pow2 = ("03", "ffffffffffffffffff", POW2_255);
+        let pow2_output = "317740bdc3c59647553d2efb7fa12ce397d3a10b864da6aaaaaaaaaaaaaaaaab";
+        // (operands, output, forged query, forgery); the windowed walk starts with 14 table
+        // products, then 4 squarings per nibble and a multiplication per non-zero nibble (r - 2
+        // starts with the nibbles 3, 0, 6); 0x18 is a squaring and a multiplication, then 3
+        // squarings
+        let forged_runs = [
+            (windowed, windowed_output, 0, Forgery::High(1)),
+            (windowed, windowed_output, 14, Forgery::High(1)),
+            (windowed, windowed_output, 22, Forgery::High(1)),
+            (windowed, windowed_output, 22, Forgery::Low(1)),
+            (binary, binary_output, 0, Forgery::High(1)),
+            (binary, binary_output, 1, Forgery::Low(1)),
+            (pow2, pow2_output, 0, Forgery::High(2)),
+            (pow2, pow2_output, 14, Forgery::High(2)),
+        ];
+        let riscv_run = RunConfig::default().do_riscv_run;
+        for (operands, output, forged_query, forgery) in forged_runs {
+            let output = hex::decode(output).unwrap();
+            let case = format!("{operands:?}, query {forged_query}, {forgery:?}");
+            // forward_only(): the native runs alone, which get the right answers
+            let native = run_modexp(
+                operands,
+                forged_query,
+                forgery,
+                rig::run_config::forward_only(),
+            );
+            assert_eq!(native, Ok(output.clone()), "{case}");
+            if riscv_run {
+                // the guest panics (on the quotient check), and its error exit is an illegal
+                // instruction for the simulator
+                match run_modexp(operands, forged_query, forgery, RunConfig::default()) {
+                    Ok(_) => panic!("{case}: the RISC-V run accepts the forgery"),
+                    Err(message) => {
+                        assert!(
+                            message.starts_with("Illegal instruction"),
+                            "{case}: {message}"
+                        )
+                    }
+                }
+            }
+        }
+        // no forgery: the processor itself keeps the tape right
+        for (operands, output) in [
+            (windowed, windowed_output),
+            (binary, binary_output),
+            (pow2, pow2_output),
+        ] {
+            let result = run_modexp(operands, usize::MAX, Forgery::High(1), RunConfig::default());
+            assert_eq!(result, Ok(hex::decode(output).unwrap()), "{operands:?}");
+        }
+    }
+}
+
 mod eth_code_padding {
     //! The Ethereum STF (`eth_stf`) lets the EVM interpreter read past the end of a bytecode
     //! without a bounds check (`EthereumLikeTypes::CODE_IS_PADDED`): PUSH immediates on every
