@@ -27,6 +27,7 @@ use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
 use forward_system::run::query_processors::GenericPreimageResponder;
 use forward_system::run::query_processors::InMemoryEthereumInitialAccountStateResponder;
 use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotValueResponder;
+use forward_system::run::query_processors::L1TxOperatorDecisionResponder;
 use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
@@ -1249,9 +1250,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             None
         };
 
-        // The operator's decisions on priority txs (force-reverts) must be
-        // replayed at the same point by the prover-input run.
-        let l1_tx_operator_decisions = result_keeper.l1_tx_operator_decisions.clone();
         let block_output: BlockOutput = result_keeper.into();
 
         let prover_input = if do_prover_input_run {
@@ -1272,6 +1270,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             );
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
             let mut tracer = NopTracer::default();
+            let l1_tx_operator_decisions: L1TxOperatorDecisionResponder = block_output
+                .tx_results
+                .iter()
+                .filter_map(|result| result.as_ref().ok()?.l1_tx_operator_decision)
+                .collect();
             // Replays the recorded operator decisions on priority txs,
             // recording into the same witness.
             let mut validator = l1_tx_operator_decisions.into_witness_validator(&copy_source);

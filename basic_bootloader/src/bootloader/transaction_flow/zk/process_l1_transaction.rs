@@ -227,6 +227,8 @@ where
             // intrinsic part, so the current resources are the "before refund"
             // snapshot.
             (
+                // The pre-execution flag determines the operator decision below;
+                // RejectedByOperator is reserved for rejection after execution.
                 L1BodyStatus::Failed,
                 Vec::new_in(system.get_allocator()),
                 None,

@@ -3,25 +3,21 @@ use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use std::collections::VecDeque;
 use zk_ee::oracle::query_ids::L1_TX_OPERATOR_DECISION_QUERY_ID;
 use zk_ee::system::validator::{L1TxOperatorDecision, OracleTxValidator};
+use zksync_os_interface::types::L1TxOperatorDecision as InterfaceDecision;
 
 /// The operator's recorded decisions on priority (L1 -> L2) transactions, in
-/// block order, as recorded by the sequencing run's `ForwardRunningResultKeeper`.
+/// block order, collected from the sequencing run's transaction outputs.
 ///
 /// Serves `L1_TX_OPERATOR_DECISION_QUERY_ID` for the `OracleTxValidator` of a
 /// witness-generation run (see [`Self::into_witness_validator`]). The bootloader
-/// issues exactly one query per included priority transaction, so running out
-/// of decisions is a wiring bug and panics like the other responders do.
+/// issues one query per included priority transaction when filtering is enabled,
+/// so running out of decisions is a wiring bug and panics like the other responders do.
 #[derive(Clone, Debug, Default)]
 pub struct L1TxOperatorDecisionResponder {
     decisions: VecDeque<L1TxOperatorDecision>,
 }
 
 impl L1TxOperatorDecisionResponder {
-    /// Records the decision for the next included priority transaction.
-    pub fn record(&mut self, decision: L1TxOperatorDecision) {
-        self.decisions.push_back(decision);
-    }
-
     /// The validator of a witness-generation run: replays these decisions
     /// through a side oracle whose reads are appended to `witness`'s read log,
     /// interleaved in program order with the block oracle's reads.
@@ -35,6 +31,25 @@ impl L1TxOperatorDecisionResponder {
             oracle,
             witness.get_read_items(),
         ))
+    }
+}
+
+impl FromIterator<InterfaceDecision> for L1TxOperatorDecisionResponder {
+    fn from_iter<T: IntoIterator<Item = InterfaceDecision>>(decisions: T) -> Self {
+        Self {
+            decisions: decisions
+                .into_iter()
+                .map(|decision| match decision {
+                    InterfaceDecision::Accepted => L1TxOperatorDecision::Accepted,
+                    InterfaceDecision::RejectedBeforeExecution => {
+                        L1TxOperatorDecision::RejectedBeforeExecution
+                    }
+                    InterfaceDecision::RejectedAfterExecution => {
+                        L1TxOperatorDecision::RejectedAfterExecution
+                    }
+                })
+                .collect(),
+        }
     }
 }
 
@@ -66,13 +81,18 @@ mod tests {
 
     #[test]
     fn replays_recorded_decisions_in_order() {
-        let mut responder = L1TxOperatorDecisionResponder::default();
-        responder.record(L1TxOperatorDecision::RejectedAfterExecution);
-        responder.record(L1TxOperatorDecision::Accepted);
+        let mut responder: L1TxOperatorDecisionResponder = [
+            InterfaceDecision::RejectedAfterExecution,
+            InterfaceDecision::Accepted,
+            InterfaceDecision::RejectedBeforeExecution,
+        ]
+        .into_iter()
+        .collect();
 
         for expected in [
             L1TxOperatorDecision::RejectedAfterExecution,
             L1TxOperatorDecision::Accepted,
+            L1TxOperatorDecision::RejectedBeforeExecution,
         ] {
             let mut words = responder.process_buffered_query(
                 L1_TX_OPERATOR_DECISION_QUERY_ID,
@@ -82,6 +102,7 @@ mod tests {
             let decoded = L1TxOperatorDecision::from_iter(&mut words).unwrap();
             assert_eq!(decoded, expected);
         }
+        assert!(responder.decisions.is_empty());
     }
 
     #[test]

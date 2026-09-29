@@ -1,5 +1,4 @@
 use crate::run::convert_alloy::IntoAlloy;
-use crate::run::query_processors::L1TxOperatorDecisionResponder;
 use crate::run::TxResultCallback;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
@@ -40,11 +39,6 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized =
     pub tx_result_callback: TR,
     pub block_computational_native_used: u64,
     pub block_pubdata_used: u64,
-    /// The operator's decision for every included priority (L1 -> L2)
-    /// transaction, in block order, recorded into the oracle responder that the
-    /// witness-generation run registers so it force-reverts exactly where
-    /// sequencing did.
-    pub l1_tx_operator_decisions: L1TxOperatorDecisionResponder,
 }
 
 impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
@@ -59,7 +53,6 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
             tx_result_callback,
             block_computational_native_used: 0,
             block_pubdata_used: 0,
-            l1_tx_operator_decisions: L1TxOperatorDecisionResponder::default(),
         }
     }
 }
@@ -118,11 +111,6 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
             basic_bootloader::bootloader::errors::InvalidTransaction,
         >,
     ) {
-        if let Ok(output) = &tx_result {
-            if let Some(decision) = output.l1_tx_operator_decision {
-                self.l1_tx_operator_decisions.record(decision);
-            }
-        }
         let owned_result = tx_result.map(|output| TxProcessingOutputOwned {
             status: output.status,
             output: output.output.to_vec(),
