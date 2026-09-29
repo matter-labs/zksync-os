@@ -132,7 +132,7 @@ where
 /// `PrecompileStatsTracer` `ecrecover.samples` (which only sees EE precompile
 /// dispatch frames). The bootloader's intrinsic sig-recovery calls do not go
 /// through this path, so the new marker fires only for EE-triggered calls.
-/// The inner `"ecrecover"` marker (from `EcRecoverImpl::execute`) still
+/// The inner `"ecrecover"` marker (from `EcRecoverImpl`) still
 /// fires, preserving backward compatibility for older consumers.
 struct EcRecoverEEInvocation<S: SystemTypes>(PhantomData<S>);
 
@@ -145,7 +145,7 @@ where
 {
     fn invoke<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
-        _precompile_caches: &mut PrecompileCaches,
+        precompile_caches: &mut PrecompileCaches,
         logger: &mut S::Logger,
         input: &[u8],
         output: &mut D,
@@ -154,8 +154,8 @@ where
     ) -> Result<(), SubsystemError<zk_ee::system::base_system_functions::Secp256k1ECRecoverErrors>>
     {
         cycle_marker::wrap_with_resources!("ecrecover_execution_environment", resources, {
-            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Secp256k1ECRecover::execute(
-                input, output, resources, oracle, logger, allocator,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Secp256k1ECRecover::execute_with_precompile_caches(
+                input, output, resources, oracle, precompile_caches, logger, allocator,
             )
         })
     }

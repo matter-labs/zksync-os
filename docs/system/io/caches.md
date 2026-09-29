@@ -211,6 +211,16 @@ hit. A hit changes only the computation: it skips the input-dependent hint
 queries in both the native prover-input recorder and the RISC-V guest. The
 recorder and guest must use matching builds so they take the same hit path.
 
+The ecrecover precompile has a second exact-input cache in the same `System`:
+a FIFO of 64 entries keyed by the whole 128-byte input after zero padding or
+truncation. It keeps both outcomes, the recovered address and the empty result
+of an invalid signature, since the input alone decides the outcome (a wrong
+hint panics). Every call is charged, and its `v` checked, before the lookup,
+so a hit charges and returns exactly what a miss does. Its entries also
+survive rollback, and a hit skips the secp256k1 hint queries in both runs, as
+above. The bootloader's own recoveries (transaction signatures and
+authorizations) don't use it.
+
 Regression tests: `test_dropped_tx_does_not_discount_new_slot_read` and
 `test_dropped_tx_does_not_discount_new_account_access` in
 [`tests/instances/transactions/src/storage_charging.rs`](../../../tests/instances/transactions/src/storage_charging.rs).

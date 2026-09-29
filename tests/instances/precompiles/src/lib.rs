@@ -6963,6 +6963,67 @@ fn test_precompile_parses_input_correctly() {
 }
 
 #[test]
+fn ecrecover_cache_oracle_failures_replay() {
+    let mut no_sqrt = hex::decode(TESTS[0].input).unwrap();
+    no_sqrt[64..96].fill(0);
+    no_sqrt[95] = 5;
+    let infinity = hex::decode("6b8d2c81b11b2d699528dde488dbdf2f94293d0d33c32e347f255fa4a6c1f0a9000000000000000000000000000000000000000000000000000000000000001b79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817986b8d2c81b11b2d699528dde488dbdf2f94293d0d33c32e347f255fa4a6c1f0a9").unwrap();
+    for input in [&no_sqrt, &infinity] {
+        let output = run_precompile(TESTS[0].precompile_id, None, input);
+        assert_eq!(output.tx_results.len(), 2);
+        for (index, result) in output.tx_results.into_iter().enumerate() {
+            let result = result.expect("the transaction is valid");
+            assert!(result.is_success(), "{result:?}");
+            if index == 0 {
+                assert!(result.as_returned_bytes().is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn ecrecover_cache_fifo_eviction_replay() {
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
+    tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
+    let base = hex::decode(TESTS[0].input).unwrap();
+    let indices = (0u8..66).chain([0, 1, 65, 2]);
+    let txs = indices
+        .enumerate()
+        .map(|(nonce, index)| {
+            let mut input = base.clone();
+            input[0] = index;
+            ZKsyncTxEnvelope::from_eth_tx(
+                TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce: nonce as u64,
+                    gas_price: 1000,
+                    gas_limit: 100_000,
+                    to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
+                    value: Default::default(),
+                    input: input.into(),
+                },
+                wallet.clone(),
+            )
+        })
+        .collect();
+    let output = tester.execute_block(txs);
+    assert_eq!(output.tx_results.len(), 70);
+    let returned = output
+        .tx_results
+        .iter()
+        .map(|result| {
+            let result = result.as_ref().expect("the transaction is valid");
+            assert!(result.is_success(), "{result:?}");
+            result.as_returned_bytes().to_vec()
+        })
+        .collect::<Vec<_>>();
+    for (at, first) in [(66, 0), (67, 1), (68, 65), (69, 2)] {
+        assert_eq!(returned[at], returned[first]);
+    }
+}
+
+#[test]
 fn test_ecpairing_precompile_invalid_input() {
     let input = hex::decode(
         "\

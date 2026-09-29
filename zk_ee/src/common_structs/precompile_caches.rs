@@ -65,6 +65,30 @@ pub const POINT_EVALUATION_INPUT_LEN: usize = 192;
 /// The inputs of the point evaluation precompile that verified
 pub type PointEvaluationCache = ExactInputCache<[u8; POINT_EVALUATION_INPUT_LEN], (), 1>;
 
+/// The ecrecover precompile input after zero padding or truncation
+pub const ECRECOVER_INPUT_LEN: usize = 128;
+
+/// The normalized digest, v, r and s. Compare r and s first because signatures for the same
+/// digest often share the first 64 bytes. Aligned for words: the recovery converts the
+/// big-endian integers in place, by words if they are aligned (see
+/// `crypto::bigint_delegation::u256::from_be_bytes`).
+#[derive(Clone, Copy)]
+#[repr(C, align(4))]
+pub struct EcRecoverInput(pub [u8; ECRECOVER_INPUT_LEN]);
+
+impl PartialEq for EcRecoverInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.0[64..] == other.0[64..] && self.0[..64] == other.0[..64]
+    }
+}
+
+impl Eq for EcRecoverInput {}
+
+pub const ECRECOVER_CACHE_CAPACITY: usize = 64;
+/// The recovered public-key hash, or `None` for an invalid signature
+pub type EcRecoverCache =
+    ExactInputCache<EcRecoverInput, Option<[u8; 32]>, ECRECOVER_CACHE_CAPACITY>;
+
 /// Results of the precompiles that are pure functions of their input and expensive to
 /// compute, for the precompile calls (from execution environments) of one `System` (one block
 /// or one simulation). An entry never changes what the precompile returns or charges, only
@@ -85,6 +109,7 @@ pub type PointEvaluationCache = ExactInputCache<[u8; POINT_EVALUATION_INPUT_LEN]
 #[derive(Default)]
 pub struct PrecompileCaches {
     pub point_evaluation: PointEvaluationCache,
+    pub ecrecover: EcRecoverCache,
 }
 
 #[cfg(test)]
@@ -246,5 +271,47 @@ mod tests {
         model_equivalence_for::<1>();
         model_equivalence_for::<3>();
         model_equivalence_for::<64>();
+    }
+
+    #[test]
+    fn ecrecover_key_compares_every_byte() {
+        let base = EcRecoverInput(XorShift(29).key());
+        assert!(base == base);
+        for index in 0..ECRECOVER_INPUT_LEN {
+            let mut other = base;
+            other.0[index] ^= 1;
+            assert!(base != other, "byte {index}");
+        }
+        let mut rng = XorShift(0x29_29_29);
+        for _ in 0..4096 {
+            let a = EcRecoverInput(rng.key());
+            let mut b = a;
+            let index = rng.next() as usize % ECRECOVER_INPUT_LEN;
+            b.0[index] ^= 1;
+            assert_eq!(a == b, a.0 == b.0);
+        }
+    }
+
+    #[test]
+    fn ecrecover_cache_negative_result_and_fifo() {
+        let mut cache = EcRecoverCache::new();
+        let key = |index: u8| {
+            let mut bytes = [0; ECRECOVER_INPUT_LEN];
+            bytes[127] = index;
+            EcRecoverInput(bytes)
+        };
+        assert_eq!(cache.get(&key(0)), None);
+        cache.insert(&key(0), None);
+        assert_eq!(cache.get(&key(0)), Some(&None));
+        for index in 1..=128 {
+            cache.insert(&key(index), Some([index; 32]));
+            for previous in 0..=index {
+                let present = usize::from(previous) + ECRECOVER_CACHE_CAPACITY > usize::from(index);
+                assert_eq!(cache.get(&key(previous)).is_some(), present);
+            }
+        }
+        for index in 65..=128 {
+            assert_eq!(cache.get(&key(index)), Some(&Some([index; 32])));
+        }
     }
 }

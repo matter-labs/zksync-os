@@ -577,6 +577,51 @@ fn run_multiblock_batch_proof_run_point_evaluation_cache() {
 }
 
 #[test]
+fn run_multiblock_batch_proof_run_ecrecover_cache() {
+    std::thread::Builder::new()
+        .name("multiblock_batch_ecrecover".to_owned())
+        .stack_size(TEST_STACK_SIZE)
+        .spawn(|| {
+            let wallet = testing_signer(0);
+            let input = hex::decode("38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02").unwrap();
+            let ecrecover_tx = |nonce, input: &[u8]| {
+                ZKsyncTxEnvelope::from_eth_tx(
+                    TxLegacy {
+                        chain_id: 37u64.into(),
+                        nonce,
+                        gas_price: 1000,
+                        gas_limit: 100_000,
+                        to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
+                        value: Default::default(),
+                        input: input.to_vec().into(),
+                    },
+                    wallet.clone(),
+                )
+            };
+            let (outputs, _) = run_two_block_batch_proof_run(
+                [
+                    vec![ecrecover_tx(0, &input), ecrecover_tx(1, &input)],
+                    vec![ecrecover_tx(2, &input), ecrecover_tx(3, &input)],
+                ],
+                DACommitmentScheme::BlobsAndPubdataKeccak256,
+                PubdataContent::FullPubdata,
+            );
+            let expected = hex::decode("000000000000000000000000ceaccac640adf55b2028469bd36ba501f28b699d").unwrap();
+            for (block, output) in outputs.iter().enumerate() {
+                assert_eq!(output.tx_results.len(), 2, "block {block}");
+                for (index, result) in output.tx_results.iter().enumerate() {
+                    let result = result.as_ref().expect("the transaction is valid");
+                    assert!(result.is_success(), "block {block} tx {index}: {result:?}");
+                    assert_eq!(result.as_returned_bytes(), expected, "block {block} tx {index}");
+                }
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn batch_helpers_reject_empty_batches() {
     let tester = new_multiblock_batch_tester();
     let initial_proof_data = tester.prepare_batch_initial_proof_data();
