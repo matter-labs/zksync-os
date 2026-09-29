@@ -1,3 +1,5 @@
+#![cfg_attr(test, feature(allocator_api))]
+
 pub mod bytecode_hash;
 pub mod helpers;
 pub mod revm_runner;

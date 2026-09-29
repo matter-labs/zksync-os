@@ -42,6 +42,7 @@ members = [
     "tests/binary_checker",
     "tests/evm_tester",
     "tests/evm_divergence_validator",
+    "tests/program_gen",
     "scripts",
 ]
 
@@ -86,6 +87,7 @@ default-members = [
     "tests/block_reexecutor",
     "tests/revm_runner",
     "tests/binary_checker",
+    "tests/program_gen",
     "scripts",
 ]
 

@@ -4,13 +4,14 @@ use alloy::{
         eip4844::{fake_exponential, BLOB_GASPRICE_UPDATE_FRACTION, BLOB_TX_MIN_BLOB_GASPRICE},
         Typed2718,
     },
-    primitives::{TxKind, U256},
+    primitives::{keccak256, TxKind, U256},
 };
 use anyhow::{anyhow, bail, Context};
 use revm::context::TxEnv;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
 use zksync_os_tests_common::zksync_tx::{
-    encoding::BOOTLOADER_FORMAL_ADDRESS, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
+    encoding::{ZKsyncOsEncodable, BOOTLOADER_FORMAL_ADDRESS},
+    ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
 };
 
 fn checked_u64(value: u128, field: &str) -> anyhow::Result<u64> {
@@ -196,7 +197,18 @@ pub fn zk_tx_into_revm_tx(
         tx_env_builder = tx_env_builder.gas_priority_fee(Some(priority_fee));
     }
 
+    let tx_hash = match tx.clone().encode() {
+        zksync_os_interface::traits::EncodedTx::Rlp(bytes, _) => keccak256(bytes),
+        zksync_os_interface::traits::EncodedTx::Abi(bytes) => {
+            // The wire encoding omits the outer offset of abi.encode(transaction).
+            let mut preimage = U256::from(32).to_be_bytes::<32>().to_vec();
+            preimage.extend_from_slice(&bytes);
+            keccak256(preimage)
+        }
+    };
+
     ZKsyncTxBuilder::new()
+        .tx_hash(tx_hash)
         .base(tx_env_builder)
         .mint(to_mint)
         .refund_recipient(refund_recipient)
@@ -265,6 +277,36 @@ mod tests {
     use super::*;
     use alloy::rpc::types::TransactionRequest;
     use zksync_os_tests_common::zksync_tx::l1_tx::ZKsyncL1Tx;
+
+    #[test]
+    fn priority_transaction_hashes_match_the_bootloader() {
+        use basic_bootloader::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
+        use std::alloc::Global;
+        use zk_ee::{
+            reference_implementations::{BaseResources, DecreasingNative},
+            system::Resource,
+            utils::UsizeAlignedByteBox,
+        };
+        use zksync_os_revm::transaction::abstraction::ZkTxTr;
+        use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
+
+        for tx in [
+            ZKsyncTxEnvelope::from(ZKsyncL1Tx::default()),
+            ZKsyncTxEnvelope::from(ZKsyncUpgradeTx::default()),
+        ] {
+            let zksync_os_interface::traits::EncodedTx::Abi(bytes) = tx.clone().encode() else {
+                panic!("expected ABI encoding")
+            };
+            let parsed = AbiEncodedTransaction::try_from_buffer(
+                UsizeAlignedByteBox::from_slice_in(&bytes, Global),
+            )
+            .unwrap();
+            let mut resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
+            let expected = parsed.calculate_hash(&mut resources).unwrap();
+            let replay = zk_tx_into_revm_tx(&tx, None, false, 30_000_000, None, None).unwrap();
+            assert_eq!(replay.tx_hash().as_slice(), expected);
+        }
+    }
 
     #[test]
     fn custom_tx_is_rejected() {
