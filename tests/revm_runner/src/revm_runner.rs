@@ -7,7 +7,7 @@ use revm::{
     context::{ContextTr, TxEnv},
     context_interface::block::BlobExcessGasAndPrice,
     context_interface::result::HaltReason,
-    database::{CacheDB, EmptyDB},
+    database::CacheDB,
     inspector::InspectCommitEvm,
     DatabaseRef,
 };
@@ -15,8 +15,9 @@ use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 use zk_ee::system::metadata::zk_metadata::BlockHashes;
 use zksync_os_interface::traits::AnyBlockContext;
 use zksync_os_revm::constants::HISTORY_STORAGE_ADDRESS;
+use zksync_os_revm::force_deploy::ForceDeployRecorder;
 use zksync_os_revm::ZKsyncTx;
-use zksync_os_revm::{DefaultZk, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
+use zksync_os_revm::{zk_context, ZKsyncTxError, ZkBuilder, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::helpers::{
@@ -185,8 +186,7 @@ where
         );
 
         let cache_db = CacheDB::new(state_provider);
-        let mut evm = ZkContext::<EmptyDB>::default()
-            .with_db(cache_db)
+        let mut evm = zk_context(cache_db, self.spec)
             .modify_cfg_chained(|cfg| {
                 cfg.chain_id = block_context.chain_id();
                 cfg.spec = self.spec;
@@ -243,7 +243,10 @@ where
             usize,
             revm::context_interface::result::ExecutionResult<HaltReason>,
         )> = vec![];
-        for replay_tx in revm_txs {
+        for (tx_number, replay_tx) in revm_txs.into_iter().enumerate() {
+            evm.0.ctx.journaled_state.set_tx_number(
+                u16::try_from(tx_number).context("REVM transaction number exceeds u16")?,
+            );
             let tx_execution = match evm.inspect_tx_commit(replay_tx.tx) {
                 Ok(res) => res,
                 Err(err) => match err {
@@ -265,6 +268,9 @@ where
                     }
                 },
             };
+            // This checker compares state, return data and EVM logs only.
+            evm.0.ctx.journaled_state.take_l2_to_l1_logs();
+            evm.0.ctx.journaled_state.take_force_deploys();
             let trace = evm
                 .0
                 .inspector

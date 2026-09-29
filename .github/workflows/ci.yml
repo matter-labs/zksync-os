@@ -135,6 +135,21 @@ jobs:
               working-directory: ./tests/instances/eth_runner
               run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054
 
+    bytecode_lab:
+        name: Bytecode lab tests
+        runs-on: [matterlabs-ci-runner-high-performance]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: ./.github/actions/setup-toolchain
+              with:
+                  release-token: ${{ secrets.RELEASE_TOKEN }}
+            - name: Check formatting
+              run: cargo fmt --manifest-path tests/bytecode_lab/Cargo.toml -- --check
+            - name: Lint bytecode lab
+              run: cargo clippy --locked --manifest-path tests/bytecode_lab/Cargo.toml --all-targets -- -D warnings
+            - name: Test bytecode lab
+              run: cargo test --locked --manifest-path tests/bytecode_lab/Cargo.toml
+
     formatting:
         name: cargo fmt
         runs-on: ubuntu-latest

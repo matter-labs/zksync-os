@@ -255,6 +255,11 @@ fn test_set_bytecode_details_evm() {
             .unwrap();
 
     let mut tester = TestingFramework::new()
+        .with_run_config({
+            let mut config = rig::chain::RunConfig::default();
+            config.enable_revm_consistency_check();
+            config
+        })
         .with_preimage(code_hash, &bytecode)
         .with_balance(
             contract_deployer_address,

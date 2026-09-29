@@ -1,0 +1,23 @@
+[package]
+name = "program_gen"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/zksync-os/"
+license = "MIT OR Apache-2.0"
+keywords = ["blockchain", "zksync", "zk", "evm"]
+categories = ["cryptography"]
+description = "Deterministic EVM bytecode and program generator for differential and stress testing. No VM dependency."
+
+[dependencies]
+# A reproducible generator needs a stable PRNG algorithm: ChaCha8 gives the
+# same stream for the same seed across machines and crate versions, which the
+# default thread rng does not guarantee.
+rand = "0.9"
+rand_chacha = "0.9"
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true }
+# The "serde" feature lets us store bytecode as compact hex strings in case
+# files instead of JSON arrays of integers.
+hex = { workspace = true, features = ["serde"] }
