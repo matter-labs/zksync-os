@@ -44,6 +44,7 @@ use zk_ee::{internal_error, types_config::*};
 
 use zk_ee::system::evm::EvmError;
 
+mod code_with_sentinel;
 mod ee_trait_impl;
 pub mod errors;
 mod evm_stack;
@@ -58,6 +59,8 @@ pub mod precompile_addresses;
 pub mod u256_helpers;
 pub mod utils;
 pub mod v2;
+
+pub(crate) use code_with_sentinel::CodeWithSentinel;
 
 pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentType::EVM;
 
@@ -205,9 +208,6 @@ pub struct BytecodePreprocessingData<'a, A: Allocator> {
     /// Either a reference to a part of the decommitted bytecode,
     /// or an owned vec created on deployment.
     pub jumpdest_bitmap: either::Either<BitMap<'a>, BitMapOwned<A>>,
-    /// A zero-padded copy of code that did not come from a padded buffer (init code, code
-    /// without cached artifacts); the frame's code slice points into it
-    pub owned_code: Option<Vec<u8, A>>,
 }
 
 impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
@@ -219,22 +219,28 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         Self {
             original_bytecode_len: 0,
             jumpdest_bitmap: Either::Left(BitMap::empty()),
-            owned_code: None,
         }
     }
 
-    /// Copies `code` into an owned buffer with `CODE_PADDING_BYTES` zero bytes after it and
-    /// returns the code slice of the copy. The buffer lives in `self` as long as the frame,
-    /// and does not move when `self` does, so the slice stays valid for the frame's life.
-    pub fn take_padded_copy(&mut self, allocator: A, code: &[u8]) -> &'a [u8] {
-        let mut buffer = Vec::with_capacity_in(code.len() + CODE_PADDING_BYTES, allocator);
-        buffer.extend_from_slice(code);
-        buffer.resize(code.len() + CODE_PADDING_BYTES, 0);
-        // SAFETY: the heap allocation of the buffer outlives the frame (it is dropped with
-        // `self`), and it is never reallocated (nothing is pushed to it again)
-        let slice = unsafe { core::slice::from_raw_parts(buffer.as_ptr(), code.len()) };
-        self.owned_code = Some(buffer);
-        slice
+    /// [`Self::parse_bytecode`] for the v2 interpreter on unpadded code, which needs a zero
+    /// byte after the code ([`CodeWithSentinel`]). In the preimage `code || padding || bitmap`
+    /// it is the padding, or bitmap byte 0 if the length is a multiple of 8 (nonzero if a
+    /// JUMPDEST is among the first 8 bytes), and empty code has none. So the code is borrowed
+    /// only if a zero byte follows it inside `bytecode` (never the rest of the allocation,
+    /// which the oracle may have written), and copied otherwise.
+    #[inline(always)]
+    pub(crate) fn parse_bytecode_followed_by_zero(
+        allocator: A,
+        bytecode: &'a [u8],
+        deployed_len: usize,
+        artifacts_len: usize,
+    ) -> Result<(CodeWithSentinel<'a, A>, Self), InternalError> {
+        let (code, preprocessing) = Self::parse_bytecode(bytecode, deployed_len, artifacts_len)?;
+        let code = match CodeWithSentinel::borrow_followed_by_zero(bytecode, deployed_len) {
+            Some(code) => code,
+            None => CodeWithSentinel::padded_copy_cold(allocator, code),
+        };
+        Ok((code, preprocessing))
     }
 
     ///
@@ -274,7 +280,6 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         let preprocessing = Self {
             original_bytecode_len: deployed_len,
             jumpdest_bitmap: Either::Left(BitMap::from_raw(bitmap_slice)),
-            owned_code: None,
         };
         Ok((code, preprocessing))
     }
@@ -322,7 +327,6 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         Self {
             original_bytecode_len: deployed_code.len(),
             jumpdest_bitmap: Either::Right(bitmap),
-            owned_code: None,
         }
     }
 
@@ -459,13 +463,19 @@ impl<'a> BitMap<'a> {
 
     /// View a byte-slice as a  usize-slice (no copy, no free).
     ///
-    /// # Safety
-    /// * `slice` length is checked to be a multiple of `u64`.
-    /// * Caller guarantees the buffer lives at least `'a`.
+    /// # Panics
+    /// If the length of `slice` is not a multiple of `u64`, or `slice` is not empty and not
+    /// aligned for `usize`.
     pub fn from_raw(slice: &'a [u8]) -> Self {
         assert_eq!(slice.len() % BYTECODE_ALIGNMENT, 0);
+        if slice.is_empty() {
+            // an empty byte slice can be anywhere, an empty `&[usize]` must be aligned too
+            return Self::empty();
+        }
+        let ptr = slice.as_ptr().cast::<usize>();
+        assert!(ptr.is_aligned(), "jumpdest bitmap is not aligned for usize");
         let words = slice.len() / core::mem::size_of::<usize>();
-        let ptr = slice.as_ptr() as *const usize;
+        // SAFETY: `ptr` is aligned, and the `words` words from it are `slice`, borrowed for `'a`
         let ws = unsafe { core::slice::from_raw_parts(ptr, words) };
         Self(ws)
     }
@@ -690,5 +700,139 @@ mod jumpdest_analysis_tests {
                 .collect();
             check(&code);
         }
+    }
+}
+
+#[cfg(test)]
+mod code_sentinel_tests {
+    use super::*;
+    use crate::code_with_sentinel::tests::code_and_sentinel;
+    use alloc::alloc::Global;
+
+    /// The bytes of `words`: a buffer aligned like a preimage (and like the bitmap in it)
+    fn bytes_of(words: &mut [u64]) -> &mut [u8] {
+        // SAFETY: the bytes of the `u64`s, borrowed from `words` for the lifetime of the result
+        unsafe { core::slice::from_raw_parts_mut(words.as_mut_ptr().cast::<u8>(), words.len() * 8) }
+    }
+
+    fn check(code: &[u8], pad_override: Option<u8>, expected_copy: bool, check_jumps: bool) {
+        let artifacts = BytecodePreprocessingData::create_artifacts_inner(Global, code);
+        let artifact_bytes = artifacts.as_slice();
+        let padded_len = code.len().div_ceil(BYTECODE_ALIGNMENT) * BYTECODE_ALIGNMENT;
+        let total_len = padded_len + artifact_bytes.len();
+        let mut words = alloc::vec![0u64; total_len.div_ceil(8)];
+        let raw = bytes_of(&mut words);
+        raw[..code.len()].copy_from_slice(code);
+        raw[padded_len..total_len].copy_from_slice(artifact_bytes);
+        if let Some(pad) = pad_override {
+            raw[code.len()] = pad;
+        }
+        let bytecode = &raw[..total_len];
+        let (returned, preprocessing) = BytecodePreprocessingData::parse_bytecode_followed_by_zero(
+            Global,
+            bytecode,
+            code.len(),
+            artifact_bytes.len(),
+        )
+        .unwrap();
+        assert_eq!(code_and_sentinel(&returned), (code, 0));
+        assert_eq!(returned.is_copy(), expected_copy);
+        assert_eq!(returned.as_ptr() == bytecode.as_ptr(), !expected_copy);
+        assert_eq!(preprocessing.original_bytecode_len, returned.len());
+        if check_jumps {
+            let reference = BytecodePreprocessingData::create_artifacts_inner(Global, code);
+            for off in 0..code.len() {
+                assert_eq!(
+                    preprocessing.is_valid_jumpdest(off),
+                    reference.is_valid_jumpdest(off)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn flat_layout_boundaries() {
+        check(&[opcodes::JUMPDEST], None, false, true);
+        check(&[0x60, 0x2a, 0, 0, 0, 0, 0, 0], None, false, true);
+        check(
+            &[0x5b, 0x60, 0x2a, 0x60, 0, 0x55, 0x5b, 0x5b],
+            None,
+            true,
+            true,
+        );
+        // The JUMPDEST byte is PUSH data, so bit zero of the bitmap is clear.
+        check(&[0x60, 0x5b, 0, 0, 0, 0, 0, 0], None, false, true);
+        check(&[], None, true, true);
+        check(&[0x60, 0x01], Some(0xfe), true, true);
+    }
+
+    #[test]
+    fn exact_code_without_artifacts() {
+        let mut words = [0u64; 1];
+        let raw = bytes_of(&mut words);
+        raw[..3].copy_from_slice(&[0x5b, 0x60, 0x01]);
+        let code = &raw[..3];
+        // The bitmap is the empty slice after the code, 3 bytes into an aligned buffer.
+        let (returned, data) =
+            BytecodePreprocessingData::parse_bytecode_followed_by_zero(Global, code, 3, 0).unwrap();
+        assert_eq!(code_and_sentinel(&returned), (code, 0));
+        assert!(returned.is_copy());
+        // No jump check: an artifact-free nonempty code has no bitmap.
+        assert!(data.bitmap_words().is_empty());
+    }
+
+    #[test]
+    fn oracle_tail_is_never_borrowed() {
+        let code = [0x60, 0x01, 0x55, 0, 0, 0, 0, 0];
+        let mut words = [0xfefefefefefefefeu64; 3];
+        let raw = bytes_of(&mut words);
+        raw[..8].copy_from_slice(&code);
+        // The oracle wrote FE after the committed slice, which is only 8 bytes.
+        let (returned, _) =
+            BytecodePreprocessingData::parse_bytecode_followed_by_zero(Global, &raw[..8], 8, 0)
+                .unwrap();
+        assert_eq!(code_and_sentinel(&returned), (&code[..], 0));
+        assert_ne!(returned.as_ptr(), raw.as_ptr());
+        assert_eq!(raw[8], 0xfe);
+        // The byte is in the slice this time, but is nonzero and must still be copied.
+        let (returned, _) =
+            BytecodePreprocessingData::parse_bytecode_followed_by_zero(Global, &raw[..16], 8, 8)
+                .unwrap();
+        assert_eq!(code_and_sentinel(&returned), (&code[..], 0));
+        assert_ne!(returned.as_ptr(), raw.as_ptr());
+    }
+
+    #[test]
+    fn randomized_flat_layout() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        for len in 0..=200 {
+            let mut code = alloc::vec![0; len];
+            for byte in &mut code {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                *byte = (seed >> 32) as u8;
+            }
+            let reference = BytecodePreprocessingData::create_artifacts_inner(Global, &code);
+            let copied = len % 8 == 0 && (len == 0 || reference.as_slice()[0] != 0);
+            check(&code, None, copied, true);
+        }
+    }
+
+    #[test]
+    fn bitmap_from_raw_empty_and_aligned() {
+        let mut words = [u64::MAX; 2];
+        let raw = bytes_of(&mut words);
+        // an empty bitmap anywhere, also at an address no `usize` can have
+        assert!(BitMap::from_raw(&raw[3..3]).as_words().is_empty());
+        let bitmap = BitMap::from_raw(&raw[8..16]);
+        assert_eq!(core::mem::size_of_val(bitmap.as_words()), 8);
+        assert!(bitmap.as_words().iter().all(|word| *word == usize::MAX));
+    }
+
+    #[test]
+    #[should_panic(expected = "not aligned")]
+    fn bitmap_from_raw_rejects_misaligned() {
+        let mut words = [0u64; 3];
+        let raw = bytes_of(&mut words);
+        BitMap::from_raw(&raw[1..9]);
     }
 }

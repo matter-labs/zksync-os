@@ -24,7 +24,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             cold,
             exit_code,
         } = self;
-        let mut hot = Hot::<S>::new(holder, cold.bytecode);
+        let mut hot = Hot::<S>::new(holder, &cold.bytecode);
         loop {
             #[cfg(not(target_arch = "riscv32"))]
             let opcode = {

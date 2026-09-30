@@ -181,7 +181,9 @@ pub(crate) fn resize_heap<S: EthereumLikeTypes>(
     Ok(())
 }
 
-/// Copies the returndata of a call into the range requested by the call
+/// Copies the returndata of a call into the range requested by the call (inlined into both
+/// resumes after a call, which run on every return)
+#[inline(always)]
 pub(crate) fn copy_returndata_to_heap<'ee, S: EthereumLikeTypes>(
     cold: &mut ColdFrameParts<'ee, S>,
     resources: &mut S::Resources,
@@ -438,7 +440,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                 memory_offset,
                 source_offset,
                 len,
-                cold.bytecode,
+                cold.bytecode.as_slice(),
                 &mut cold.heap,
             ) {
                 self.stack.pop_3()?;
@@ -479,7 +481,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             memory_offset.saturating_add(len),
         )?;
         let source = source_offset
-            .and_then(|offset| cold.bytecode.get(offset..))
+            .and_then(|offset| cold.bytecode.as_slice().get(offset..))
             .unwrap_or(&[]);
         copy_and_zeropad_nonoverlapping(source, &mut cold.heap[memory_offset..memory_offset + len]);
         Ok(())

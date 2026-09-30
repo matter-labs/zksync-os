@@ -12,7 +12,7 @@ use crate::gas_constants::MEMORY;
 use crate::native_resource_constants::{
     HEAP_EXPANSION_BASE_NATIVE_COST, HEAP_EXPANSION_PER_BYTE_NATIVE_COST, STEP_NATIVE_COST,
 };
-use crate::{ExitCode, InstructionResult, STACK_SIZE};
+use crate::{CodeWithSentinel, ExitCode, InstructionResult, STACK_SIZE};
 
 /// The top of the stack: a pointer to the next free slot, which addresses the operands with
 /// immediate offsets, and the depth, which the bounds checks compare against constants.
@@ -291,7 +291,8 @@ impl StackTop {
 /// written back by [`Hot::finish`]. Only plain values, never borrowed by an outlined call
 /// (see [`Hot::outlined`]), so that it can stay in registers.
 pub(crate) struct Hot<'h, S: EthereumLikeTypes> {
-    /// Next byte to execute (or read as an immediate)
+    /// Next byte to execute (or read as an immediate). At a proving fetch it is at most
+    /// `code_end` for unpadded code, and at most 32 bytes past it for padded code.
     pub ip: *const u8,
     /// One past the last byte of the code
     pub code_end: *const u8,
@@ -310,9 +311,13 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     /// `outlined` copies the state bitwise; nothing in it may own a resource
     const NO_DROP_GLUE: () = assert!(!core::mem::needs_drop::<Self>());
 
-    /// Takes the hot state out of the holder for a run over `code`
+    /// Takes the hot state out of the holder for a run over `code`. Both code pointers are
+    /// derived from the pointer of `code`, whose span includes the zero byte after the code.
     #[inline(always)]
-    pub fn new(holder: &'h mut HotFrameParts<S>, code: &[u8]) -> Self {
+    pub fn new(
+        holder: &'h mut HotFrameParts<S>,
+        code: &CodeWithSentinel<'_, S::Allocator>,
+    ) -> Self {
         let depth = holder.stack.depth();
         Self {
             ip: code.as_ptr().wrapping_add(holder.instruction_pointer),
@@ -368,23 +373,31 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         result
     }
 
-    /// The opcode at `ip`, advancing past it; `STOP` past the end of the code (the pointer
-    /// still advances, as the frame's instruction pointer used to)
+    /// The opcode at `ip`, advancing past it. At the end of the code this reads the zero byte
+    /// that frame setup puts after it, i.e. a `STOP` (the pointer still advances)
     #[cfg(target_arch = "riscv32")]
     #[inline(always)]
     pub fn fetch_and_advance(&mut self) -> u8 {
         self.ip = self.ip.wrapping_add(1);
-        if S::CODE_IS_PADDED {
-            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes (in the system's
-            // buffer or in a padded copy, see `EthereumLikeTypes::CODE_IS_PADDED`), and `ip`
-            // never gets further than 33 bytes past its end (a `STOP` is read there at the
-            // latest, see `CODE_PADDING_BYTES`)
-            unsafe { self.ip.sub(1).read() }
-        } else if self.ip <= self.code_end {
-            // SAFETY: in bounds of the code
-            unsafe { self.ip.sub(1).read() }
-        } else {
-            crate::opcodes::STOP
+        // SAFETY: `ip` was derived from the pointer of a `CodeWithSentinel` (`Self::new`), from
+        // which the code and the zero byte after it are readable.
+        // Unpadded code: `ip - 1` is in the code or at its end, the zero byte. Sequential
+        // fetches stop at the end, a truncated PUSH immediate stops `ip` there
+        // (`stop_at_code_end`), a jump lands at most there (`ColdFrameParts::set_code`), and
+        // `Interpreter::run` clamps a pointer set from outside to it.
+        // Padded code is followed by `CODE_PADDING_BYTES` zero bytes
+        // (`EthereumLikeTypes::CODE_IS_PADDED`), and `ip - 1` is at most 32 bytes past its end
+        // (a `STOP` is read there at the latest).
+        unsafe { self.ip.sub(1).read() }
+    }
+
+    /// After a PUSH immediate that runs past the end of the code: the proving fetch has no end
+    /// check (see [`Self::fetch_and_advance`]), so `ip` stops at the zero byte after the code,
+    /// i.e. a `STOP`. The host keeps the advanced pointer, which its tracers report.
+    #[inline(always)]
+    pub fn stop_at_code_end(&mut self) {
+        if cfg!(target_arch = "riscv32") {
+            self.ip = self.code_end;
         }
     }
 

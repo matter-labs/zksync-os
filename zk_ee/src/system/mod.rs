@@ -82,12 +82,16 @@ pub trait SystemTypes {
 
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {
     /// Whether every bytecode the system hands to the EVM interpreter is followed by at
-    /// least `evm_interpreter::CODE_PADDING_BYTES` readable zero bytes. The interpreter then
-    /// fetches opcodes and PUSH immediates without bounds checks: past the end of the code
-    /// it reads zeros, which is `STOP` and the zero-padded immediate the EVM specifies.
+    /// least `evm_interpreter::CODE_PADDING_BYTES` readable zero bytes, inside the slice it
+    /// hands over when that holds the artifacts too (`code || padding || artifacts`), and not
+    /// written while the code may run. The interpreter then fetches opcodes and PUSH
+    /// immediates without bounds checks: past the end of the code it reads zeros, which is
+    /// `STOP` and the zero-padded immediate the EVM specifies.
     /// Code with cached artifacts runs in place, in the system's buffer, so the system writes
     /// those zeros itself (bytes after the code that came from the oracle are not covered by
     /// the code hash); the interpreter runs other code from a zero-padded copy.
+    /// Without it the interpreter bounds-checks PUSH immediates and needs one zero byte after
+    /// the code, which it provides itself (copying the code when its buffer has none).
     const CODE_IS_PADDED: bool = false;
 }
 

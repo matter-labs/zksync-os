@@ -35,7 +35,7 @@ use zk_ee::types_config::SystemIOTypesConfig;
 use crate::errors::EvmSubsystemError;
 use crate::evm_stack::EvmStack;
 use crate::interpreter::EVMCallRequest;
-use crate::{BytecodePreprocessingData, ExitCode, PendingOsRequest};
+use crate::{BytecodePreprocessingData, CodeWithSentinel, ExitCode, PendingOsRequest};
 
 /// A tracer call: compiled out on the proving target, where the tracer is always the no-op one.
 macro_rules! trace {
@@ -59,7 +59,8 @@ pub(crate) use hot::Hot;
 /// The part of the frame every instruction touches. Between runs of the loop it lives here;
 /// during a run it lives in [`Hot`], which borrows this holder for the whole run.
 pub struct HotFrameParts<S: EthereumLikeTypes> {
-    /// Instruction pointer.
+    /// Instruction pointer. On unpadded code the proving fetch relies on it being at most the
+    /// length of the code (see `Hot::fetch_and_advance`), which `Interpreter::run` enforces.
     pub instruction_pointer: usize,
     /// Stack.
     pub stack: EvmStack<S::Allocator>,
@@ -81,10 +82,11 @@ pub struct ColdFrameParts<'a, S: EthereumLikeTypes> {
     pub heap: SliceVec<'a, u8>,
     /// returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
-    /// Bytecode
-    pub bytecode: &'a [u8],
+    /// Bytecode, with the zero byte after it that the proving fetch reads as the `STOP` after
+    /// the code (`CodeWithSentinel`). Only `set_code` installs it, together with its artifacts.
+    bytecode: CodeWithSentinel<'a, S::Allocator>,
     /// Preprocessing result
-    pub bytecode_preprocessing: BytecodePreprocessingData<'a, S::Allocator>,
+    bytecode_preprocessing: BytecodePreprocessingData<'a, S::Allocator>,
     /// The words of the jumpdest bitmap in `bytecode_preprocessing`, so a jump reads the bitmap
     /// without going through the borrowed/owned distinction
     jumpdest_words: *const usize,
@@ -103,9 +105,10 @@ pub struct ColdFrameParts<'a, S: EthereumLikeTypes> {
     pub(crate) pending_call: Option<EVMCallRequest<S>>,
 }
 
-// SAFETY: `jumpdest_words` points into `bytecode_preprocessing`, owned by (or borrowed for
-// `'a` by) the same struct, so it adds no sharing beyond what the other fields carry; the
-// bounds are those the auto traits would derive from them.
+// SAFETY: `jumpdest_words` points into `bytecode_preprocessing`, and the code pointer of
+// `bytecode` into its own copy or into a buffer borrowed for `'a`, so they add no sharing
+// beyond what the other fields carry; the bounds are those the auto traits would derive from
+// them.
 unsafe impl<'a, S: EthereumLikeTypes> Send for ColdFrameParts<'a, S>
 where
     S::Allocator: Send,
@@ -167,13 +170,26 @@ impl<'a, S: EthereumLikeTypes, T: Tracer<S>> Env<'a, S, T> {
 }
 
 impl<'a, S: EthereumLikeTypes> ColdFrameParts<'a, S> {
-    /// Installs the code of the frame together with its jumpdest artifacts
+    /// Installs the code of the frame together with its jumpdest artifacts. The proving fetch
+    /// relies on both (see `Hot::fetch_and_advance`): the zero byte after the code, and a jump
+    /// landing at most at the end of the code, since a destination is below
+    /// `original_bytecode_len`, the length of the code.
     #[inline(always)]
     pub(crate) fn set_code(
         &mut self,
-        code: &'a [u8],
+        code: CodeWithSentinel<'a, S::Allocator>,
         preprocessing: BytecodePreprocessingData<'a, S::Allocator>,
     ) {
+        debug_assert_eq!(
+            code.sentinel(),
+            0,
+            "the code must be followed by a zero byte"
+        );
+        debug_assert_eq!(
+            preprocessing.original_bytecode_len,
+            code.len(),
+            "the artifacts must be those of the code"
+        );
         self.bytecode = code;
         self.bytecode_preprocessing = preprocessing;
         self.jumpdest_words = self.bytecode_preprocessing.bitmap_words().as_ptr();
@@ -413,7 +429,7 @@ impl<'v, S: EthereumLikeTypes> EvmFrameInterface<S> for FrameView<'v, S> {
     }
 
     fn bytecode(&self) -> &[u8] {
-        self.cold.bytecode
+        self.cold.bytecode.as_slice()
     }
 
     fn call_value(&self) -> &U256 {

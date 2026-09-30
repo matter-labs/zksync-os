@@ -120,7 +120,10 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             acc
         } else {
             // SAFETY: bounds checked per byte
-            unsafe { read_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end) }
+            let value =
+                unsafe { read_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end) };
+            self.stop_at_code_end();
+            value
         };
         self.stack.push_u64(value)
     }
@@ -182,6 +185,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             // SAFETY: bounds checked per byte
             let value =
                 unsafe { read_immediate_truncated::<2>(self.ip.wrapping_sub(2), self.code_end) };
+            self.stop_at_code_end();
             self.stack.push_u64(value)
         }
     }
@@ -290,6 +294,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
                     write_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end, dst)
                 }
             };
+            self.stop_at_code_end();
         }
         Ok(())
     }

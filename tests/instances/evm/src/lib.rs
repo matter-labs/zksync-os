@@ -21,6 +21,8 @@ use rig::{
 mod copy_opcodes;
 mod test_support;
 
+// Running off the end of the code, which the proving target fetches without a bounds check.
+mod code_end;
 // Constructor/runtime behavior during CREATE.
 mod deployment_outcomes;
 // CALL execution outcomes that are part of normal EVM runtime semantics.

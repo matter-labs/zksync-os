@@ -30,13 +30,45 @@ use crate::evm_stack::EvmStack;
 use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use crate::{
-    BytecodePreprocessingData, ExitCode, PendingOsRequest, ARTIFACTS_CACHING_CODE_VERSION_BYTE,
-    ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE, DEFAULT_CODE_VERSION_BYTE, MAX_CODE_SIZE,
-    THIS_EE_TYPE,
+    BytecodePreprocessingData, CodeWithSentinel, ExitCode, PendingOsRequest,
+    ARTIFACTS_CACHING_CODE_VERSION_BYTE, ARTIFACTS_FROM_CODE_CACHE_CODE_VERSION_BYTE,
+    DEFAULT_CODE_VERSION_BYTE, MAX_CODE_SIZE, THIS_EE_TYPE,
 };
 
 #[cfg(not(target_arch = "riscv32"))]
 use super::FrameView;
+
+/// The code of a frame and its jumpdest artifacts
+type FrameCode<'a, A> = (CodeWithSentinel<'a, A>, BytecodePreprocessingData<'a, A>);
+
+/// [`BytecodePreprocessingData::parse_bytecode`] for a frame. The code must be followed by a
+/// zero byte, which the proving fetch reads as the `STOP` after the code (see
+/// `Hot::fetch_and_advance`): the storage model pads padded code, and unpadded code is copied
+/// unless its buffer has the byte
+#[inline(always)]
+fn parse_frame_bytecode<'a, S: EthereumLikeTypes>(
+    system: &System<S>,
+    bytecode: &'a [u8],
+    code_len: usize,
+    artifacts_len: usize,
+) -> Result<FrameCode<'a, S::Allocator>, zk_ee::system::errors::internal::InternalError> {
+    if S::CODE_IS_PADDED {
+        let (_, preprocessing) =
+            BytecodePreprocessingData::parse_bytecode(bytecode, code_len, artifacts_len)?;
+        // SAFETY: `bytecode` is `code || padding || artifacts` (an artifacts version), whose
+        // padding the storage model of a padded type makes `CODE_PADDING_BYTES` zero bytes or
+        // more, which it does not write again (`EthereumLikeTypes::CODE_IS_PADDED`)
+        let code = unsafe { CodeWithSentinel::borrow_padded(bytecode, code_len) };
+        Ok((code, preprocessing))
+    } else {
+        BytecodePreprocessingData::parse_bytecode_followed_by_zero(
+            system.get_allocator(),
+            bytecode,
+            code_len,
+            artifacts_len,
+        )
+    }
+}
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Runs the loop and returns why it stopped
@@ -51,6 +83,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     {
         let mut env = Env::new(system, hooks, tracer);
         self.exit_code = None;
+        // The proving fetch has no end check on unpadded code (see `Hot::fetch_and_advance`). A
+        // frame's own runs never start past the end of the code; a run after the frame
+        // stopped, or on a pointer set from outside, starts at the `STOP` after it instead
+        if cfg!(target_arch = "riscv32") && !S::CODE_IS_PADDED {
+            self.hot.instruction_pointer =
+                self.hot.instruction_pointer.min(self.cold.bytecode.len());
+        }
         self.run_loop(&mut env);
         let result = self
             .exit_code
@@ -248,7 +287,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             calldata: &[],
             heap: SliceVec::new(&mut []),
             returndata_location: 0..0,
-            bytecode: &[],
+            bytecode: CodeWithSentinel::empty(),
             bytecode_preprocessing: BytecodePreprocessingData::empty(),
             jumpdest_words: core::ptr::null(),
             call_value: U256::zero(),
@@ -257,7 +296,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             pending_os_request: None,
             pending_call: None,
         };
-        cold.set_code(&[], BytecodePreprocessingData::empty());
+        cold.set_code(
+            CodeWithSentinel::empty(),
+            BytecodePreprocessingData::empty(),
+        );
         Ok(Self {
             hot: HotFrameParts {
                 instruction_pointer: 0,
@@ -310,17 +352,16 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         if modifier == CallModifier::Constructor {
             // the code to execute is in the calldata
-            let mut preprocessing = BytecodePreprocessingData::create_artifacts(
+            let preprocessing = BytecodePreprocessingData::create_artifacts(
                 system.get_allocator(),
                 calldata,
                 &mut available_resources,
             )?;
-            let code = if S::CODE_IS_PADDED {
-                // the interpreter reads past the end of padded code; the calldata is not padded
-                preprocessing.take_padded_copy(system.get_allocator(), calldata)
-            } else {
-                calldata
-            };
+            // The interpreter reads past the end of the code, and nothing it can rely on
+            // follows the calldata: for a CREATE that byte is in the constructor's own heap
+            // (`SliceVec::freeze`). So the code is always copied, uncharged, which adds at most
+            // `MAX_INITCODE_SIZE + CODE_PADDING_BYTES` bytes per live frame.
+            let code = CodeWithSentinel::padded_copy(system.get_allocator(), calldata);
             self.cold.set_code(code, preprocessing);
         } else {
             // a call always runs on loaded code; only a deployment target's code is left unloaded
@@ -335,21 +376,18 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             match callee_account_properties.code_version {
                 DEFAULT_CODE_VERSION_BYTE => {
                     assert_eq!(artifacts_len, 0);
-                    let mut preprocessing = BytecodePreprocessingData::create_artifacts(
+                    let preprocessing = BytecodePreprocessingData::create_artifacts(
                         system.get_allocator(),
                         bytecode,
                         &mut available_resources,
                     )?;
-                    let code = if S::CODE_IS_PADDED {
-                        // code without cached artifacts comes from an unpadded buffer
-                        preprocessing.take_padded_copy(system.get_allocator(), bytecode)
-                    } else {
-                        bytecode
-                    };
+                    // code without cached artifacts has no byte after it to rely on
+                    let code = CodeWithSentinel::padded_copy(system.get_allocator(), bytecode);
                     self.cold.set_code(code, preprocessing);
                 }
                 ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
-                    let (code, preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                    let (code, preprocessing) = parse_frame_bytecode::<S>(
+                        system,
                         bytecode,
                         unpadded_code_len as usize,
                         artifacts_len as usize,
@@ -362,7 +400,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         unpadded_code_len as usize,
                         &mut available_resources,
                     )?;
-                    let (code, preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                    let (code, preprocessing) = parse_frame_bytecode::<S>(
+                        system,
                         bytecode,
                         unpadded_code_len as usize,
                         artifacts_len as usize,
