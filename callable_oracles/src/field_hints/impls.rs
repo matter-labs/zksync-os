@@ -166,6 +166,25 @@ pub(crate) fn secp256k1_base_field_inverse(operand: &Operand) -> FieldElement {
     el
 }
 
+/// The quotient of the numerator and the (non-zero) denominator, two adjacent elements
+pub(crate) fn secp256k1_base_field_division(operand: &Operand) -> FieldElement {
+    let [numerator, denominator]: [FieldElement; 2] = match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(operand.size(), 64, "the operand is two elements");
+            core::array::from_fn(|i| {
+                let words: [u32; 8] = operand.guest_words(32 * i, 8).try_into().expect("8 words");
+                FieldElement::from_guest_operand_words(&words)
+            })
+        }
+    };
+    assert!(!denominator.is_zero());
+    let mut quotient = denominator;
+    quotient.invert_in_place();
+    quotient.mul_in_place(&numerator);
+    quotient
+}
+
 pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
     let mut el: Scalar = secp256k1_element(operand);
     assert!(!el.is_zero());
@@ -177,6 +196,28 @@ pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
 pub(crate) fn inverse<F: HintEncoding + Copy>(operand: &Operand) -> F {
     let el: F = element(operand);
     el.inverse().expect("the operand is non-zero")
+}
+
+/// The quotient of the numerator and the (non-zero) denominator, two adjacent elements of a
+/// base prime field
+pub(crate) fn division<F: HintEncoding + PrimeField>(operand: &Operand) -> F {
+    let [numerator, denominator]: [F; 2] = match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(operand.size(), 16 * F::LIMBS, "the operand is two elements");
+            // Montgomery limbs, any representatives: their factor `R` cancels in the quotient
+            let words = operand.guest_words(0, 4 * F::LIMBS);
+            let mut halves = words.chunks(2 * F::LIMBS).map(|words| {
+                let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+                F::from_le_bytes_mod_order(&bytes)
+            });
+            [
+                halves.next().expect("two elements"),
+                halves.next().expect("two elements"),
+            ]
+        }
+    };
+    numerator * denominator.inverse().expect("the denominator is non-zero")
 }
 
 /// The square root candidate of a bls12-381 base field element, as `secp256k1_base_field_sqrt`:
@@ -204,7 +245,7 @@ pub(crate) fn bn254_pairing_residue_witness(
     responses: &mut Responses,
 ) {
     use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
-    use crypto::bn254::curves::{Bn254, G2PreparedNoAlloc};
+    use crypto::bn254::curves::{Bn254, G1Evaluation, G2PreparedNoAlloc};
     use crypto::bn254::{G1Affine, G2Affine};
     use guest_layout::{BN254_G1_AFFINE, BN254_G2_AFFINE, BN254_PAIR_G1, BN254_PAIR_G2};
     let pairs: Vec<(G1Affine, G2Affine)> = match operand.querier {
@@ -227,14 +268,17 @@ pub(crate) fn bn254_pairing_residue_witness(
         }
     };
     assert!(!pairs.is_empty(), "the operand has pairs");
-    // the lines as the verifier computes them (projective; the affine ones from hinted
-    // inverses, `g2_affine::prepare_as_verifier`, are not in use): the witness equation holds
-    // for the verifier's Miller loop output only
+    // the Miller loop as the verifier computes it (the affine lines from hinted slopes, at
+    // normalized `G1` points): the witness equation holds for the verifier's output only
     let prepared: Vec<G2PreparedNoAlloc> = pairs
         .iter()
-        .map(|(_, g2)| G2PreparedNoAlloc::from(*g2))
+        .map(|(_, g2)| crypto::bn254::curves::g2_affine::prepare_as_verifier(g2))
         .collect();
-    let f = Bn254::multi_miller_loop_prepared(pairs.iter().map(|(g1, _)| g1), prepared.iter());
+    let evaluations: Vec<G1Evaluation> = pairs
+        .iter()
+        .map(|(g1, _)| G1Evaluation::new(g1, &mut crypto::affine_glv::InvertingDivider))
+        .collect();
+    let f = Bn254::multi_miller_loop_normalized(None, evaluations.iter().zip(prepared.iter()));
     let is_identity = !claim_not_identity
         && Bn254::final_exponentiation(MillerLoopOutput(f))
             .expect("non-zero")
@@ -297,12 +341,12 @@ pub(crate) fn bls12_381_kzg_residue_witness(
     }
 }
 
-/// The inverses of the two affine `G2` chains of the pairing input point of the operand, see
-/// `curve_hints::bn254_g2_pairing_inverses`: a flag and the subgroup test inverses, a flag
-/// and the line precomputation inverses (zeros behind a cleared flag)
-pub(crate) fn bn254_g2_pairing_inverses(operand: &Operand, responses: &mut Responses) {
+/// The slopes of the two affine `G2` chains of the pairing input point of the operand, see
+/// `curve_hints::bn254_g2_pairing_slopes`: a flag and the subgroup test slopes, a flag and the
+/// line precomputation slopes (zeros behind a cleared flag)
+pub(crate) fn bn254_g2_pairing_slopes(operand: &Operand, responses: &mut Responses) {
     use crypto::ark_ff::AdditiveGroup;
-    use crypto::bn254::curves::g2_affine::{line_inverses, subgroup_inverses};
+    use crypto::bn254::curves::g2_affine::{line_slopes, subgroup_slopes};
     use crypto::bn254::{Fq2, G2Affine};
     use guest_layout::BN254_G2_AFFINE;
     let q: G2Affine = match operand.querier {
@@ -316,12 +360,12 @@ pub(crate) fn bn254_g2_pairing_inverses(operand: &Operand, responses: &mut Respo
             operand.guest_affine(0, BN254_G2_AFFINE)
         }
     };
-    fn chain<const N: usize>(inverses: Option<[Fq2; N]>, responses: &mut Responses) {
-        match inverses {
-            Some(inverses) => responses.write(&(true, inverses)),
+    fn chain<const N: usize>(slopes: Option<[Fq2; N]>, responses: &mut Responses) {
+        match slopes {
+            Some(slopes) => responses.write(&(true, slopes)),
             None => responses.write(&(false, [Fq2::ZERO; N])),
         }
     }
-    chain(subgroup_inverses(&q), responses);
-    chain(line_inverses(&q), responses);
+    chain(subgroup_slopes(&q), responses);
+    chain(line_slopes(&q), responses);
 }

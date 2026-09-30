@@ -99,9 +99,16 @@ pub fn bn254_ecadd_inner<O: IOOracle>(
     }
 
     let [a, b] = &points;
-    // the in-place group law: arkworks' `Projective + Affine` copies every field element
-    let result = crypto::bn254::g1::add_affine(a, b);
-    let result = serialize_projective(result, oracle);
+    let result = match oracle {
+        // affine coordinates, with the division of the slope a checked hint
+        Some(oracle) => serialize_affine(&crypto::bn254::g1::add_affine_with_divider(
+            a,
+            b,
+            &mut curve_hints::Bn254FqDivider::new(oracle),
+        )),
+        // the in-place group law: arkworks' `Projective + Affine` copies every field element
+        None => serialize_projective::<O>(crypto::bn254::g1::add_affine(a, b), None),
+    };
 
     Ok(result)
 }
@@ -149,6 +156,20 @@ pub(crate) fn parse_affine(x: &[u8; 32], y: &[u8; 32]) -> Result<crypto::bn254::
     let point = G1Affine::new_unchecked(x, y);
     point.check().map_err(|_| ())?;
     Ok(point)
+}
+
+/// The EVM encoding of `point`
+pub(crate) fn serialize_affine(point: &crypto::bn254::G1Affine) -> [u8; 64] {
+    let mut out = [0u8; 64];
+    // zeroes are canonical for the point at infinity
+    if !point.infinity {
+        let [x, y] = out.as_chunks_mut::<32>().0 else {
+            unreachable!("64 bytes are two 32-byte chunks")
+        };
+        write_bigint_be(&point.x.into_bigint(), x);
+        write_bigint_be(&point.y.into_bigint(), y);
+    }
+    out
 }
 
 /// The EVM encoding of `point`. With an oracle, the inversion of its `Z` coordinate comes from

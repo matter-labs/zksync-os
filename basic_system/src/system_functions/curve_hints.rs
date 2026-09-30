@@ -12,7 +12,8 @@
 //! external input, so a bad one is a broken prover rather than a case to recover from.
 
 use crate::system_functions::field_ops::{
-    query_field_hint, read_hint_answer, send_field_hint_query, FieldHintOp, HintAnswer, HintTarget,
+    query_field_hint, query_field_hint_into, read_hint_answer, send_field_hint_query, FieldHintOp,
+    HintAnswer, HintTarget,
 };
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
@@ -398,6 +399,44 @@ pub fn bn254_fq_inverse<O: IOOracle>(
     inverse_from_hint(oracle, FieldHintOp::Bn254BaseFieldInverse, a)
 }
 
+/// Divisions in the bn254 base field from hints, for the curve arithmetic in affine coordinates
+/// (`crypto::affine_glv`)
+pub struct Bn254FqDivider<'a, O: IOOracle> {
+    oracle: &'a mut O,
+}
+
+impl<'a, O: IOOracle> Bn254FqDivider<'a, O> {
+    pub fn new(oracle: &'a mut O) -> Self {
+        Self { oracle }
+    }
+}
+
+impl<O: IOOracle> crypto::affine_glv::Divider<crypto::bn254::Fq> for Bn254FqDivider<'_, O> {
+    #[inline(always)]
+    fn divide<'q>(
+        &mut self,
+        fraction: &mut [crypto::bn254::Fq; 2],
+        quotient: &'q mut MaybeUninit<crypto::bn254::Fq>,
+    ) -> &'q mut crypto::bn254::Fq {
+        // the quotient is received canonical, so it is a valid element of the redundant
+        // representation
+        let quotient = query_field_hint_into(
+            self.oracle,
+            FieldHintOp::Bn254BaseFieldDivision,
+            &*fraction,
+            quotient,
+        );
+        // quotient * denominator == numerator: the denominator is not zero (the caller's
+        // obligation), so the quotient is the only element that passes. The fraction is ours
+        // to overwrite.
+        let [numerator, denominator] = fraction;
+        *denominator *= &*quotient;
+        *denominator -= &*numerator;
+        assert!(denominator.is_zero(), "the field division hint is wrong");
+        quotient
+    }
+}
+
 /// `f^-1` in the bn254 degree-12 extension field, `None` for a zero `f`
 pub fn bn254_fq12_inverse<O: IOOracle>(
     oracle: &mut O,
@@ -500,72 +539,66 @@ pub fn bn254_pairing_residue_witness<O: IOOracle>(
     claim
 }
 
-/// The hinted inverses of the affine `G2` chains of one point
+/// The hinted slopes of the affine `G2` chains of one point
 /// (`crypto::bn254::curves::g2_affine`), received from the oracle as the chains consume them, so
-/// that no array of them is ever moved: a flag and the inverses of the membership test, then a flag
+/// that no array of them is ever moved: a flag and the slopes of the membership test, then a flag
 /// and those of the line precomputation. A cleared flag is the prover reporting an exceptional
 /// chain (the caller falls back to the projective computation; the words of that chain are zeros
-/// and are skipped). The hints are not checked here: each chain checks every inverse against its
-/// denominator, and a wrong one is a broken prover. Whatever is left of the answer is skipped on
-/// drop, and the query ended, so the oracle stays in step on every path.
-pub struct G2InverseHints<'a, O: MemoryOracle> {
+/// and are skipped). Each slope is checked against the fraction of its step, and a wrong one is
+/// a broken prover. Whatever is left of a chain, or of the answer, is skipped on drop, and the
+/// query ended, so the oracle stays in step on every path.
+pub struct G2SlopeHints<'a, O: MemoryOracle> {
     oracle: &'a mut O,
     /// Words of the answer not received yet
     remaining_words: usize,
 }
 
-/// Inverses of the subgroup test and of the line precomputation, in base field elements (two per
-/// `Fq2`)
-pub const G2_SUBGROUP_INVERSE_WORDS: usize =
-    2 * crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES;
-pub const G2_LINE_INVERSE_WORDS: usize = 2 * crypto::bn254::curves::g2_affine::LINE_INVERSES;
-
 /// Oracle words of one `Fq2` hint: two elements of 4 limbs
 const FQ2_HINT_WORDS: usize = 2 * 2 * 4;
 
-/// Oracle words of the whole answer: two flags and the inverses
+/// Oracle words of the whole answer: two flags and the slopes
 const G2_HINT_WORDS: usize = 2
-    + (crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES
-        + crypto::bn254::curves::g2_affine::LINE_INVERSES)
+    + (crypto::bn254::curves::g2_affine::SUBGROUP_DIVISIONS
+        + crypto::bn254::curves::g2_affine::LINE_DIVISIONS)
         * FQ2_HINT_WORDS;
 
-/// The inverses of the affine `G2` chains of `q` (on the twist, not the point at infinity)
+/// The slopes of the affine `G2` chains of `q` (on the twist, not the point at infinity)
 /// from the oracle
-pub fn bn254_g2_pairing_inverses<'a, O: IOOracle>(
+pub fn bn254_g2_pairing_slopes<'a, O: IOOracle>(
     oracle: &'a mut O,
     q: &crypto::bn254::G2Affine,
-) -> G2InverseHints<'a, O> {
-    send_field_hint_query(oracle, FieldHintOp::Bn254G2PairingInverses, q)
+) -> G2SlopeHints<'a, O> {
+    send_field_hint_query(oracle, FieldHintOp::Bn254G2PairingSlopes, q)
         .expect("must send the field hint query");
-    G2InverseHints {
+    G2SlopeHints {
         oracle,
         remaining_words: G2_HINT_WORDS,
     }
 }
 
-impl<'a, O: MemoryOracle> G2InverseHints<'a, O> {
-    /// The inverses of the membership test, `None` if the prover reports an exceptional chain
+impl<'a, O: MemoryOracle> G2SlopeHints<'a, O> {
+    /// The slopes of the membership test, `None` if the prover reports an exceptional chain
     pub fn subgroup_chain(&mut self) -> Option<HintedChain<'_, 'a, O>> {
-        self.chain(crypto::bn254::curves::g2_affine::SUBGROUP_INVERSES)
+        self.chain(crypto::bn254::curves::g2_affine::SUBGROUP_DIVISIONS)
     }
 
-    /// The inverses of the line precomputation, `None` if the prover reports an exceptional
+    /// The slopes of the line precomputation, `None` if the prover reports an exceptional
     /// chain; after the membership test's
     pub fn line_chain(&mut self) -> Option<HintedChain<'_, 'a, O>> {
-        self.chain(crypto::bn254::curves::g2_affine::LINE_INVERSES)
+        self.chain(crypto::bn254::curves::g2_affine::LINE_DIVISIONS)
     }
 
-    fn chain(&mut self, inverses: usize) -> Option<HintedChain<'_, 'a, O>> {
+    fn chain(&mut self, slopes: usize) -> Option<HintedChain<'_, 'a, O>> {
         self.remaining_words -= 1;
         let present: bool =
             read_hint_answer(self.oracle).expect("the hint response has the flag of the chain");
         if !present {
-            self.skip(inverses * FQ2_HINT_WORDS);
+            self.skip(slopes * FQ2_HINT_WORDS);
             return None;
         }
         Some(HintedChain {
             hints: self,
-            remaining: inverses,
+            remaining: slopes,
         })
     }
 
@@ -579,7 +612,7 @@ impl<'a, O: MemoryOracle> G2InverseHints<'a, O> {
     }
 }
 
-impl<O: MemoryOracle> Drop for G2InverseHints<'_, O> {
+impl<O: MemoryOracle> Drop for G2SlopeHints<'_, O> {
     fn drop(&mut self) {
         self.skip(self.remaining_words);
         self.oracle
@@ -590,18 +623,34 @@ impl<O: MemoryOracle> Drop for G2InverseHints<'_, O> {
 
 /// The hints of one chain, in the chain's order
 pub struct HintedChain<'c, 'a, O: MemoryOracle> {
-    hints: &'c mut G2InverseHints<'a, O>,
+    hints: &'c mut G2SlopeHints<'a, O>,
     remaining: usize,
 }
 
-impl<O: MemoryOracle> crypto::bn254::curves::g2_affine::Inverter for HintedChain<'_, '_, O> {
-    fn inverse(&mut self, den: &crypto::bn254::Fq2) -> Option<crypto::bn254::Fq2> {
-        debug_assert!(self.remaining > 0, "the chain is longer than its hints");
+impl<O: MemoryOracle> crypto::affine_glv::Divider<crypto::bn254::Fq2> for HintedChain<'_, '_, O> {
+    #[inline(always)]
+    fn divide<'q>(
+        &mut self,
+        fraction: &mut [crypto::bn254::Fq2; 2],
+        quotient: &'q mut MaybeUninit<crypto::bn254::Fq2>,
+    ) -> &'q mut crypto::bn254::Fq2 {
+        assert!(self.remaining > 0, "the chain is longer than its hints");
         self.remaining -= 1;
         self.hints.remaining_words -= FQ2_HINT_WORDS;
-        let inverse: crypto::bn254::Fq2 =
-            read_hint_answer(self.hints.oracle).expect("the hint is a canonical field element");
-        crypto::bn254::curves::g2_affine::verify_inverse(den, inverse)
+        let quotient = <crypto::bn254::Fq2 as HintAnswer>::read(self.hints.oracle, quotient)
+            .expect("the hint is a canonical field element");
+        assert!(
+            crypto::bn254::curves::g2_affine::verify_quotient(fraction, quotient),
+            "the field division hint is wrong"
+        );
+        quotient
+    }
+}
+
+impl<O: MemoryOracle> Drop for HintedChain<'_, '_, O> {
+    /// The rest of an abandoned chain is skipped
+    fn drop(&mut self) {
+        self.hints.skip(self.remaining * FQ2_HINT_WORDS);
     }
 }
 
@@ -911,6 +960,29 @@ pub(crate) mod tests {
     fn wrong_bn254_inverse_is_rejected() {
         let a = crypto::bn254::Fq::from(7u64);
         let _ = bn254_fq_inverse(&mut all_lying(), &a);
+    }
+
+    #[test]
+    fn bn254_division_is_the_quotient() {
+        use crypto::affine_glv::Divider;
+        let elements = elements::<crypto::bn254::Fq>(8);
+        let mut oracle = oracle();
+        for pair in elements.chunks(2) {
+            let mut fraction = [pair[0], pair[1]];
+            let mut quotient = MaybeUninit::uninit();
+            let quotient = Bn254FqDivider::new(&mut oracle).divide(&mut fraction, &mut quotient);
+            assert_eq!(*quotient * pair[1], pair[0]);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "division hint is wrong")]
+    fn wrong_bn254_division_is_rejected() {
+        use crypto::affine_glv::Divider;
+        let mut fraction = [crypto::bn254::Fq::from(7u64), crypto::bn254::Fq::from(5u64)];
+        let mut quotient = MaybeUninit::uninit();
+        Bn254FqDivider::new(&mut lying_oracle(&[FieldHintOp::Bn254BaseFieldDivision]))
+            .divide(&mut fraction, &mut quotient);
     }
 
     #[test]

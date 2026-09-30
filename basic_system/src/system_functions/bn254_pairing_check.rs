@@ -3,11 +3,11 @@ use crate::cost_constants::{
     BN254_PAIRING_BASE_NATIVE_COST, BN254_PAIRING_COST_PER_PAIR_GAS,
     BN254_PAIRING_PER_PAIR_NATIVE_COST, BN254_PAIRING_STATIC_COST_GAS,
 };
-use crate::system_functions::bytereverse;
+use crate::system_functions::bn254_ecadd::bigint_from_be;
 use crate::system_functions::curve_hints;
 use alloc::vec::Vec;
 use crypto::ark_ff::Zero;
-use crypto::ark_serialize::{CanonicalDeserialize, Valid};
+use crypto::ark_serialize::Valid;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
@@ -89,20 +89,23 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
 ) -> Result<bool, ()> {
     use crypto::ark_ec::pairing::Pairing;
     use crypto::ark_ff::{One, PrimeField};
-    use crypto::bn254::curves::{Bn254, G1Affine, G2Affine, G2PreparedNoAlloc};
+    use crypto::bn254::curves::{
+        g2_affine, Bn254, G1Affine, G1Evaluation, G2Affine, G2PreparedNoAlloc,
+    };
     use crypto::bn254::fields::{Fq, Fq2};
 
     if num_pairs == 0 {
         return Ok(true);
     }
 
+    let mut oracle = oracle;
     let mut pairs = Vec::with_capacity_in(num_pairs, allocator.clone());
-    // the lines of the G2 points, precomputed from hinted inverses (affine coordinates, half
-    // the multiplications) when an oracle is given
-    let mut prepared = Vec::with_capacity_in(
-        if oracle.is_some() { num_pairs } else { 0 },
-        allocator.clone(),
-    );
+    // with an oracle: the lines of the G2 points, precomputed in affine coordinates from hinted
+    // slopes (less than half the multiplications), and the G1 points as the lines are
+    // evaluated at them
+    let with_advice = if oracle.is_some() { num_pairs } else { 0 };
+    let mut prepared = Vec::with_capacity_in(with_advice, allocator.clone());
+    let mut evaluations = Vec::with_capacity_in(with_advice, allocator.clone());
     let mut src_iter = src.iter();
 
     for _ in 0..num_pairs {
@@ -110,26 +113,17 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
         for (dst, src) in buffer.iter_mut().zip(&mut src_iter) {
             *dst = *src;
         }
-        let mut it = buffer.as_chunks::<32>().0.iter();
+        // NOTE: Ethereum serialization is strange: the imaginary parts of the G2 coordinates
+        // come first
+        let ([g1_x, g1_y, g2_x_c1, g2_x_c0, g2_y_c1, g2_y_c0], []) = buffer.as_chunks::<32>()
+        else {
+            unreachable!("192 bytes are 6 chunks of 32")
+        };
+        // an element of the base field from its big-endian encoding, which must be canonical
+        let parse = |bytes: &[u8; 32]| Fq::from_bigint(bigint_from_be(bytes)).ok_or(());
         unsafe {
-            let mut g1_x = *it.next().unwrap_unchecked();
-            let mut g1_y = *it.next().unwrap_unchecked();
-
-            // NOTE: Ethereum serialization is strange
-            let mut g2_x_c1 = *it.next().unwrap_unchecked();
-            let mut g2_x_c0 = *it.next().unwrap_unchecked();
-            let mut g2_y_c1 = *it.next().unwrap_unchecked();
-            let mut g2_y_c0 = *it.next().unwrap_unchecked();
-
-            bytereverse(&mut g1_x);
-            bytereverse(&mut g1_y);
-
-            let g1_x =
-                <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g1_x[..]).map_err(|_| ())?;
-            let g1_y =
-                <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g1_y[..]).map_err(|_| ())?;
-            let g1_x = Fq::from_bigint(g1_x).ok_or(())?;
-            let g1_y = Fq::from_bigint(g1_y).ok_or(())?;
+            let g1_x = parse(g1_x)?;
+            let g1_y = parse(g1_y)?;
 
             // the point at infinity is encoded as (0, 0); every other encoding must be a
             // point of the curve (and, for G2, of the subgroup)
@@ -139,28 +133,8 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
                 g1_point.check().map_err(|_| ())?;
             }
 
-            bytereverse(&mut g2_x_c0);
-            bytereverse(&mut g2_x_c1);
-            bytereverse(&mut g2_y_c0);
-            bytereverse(&mut g2_y_c1);
-
-            let g2_x_c0 = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g2_x_c0[..])
-                .map_err(|_| ())?;
-            let g2_x_c1 = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g2_x_c1[..])
-                .map_err(|_| ())?;
-            let g2_x_c0 = Fq::from_bigint(g2_x_c0).ok_or(())?;
-            let g2_x_c1 = Fq::from_bigint(g2_x_c1).ok_or(())?;
-
-            let g2_x = Fq2::new(g2_x_c0, g2_x_c1);
-
-            let g2_y_c0 = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g2_y_c0[..])
-                .map_err(|_| ())?;
-            let g2_y_c1 = <Fq as PrimeField>::BigInt::deserialize_uncompressed(&g2_y_c1[..])
-                .map_err(|_| ())?;
-            let g2_y_c0 = Fq::from_bigint(g2_y_c0).ok_or(())?;
-            let g2_y_c1 = Fq::from_bigint(g2_y_c1).ok_or(())?;
-
-            let g2_y = Fq2::new(g2_y_c0, g2_y_c1);
+            let g2_x = Fq2::new(parse(g2_x_c0)?, parse(g2_x_c1)?);
+            let g2_y = Fq2::new(parse(g2_y_c0)?, parse(g2_y_c1)?);
 
             let g2_is_zero = g2_x.is_zero() && g2_y.is_zero();
             let g2_point = G2Affine::new_unchecked(g2_x, g2_y);
@@ -172,24 +146,45 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
             if !g2_point.is_on_curve() {
                 return Err(());
             }
-            if !g2_point.is_in_correct_subgroup_assuming_on_curve() {
+            // the slopes of the two affine chains of the point; whatever is not consumed of
+            // them is skipped when they go out of scope
+            let mut hints = oracle
+                .as_deref_mut()
+                .map(|oracle| curve_hints::bn254_g2_pairing_slopes(oracle, &g2_point));
+            let is_in_subgroup = hints
+                .as_mut()
+                .and_then(|hints| hints.subgroup_chain())
+                .and_then(|mut chain| g2_affine::membership(&g2_point, &mut chain))
+                // no hints, or an exceptional chain: the projective test
+                .unwrap_or_else(|| g2_point.is_in_correct_subgroup_assuming_on_curve());
+            if !is_in_subgroup {
                 return Err(());
             }
             if g1_is_zero {
                 // e(O, Q) = 1
                 continue;
             }
-            if oracle.is_some() {
+            if let Some(hints) = hints.as_mut() {
                 // the lines of the point, built in the vector's next slot (they are 16 KB,
-                // not to be moved), for the Miller loop that starts at the residue witness.
-                // NOTE: the affine chains with hinted inverses (`curve_hints::G2InverseHints`,
-                // `g2_affine::prepare_into`) are not used for now: their hint plumbing costs
-                // about what the affine formulas save.
+                // not to be moved), for the Miller loop that starts at the residue witness
                 prepared.reserve(1);
                 let slot = &mut prepared.spare_capacity_mut()[0];
-                slot.write(G2PreparedNoAlloc::from(g2_point));
+                let affine = hints
+                    .line_chain()
+                    .and_then(|mut chain| g2_affine::prepare_into(&g2_point, &mut chain, slot));
+                if affine.is_none() {
+                    // an exceptional chain: the projective lines
+                    slot.write(G2PreparedNoAlloc::from(g2_point));
+                }
                 // SAFETY: the slot was just initialized
                 prepared.set_len(prepared.len() + 1);
+            }
+            drop(hints);
+            if let Some(oracle) = oracle.as_deref_mut() {
+                evaluations.push(G1Evaluation::new(
+                    &g1_point,
+                    &mut curve_hints::Bn254FqDivider::new(oracle),
+                ));
             }
 
             pairs.push((g1_point, g2_point));
@@ -210,6 +205,8 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
             Bn254::final_exponentiation(miller_loop).expect("the Miller loop output is invertible");
         return Ok(result.0.is_one());
     };
+    debug_assert!(prepared.len() == pairs.len() && evaluations.len() == pairs.len());
+    let normalized = || evaluations.iter().zip(prepared.iter());
     // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
     // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
     // `crypto::residue_witness`): the Miller loop started at `d` gives `d^(6x+2) f`, the rest
@@ -219,8 +216,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
     // exponentiation, which finds an identity all the same.
     match curve_hints::bn254_pairing_residue_witness(oracle, &pairs) {
         curve_hints::PairingClaim::Identity { c, d, s } => {
-            debug_assert_eq!(prepared.len(), pairs.len());
-            let l = Bn254::multi_miller_loop_with_initial(&d, &c, g1_iter(), prepared.iter());
+            let l = Bn254::multi_miller_loop_normalized(Some((&d, &c)), normalized());
             assert!(
                 crypto::residue_witness::bn254::check(&l, &d, &s),
                 "the residue witness of the pairing claimed to be the identity is wrong"
@@ -228,7 +224,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
             Ok(true)
         }
         curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            let miller_loop = Bn254::multi_miller_loop_prepared(g1_iter(), prepared.iter());
+            let miller_loop = Bn254::multi_miller_loop_normalized(None, normalized());
             let result = Bn254::final_exponentiation_with_inverse(&miller_loop, |f| {
                 curve_hints::checked_inverse(f, f_inverse)
             })
@@ -320,6 +316,112 @@ mod test {
         let mut lying =
             curve_hints::tests::lying_oracle_last_word(&[FieldHintOp::Bn254PairingResidueWitness]);
         let _ = bn254_pairing_check_inner(2, src.as_slice(), std::alloc::Global, Some(&mut lying));
+    }
+
+    fn native_oracle() -> ZkEENonDeterminismSource {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(NativeFieldOpsQuery);
+        oracle
+    }
+
+    fn encode(pairs: &[(crypto::bn254::G1Affine, crypto::bn254::G2Affine)]) -> Vec<u8> {
+        use crypto::ark_ff::{BigInteger, PrimeField};
+        let mut encoded = vec![];
+        for (p, q) in pairs {
+            let elements = if p.infinity {
+                [crypto::bn254::Fq::zero(); 2]
+            } else {
+                [p.x, p.y]
+            }
+            .into_iter()
+            .chain(if q.infinity {
+                [crypto::bn254::Fq::zero(); 4]
+            } else {
+                [q.x.c1, q.x.c0, q.y.c1, q.y.c0]
+            });
+            for element in elements {
+                encoded.extend(element.into_bigint().to_bytes_be());
+            }
+        }
+        encoded
+    }
+
+    /// With the advice of the oracle (the affine chains with hinted slopes, the Miller loop
+    /// over all the pairs with the residue witness) the results are the ones without it: for
+    /// products that are the identity and that are not, with points at infinity, and for
+    /// points of the twist outside the subgroup
+    #[test]
+    fn test_advice_matches_no_advice() {
+        use crypto::ark_ec::{AffineRepr, CurveGroup};
+        use crypto::bn254::{Fq, Fq2, Fr, G1Affine, G2Affine};
+        let g1 = |k: u64| (G1Affine::generator() * Fr::from(k)).into_affine();
+        let g2 = |k: u64| (G2Affine::generator() * Fr::from(k)).into_affine();
+        // a point of the twist outside the subgroup: x = 1 has a y on the twist
+        let outside = {
+            use crypto::ark_ec::short_weierstrass::SWCurveConfig;
+            use crypto::ark_ff::Field;
+            let mut x = Fq2::new(Fq::from(1u64), Fq::zero());
+            loop {
+                let y2 = x * x * x + crypto::bn254::g2::Config::COEFF_B;
+                if let Some(y) = y2.sqrt() {
+                    let q = G2Affine::new_unchecked(x, y);
+                    if !q.is_in_correct_subgroup_assuming_on_curve() {
+                        break q;
+                    }
+                }
+                x.c0 += Fq::from(1u64);
+            }
+        };
+        let inputs: Vec<Vec<(G1Affine, G2Affine)>> = vec![
+            vec![(g1(6), g2(1)), ((-g1(2)), g2(3))],
+            vec![
+                (g1(6), g2(1)),
+                ((-g1(2)), g2(3)),
+                (g1(5), g2(7)),
+                (g1(7), -g2(5)),
+            ],
+            vec![(g1(6), g2(1))],
+            vec![(g1(6), g2(1)), (g1(2), g2(3))],
+            vec![(G1Affine::identity(), g2(1)), (g1(3), G2Affine::identity())],
+            vec![
+                (g1(6), g2(1)),
+                ((-g1(2)), g2(3)),
+                (G1Affine::identity(), g2(9)),
+            ],
+            vec![(g1(6), outside)],
+            vec![(G1Affine::identity(), outside)],
+        ];
+        for pairs in inputs {
+            let src = encode(&pairs);
+            let expected = bn254_pairing_check_inner::<_, ZkEENonDeterminismSource>(
+                pairs.len(),
+                &src,
+                std::alloc::Global,
+                None,
+            );
+            let hinted = bn254_pairing_check_inner(
+                pairs.len(),
+                &src,
+                std::alloc::Global,
+                Some(&mut native_oracle()),
+            );
+            assert_eq!(hinted, expected);
+            let is_outside = pairs.iter().any(|(_, q)| *q == outside);
+            assert_eq!(expected.is_err(), is_outside);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "division hint is wrong")]
+    fn test_pairing_wrong_slope_panics() {
+        use crypto::ark_ec::AffineRepr;
+        let src = encode(&[(
+            crypto::bn254::G1Affine::generator(),
+            crypto::bn254::G2Affine::generator(),
+        )]);
+        let mut lying =
+            curve_hints::tests::lying_oracle_last_word(&[FieldHintOp::Bn254G2PairingSlopes]);
+        let _ = bn254_pairing_check_inner(1, &src, std::alloc::Global, Some(&mut lying));
     }
 
     #[test]

@@ -49,6 +49,7 @@ dependencies = [
  "num-traits",
  "p256",
  "ripemd",
+ "riscv_common",
  "ruint",
  "seq-macro",
  "sha2",

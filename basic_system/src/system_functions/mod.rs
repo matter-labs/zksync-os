@@ -19,18 +19,6 @@ pub mod sha256;
 pub mod u256_advice;
 
 ///
-/// Internal utility function to reverse byte array
-///
-#[inline(always)]
-fn bytereverse(input: &mut [u8]) {
-    assert!(input.len().is_multiple_of(2));
-    let len = input.len();
-    for i in 0..len / 2 {
-        input.swap(i, len - 1 - i);
-    }
-}
-
-///
 /// No std system functions implementations.
 /// All of them are following EVM specs(for precompiles and keccak opcode).
 /// USE_ADVICE const parameter affects only the forward run, as advice

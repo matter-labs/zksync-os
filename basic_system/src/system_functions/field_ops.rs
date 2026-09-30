@@ -65,22 +65,28 @@ pub enum FieldHintOp {
     /// "is the identity" flag, then for an identity the witness `c`, `d = c^-1` (`Fq12` each) and
     /// the scaling factor (`Fq6`), otherwise the inverse of the Miller loop output (`Fq12`)
     Bn254PairingResidueWitness,
-    /// The inverses of the two affine `G2` chains of a bn254 pairing input point (see
-    /// `crypto::bn254::curves::g2_affine`): the `G2Affine` point in; a flag and the 93 inverses
-    /// (`Fq2`) of the subgroup membership test, then a flag and the 87 inverses of the line
+    /// The slopes of the two affine `G2` chains of a bn254 pairing input point (see
+    /// `crypto::bn254::curves::g2_affine`): the `G2Affine` point in; a flag and the 93 slopes
+    /// (`Fq2`) of the subgroup membership test, then a flag and the 87 slopes of the line
     /// precomputation out. A cleared flag means the chain hit an exceptional case and the
     /// projective computation is to be used.
-    Bn254G2PairingInverses,
+    Bn254G2PairingSlopes,
     /// The prover's claim about the KZG proof pairing product `e(P1, G2) e(P2, tau G2)`: the
     /// `G1Affine` points `[P1, P2]` in; an "is the identity" flag, then for an identity the
     /// witness `d` (`Fq12`) and the scaling factor (`Fq6`), otherwise the inverse of the Miller
     /// loop output (`Fq12`)
     Bls12381KzgResidueWitness,
+    /// secp256k1 base field division: the numerator and the denominator (two adjacent elements)
+    /// in, the quotient out
+    Secp256k1BaseFieldDivision,
+    /// bn254 base field division: the numerator and the denominator (two adjacent elements)
+    /// in, the quotient out
+    Bn254BaseFieldDivision,
 }
 
 impl FieldHintOp {
     pub fn parse_u32(value: u32) -> Option<Self> {
-        const ALL: [FieldHintOp; 11] = [
+        const ALL: [FieldHintOp; 13] = [
             FieldHintOp::Secp256k1BaseFieldSqrt,
             FieldHintOp::Secp256k1BaseFieldInverse,
             FieldHintOp::Secp256k1ScalarFieldInverse,
@@ -90,8 +96,10 @@ impl FieldHintOp {
             FieldHintOp::Bls12381BaseFieldInverse,
             FieldHintOp::Bls12381Fq12Inverse,
             FieldHintOp::Bn254PairingResidueWitness,
-            FieldHintOp::Bn254G2PairingInverses,
+            FieldHintOp::Bn254G2PairingSlopes,
             FieldHintOp::Bls12381KzgResidueWitness,
+            FieldHintOp::Secp256k1BaseFieldDivision,
+            FieldHintOp::Bn254BaseFieldDivision,
         ];
         ALL.into_iter().find(|op| *op as u32 == value)
     }
@@ -581,6 +589,37 @@ fn read_secp256k1_element<'a, T: Secp256k1Element, O: MemoryOracle>(
     }
 }
 
+/// Receives a quotient of the base field, which the caller checks against the fraction: on the
+/// RISC-V guest the words are taken as they are. The delegated representation works on any
+/// 256-bit representative of an element (it is "weakly reduced" between the operations), and
+/// the check of the quotient is modulo `p`, so a representative above `p` is the same element
+/// as the canonical one, and costs the comparison with `p` less.
+#[inline(always)]
+fn read_secp256k1_quotient<'a, O: MemoryOracle>(
+    oracle: &mut O,
+    dst: &'a mut MaybeUninit<FieldElement>,
+) -> Result<&'a mut FieldElement, InternalError> {
+    #[cfg(target_arch = "riscv32")]
+    {
+        const {
+            assert!(
+                <FieldElement as Secp256k1Element>::IS_MONTGOMERY_WORDS
+                    && core::mem::align_of::<FieldElement>() >= core::mem::align_of::<u32>()
+            )
+        };
+        // SAFETY: the element is 8 words (checked above), aligned for them, and any value of
+        // them is an element
+        unsafe {
+            oracle.write_words(dst.as_mut_ptr().cast::<u32>(), 8)?;
+            Ok(dst.assume_init_mut())
+        }
+    }
+    #[cfg(not(target_arch = "riscv32"))]
+    {
+        read_secp256k1_element(oracle, dst)
+    }
+}
+
 macro_rules! impl_hint_answer_for_secp256k1_element {
     ($($t:ty),+) => {$(
         impl HintAnswer for $t {
@@ -619,6 +658,38 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
     /// An inversion is a hint checked with one multiplication, so the scalar multiplication
     /// makes its table affine (one inversion) instead of carrying a shared denominator
     const FE_INVERT_IS_CHEAP: bool = true;
+
+    /// A division is a hint checked with one multiplication, so the scalar multiplication works
+    /// in affine coordinates
+    const FE_DIVIDE_IS_CHEAP: bool = true;
+
+    fn fe_divide<'q>(
+        &mut self,
+        fraction: &mut [FieldElement; 2],
+        quotient: &'q mut MaybeUninit<FieldElement>,
+    ) -> &'q mut FieldElement {
+        send_field_hint_query(
+            self.oracle,
+            FieldHintOp::Secp256k1BaseFieldDivision,
+            fraction,
+        )
+        .expect("must send the field hint query");
+        let quotient =
+            read_secp256k1_quotient(self.oracle, quotient).expect("the hint answer is well-formed");
+        self.oracle
+            .finish_query()
+            .expect("the hint answer has no excess data");
+
+        // we must check that hint was correct: quotient * denominator == numerator. The
+        // denominator is not zero (the caller's obligation), so the quotient is the only
+        // element that passes. The fraction is ours to overwrite.
+        let [numerator, denominator] = fraction;
+        denominator.mul_in_place(quotient);
+        denominator.sub_in_place(numerator);
+        assert!(denominator.is_zero());
+
+        quotient
+    }
 
     fn fe_sqrt_and_assign(&mut self, x: &mut FieldElement) -> bool {
         // Match default hook semantics: sqrt(0) exists and equals 0.
@@ -882,6 +953,97 @@ mod tests {
 
             prop_assert_eq!(fe_default.to_bytes(), fe_oracle.to_bytes(), "inverse values should match");
         });
+    }
+
+    #[test]
+    fn test_fe_divide_oracle_matches_default() {
+        proptest!(|(numerator: [u8; 32], denominator: [u8; 32])| {
+            let (Some(numerator), Some(denominator)) = (
+                FieldElement::from_bytes(&numerator),
+                FieldElement::from_bytes(&denominator),
+            ) else {
+                return Ok(());
+            };
+            if denominator.normalizes_to_zero() {
+                return Ok(());
+            }
+
+            let mut quotient_default = MaybeUninit::uninit();
+            let quotient_default = DefaultSecp256k1Hooks
+                .fe_divide(&mut [numerator, denominator], &mut quotient_default);
+
+            let mut oracle = create_oracle_with_field_ops();
+            let mut quotient_oracle = MaybeUninit::uninit();
+            let quotient_oracle = Secp256k1HooksWithOracle::new(&mut oracle)
+                .fe_divide(&mut [numerator, denominator], &mut quotient_oracle);
+
+            prop_assert_eq!(quotient_default.to_bytes(), quotient_oracle.to_bytes(), "quotients should match");
+
+            let mut product = *quotient_oracle;
+            product.mul_in_place(&denominator);
+            prop_assert_eq!(product.to_bytes(), numerator.to_bytes());
+        });
+    }
+
+    /// An oracle that answers every query with the integer 1
+    struct OneOracle;
+
+    impl MemoryOracle for OneOracle {
+        fn send_query(&mut self, _query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+            Ok(())
+        }
+
+        unsafe fn write_words(
+            &mut self,
+            dst: *mut u32,
+            num_words: usize,
+        ) -> Result<(), InternalError> {
+            for i in 0..num_words {
+                // SAFETY: the destination is valid for the words (the caller's obligation)
+                unsafe { dst.add(i).write(u32::from(i == 0)) };
+            }
+            Ok(())
+        }
+    }
+
+    impl IOOracle for OneOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<
+            'a,
+            I: zk_ee::oracle::usize_serialization::UsizeSerializable
+                + zk_ee::oracle::usize_serialization::UsizeDeserializable,
+        >(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            Ok(core::iter::empty())
+        }
+    }
+
+    fn fe_of(n: u8) -> FieldElement {
+        let mut bytes = [0u8; 32];
+        bytes[31] = n;
+        FieldElement::from_bytes(&bytes).unwrap()
+    }
+
+    #[test]
+    fn test_fe_divide_accepts_the_quotient() {
+        // 5 / 5 is the 1 of the oracle
+        let mut quotient = MaybeUninit::uninit();
+        let quotient = Secp256k1HooksWithOracle::new(&mut OneOracle)
+            .fe_divide(&mut [fe_of(5), fe_of(5)], &mut quotient);
+        assert_eq!(quotient.to_bytes(), FieldElement::ONE.to_bytes());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fe_divide_rejects_a_wrong_quotient() {
+        // 6 / 5 is not
+        let mut quotient = MaybeUninit::uninit();
+        Secp256k1HooksWithOracle::new(&mut OneOracle)
+            .fe_divide(&mut [fe_of(6), fe_of(5)], &mut quotient);
     }
 
     #[test]

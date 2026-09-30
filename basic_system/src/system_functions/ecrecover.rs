@@ -59,40 +59,33 @@ fn ecrecover_as_system_function_inner<
 ) -> Result<(), SystemError> {
     resources.charge_legacy_gas_and_native(ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST)?;
     // digest, v, r, s in ABI
-    let mut buffer = [0u8; 128];
-    for (dst, src) in buffer.iter_mut().zip(src.iter()) {
+    let mut buffer = WordAligned([0u8; 128]);
+    for (dst, src) in buffer.0.iter_mut().zip(src.iter()) {
         *dst = *src;
     }
 
     // follow https://github.com/ethereum/go-ethereum/blob/aadcb886753079d419f966a3bc990f708f8d1c3b/core/vm/contracts.go#L188
 
-    let mut it = buffer.as_chunks::<32>().0.iter();
-    let recovered_pubkey_bytes = unsafe {
-        let digest = it.next().unwrap_unchecked();
-        let v = it.next().unwrap_unchecked();
-        let r = it.next().unwrap_unchecked();
-        let s = it.next().unwrap_unchecked();
-
-        if v[..31].iter().all(|el| *el == 0) == false {
-            return Ok(());
-        }
-
-        let rec_id = v[31].wrapping_sub(27);
-        if (rec_id == 0 || rec_id == 1) == false {
-            return Ok(());
-        }
-
-        let oracle = if USE_ADVICE { oracle } else { None };
-
-        let Ok(pk_bytes) = ecrecover_inner(digest, r, s, rec_id, oracle) else {
-            return Ok(());
-        };
-
-        pk_bytes
+    let ([digest, v, r, s], []) = buffer.0.as_chunks::<32>() else {
+        unreachable!("128 bytes are 4 chunks of 32")
     };
-    let bytes_ref = recovered_pubkey_bytes.as_ref();
 
-    let address_hash = super::keccak256::keccak256_digest(&bytes_ref[1..]);
+    if v[..31].iter().all(|el| *el == 0) == false {
+        return Ok(());
+    }
+
+    let rec_id = v[31].wrapping_sub(27);
+    if (rec_id == 0 || rec_id == 1) == false {
+        return Ok(());
+    }
+
+    let oracle = if USE_ADVICE { oracle } else { None };
+
+    let Ok(public_key) = ecrecover_inner(digest, r, s, rec_id == 1, oracle) else {
+        return Ok(());
+    };
+
+    let address_hash = super::keccak256::keccak256_digest(&public_key.0);
 
     dst.try_extend(core::iter::repeat_n(0, 12).chain(address_hash.into_iter().skip(12)))
         .map_err(|_| out_of_return_memory!())?;
@@ -100,42 +93,42 @@ fn ecrecover_as_system_function_inner<
     Ok(())
 }
 
+/// Bytes at an address aligned for words: the conversions between big-endian bytes and integers
+/// work by words then (see `crypto::bigint_delegation::u256::from_be_bytes`)
+#[repr(C, align(4))]
+pub struct WordAligned<const N: usize>(pub [u8; N]);
+
+/// The public key (its coordinates `x` and `y`, big-endian) of the signature `(r, s)` of
+/// `digest`, for the point of the signature with the coordinate `x = r` and the `y` of the
+/// given parity. Fails if `r` or `s` is not in `[1, order - 1]`, or there is no such point or
+/// key.
 pub fn ecrecover_inner<O: IOOracle>(
     digest: &[u8; 32],
     r: &[u8; 32],
     s: &[u8; 32],
-    rec_id: u8,
+    y_is_odd: bool,
     oracle: Option<&mut O>,
-) -> Result<crypto::k256::EncodedPoint, ()> {
-    use crypto::k256::{
-        ecdsa::{hazmat::bits2field, RecoveryId, Signature},
-        elliptic_curve::ops::Reduce,
-        Scalar,
-    };
+) -> Result<WordAligned<64>, ()> {
+    use crypto::secp256k1::{hooks::DefaultSecp256k1Hooks, recover_from_bytes_with_hooks};
 
-    let signature = Signature::from_scalars(*r, *s).map_err(|_| ())?;
-    let recovery_id = RecoveryId::try_from(rec_id).map_err(|_| ())?;
-
-    let message = <Scalar as Reduce<crypto::k256::U256>>::reduce_bytes(
-        &bits2field::<crypto::k256::Secp256k1>(digest).map_err(|_| ())?,
-    );
-
-    let res = match oracle {
-        Some(oracle) => crypto::secp256k1::recover_with_hooks(
-            &message,
-            &signature,
-            &recovery_id,
+    let public_key = match oracle {
+        Some(oracle) => recover_from_bytes_with_hooks(
+            digest,
+            r,
+            s,
+            y_is_odd,
             &mut Secp256k1HooksWithOracle::new(oracle),
         ),
-        None => crypto::secp256k1::recover(&message, &signature, &recovery_id),
-    };
-
-    let Ok(pk) = res else {
-        return Err(());
-    };
+        None => recover_from_bytes_with_hooks(digest, r, s, y_is_odd, &mut DefaultSecp256k1Hooks),
+    }
+    .map_err(|_| ())?;
 
     // represent as bytes, and we do not need compression
-    let encoded = pk.to_encoded_point(false);
+    let mut encoded = WordAligned([0u8; 64]);
+    let ([x, y], []) = encoded.0.as_chunks_mut::<32>() else {
+        unreachable!("64 bytes are 2 chunks of 32")
+    };
+    public_key.write_coordinates(x, y);
 
     Ok(encoded)
 }
@@ -291,5 +284,64 @@ mod test {
             pubkey, expected_pubkey,
             "pubkey should be equal to reference"
         )
+    }
+
+    /// With the advice of the oracle (affine arithmetic with hinted divisions) the result is the
+    /// one without it, for signatures that recover a key and for the inputs that do not
+    #[test]
+    fn test_advice_matches_no_advice() {
+        use callable_oracles::field_hints::NativeFieldOpsQuery;
+        use oracle_provider::ZkEENonDeterminismSource;
+        use proptest::{prop_assert, prop_assert_eq, proptest};
+
+        fn run(input: &[u8; 128], advice: bool) -> Vec<u8> {
+            let mut output = vec![];
+            let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+            if advice {
+                let mut oracle = ZkEENonDeterminismSource::default();
+                oracle.add_external_processor(NativeFieldOpsQuery);
+                ecrecover_as_system_function_inner::<_, _, _, _, true>(
+                    input.as_slice(),
+                    &mut output,
+                    &mut resources,
+                    Some(&mut oracle),
+                )
+            } else {
+                ecrecover_as_system_function_inner::<NoOracle, _, _, _, false>(
+                    input.as_slice(),
+                    &mut output,
+                    &mut resources,
+                    None,
+                )
+            }
+            .expect("ecrecover");
+            output
+        }
+
+        proptest!(|(digest: [u8; 32], key: [u8; 32], r: [u8; 32], s: [u8; 32], odd: bool)| {
+            let mut input = [0u8; 128];
+            input[..32].copy_from_slice(&digest);
+
+            // any bytes: mostly no point of the curve, or a key nobody signed with
+            input[63] = 27 + u8::from(odd);
+            input[64..96].copy_from_slice(&r);
+            input[96..].copy_from_slice(&s);
+            prop_assert_eq!(run(&input, true), run(&input, false));
+
+            if let Ok(key) = crypto::k256::ecdsa::SigningKey::from_bytes(&key.into()) {
+                let (signature, recovery_id) = key.sign_prehash_recoverable(&digest).unwrap();
+                if !recovery_id.is_x_reduced() {
+                    input[63] = 27 + u8::from(recovery_id.is_y_odd());
+                    input[64..].copy_from_slice(&signature.to_bytes());
+                    let recovered = run(&input, true);
+                    prop_assert_eq!(&recovered, &run(&input, false));
+
+                    let public_key = key.verifying_key().to_encoded_point(false);
+                    let address = super::super::keccak256::keccak256_digest(&public_key.as_bytes()[1..]);
+                    prop_assert!(recovered[..12].iter().all(|byte| *byte == 0));
+                    prop_assert_eq!(&recovered[12..], &address[12..]);
+                }
+            }
+        });
     }
 }

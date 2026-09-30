@@ -62,8 +62,14 @@ fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
         FieldHintOp::Secp256k1ScalarFieldInverse => {
             responses.write(&impls::secp256k1_scalar_field_inverse(operand))
         }
+        FieldHintOp::Secp256k1BaseFieldDivision => {
+            responses.write(&impls::secp256k1_base_field_division(operand))
+        }
         FieldHintOp::Bn254BaseFieldInverse => {
             responses.write(&impls::inverse::<crypto::bn254::Fq>(operand))
+        }
+        FieldHintOp::Bn254BaseFieldDivision => {
+            responses.write(&impls::division::<crypto::bn254::Fq>(operand))
         }
         FieldHintOp::Bn254Fq12Inverse => {
             responses.write(&impls::inverse::<crypto::bn254::Fq12>(operand))
@@ -80,7 +86,7 @@ fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
         FieldHintOp::Bn254PairingResidueWitness => {
             impls::bn254_pairing_residue_witness(operand, false, responses)
         }
-        FieldHintOp::Bn254G2PairingInverses => impls::bn254_g2_pairing_inverses(operand, responses),
+        FieldHintOp::Bn254G2PairingSlopes => impls::bn254_g2_pairing_slopes(operand, responses),
         FieldHintOp::Bls12381KzgResidueWitness => {
             impls::bls12_381_kzg_residue_witness(operand, false, responses)
         }
@@ -387,7 +393,7 @@ mod native_query_tests {
 
         let g2 = bn254::G2Affine::generator();
         let guest_g2 = guest_point(BN254_G2_AFFINE, guest_fq2(&g2.x), guest_fq2(&g2.y), false);
-        assert_same_guest_answers(FieldHintOp::Bn254G2PairingInverses, &g2, &guest_g2);
+        assert_same_guest_answers(FieldHintOp::Bn254G2PairingSlopes, &g2, &guest_g2);
 
         let g1 = (bn254::G1Affine::generator() * bn254::Fr::from(5u64)).into();
         let g1: bn254::G1Affine = g1;
