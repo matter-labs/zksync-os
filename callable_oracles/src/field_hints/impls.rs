@@ -304,7 +304,7 @@ pub(crate) fn bls12_381_kzg_residue_witness(
 ) {
     use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
     use crypto::bls12_381::curves::Bls12_381;
-    use crypto::bls12_381::{Fq12, G1Affine};
+    use crypto::bls12_381::G1Affine;
     use guest_layout::BLS12_381_G1_AFFINE;
     let [p1, p2]: [G1Affine; 2] = match operand.querier {
         HintTarget::Native => operand.native_value(),
@@ -321,14 +321,16 @@ pub(crate) fn bls12_381_kzg_residue_witness(
         &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
         &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
     ];
-    let f = Bls12_381::multi_miller_loop_with_initial(&Fq12::one(), [p1, p2], g2);
+    let points = [p1, p2];
+    // the Miller loop as the verifier computes it: over both pairs at once, with the normalized
+    // lines of the fixed points (the witness equation holds for the verifier's output only)
+    let pairs = points.iter().zip(g2);
+    let f = Bls12_381::multi_miller_loop_shared(None, pairs.clone());
     let is_identity = !claim_not_identity
-        && Bls12_381::final_exponentiation(MillerLoopOutput(
-            Bls12_381::multi_miller_loop_prepared([p1, p2], g2),
-        ))
-        .expect("non-zero")
-        .0
-        .is_one();
+        && Bls12_381::final_exponentiation(MillerLoopOutput(f))
+            .expect("non-zero")
+            .0
+            .is_one();
     if is_identity {
         let witness = crypto::residue_witness::bls12_381::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");

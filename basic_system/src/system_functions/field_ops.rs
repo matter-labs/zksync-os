@@ -82,11 +82,14 @@ pub enum FieldHintOp {
     /// bn254 base field division: the numerator and the denominator (two adjacent elements)
     /// in, the quotient out
     Bn254BaseFieldDivision,
+    /// bls12-381 base field division: the numerator and the denominator (two adjacent
+    /// elements) in, the quotient out
+    Bls12381BaseFieldDivision,
 }
 
 impl FieldHintOp {
     pub fn parse_u32(value: u32) -> Option<Self> {
-        const ALL: [FieldHintOp; 13] = [
+        const ALL: [FieldHintOp; 14] = [
             FieldHintOp::Secp256k1BaseFieldSqrt,
             FieldHintOp::Secp256k1BaseFieldInverse,
             FieldHintOp::Secp256k1ScalarFieldInverse,
@@ -100,6 +103,7 @@ impl FieldHintOp {
             FieldHintOp::Bls12381KzgResidueWitness,
             FieldHintOp::Secp256k1BaseFieldDivision,
             FieldHintOp::Bn254BaseFieldDivision,
+            FieldHintOp::Bls12381BaseFieldDivision,
         ];
         ALL.into_iter().find(|op| *op as u32 == value)
     }

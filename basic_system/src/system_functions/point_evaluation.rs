@@ -15,8 +15,9 @@ pub type KzgScalar = <crypto::bls12_381::Fr as PrimeField>::BigInt;
 
 ///
 /// Point evaluation system function implementation.
-/// With `USE_ADVICE`, the square roots of the point decompressions and the field inversions
-/// (of the affine conversion and of the final exponentiation) are taken from oracle hints.
+/// With `USE_ADVICE`, the square roots of the point decompressions, the field divisions of the
+/// curve arithmetic (in affine coordinates) and the inversion of the final exponentiation are
+/// taken from oracle hints.
 ///
 pub struct PointEvaluationImpl<const USE_ADVICE: bool>;
 
@@ -87,16 +88,28 @@ pub fn parse_g1_compressed(input: &[u8]) -> Result<crypto::bls12_381::G1Affine, 
 }
 
 /// `parse_g1_compressed` with the square root of the decompression from a checked oracle
-/// hint, when an oracle is given
+/// hint, and the subgroup membership test in affine coordinates with hinted divisions, when an
+/// oracle is given
 fn parse_g1_compressed_with_oracle<O: IOOracle>(
     input: &[u8],
     oracle: Option<&mut O>,
 ) -> Result<crypto::bls12_381::G1Affine, ()> {
     match oracle {
-        Some(oracle) => crypto::bls12_381::g1_from_compressed_with_sqrt(input, |y_squared| {
-            curve_hints::bls12_381_fq_sqrt(oracle, y_squared)
-        })
-        .map_err(|_| ()),
+        Some(oracle) => {
+            // the two steps query the oracle one after the other
+            let oracle = core::cell::RefCell::new(oracle);
+            crypto::bls12_381::g1_from_compressed_with_hints(
+                input,
+                |y_squared| curve_hints::bls12_381_fq_sqrt(*oracle.borrow_mut(), y_squared),
+                |point| {
+                    crypto::bls12_381::g1::is_in_subgroup_with_divider(
+                        point,
+                        &mut curve_hints::Bls12381FqDivider::new(*oracle.borrow_mut()),
+                    )
+                },
+            )
+            .map_err(|_| ())
+        }
         None => parse_g1_compressed(input),
     }
 }
@@ -111,8 +124,8 @@ pub fn verify_kzg_proof(
     verify_kzg_proof_with_oracle::<oracle_provider_stub::NoOracle>(commitment, proof, z, y, None)
 }
 
-/// With an oracle, the field inversions (of the affine conversion and of the final
-/// exponentiation) come from checked hints.
+/// With an oracle, the curve arithmetic works in affine coordinates with its field divisions
+/// from checked hints, and the inversion of the final exponentiation comes from one too.
 pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     commitment: crypto::bls12_381::G1Affine,
     proof: crypto::bls12_381::G1Affine,
@@ -120,7 +133,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     y: KzgScalar,
     mut oracle: Option<&mut O>,
 ) -> bool {
-    use crypto::bls12_381::curves::Bls12_381;
+    use crypto::bls12_381::curves::{g1, Bls12_381};
     // Original check:
     // e(yG1 - commitment, G2) * e(proof, tauG2 - zG2) == 1.
     //
@@ -131,34 +144,52 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     let scalar = |repr: &KzgScalar| {
         crypto::bls12_381::Fr::from_bigint(*repr).expect("the scalar is below the group order")
     };
-    let mut left_g1 = crypto::bls12_381::curves::g1::mul_two(
-        &crypto::bls12_381::G1Affine::generator().into_group(),
-        scalar(&y),
-        &proof.into_group(),
-        -scalar(&z),
-    );
-    left_g1 -= &commitment;
-
+    let generator = crypto::bls12_381::G1Affine::generator();
     let left_g1 = match oracle.as_deref_mut() {
-        Some(oracle) => crypto::hinted_ops::to_affine_with_inverse(&left_g1, |z| {
-            curve_hints::bls12_381_fq_inverse(oracle, z)
-        }),
-        None => left_g1.into_affine(),
+        Some(oracle) => {
+            let mut divider = curve_hints::Bls12381FqDivider::new(oracle);
+            let sum = g1::mul_two_affine_with_divider(
+                &generator,
+                scalar(&y),
+                &proof,
+                -scalar(&z),
+                &mut divider,
+            );
+            g1::add_affine_with_divider(&sum, &-commitment, &mut divider)
+        }
+        None => {
+            let mut left_g1 = g1::mul_two(
+                &generator.into_group(),
+                scalar(&y),
+                &proof.into_group(),
+                -scalar(&z),
+            );
+            left_g1 -= &commitment;
+            left_g1.into_affine()
+        }
     };
-    // both G2 points are fixed, so their Miller-loop line coefficients are constants, read
-    // in place
+    // both G2 points are fixed, so their Miller-loop line coefficients are constants
+    // (normalized to a first coefficient of one), read in place
     let g2 = [
         &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
         &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
     ];
     // the G1 points of the product, which the oracle reads where they are
     let g1 = [left_g1, proof];
-    let Some(oracle) = oracle else {
-        let miller_loop = Bls12_381::multi_miller_loop_prepared(g1, g2);
+    // the Miller loop over both pairs at once, as the prover computes it for its witness
+    let pairs = || g1.iter().zip(g2);
+    // the exact final exponentiation of the loop output, conjugated for the negative seed as
+    // `multi_miller_loop` conjugates it (the prover's inverse is of the conjugate)
+    let exact = |inverse: &dyn Fn(&crypto::bls12_381::Fq12) -> Option<crypto::bls12_381::Fq12>| {
+        let mut miller_loop = Bls12_381::multi_miller_loop_shared(None, pairs());
+        miller_loop.conjugate_in_place();
         // the Miller loop of curve points never evaluates to zero
-        let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, Field::inverse)
+        let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, inverse)
             .expect("the Miller loop output is invertible");
-        return gt_el == <Bls12_381 as Pairing>::TargetField::ONE;
+        gt_el == <Bls12_381 as Pairing>::TargetField::ONE
+    };
+    let Some(oracle) = oracle else {
+        return exact(&Field::inverse);
     };
     // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
     // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
@@ -169,7 +200,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     // exponentiation, which finds an identity all the same.
     match curve_hints::bls12_381_kzg_residue_witness(oracle, &g1) {
         curve_hints::PairingClaim::Identity { c: _, d, s } => {
-            let l = Bls12_381::multi_miller_loop_with_initial(&d, g1, g2);
+            let l = Bls12_381::multi_miller_loop_shared(Some(&d), pairs());
             assert!(
                 crypto::residue_witness::bls12_381::check(&l, &d, &s),
                 "the residue witness of the KZG proof claimed to be valid is wrong"
@@ -177,12 +208,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
             true
         }
         curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            let miller_loop = Bls12_381::multi_miller_loop_prepared(g1, g2);
-            let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, |f| {
-                curve_hints::checked_inverse(f, f_inverse)
-            })
-            .expect("the Miller loop output is invertible");
-            gt_el == <Bls12_381 as Pairing>::TargetField::ONE
+            exact(&|f| curve_hints::checked_inverse(f, f_inverse))
         }
     }
 }

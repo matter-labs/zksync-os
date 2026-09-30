@@ -437,6 +437,41 @@ impl<O: IOOracle> crypto::affine_glv::Divider<crypto::bn254::Fq> for Bn254FqDivi
     }
 }
 
+/// Divisions in the bls12-381 base field from hints, as [`Bn254FqDivider`]
+pub struct Bls12381FqDivider<'a, O: IOOracle> {
+    oracle: &'a mut O,
+}
+
+impl<'a, O: IOOracle> Bls12381FqDivider<'a, O> {
+    pub fn new(oracle: &'a mut O) -> Self {
+        Self { oracle }
+    }
+}
+
+impl<O: IOOracle> crypto::affine_glv::Divider<crypto::bls12_381::Fq> for Bls12381FqDivider<'_, O> {
+    #[inline(always)]
+    fn divide<'q>(
+        &mut self,
+        fraction: &mut [crypto::bls12_381::Fq; 2],
+        quotient: &'q mut MaybeUninit<crypto::bls12_381::Fq>,
+    ) -> &'q mut crypto::bls12_381::Fq {
+        // the quotient is received canonical, so it is a valid element of the redundant
+        // representation
+        let quotient = query_field_hint_into(
+            self.oracle,
+            FieldHintOp::Bls12381BaseFieldDivision,
+            &*fraction,
+            quotient,
+        );
+        // as for bn254: the only element that passes is the quotient
+        let [numerator, denominator] = fraction;
+        *denominator *= &*quotient;
+        *denominator -= &*numerator;
+        assert!(denominator.is_zero(), "the field division hint is wrong");
+        quotient
+    }
+}
+
 /// `f^-1` in the bn254 degree-12 extension field, `None` for a zero `f`
 pub fn bn254_fq12_inverse<O: IOOracle>(
     oracle: &mut O,
@@ -973,6 +1008,32 @@ pub(crate) mod tests {
             let quotient = Bn254FqDivider::new(&mut oracle).divide(&mut fraction, &mut quotient);
             assert_eq!(*quotient * pair[1], pair[0]);
         }
+    }
+
+    #[test]
+    fn bls12_381_division_is_the_quotient() {
+        use crypto::affine_glv::Divider;
+        let elements = elements::<crypto::bls12_381::Fq>(8);
+        let mut oracle = oracle();
+        for pair in elements.chunks(2) {
+            let mut fraction = [pair[0], pair[1]];
+            let mut quotient = MaybeUninit::uninit();
+            let quotient = Bls12381FqDivider::new(&mut oracle).divide(&mut fraction, &mut quotient);
+            assert_eq!(*quotient * pair[1], pair[0]);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "division hint is wrong")]
+    fn wrong_bls12_381_division_is_rejected() {
+        use crypto::affine_glv::Divider;
+        let mut fraction = [
+            crypto::bls12_381::Fq::from(7u64),
+            crypto::bls12_381::Fq::from(5u64),
+        ];
+        let mut quotient = MaybeUninit::uninit();
+        Bls12381FqDivider::new(&mut lying_oracle(&[FieldHintOp::Bls12381BaseFieldDivision]))
+            .divide(&mut fraction, &mut quotient);
     }
 
     #[test]

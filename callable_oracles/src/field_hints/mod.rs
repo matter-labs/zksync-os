@@ -80,6 +80,9 @@ fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
         FieldHintOp::Bls12381BaseFieldInverse => {
             responses.write(&impls::inverse::<crypto::bls12_381::Fq>(operand))
         }
+        FieldHintOp::Bls12381BaseFieldDivision => {
+            responses.write(&impls::division::<crypto::bls12_381::Fq>(operand))
+        }
         FieldHintOp::Bls12381Fq12Inverse => {
             responses.write(&impls::inverse::<crypto::bls12_381::Fq12>(operand))
         }
