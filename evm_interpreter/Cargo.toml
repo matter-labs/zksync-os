@@ -31,4 +31,4 @@ error_origins = []
 delegation = ["u256/delegation", "zk_ee/delegation"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(opcode_profile)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(opcode_profile)", "cfg(evm_fuse_push2_jumps)"] }

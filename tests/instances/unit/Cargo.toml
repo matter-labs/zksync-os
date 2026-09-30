@@ -17,3 +17,6 @@ hex = { workspace = true }
 [features]
 e2e_proving = ["rig/e2e_proving"]
 cycle_marker = ["rig/cycle_marker"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(evm_fuse_push2_jumps)"] }

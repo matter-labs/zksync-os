@@ -3,7 +3,7 @@
 
 use u256::U256;
 use zk_ee::system::evm::EvmError;
-use zk_ee::system::{EthereumLikeTypes, Resource};
+use zk_ee::system::{EthereumLikeTypes, Resource, Resources};
 
 use super::hot::{read_be_word, spend_native, write_be_word, Hot};
 use super::ops_cold::resize_heap_by_value;
@@ -12,11 +12,21 @@ use crate::gas_constants;
 use crate::i256::i256_cmp;
 use crate::instructions::bitwise::apply_sar;
 use crate::native_resource_constants::*;
-use crate::{ExitCode, InstructionResult};
+use crate::opcodes;
+use crate::{ExitCode, InstructionResult, STACK_SIZE};
 
 /// JUMP / JUMPI charge the destination JUMPDEST and skip its dispatch on the proving target
 /// only, so that host tracers keep seeing a JUMPDEST step (see `crate::instructions::control_flow`).
 const INLINE_JUMPDEST: bool = cfg!(target_arch = "riscv32");
+
+/// PUSH2 also runs a JUMP or JUMPI right after it on the proving target only (see
+/// [`Hot::push2`]): the host dispatches both, so its tracers see every step.
+/// `evm_fuse_push2_jumps` turns it on for host tests. Only for gas-only resources (the Ethereum
+/// STF, see `Resources::ERGS_ONLY`).
+const FUSE_PUSH2_JUMPS: bool = cfg!(any(target_arch = "riscv32", evm_fuse_push2_jumps));
+
+// `push2` tells the two jumps apart from their distance to JUMP
+const _: () = assert!(opcodes::JUMPI == opcodes::JUMP + 1);
 
 /// Reads an immediate of `N <= 8` bytes that runs past the end of the code (zero padded)
 #[cold]
@@ -114,6 +124,121 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             unsafe { read_immediate_truncated::<N>(self.ip.wrapping_sub(N), self.code_end) }
         };
         self.stack.push_u64(value)
+    }
+
+    /// PUSH2, which on the proving target also runs a JUMP or JUMPI right after it, for gas-only
+    /// resources. The destination then stays in a register: no slot is written, and there is no
+    /// second
+    /// dispatch and no 256-bit destination check. Each instruction is still charged by its own
+    /// `charge_step`, and fails with the same error at the same point and with the same stack,
+    /// as when the two are dispatched one after the other.
+    ///
+    /// Keep it in sync with `push_small::<2>`. It differs in the bound on unpadded code
+    /// (strict, for the peek), the depth test before the peek and the peek itself.
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
+    pub fn push2(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
+        if !FUSE_PUSH2_JUMPS || !const { <S::Resources as Resources>::ERGS_ONLY.holds() } {
+            return self.push_small::<2>();
+        }
+        self.charge_step(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
+        self.ip = self.ip.wrapping_add(2);
+        // Unpadded code: the byte after the immediate must be in the code too, since it is
+        // peeked below. An immediate that ends the code exactly takes the other branch, which
+        // reads it the same.
+        if S::CODE_IS_PADDED || self.ip < self.code_end {
+            // SAFETY: the whole immediate is in the code, or in its zero padding
+            let value =
+                unsafe { ((self.ip.sub(2).read() as u64) << 8) | self.ip.sub(1).read() as u64 };
+            // Only if the push itself would succeed, and only on a code byte (not on the
+            // padding of padded code): that byte is the one the next fetch would dispatch.
+            if self.stack.depth < STACK_SIZE && (!S::CODE_IS_PADDED || self.ip < self.code_end) {
+                // SAFETY: `ip < code_end`
+                let next = unsafe { self.ip.read() };
+                if next.wrapping_sub(opcodes::JUMP) < 2 {
+                    let fused = if next == opcodes::JUMP {
+                        self.jump_after_push2(cold, value as usize)
+                    // JUMPI also pops the value under the destination: on an empty stack it
+                    // is left to the dispatch, which fails it after both charges
+                    } else if self.stack.depth != 0 {
+                        self.jumpi_after_push2(cold, value as usize)
+                    } else {
+                        Ok(self.stack.push_u64(value))
+                    };
+                    return match fused {
+                        Ok(result) => result,
+                        Err(error) => {
+                            // the jump's charge failed, when the dispatched PUSH2 has pushed
+                            // its value (there is room: see above)
+                            core::hint::cold_path();
+                            let pushed = self.stack.push_u64(value);
+                            debug_assert!(pushed.is_ok());
+                            Err(error)
+                        }
+                    };
+                }
+            }
+            self.stack.push_u64(value)
+        } else {
+            // the immediate ends at or past the end of the code: never fused
+            // SAFETY: bounds checked per byte
+            let value =
+                unsafe { read_immediate_truncated::<2>(self.ip.wrapping_sub(2), self.code_end) };
+            self.stack.push_u64(value)
+        }
+    }
+
+    /// The JUMP at `ip`, after a PUSH2 of `dest` that was charged and whose stack check passed
+    /// ([`Self::push2`]). The destination doesn't go to the stack, since the jump would pop it
+    /// at once. The outer error is a failed charge of the JUMP, for which `push2` pushes the
+    /// destination after all; the inner result is that of the jump.
+    #[inline(always)]
+    fn jump_after_push2(
+        &mut self,
+        cold: &ColdFrameParts<'_, S>,
+        dest: usize,
+    ) -> Result<InstructionResult, ExitCode> {
+        // where the PUSH2 ends and the JUMP starts when the two are dispatched (so that the
+        // marker count is the same)
+        cycle_marker::opcode_end!("PUSH2");
+        cycle_marker::opcode_start!();
+        // past the JUMP, as its fetch leaves `ip`
+        self.ip = self.ip.wrapping_add(1);
+        self.charge_step(gas_constants::MID, JUMP_NATIVE_COST)?;
+        // a pushed `u16` always passes `cast_to_usize`
+        Ok(if cold.is_valid_jumpdest(dest) {
+            self.land_on_jumpdest(cold, dest)
+        } else {
+            Err(EvmError::InvalidJump.into())
+        })
+    }
+
+    /// [`Self::jump_after_push2`] for a JUMPI, on a stack of at least one value
+    #[inline(always)]
+    fn jumpi_after_push2(
+        &mut self,
+        cold: &ColdFrameParts<'_, S>,
+        dest: usize,
+    ) -> Result<InstructionResult, ExitCode> {
+        cycle_marker::opcode_end!("PUSH2");
+        cycle_marker::opcode_start!();
+        self.ip = self.ip.wrapping_add(1);
+        self.charge_step(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
+        // the condition is the value under the destination, i.e. JUMPI's second pop (`push2`
+        // checked that there is one)
+        let condition = match self.stack.pop_1() {
+            Ok(condition) => condition,
+            Err(error) => return Ok(Err(error)),
+        };
+        if condition.is_zero() {
+            // the destination is not checked
+            return Ok(Ok(()));
+        }
+        Ok(if cold.is_valid_jumpdest(dest) {
+            self.land_on_jumpdest(cold, dest)
+        } else {
+            Err(EvmError::InvalidJump.into())
+        })
     }
 
     /// PUSH9..=PUSH32: the immediate is written straight into the slot, reversed

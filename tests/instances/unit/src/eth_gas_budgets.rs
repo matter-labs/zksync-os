@@ -51,7 +51,7 @@ use rig::zk_ee::system::{CallResult, Ergs, IOSubsystemExt, Resources, System, Sy
 use rig::zk_ee::utils::Bytes32;
 use std::collections::{BTreeMap, HashMap};
 
-type EthProvingTypes = EthereumStorageSystemTypesWithPostOps<ZkEENonDeterminismSource>;
+pub(crate) type EthProvingTypes = EthereumStorageSystemTypesWithPostOps<ZkEENonDeterminismSource>;
 type R = <EthProvingTypes as SystemTypes>::Resources;
 
 const CALLER: B160 = B160::from_limbs([0x1000, 0, 0]);
@@ -176,6 +176,39 @@ struct Outcome {
 /// Runs `entry_code` (with `callee_code` at `CALLEE`) as the entry frame of a transaction, with
 /// `budget` gas
 fn run(entry_code: &[u8], callee_code: &[u8], calldata: &[u8], budget: u64) -> Outcome {
+    let mut tracer = EvmOpcodesLogger::<EthProvingTypes>::default();
+    let (result, left, data) =
+        run_with_tracer(entry_code, callee_code, calldata, budget, &mut tracer);
+    let steps: Vec<_> = tracer
+        .transaction_logs
+        .iter()
+        .flat_map(|log| &log.steps)
+        .map(|s| (s.depth, s.pc, s.opcode_raw, s.gas))
+        .collect();
+    // FNV-1a over the steps
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    for step in &steps {
+        for byte in format!("{step:?};").bytes() {
+            digest = (digest ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    let line = format!(
+        "budget {budget:#x}: {result}, left {left:#x}, data {}, {} steps {digest:016x}",
+        hex::encode(data),
+        steps.len()
+    );
+    Outcome { line, left, steps }
+}
+
+/// [`run`] under `tracer`: how the frame ended ("success", "failed" or "preparation failed"),
+/// the gas left and the return data
+pub(crate) fn run_with_tracer(
+    entry_code: &[u8],
+    callee_code: &[u8],
+    calldata: &[u8],
+    budget: u64,
+    tracer: &mut impl Tracer<EthProvingTypes>,
+) -> (&'static str, u64, Vec<u8>) {
     let account = |code: &[u8]| EthereumAccountProperties {
         nonce: 1,
         bytecode_hash: keccak(code),
@@ -245,7 +278,6 @@ fn run(entry_code: &[u8], callee_code: &[u8], calldata: &[u8], budget: u64) -> O
         return_data: &mut return_data,
     };
 
-    let mut tracer = EvmOpcodesLogger::<EthProvingTypes>::default();
     tracer.begin_tx(calldata);
     let completed = BasicBootloader::<EthProvingTypes, EthereumTransactionFlow<EthProvingTypes>>::run_single_interaction(
         &mut system,
@@ -257,7 +289,7 @@ fn run(entry_code: &[u8], callee_code: &[u8], calldata: &[u8], budget: u64) -> O
         R::from_ergs(Ergs(budget)),
         &U256::ZERO,
         true,
-        &mut tracer,
+        tracer,
         &mut NopTxValidator,
     )
     .expect("the call runs");
@@ -268,25 +300,7 @@ fn run(entry_code: &[u8], callee_code: &[u8], calldata: &[u8], budget: u64) -> O
         CallResult::Failed { return_values } => ("failed", return_values.returndata),
         CallResult::PreparationStepFailed => ("preparation failed", &[][..]),
     };
-    let steps: Vec<_> = tracer
-        .transaction_logs
-        .iter()
-        .flat_map(|log| &log.steps)
-        .map(|s| (s.depth, s.pc, s.opcode_raw, s.gas))
-        .collect();
-    // FNV-1a over the steps
-    let mut digest = 0xcbf2_9ce4_8422_2325u64;
-    for step in &steps {
-        for byte in format!("{step:?};").bytes() {
-            digest = (digest ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
-        }
-    }
-    let line = format!(
-        "budget {budget:#x}: {result}, left {left:#x}, data {}, {} steps {digest:016x}",
-        hex::encode(data),
-        steps.len()
-    );
-    Outcome { line, left, steps }
+    (result, left, data.to_vec())
 }
 
 /// Compares the lines of `case` with the golden file (or writes them, see the module docs)

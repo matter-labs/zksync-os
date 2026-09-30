@@ -108,7 +108,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 opcodes::JUMPDEST => arm!(hot.jumpdest()),
                 opcodes::PUSH0 => arm!(hot.push0()),
                 opcodes::PUSH1 => arm!(hot.push_small::<1>()),
-                opcodes::PUSH2 => arm!(hot.push_small::<2>()),
+                opcodes::PUSH2 => arm!(hot.push2(cold)),
                 opcodes::PUSH3 => arm!(hot.push_small::<3>()),
                 opcodes::PUSH4 => arm!(hot.push_small::<4>()),
                 opcodes::PUSH5 => arm!(hot.push_small::<5>()),
