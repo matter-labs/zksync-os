@@ -43,6 +43,8 @@ mod l1_tx_resilience;
 mod native_charging;
 // Per-transaction memory budget of the block-scoped raw preimage cache.
 mod preimage_cache_budget;
+// Guest heap headroom of the proving post-op at the block gas limit.
+mod proving_memory_peak;
 mod storage_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;

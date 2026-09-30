@@ -224,6 +224,18 @@ impl BytecodeBuilder {
         self
     }
 
+    /// Appends `DUP<n>`, which copies the `n`-th stack item (1 is the top).
+    pub fn dup(mut self, n: u8) -> Self {
+        assert!((1..=16).contains(&n), "DUP supports positions 1..=16");
+        self.bytes.push(0x7f + n);
+        self
+    }
+
+    pub fn lt(mut self) -> Self {
+        self.bytes.push(0x10);
+        self
+    }
+
     pub fn selfdestruct(mut self) -> Self {
         self.bytes.push(0xff);
         self
