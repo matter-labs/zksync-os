@@ -199,7 +199,8 @@ mod tests {
 
     #[test]
     fn batch_public_input_hash_golden_vector() {
-        // Shared with era-contracts `ZKsyncOSPublicInput.t.sol::PUBLIC_INPUT_HASH_GOLDEN`: the full
+        // Shared with era-contracts `TestConstants.sol::PUBLIC_INPUT_HASH_GOLDEN`, checked
+        // by `ZKsyncOSPublicInput.t.sol`: the full
         // `keccak256(state_before, state_after, chain_config_hash, batch_output)` for zero state
         // commitments, `sample_chain_config()` and `BATCH_OUTPUT_HASH_GOLDEN`. Both repos must pin the
         // same value; changing the public-input encoding on either side must update both.
@@ -207,6 +208,38 @@ mod tests {
             sample_public_input(sample_chain_config()).hash(),
             hex!("115e07747f99e4785e3f1c91d3ff85f05eee22c99004e6a81adc37b1b21495fe")
         );
+    }
+
+    #[test]
+    fn batch_public_input_hash_flag_golden_vectors() {
+        // Shared with era-contracts TestConstants.sol and ZKsyncOSPublicInput.t.sol.
+        // The asymmetric cases pin which flag occupies each word.
+        for (filtering, large_contracts, config_hash, public_input_hash) in [
+            (
+                true,
+                false,
+                hex!("f376cdd377febdda64444c8e0ba5b368ebb3347f597404ffa51a6c19299479c2"),
+                hex!("7bb4bea265b944d45623d3e57de083aceb9c7d9f30240c3a917fa187a4444282"),
+            ),
+            (
+                false,
+                true,
+                hex!("7431a77ce6e77c295d5f7e097382054ac118b993f7b311c765a41f744e99d448"),
+                hex!("ac58d82a0990197b31c12ec9cc33b330e5dbda74011eafd37b7e78a5241f0ec7"),
+            ),
+            (
+                true,
+                true,
+                hex!("d8fab3201bc811330f9f0f5d5a68ed7c30713d11d513da418f93c59f01cd2a0c"),
+                hex!("a78ab15446de058e9f871114c4b0333d8ab23ec8959f89b582c33409751aa837"),
+            ),
+        ] {
+            let config = sample_chain_config()
+                .with_l1_tx_filtering(filtering)
+                .with_large_contracts(large_contracts);
+            assert_eq!(config.hash(), config_hash);
+            assert_eq!(sample_public_input(config).hash(), public_input_hash);
+        }
     }
 
     #[test]
