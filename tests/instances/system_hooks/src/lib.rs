@@ -3,6 +3,8 @@
 //!
 #![cfg(test)]
 
+mod code_size;
+
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;

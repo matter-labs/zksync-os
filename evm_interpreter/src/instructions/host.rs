@@ -305,6 +305,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Err(ExitCode::SelfDestruct)
     }
 
+    // Keep creation-only config reads from increasing register pressure in the opcode loop.
+    #[cfg_attr(target_arch = "riscv32", inline(never))]
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
@@ -334,7 +336,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
         // Create code size is limited
-        if len > MAX_INITCODE_SIZE {
+        if len as u64 > u64::from(system.get_chain_config().max_initcode_size()) {
             return Err(EvmError::CreateInitcodeSizeLimit.into());
         }
 

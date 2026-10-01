@@ -188,27 +188,58 @@ mod tests {
 
     #[test]
     fn chain_config_hash_golden_vector() {
-        // Pins the five-word `chain_config_hash` encoding (chain_id, fri, max_tx_gas_limit,
-        // pubdata_content, l1_tx_filtering_enabled) shared with era-contracts
-        // (`Executor._getBatchProofPublicInputZKsyncOS`): chain id 37, FRI disabled, the default max tx
-        // gas limit, pubdata content `FullPubdata` (0) and L1 tx filtering disabled (0). Changing the
-        // encoding on either side must update both.
+        // Pins the encoding shared with era-contracts: chain id 37, FRI disabled,
+        // default tx gas limit, FullPubdata, L1 filtering and large contracts disabled.
+        // Both repos must update together; see docs/system/large_contracts.md.
         assert_eq!(
             sample_chain_config().hash(),
-            hex!("d677601019863c835bb6fdfd10afdf0f7630c8046cc9de7aeee44931fa2b2f42")
+            hex!("a37baa17e852b9c326cea601ab0565fb733b0e0c4590f5a39efc8da5e3ec485c")
         );
     }
 
     #[test]
     fn batch_public_input_hash_golden_vector() {
-        // Shared with era-contracts `ZKsyncOSPublicInput.t.sol::PUBLIC_INPUT_HASH_GOLDEN`: the full
+        // Shared with era-contracts `TestConstants.sol::PUBLIC_INPUT_HASH_GOLDEN`, checked
+        // by `ZKsyncOSPublicInput.t.sol`: the full
         // `keccak256(state_before, state_after, chain_config_hash, batch_output)` for zero state
         // commitments, `sample_chain_config()` and `BATCH_OUTPUT_HASH_GOLDEN`. Both repos must pin the
         // same value; changing the public-input encoding on either side must update both.
         assert_eq!(
             sample_public_input(sample_chain_config()).hash(),
-            hex!("df099e94dc933cb1e302ad66826a922df76c4759542b07311d99b0c5e9eb436d")
+            hex!("115e07747f99e4785e3f1c91d3ff85f05eee22c99004e6a81adc37b1b21495fe")
         );
+    }
+
+    #[test]
+    fn batch_public_input_hash_flag_golden_vectors() {
+        // Shared with era-contracts TestConstants.sol and ZKsyncOSPublicInput.t.sol.
+        // The asymmetric cases pin which flag occupies each word.
+        for (filtering, large_contracts, config_hash, public_input_hash) in [
+            (
+                true,
+                false,
+                hex!("f376cdd377febdda64444c8e0ba5b368ebb3347f597404ffa51a6c19299479c2"),
+                hex!("7bb4bea265b944d45623d3e57de083aceb9c7d9f30240c3a917fa187a4444282"),
+            ),
+            (
+                false,
+                true,
+                hex!("7431a77ce6e77c295d5f7e097382054ac118b993f7b311c765a41f744e99d448"),
+                hex!("ac58d82a0990197b31c12ec9cc33b330e5dbda74011eafd37b7e78a5241f0ec7"),
+            ),
+            (
+                true,
+                true,
+                hex!("d8fab3201bc811330f9f0f5d5a68ed7c30713d11d513da418f93c59f01cd2a0c"),
+                hex!("a78ab15446de058e9f871114c4b0333d8ab23ec8959f89b582c33409751aa837"),
+            ),
+        ] {
+            let config = sample_chain_config()
+                .with_l1_tx_filtering(filtering)
+                .with_large_contracts(large_contracts);
+            assert_eq!(config.hash(), config_hash);
+            assert_eq!(sample_public_input(config).hash(), public_input_hash);
+        }
     }
 
     #[test]
@@ -249,6 +280,16 @@ mod tests {
         assert_ne!(
             sample_public_input(base).hash(),
             sample_public_input(other).hash()
+        );
+    }
+
+    #[test]
+    fn batch_public_input_hash_commits_to_code_size() {
+        let config = sample_chain_config();
+        let custom = config.with_large_contracts(true);
+        assert_ne!(
+            sample_public_input(config).hash(),
+            sample_public_input(custom).hash()
         );
     }
 }

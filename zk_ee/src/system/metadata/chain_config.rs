@@ -15,6 +15,11 @@ use super::basic_metadata::ChainConfigMetadata;
 /// may raise the cap above Ethereum's limit but must not set it below.
 pub const DEFAULT_MAX_TX_GAS_LIMIT: u64 = 1 << 24;
 
+/// Default EIP-170 deployed-code limit, in bytes.
+pub const DEFAULT_MAX_CODE_SIZE: u32 = 0x6000;
+/// Opt-in EIP-7954 deployed-code limit, in bytes.
+pub const LARGE_MAX_CODE_SIZE: u32 = 0x10000;
+
 /// Chain-level execution rules committed into the batch public input.
 ///
 /// These values are fixed for the duration of a batch (a batch must not span
@@ -53,6 +58,9 @@ pub struct ChainConfig {
     // to the behavior-preserving choice.
     #[cfg_attr(feature = "serde", serde(default))]
     l1_tx_filtering_enabled: bool,
+    /// Enables 64 KiB deployed code and 128 KiB initcode instead of 24/48 KiB.
+    #[cfg_attr(feature = "serde", serde(default))]
+    large_contracts_enabled: bool,
 }
 
 #[cfg(feature = "serde")]
@@ -84,6 +92,7 @@ impl ChainConfig {
             max_tx_gas_limit,
             pubdata_content: PubdataContent::FullPubdata,
             l1_tx_filtering_enabled: false,
+            large_contracts_enabled: false,
         };
         config.validate()?;
 
@@ -106,9 +115,31 @@ impl ChainConfig {
         self
     }
 
+    /// Selects the 64/128 KiB code/initcode limits when enabled.
+    pub const fn with_large_contracts(mut self, enabled: bool) -> Self {
+        self.large_contracts_enabled = enabled;
+        self
+    }
+
+    pub const fn large_contracts_enabled(&self) -> bool {
+        self.large_contracts_enabled
+    }
+
+    pub const fn max_code_size(&self) -> u32 {
+        if self.large_contracts_enabled {
+            LARGE_MAX_CODE_SIZE
+        } else {
+            DEFAULT_MAX_CODE_SIZE
+        }
+    }
+
+    pub const fn max_initcode_size(&self) -> u32 {
+        self.max_code_size() * 2
+    }
+
     /// Canonical default configuration: chain id `0`, FRI proof verification
     /// off, the per-tx gas cap at the EIP-7825 limit, full pubdata and L1
-    /// transaction filtering off. This is the `const`
+    /// transaction filtering and large contracts off. This is the `const`
     /// equivalent of [`Default::default`] (which forwards here) and is the
     /// default used by the forward-run entrypoints; callers that need specific
     /// values construct via [`ChainConfig::new`].
@@ -119,6 +150,7 @@ impl ChainConfig {
             max_tx_gas_limit: DEFAULT_MAX_TX_GAS_LIMIT,
             pubdata_content: PubdataContent::FullPubdata,
             l1_tx_filtering_enabled: false,
+            large_contracts_enabled: false,
         }
     }
 
@@ -154,6 +186,7 @@ impl ChainConfig {
     /// - `max_tx_gas_limit`: uint64 big-endian, right-aligned in a 32-byte word
     /// - `pubdata_content`: 32-byte word, last byte the mode id (`FullPubdata=0`/`LogsOnly=1`)
     /// - `l1_tx_filtering_enabled`: 32-byte word, last byte `0`/`1`
+    /// - `large_contracts_enabled`: 32-byte word, last byte `0`/`1`
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(U256::from(self.chain_id).to_be_bytes::<32>());
@@ -169,6 +202,9 @@ impl ChainConfig {
         let mut l1_tx_filtering_word = [0u8; 32];
         l1_tx_filtering_word[31] = u8::from(self.l1_tx_filtering_enabled);
         hasher.update(l1_tx_filtering_word);
+        let mut code_size_word = [0u8; 32];
+        code_size_word[31] = u8::from(self.large_contracts_enabled);
+        hasher.update(code_size_word);
         hasher.finalize()
     }
 
@@ -198,6 +234,7 @@ impl UsizeSerializable for ChainConfig {
         + <bool as UsizeSerializable>::USIZE_LEN
         + <u64 as UsizeSerializable>::USIZE_LEN
         + <PubdataContent as UsizeSerializable>::USIZE_LEN
+        + <bool as UsizeSerializable>::USIZE_LEN
         + <bool as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -209,7 +246,10 @@ impl UsizeSerializable for ChainConfig {
                     UsizeSerializable::iter(&self.max_tx_gas_limit),
                     ExactSizeChain::new(
                         UsizeSerializable::iter(&self.pubdata_content),
-                        UsizeSerializable::iter(&self.l1_tx_filtering_enabled),
+                        ExactSizeChain::new(
+                            UsizeSerializable::iter(&self.l1_tx_filtering_enabled),
+                            UsizeSerializable::iter(&self.large_contracts_enabled),
+                        ),
                     ),
                 ),
             ),
@@ -226,6 +266,7 @@ impl UsizeDeserializable for ChainConfig {
         let max_tx_gas_limit = UsizeDeserializable::from_iter(src)?;
         let pubdata_content = UsizeDeserializable::from_iter(src)?;
         let l1_tx_filtering_enabled = UsizeDeserializable::from_iter(src)?;
+        let large_contracts_enabled = UsizeDeserializable::from_iter(src)?;
 
         Ok(Self {
             chain_id,
@@ -233,6 +274,7 @@ impl UsizeDeserializable for ChainConfig {
             max_tx_gas_limit,
             pubdata_content,
             l1_tx_filtering_enabled,
+            large_contracts_enabled,
         })
     }
 }
@@ -249,18 +291,32 @@ mod tests {
 
     #[test]
     fn chain_config_roundtrips_through_usize_serialization() {
-        let original = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT).unwrap();
-        let serialized: Vec<usize> = original.iter().collect();
-        let mut iter = serialized.into_iter();
-        let deserialized = ChainConfig::from_iter(&mut iter).unwrap();
+        for filtering in [false, true] {
+            for large_contracts in [false, true] {
+                let original = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT)
+                    .unwrap()
+                    .with_l1_tx_filtering(filtering)
+                    .with_large_contracts(large_contracts);
+                let serialized: Vec<usize> = original.iter().collect();
+                assert_eq!(
+                    serialized.len(),
+                    <ChainConfig as UsizeSerializable>::USIZE_LEN
+                );
+                let mut iter = serialized.into_iter();
+                let deserialized = ChainConfig::from_iter(&mut iter).unwrap();
 
-        assert_eq!(original, deserialized);
+                assert_eq!(original, deserialized);
+                assert_eq!(iter.len(), 0);
+            }
+        }
     }
 
     #[test]
     fn chain_config_new_sets_all_fields() {
         let config = ChainConfig::new(37, true, DEFAULT_MAX_TX_GAS_LIMIT + 1).unwrap();
 
+        assert_eq!(config.max_code_size(), DEFAULT_MAX_CODE_SIZE);
+        assert_eq!(config.max_initcode_size(), DEFAULT_MAX_CODE_SIZE * 2);
         assert_eq!(config.chain_id(), 37);
         assert!(config.fri_proof_verification_enabled());
         assert_eq!(config.max_tx_gas_limit(), DEFAULT_MAX_TX_GAS_LIMIT + 1);
@@ -320,13 +376,38 @@ mod tests {
         // deserialization, so a below-floor value parses successfully and is
         // only rejected by an explicit `validate()`.
         let mut serialized: Vec<usize> = ChainConfig::default_for_chain().iter().collect();
-        // Field order is [chain_id, fri, max_tx_gas_limit, pubdata_content,
-        // l1_tx_filtering_enabled], one word each on the 64-bit test host; drop
-        // max_tx_gas_limit (index 2) below the floor.
+        // On the 64-bit test host the third word is max_tx_gas_limit.
         serialized[2] = (DEFAULT_MAX_TX_GAS_LIMIT - 1) as usize;
         let mut iter = serialized.into_iter();
 
         let config = ChainConfig::from_iter(&mut iter).expect("deserialization must not validate");
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn code_size_options_roundtrip() {
+        for (enabled, limit) in [(false, DEFAULT_MAX_CODE_SIZE), (true, LARGE_MAX_CODE_SIZE)] {
+            let config = ChainConfig::default().with_large_contracts(enabled);
+            assert_eq!(config.large_contracts_enabled(), enabled);
+            assert_eq!(config.max_code_size(), limit);
+            assert_eq!(config.max_initcode_size(), limit * 2);
+            let mut serialized = config.iter().collect::<Vec<_>>().into_iter();
+            assert_eq!(ChainConfig::from_iter(&mut serialized).unwrap(), config);
+        }
+        assert!(!ChainConfig::default().large_contracts_enabled());
+    }
+
+    #[test]
+    fn chain_config_hash_commits_to_code_size_option() {
+        let default = ChainConfig::default();
+        let custom = default.with_large_contracts(true);
+        assert_ne!(default.hash(), custom.hash());
+    }
+
+    #[test]
+    fn code_size_option_rejects_non_boolean_oracle_value() {
+        let mut serialized = ChainConfig::default().iter().collect::<Vec<_>>();
+        *serialized.last_mut().unwrap() = 2;
+        assert!(ChainConfig::from_iter(&mut serialized.into_iter()).is_err());
     }
 }

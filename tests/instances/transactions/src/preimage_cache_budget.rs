@@ -8,7 +8,7 @@
 //! `docs/system/io/caches.md`. Only the preimages of an accepted transaction
 //! are free for the transactions that follow.
 //!
-//! Both tests execute the same three transactions and differ only in the block
+//! The rollback tests execute the same three transactions and differ only in the block
 //! pubdata limit. The limit decides whether the bootloader accepts or drops the
 //! second transaction after it warms a large set of bytecodes. The third
 //! transaction warms the same set plus two more bytecodes. That total crosses
@@ -237,4 +237,85 @@ fn preimage_budget_promotes_entries_from_accepted_tx() {
     // In this block the shared bytecodes belong to an accepted transaction, so
     // this transaction pays only for the extra bytecodes and stays in budget.
     assert_tx_success!(output, 2);
+}
+
+#[test]
+fn large_contract_cache_exhaustion_preserves_l1_progress() {
+    use rig::utils::L1TxBuilder;
+    use rig::zk_ee::system::metadata::chain_config::LARGE_MAX_CODE_SIZE;
+
+    const CODE_LEN: usize = LARGE_MAX_CODE_SIZE as usize;
+    const PREIMAGE_LEN: usize = CODE_LEN + CODE_LEN / 8;
+    const CONTRACT_COUNT: u16 = (MAX_PREIMAGE_CACHE_BYTES_ADDED_PER_TX / PREIMAGE_LEN + 1) as u16;
+    const REFUND_VALUE: u64 = 1_000;
+    let sender = address!("1000000000000000000000000000000000000000");
+    let refund_recipient = address!("2000000000000000000000000000000000000000");
+
+    let mut code = BytecodeBuilder::new().push_u8(1).push0().sstore().finish();
+    code.extend(toucher_bytecode(CONTRACT_COUNT, 0));
+    assert!(code.len() <= CODE_LEN);
+    let mut tester = TestingFramework::new()
+        // Like the existing cache-budget tests, retaining 128 MiB is too expensive
+        // for RISC-V simulation. Deployment boundaries run in both modes separately.
+        .with_run_config(rig::run_config::forward_only())
+        // REVM has no equivalent preimage-cache budget.
+        .without_revm_consistency_check()
+        .with_evm_contract(FULL_TOUCHER_ADDRESS, &code);
+    tester.set_chain_config(tester.chain_config().with_large_contracts(true));
+    for index in 0..CONTRACT_COUNT {
+        let mut bytecode = vec![0u8; CODE_LEN];
+        bytecode[CODE_LEN - 2..].copy_from_slice(&index.to_be_bytes());
+        tester.set_evm_contract(filler_address(index), &bytecode);
+    }
+
+    let deposit =
+        U256::from(TOUCHER_GAS_LIMIT) * U256::from(DEFAULT_MAX_FEE) + U256::from(REFUND_VALUE);
+    let attack = L1TxBuilder::new()
+        .from(sender)
+        .to(FULL_TOUCHER_ADDRESS)
+        .gas_price(DEFAULT_MAX_FEE)
+        .gas_limit(u128::from(TOUCHER_GAS_LIMIT))
+        .to_mint(deposit)
+        .value(U256::ONE)
+        .refund_recipient(refund_recipient)
+        .build();
+    let next = L1TxBuilder::new()
+        .from(sender)
+        .to(TRANSFER_RECIPIENT_ADDRESS)
+        .nonce(1)
+        .gas_limit(u128::from(TRANSFER_GAS_LIMIT))
+        .to_mint(U256::ONE)
+        .value(U256::ONE)
+        .build();
+    let output = tester.execute_block(vec![attack.clone(), next.clone()]);
+    assert_tx_reverted!(output, 0);
+    assert_gas_used_gt!(output, 0, TOUCHER_GAS_LIMIT - 1);
+    assert_tx_success!(output, 1);
+    assert!(tester
+        .get_storage_slot(&FULL_TOUCHER_ADDRESS, U256::ZERO)
+        .is_none_or(|value| value.is_zero()));
+    assert_eq!(tester.get_balance(&FULL_TOUCHER_ADDRESS), U256::ZERO);
+    assert_eq!(
+        tester.get_balance(&refund_recipient),
+        U256::from(REFUND_VALUE)
+    );
+    assert_eq!(tester.get_balance(&TRANSFER_RECIPIENT_ADDRESS), U256::ONE);
+    assert_eq!(
+        tester.get_balance(&Address::ZERO),
+        deposit - U256::from(REFUND_VALUE)
+    );
+    for (index, success) in [(0, false), (1, true)] {
+        let logs = &output.tx_results[index].as_ref().unwrap().l2_to_l1_logs;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0].log.value.0,
+            U256::from(u8::from(success)).to_be_bytes::<32>()
+        );
+    }
+    let batch = super::last_prover_input_batch_output(&tester);
+    assert_eq!(batch.number_of_layer_1_txs, U256::from(2));
+    assert_eq!(
+        batch.priority_operations_hash,
+        super::expected_priority_operations_hash([attack, next])
+    );
 }

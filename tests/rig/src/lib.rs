@@ -200,7 +200,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             chain: pre_block_chain,
         })
         .with_independent_gas(independent_gas)
-        .with_tx_gas_limit_cap(tx_gas_limit_cap);
+        .with_tx_gas_limit_cap(tx_gas_limit_cap)
+        .with_max_code_size(self.chain_config().max_code_size() as usize);
 
         revm_runner
             .run(
@@ -336,7 +337,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             // `ChainConfig::new` defaults to `FullPubdata`; keep the configured content.
             .with_pubdata_content(current.pubdata_content())
             // `ChainConfig::new` defaults to no L1 tx filtering; keep the configured flag.
-            .with_l1_tx_filtering(current.l1_tx_filtering_enabled()),
+            .with_l1_tx_filtering(current.l1_tx_filtering_enabled())
+            .with_large_contracts(current.large_contracts_enabled()),
         )
     }
 
@@ -858,7 +860,7 @@ pub fn common_target_address() -> alloy::primitives::Address {
 
 #[cfg(test)]
 mod tests {
-    use super::{chain::RunConfig, TestingFramework};
+    use super::{chain::RunConfig, ChainConfig, TestingFramework};
     use forward_system::run::convert_alloy::IntoAlloy;
     use ruint::aliases::U256;
     use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
@@ -916,5 +918,32 @@ mod tests {
         let _ = tester.execute_block(vec![]);
 
         assert_eq!(tester.get_balance(&treasury), U256::ZERO);
+    }
+
+    #[test]
+    fn code_size_option_defaults_in_old_dumps_and_roundtrips() {
+        let config = ChainConfig::default().with_large_contracts(true);
+        let mut json = serde_json::to_value(config).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ChainConfig>(json.clone()).unwrap(),
+            config
+        );
+        json.as_object_mut()
+            .unwrap()
+            .remove("large_contracts_enabled");
+        assert_eq!(
+            serde_json::from_value::<ChainConfig>(json).unwrap(),
+            ChainConfig::default()
+        );
+    }
+
+    #[test]
+    fn gas_limit_builder_preserves_large_contracts_option() {
+        let tester = TestingFramework::new();
+        let config = tester.chain_config().with_large_contracts(true);
+        let tester = tester
+            .with_chain_config(config)
+            .with_max_tx_gas_limit(config.max_tx_gas_limit() + 1);
+        assert!(tester.chain_config().large_contracts_enabled());
     }
 }
