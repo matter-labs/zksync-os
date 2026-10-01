@@ -18,6 +18,15 @@ pub const DEPLOY_GAS_LIMIT: u64 = 900_000;
 /// Gas limit used for generic contract calls.
 pub const CALL_GAS_LIMIT: u64 = 200_000;
 
+/// Settlement-side ceiling for new L1 transactions; mirrors era-contracts `PRIORITY_TX_MAX_GAS_LIMIT`.
+pub const PRIORITY_TX_MAX_GAS_LIMIT: u64 = 1 << 24;
+
+/// Settlement-side ceiling for genesis and protocol-upgrade transactions.
+pub const UPGRADE_TX_MAX_GAS_LIMIT: u64 = 72_000_000;
+
+/// Previous settlement-side default, used to exercise already-queued L1 transactions.
+pub const LEGACY_PRIORITY_TX_MAX_GAS_LIMIT: u64 = 72_000_000;
+
 /// Default EIP-1559 base fee.
 pub const DEFAULT_BASEFEE: u128 = 1_000;
 

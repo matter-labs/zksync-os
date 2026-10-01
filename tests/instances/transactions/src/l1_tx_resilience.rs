@@ -15,6 +15,7 @@ use alloy_sol_types::{sol, SolCall};
 use rig::alloy::primitives::address;
 use rig::basic_bootloader::bootloader::constants::MAX_TX_NATIVE_COMPUTATIONAL;
 use rig::basic_system::cost_constants::{BLAKE2F_BASE_NATIVE_COST, BLAKE2F_PER_ROUND_NATIVE_COST};
+use rig::constants::{LEGACY_PRIORITY_TX_MAX_GAS_LIMIT, PRIORITY_TX_MAX_GAS_LIMIT};
 use rig::evm_bytecode::BytecodeBuilder;
 use rig::ruint::aliases::U256;
 use rig::tx_succeeded;
@@ -236,12 +237,6 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
 /// Verify that an L1 transaction can consume close to its full
 /// gas-implied pubdata budget under production parameters, regardless of
 /// L1 `gas_price`.
-///
-/// Production values used here:
-/// - `gas_limit = 72_000_000` (PRIORITY_TX_MAX_GAS_LIMIT)
-/// - `gas_per_pubdata = 800`
-/// → theoretical pubdata budget = `72_000_000 / 800 = 90_000` bytes.
-///
 #[test]
 fn test_l1_tx_can_use_full_pubdata_budget() {
     let from = address!("1234000000000000000000000000000000000000");
@@ -251,15 +246,14 @@ fn test_l1_tx_can_use_full_pubdata_budget() {
         address!("0000000000000000000000000000000000008008").as_slice(),
     );
 
-    // PRIORITY_TX_MAX_GAS_LIMIT — production cap for L1 priority txs.
-    let gas_limit: u64 = 72_000_000;
+    let gas_limit = PRIORITY_TX_MAX_GAS_LIMIT;
     let gas_per_pubdata: u64 = 800;
     // Theoretical pubdata budget (in bytes).
-    let theoretical_budget = gas_limit / gas_per_pubdata; // = 90_000
+    let theoretical_budget = gas_limit / gas_per_pubdata;
 
-    // There is also intrinsic pubdata and overhead for l2 -> l1 log
-    // Also computational part is really small, but still takes 1 byte of pubdata
-    let payload_len: usize = 89_500;
+    // Leave room for intrinsic pubdata, the L2 -> L1 log, and computational charges.
+    const PUBDATA_OVERHEAD_MARGIN: usize = 500;
+    let payload_len = theoretical_budget as usize - PUBDATA_OVERHEAD_MARGIN;
     // Use zero bytes so calldata intrinsic is 4 gas/byte (vs 16 for non-zero).
     let payload = vec![0u8; payload_len];
 
@@ -415,11 +409,11 @@ fn test_l1_tx_returndata_cleared_on_pubdata_revert() {
 ///
 /// `blake2f` is the trigger: 1 gas per round against
 /// `BLAKE2F_PER_ROUND_NATIVE_COST` native per round, a ratio high enough to
-/// exhaust the native budget well inside `PRIORITY_TX_MAX_GAS_LIMIT`.
+/// exhaust the native budget inside the pre-0.6.0 priority gas limit.
+/// Already-queued transactions must remain processable after the admission cap is lowered.
 #[test]
 fn test_l1_tx_exhausting_native_is_included_not_rejected() {
-    // PRIORITY_TX_MAX_GAS_LIMIT — production cap for L1 priority txs.
-    const GAS_LIMIT: u64 = 72_000_000;
+    const GAS_LIMIT: u64 = LEGACY_PRIORITY_TX_MAX_GAS_LIMIT;
     // EIP-152 prices blake2f at one gas per round, so rounds == gas.
     const BLAKE2F_GAS_PER_ROUND: u64 = 1;
 
