@@ -186,16 +186,15 @@ pub(crate) fn secp256k1_base_field_division(operand: &Operand) -> FieldElement {
 }
 
 pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
-    let mut el: Scalar = secp256k1_element(operand);
+    let el: Scalar = secp256k1_element(operand);
     assert!(!el.is_zero());
-    el.invert_in_place();
-    el
+    el.invert_vartime()
 }
 
 /// The inverse of a non-zero field element
 pub(crate) fn inverse<F: HintEncoding + Copy>(operand: &Operand) -> F {
     let el: F = element(operand);
-    el.inverse().expect("the operand is non-zero")
+    crypto::field_inverse::inverse(&el).expect("the operand is non-zero")
 }
 
 /// The quotient of the numerator and the (non-zero) denominator, two adjacent elements of a
@@ -217,7 +216,7 @@ pub(crate) fn division<F: HintEncoding + PrimeField>(operand: &Operand) -> F {
             ]
         }
     };
-    numerator * denominator.inverse().expect("the denominator is non-zero")
+    numerator * crypto::field_inverse::inverse(&denominator).expect("the denominator is non-zero")
 }
 
 /// The square root candidate of a bls12-381 base field element, as `secp256k1_base_field_sqrt`:
