@@ -687,39 +687,12 @@ pub fn build_prover(worker_threads: Option<usize>) -> anyhow::Result<Box<dyn Pro
     }
 }
 
-/// Executes the program on the transpiler (JIT on x86_64, interpreter
-/// elsewhere) to count the program's own cycles. Real proofs at a recursion
-/// level only report the cycle count of the last recursion verifier, so the
-/// Ethproofs `proving_cycles` field is taken from this run instead.
-pub fn count_program_cycles(program: &Program, prover_input: &[u32]) -> anyhow::Result<u64> {
-    let mut builder = program.transpiler_runner();
-    if cfg!(target_arch = "x86_64") {
-        builder = builder.with_jit();
-    }
-    let runner = builder
-        .build()
-        .context("failed to build transpiler runner")?;
-    let execution = runner
-        .run(prover_input)
-        .context("transpiler execution failed")?;
-    anyhow::ensure!(
-        execution.reached_end,
-        "program did not reach the end within {} cycles",
-        execution.cycles_executed
-    );
-    anyhow::ensure!(
-        execution.receipt.output.iter().any(|word| *word != 0),
-        "program output is all zeroes, the block execution failed inside the guest"
-    );
-    Ok(execution.cycles_executed as u64)
-}
-
 /// Proof of one block together with the timings Ethproofs wants reported.
 pub struct BlockProof {
     pub block_number: u64,
     pub gas_used: u64,
     pub prove_result: ProveResult,
-    /// Cycles the program itself executed (see [`count_program_cycles`]).
+    /// Cycles the program itself executed (the base layer of the proof).
     pub program_cycles: u64,
     /// Prover-input recording + proving, i.e. everything that is not RPC.
     pub proving_time: Duration,
@@ -737,11 +710,7 @@ impl BlockProof {
 }
 
 /// Records the prover input for the block, proves it and counts its cycles.
-pub fn prove_block(
-    prover: &dyn Prover,
-    program: &Program,
-    inputs: &EthBlockInputs,
-) -> anyhow::Result<BlockProof> {
+pub fn prove_block(prover: &dyn Prover, inputs: &EthBlockInputs) -> anyhow::Result<BlockProof> {
     let start = Instant::now();
     let prover_input = inputs.prover_input();
     info!(
@@ -759,7 +728,7 @@ pub fn prove_block(
         prove_result.proof.debug_info()
     );
 
-    let program_cycles = count_program_cycles(program, &prover_input)?;
+    let program_cycles = prove_result.program_cycles;
     info!("Block {} took {program_cycles} cycles", inputs.block_number);
 
     Ok(BlockProof {
@@ -787,9 +756,8 @@ pub fn prove_single_block_from_dir(
     worker_threads: Option<usize>,
 ) -> anyhow::Result<BlockProof> {
     let inputs = EthBlockInputs::from_dir(block_dir)?;
-    let program = load_program()?;
     let prover = build_prover(worker_threads)?;
-    prove_block(&*prover, &program, &inputs)
+    prove_block(&*prover, &inputs)
 }
 
 /// Fetches a block from the Reth node, records its prover input (optionally
@@ -901,7 +869,6 @@ pub fn ethproofs_with_proofs(
     block_selector: (u64, u64),
     worker_threads: Option<usize>,
 ) -> anyhow::Result<()> {
-    let program = load_program()?;
     let prover = build_prover(worker_threads)?;
 
     let mut next = 0;
@@ -912,7 +879,7 @@ pub fn ethproofs_with_proofs(
         if head > next {
             println!("Generating proof for block {}", head);
             let inputs = EthBlockInputs::from_rpc(head, reth_endpoint)?;
-            let block_proof = prove_block(&*prover, &program, &inputs)?;
+            let block_proof = prove_block(&*prover, &inputs)?;
             let encoded_proof = block_proof.encoded_proof()?;
             println!(
                 "Block {} proved in {:?} ({} cycles, {} bytes of proof)",
