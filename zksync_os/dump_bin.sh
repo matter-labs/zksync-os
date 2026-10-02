@@ -15,7 +15,7 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --reproducible)
-      REPRODUCIBLE="--reproducible --workspace-root .."
+      REPRODUCIBLE="--reproducible --workspace-root ../.."
       shift
       ;;
     *)
