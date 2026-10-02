@@ -140,6 +140,15 @@ where
 
         // whatever the non-persistent data was there, it's now gone
 
+        // The runner buffers are scratch memory for the tx loop only, and
+        // nothing reads them after it. Free them before the post-op so their
+        // 384 MB is available to it: in proving mode the post-op verifies
+        // Merkle proofs for every accessed storage slot, which the forward run
+        // doesn't do and can't limit. Holding the buffers until the end of
+        // this function can make a valid block run out of guest heap there.
+        drop(heaps);
+        drop(return_data);
+
         // Post-op
 
         let res = <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(
