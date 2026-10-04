@@ -370,3 +370,57 @@ pub(crate) fn bn254_g2_pairing_slopes(operand: &Operand, responses: &mut Respons
     chain(subgroup_slopes(&q), responses);
     chain(line_slopes(&q), responses);
 }
+
+/// Arbitrary pairing claim, using exactly the projective prepared lines of the verifier.
+pub(crate) fn bls12_381_pairing_residue_witness(
+    operand: &Operand,
+    claim_not_identity: bool,
+    responses: &mut Responses,
+) {
+    use basic_system::system_functions::curve_hints::Bls12381Pair;
+    use crypto::ark_ec::pairing::{MillerLoopOutput, Pairing};
+    use crypto::bls12_381::curves::Bls12_381;
+    use crypto::bls12_381::Fq12;
+    use guest_layout::*;
+    let pairs: Vec<Bls12381Pair> = match operand.querier {
+        HintTarget::Native => operand.native_values(),
+        HintTarget::Guest => {
+            assert!(
+                operand.size().is_multiple_of(BLS12_381_PAIR_SIZE),
+                "the operand is affine pairs"
+            );
+            (0..operand.size() / BLS12_381_PAIR_SIZE)
+                .map(|i| {
+                    let offset = i * BLS12_381_PAIR_SIZE;
+                    Bls12381Pair {
+                        g1: operand.guest_affine(offset + BLS12_381_PAIR_G1, BLS12_381_G1_AFFINE),
+                        g2: operand.guest_affine(offset + BLS12_381_PAIR_G2, BLS12_381_G2_AFFINE),
+                    }
+                })
+                .collect()
+        }
+    };
+    assert!(!pairs.is_empty(), "the operand has pairs");
+    let f = Bls12_381::multi_miller_loop_with_initial_owned(
+        &Fq12::one(),
+        pairs.iter().map(|pair| pair.g1),
+        pairs.iter().map(|pair| pair.g2),
+    );
+    let mut conjugated = f;
+    conjugated.conjugate_in_place();
+    let identity = !claim_not_identity
+        && Bls12_381::final_exponentiation(MillerLoopOutput(conjugated))
+            .expect("the Miller loop is non-zero")
+            .0
+            .is_one();
+    if identity {
+        let witness = crypto::residue_witness::bls12_381::witness(&f)
+            .expect("an identity has a residue witness");
+        responses.write(&(true, witness));
+    } else {
+        responses.write(&(
+            false,
+            conjugated.inverse().expect("the Miller loop is non-zero"),
+        ));
+    }
+}

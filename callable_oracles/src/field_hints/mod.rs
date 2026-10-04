@@ -93,6 +93,9 @@ fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
         FieldHintOp::Bls12381KzgResidueWitness => {
             impls::bls12_381_kzg_residue_witness(operand, false, responses)
         }
+        FieldHintOp::Bls12381PairingResidueWitness => {
+            impls::bls12_381_pairing_residue_witness(operand, false, responses)
+        }
         _ => {
             panic!("Unknown field hint op {}", op as u32);
         }
@@ -114,6 +117,9 @@ pub fn not_identity_claim(memory: &dyn QuerierMemory, input_word: usize) -> Vec<
         }
         (FieldHintOp::Bls12381KzgResidueWitness, operand) => {
             impls::bls12_381_kzg_residue_witness(&operand, true, &mut responses)
+        }
+        (FieldHintOp::Bls12381PairingResidueWitness, operand) => {
+            impls::bls12_381_pairing_residue_witness(&operand, true, &mut responses)
         }
         (op, _) => panic!("not a pairing request: {op:?}"),
     }

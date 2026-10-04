@@ -72,6 +72,51 @@ fn parse_g2_with_subgroup_check(
     }
 }
 
+/// The existing encoding and on-curve validation, followed by a checked affine subgroup chain.
+fn parse_g1_with_subgroup_check_with_oracle<O: zk_ee::oracle::IOOracle>(
+    input: &[u8; G1_SERIALIZATION_LEN],
+    oracle: Option<&mut O>,
+) -> Result<G1Affine, Bls12PrecompileSubsystemError> {
+    let Some(oracle) = oracle else {
+        return parse_g1_with_subgroup_check(input);
+    };
+    let point = parse_g1(input)?;
+    if point.is_zero()
+        || g1::is_in_subgroup_with_divider(
+            &point,
+            &mut crate::system_functions::curve_hints::Bls12381FqDivider::new(oracle),
+        )
+    {
+        Ok(point)
+    } else {
+        Err(interface_error!(
+            Bls12PrecompileInterfaceError::PointNotInSubgroup
+        ))
+    }
+}
+
+fn parse_g2_with_subgroup_check_with_oracle<O: zk_ee::oracle::IOOracle>(
+    input: &[u8; G2_SERIALIZATION_LEN],
+    oracle: Option<&mut O>,
+) -> Result<G2Affine, Bls12PrecompileSubsystemError> {
+    let Some(oracle) = oracle else {
+        return parse_g2_with_subgroup_check(input);
+    };
+    let point = parse_g2(input)?;
+    if point.is_zero()
+        || g2::is_in_subgroup_with_divider(
+            &point,
+            &mut crate::system_functions::curve_hints::Bls12381Fq2Divider::new(oracle),
+        )
+    {
+        Ok(point)
+    } else {
+        Err(interface_error!(
+            Bls12PrecompileInterfaceError::PointNotInSubgroup
+        ))
+    }
+}
+
 fn write_g1<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(
     el: G1Affine,
     output: &mut D,
@@ -97,90 +142,4 @@ fn write_g2<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::alloc::Global;
-    use zk_ee::{
-        reference_implementations::{BaseResources, DecreasingNative},
-        system::{errors::subsystem::SubsystemError, Resource, SystemFunction},
-    };
-
-    type TestResources = BaseResources<DecreasingNative>;
-
-    fn assert_invalid_input_size_and_preserves_resources<F>(input: Vec<u8>)
-    where
-        F: SystemFunction<TestResources, Bls12PrecompileErrors>,
-    {
-        let mut output = Vec::new();
-        let mut resources = TestResources::FORMAL_INFINITE;
-        let initial_resources = resources.clone();
-
-        let err = F::execute(&input, &mut output, &mut resources, Global)
-            .expect_err("malformed input must be rejected");
-
-        assert_eq!(resources, initial_resources);
-        assert!(output.is_empty());
-        assert!(matches!(
-            err,
-            SubsystemError::LeafUsage(err)
-                if err.0 == Bls12PrecompileInterfaceError::InvalidInputSize
-        ));
-    }
-
-    #[test]
-    fn malformed_g1_addition_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G1AdditionPrecompile>(vec![
-            0u8;
-            G1_SERIALIZATION_LEN * 2 - 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_g2_addition_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G2AdditionPrecompile>(vec![
-            0u8;
-            G2_SERIALIZATION_LEN * 2 + 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_g1_mapping_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G1MappingPrecompile>(vec![
-            0u8;
-            FIELD_ELEMENT_SERIALIZATION_LEN - 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_g2_mapping_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G2MappingPrecompile>(vec![
-            0u8;
-            FIELD_EXT_ELEMENT_SERIALIZATION_LEN + 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_g1_msm_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G1MSMPrecompile>(vec![
-            0u8;
-            msm::G1_MSM_PAIR_LEN
-                + 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_g2_msm_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381G2MSMPrecompile>(vec![
-            0u8;
-            msm::G2_MSM_PAIR_LEN
-                + 1
-        ]);
-    }
-
-    #[test]
-    fn malformed_pairing_input_is_free() {
-        assert_invalid_input_size_and_preserves_resources::<Bls12381PairingCheckPrecompile>(
-            vec![0u8; pairing::BLS12_381_PAIR_LEN + 1],
-        );
-    }
-}
+mod tests;

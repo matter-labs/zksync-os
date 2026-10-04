@@ -229,46 +229,46 @@ where
     }
 
     {
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Add,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12G1Add,
             Bls12PrecompileErrors,
         >(hooks, BLS12_G1ADD_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Add,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12G2Add,
             Bls12PrecompileErrors,
         >(hooks, BLS12_G2ADD_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Msm,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12G1Msm,
             Bls12PrecompileErrors,
         >(hooks, BLS12_G1MSM_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Msm,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12G2Msm,
             Bls12PrecompileErrors,
         >(hooks, BLS12_G2MSM_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12PairingCheck,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12PairingCheck,
             Bls12PrecompileErrors,
         >(hooks, BLS12_PAIRING_CHECK_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFpToG1,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12MapFpToG1,
             Bls12PrecompileErrors,
         >(hooks, BLS12_MAP_FP_TO_G1_ADDRESS_LOW)?;
-        add_precompile::<
+        add_precompile_ext::<
             _,
             _,
-            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFp2ToG2,
+            <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Bls12MapFp2ToG2,
             Bls12PrecompileErrors,
         >(hooks, BLS12_MAP_FP2_TO_G2_ADDRESS_LOW)?;
     }

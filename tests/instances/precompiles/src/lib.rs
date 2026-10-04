@@ -1408,6 +1408,112 @@ const PECTRA_TESTS: [Test; 13] = [
     },
 ];
 
+// Single-pair BLS12-381 G1 MSM vectors at the edges of the reduction of the scalar modulo the
+// group order r: G * 0, G * r and O * (2^256 - 1) are the point at infinity, G * (r + 1) and
+// G * (2r + 1) are G, G * (r - 1) is -G, and G * (2^256 - 1) is G * ((2^256 - 1) mod r) (from a
+// double-and-add of the unreduced scalar in python integers, and the same as its vector in
+// `PECTRA_TESTS`). The others are not in `PECTRA_TESTS`, which `test_precompiles` benchmarks.
+const BLS12_G1_MSM_SINGLE_PAIR_TESTS: [Test; 7] = [
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e10000000000000000000000000000000000000000000000000000000000000000",
+        expected: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        name: "bls12-381 g1 msm G*0=0",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e173eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001",
+        expected: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        name: "bls12-381 g1 msm G*r=0",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e173eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000002",
+        expected: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1",
+        name: "bls12-381 g1 msm G*(r+1)=G",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e173eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000",
+        expected: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb00000000000000000000000000000000114d1d6855d545a8aa7d76c8cf2e21f267816aef1db507c96655b9d5caac42364e6f38ba0ecb751bad54dcd6b939c2ca",
+        name: "bls12-381 g1 msm G*(r-1)=-G",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        expected: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        name: "bls12-381 g1 msm 0*ff=0",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1e7db4ea6533afa906673b0101343b00aa77b4805fffcb7fdfffffffe00000003",
+        expected: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1",
+        name: "bls12-381 g1 msm G*(2r+1)=G",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+    Test {
+        input: "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        expected: "0000000000000000000000000000000016ea601ca88f7d3489479129b258960b4c1df37194d30803627c30c34252679a0ada1a51bc7a4006a4f0564050d3174600000000000000000000000000000000039e394a6f95c4a2f27bf38f950b2af8d2aa8e0c4a1ffbe9ca518d1bedb573e310fba8f436aec3a3c8f2655fad5e2013",
+        name: "bls12-381 g1 msm G*(2^256-1)",
+        precompile_id: "000000000000000000000000000000000000000c",
+    },
+];
+
+/// All seven EIP-2537 precompiles through direct and forwarded transactions.
+/// With ZKSYNC_RISC_V_RUN, the normal rig also checks native/guest state equality;
+/// the expected vectors and revm consistency check establish the returned results.
+#[test]
+fn test_bls12_eip2537() {
+    // The first Pectra vector is BLAKE2F; the remaining twelve are BLS12-381.
+    run_test_vectors(&PECTRA_TESTS[1..]);
+
+    // e(G1,G2) * e(-G1,G2) = 1 exercises a nontrivial residue witness.
+    // Reuse the independently specified G*(r-1) = -G vector for the negation.
+    let negative_g1 = BLS12_G1_MSM_SINGLE_PAIR_TESTS[3].expected;
+    let input = hex::decode(format!("{BLS_G1}{BLS_G2}{negative_g1}{BLS_G2}")).unwrap();
+    let output = run_precompile("000000000000000000000000000000000000000f", None, &input);
+    let direct = output.tx_results[0]
+        .clone()
+        .expect("the cancellation pairing transaction succeeds");
+    assert_eq!(
+        direct.as_returned_bytes(),
+        hex::decode(PECTRA_TESTS[5].expected).unwrap(),
+        "the cancellation pairing is the identity"
+    );
+    assert!(output.tx_results[1]
+        .clone()
+        .expect("the forwarded cancellation pairing transaction succeeds")
+        .is_success());
+}
+
+/// Exercise the two-point affine GLV path with full-width subgroup-order scalars.
+#[test]
+fn test_bls12_g1_msm_two_pair_cancellation() {
+    // G*(r-1) + G*1 = 0. Both inputs and the result reuse independent existing vectors.
+    let input = hex::decode(format!(
+        "{}{}",
+        BLS12_G1_MSM_SINGLE_PAIR_TESTS[3].input, PECTRA_TESTS[3].input
+    ))
+    .unwrap();
+    let output = run_precompile("000000000000000000000000000000000000000c", None, &input);
+    let direct = output.tx_results[0]
+        .clone()
+        .expect("the two-point MSM transaction succeeds");
+    assert_eq!(
+        direct.as_returned_bytes(),
+        hex::decode(BLS12_G1_MSM_SINGLE_PAIR_TESTS[0].expected).unwrap(),
+        "the two-point MSM cancels to infinity"
+    );
+    assert!(output.tx_results[1]
+        .clone()
+        .expect("the forwarded two-point MSM transaction succeeds")
+        .is_success());
+}
+
+#[test]
+fn test_bls12_g1_msm_single_pair_edges() {
+    run_test_vectors(&BLS12_G1_MSM_SINGLE_PAIR_TESTS);
+}
+
 #[test]
 #[ignore = "Requires max emulator cycle limit"]
 fn bench_bls_g1add() {
