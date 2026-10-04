@@ -1,7 +1,11 @@
 use super::*;
+use crate::system_functions::curve_hints;
 use alloc::vec::Vec;
 use crypto::ark_ec::CurveGroup;
-use zk_ee::system::{Resources, SystemFunction};
+use crypto::ark_ff::AdditiveGroup;
+use zk_ee::oracle::IOOracle;
+use zk_ee::system::logger::Logger;
+use zk_ee::system::{Resources, SystemFunctionExt};
 
 pub const BLS12_381_G1_MSM_PER_POINT_GAS: u64 = 12000;
 pub const BLS12_381_G2_MSM_PER_POINT_GAS: u64 = 22500;
@@ -167,22 +171,32 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
             })
 }
 
-pub struct Bls12381G1MSMPrecompile;
+pub struct Bls12381G1MSMPrecompile<const USE_ADVICE: bool>;
 
-impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPrecompile {
-    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
-
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileErrors>
+    for Bls12381G1MSMPrecompile<USE_ADVICE>
+{
     fn execute<
+        O: IOOracle,
+        L: Logger,
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
     >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
         cycle_marker::wrap_with_resources!("bls12_381_g1_msm", resources, {
-            bls12_381_g1_msm_as_system_function_inner(input, output, resources, allocator)
+            bls12_381_g1_msm_as_system_function_inner(
+                input,
+                output,
+                resources,
+                allocator,
+                if USE_ADVICE { Some(oracle) } else { None },
+            )
         })
     }
 }
@@ -190,12 +204,14 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPre
 fn bls12_381_g1_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
+    O: IOOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],
     output: &mut D,
     resources: &mut R,
     allocator: A,
+    mut oracle: Option<&mut O>,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     if input.is_empty() || !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
         return Err(interface_error!(
@@ -227,8 +243,9 @@ fn bls12_381_g1_msm_as_system_function_inner<
 
     // parse to use Peppinger algorithm
     for pair_encoding in input.as_chunks::<G1_MSM_PAIR_LEN>().0.iter() {
-        let point = parse_g1_with_subgroup_check(
+        let point = parse_g1_with_subgroup_check_with_oracle(
             pair_encoding[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
+            oracle.as_deref_mut(),
         )?;
         let scalar = parse_integer(
             pair_encoding[G1_SERIALIZATION_LEN..(G1_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
@@ -239,31 +256,65 @@ fn bls12_381_g1_msm_as_system_function_inner<
         scalars.push(scalar);
     }
 
-    let result: G1Projective = msm(&points, scalars, allocator);
-
-    let result = result.into_affine();
+    // Reduction modulo r is valid only after every point passed its subgroup check.
+    // For one or two pairs affine GLV shares the doublings and checks each slope hint.
+    let result = if let Some(oracle) = oracle.as_deref_mut().filter(|_| num_pairs <= 2) {
+        let scalar = |s: <Fr as PrimeField>::BigInt| g1::scalar_from_limbs(s.as_ref());
+        let k = scalar(scalars[0]);
+        let (q, l) = if num_pairs == 2 {
+            (points[1], scalar(scalars[1]))
+        } else {
+            (G1Affine::identity(), Fr::ZERO)
+        };
+        drop(scalars);
+        g1::mul_two_affine_with_divider(
+            &points[0],
+            k,
+            &q,
+            l,
+            &mut curve_hints::Bls12381FqDivider::new(oracle),
+        )
+    } else {
+        let result: G1Projective = msm(&points, scalars, allocator);
+        match oracle {
+            Some(oracle) => g1::into_affine_with_inverse(&result, |z| {
+                curve_hints::bls12_381_fq_inverse(oracle, z)
+            }),
+            None => result.into_affine(),
+        }
+    };
 
     write_g1(result, output)?;
 
     Ok(())
 }
 
-pub struct Bls12381G2MSMPrecompile;
+pub struct Bls12381G2MSMPrecompile<const USE_ADVICE: bool>;
 
-impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPrecompile {
-    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
-
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileErrors>
+    for Bls12381G2MSMPrecompile<USE_ADVICE>
+{
     fn execute<
+        O: IOOracle,
+        L: Logger,
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
     >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
         cycle_marker::wrap_with_resources!("bls12_381_g2_msm", resources, {
-            bls12_381_g2_msm_as_system_function_inner(input, output, resources, allocator)
+            bls12_381_g2_msm_as_system_function_inner(
+                input,
+                output,
+                resources,
+                allocator,
+                if USE_ADVICE { Some(oracle) } else { None },
+            )
         })
     }
 }
@@ -271,12 +322,14 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPre
 fn bls12_381_g2_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
+    O: IOOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],
     output: &mut D,
     resources: &mut R,
     allocator: A,
+    mut oracle: Option<&mut O>,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     if input.is_empty() || !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
         return Err(interface_error!(
@@ -309,8 +362,9 @@ fn bls12_381_g2_msm_as_system_function_inner<
 
     // parse to use Peppinger algorithm
     for pair_encoding in input.as_chunks::<G2_MSM_PAIR_LEN>().0.iter() {
-        let point = parse_g2_with_subgroup_check(
+        let point = parse_g2_with_subgroup_check_with_oracle(
             pair_encoding[0..G2_SERIALIZATION_LEN].try_into().unwrap(),
+            oracle.as_deref_mut(),
         )?;
         let scalar = parse_integer(
             pair_encoding[G2_SERIALIZATION_LEN..(G2_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
@@ -323,9 +377,17 @@ fn bls12_381_g2_msm_as_system_function_inner<
 
     let result: G2Projective = msm(&points, scalars, allocator);
 
-    let result = result.into_affine();
+    let result = match oracle {
+        Some(oracle) => {
+            g2::into_affine_with_inverse(&result, |z| curve_hints::bls12_381_fq2_inverse(oracle, z))
+        }
+        None => result.into_affine(),
+    };
 
     write_g2(result, output)?;
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
