@@ -398,6 +398,20 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub fn gas_left(&self) -> u64 {
         self.resources.legacy_gas()
     }
+
+    /// [`charge_step`] on the resources of the frame, for the inlined instructions (see
+    /// [`fast_charge_step`])
+    #[inline(always)]
+    pub fn charge_step(&mut self, gas: u64, native: u64) -> InstructionResult {
+        fast_charge_step(&mut self.resources, gas, native)
+    }
+
+    /// [`spend_gas_and_native`] on the resources of the frame, for the inlined instructions
+    /// (see [`fast_spend_gas_and_native`])
+    #[inline(always)]
+    pub fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> InstructionResult {
+        fast_spend_gas_and_native(&mut self.resources, gas, native)
+    }
 }
 
 // --- resources -------------------------------------------------------------------------
@@ -481,6 +495,110 @@ pub(crate) fn charge_step<R: Resources>(
     }
 }
 
+// --- the gas of gas-only resources in one register --------------------------------------
+
+/// Largest charge taken from the low word of the ergs
+const LOW_WORD_CHARGE_MAX: u64 = 1 << 31;
+
+/// No instruction; hides `x` from the optimizer on the proving target. The identity elsewhere.
+///
+/// A charge tests the sign of the charged low word through it, so that LLVM keeps that test
+/// instead of comparing the old value with the cost (which keeps both values live), and the
+/// value given back on failure is not folded into the old one. On the high word, it keeps
+/// LLVM from rebuilding the ergs with a 64-bit mask, a constant the loop would keep in a
+/// register.
+#[inline(always)]
+fn opaque(x: u32) -> u32 {
+    #[cfg(target_arch = "riscv32")]
+    {
+        let mut x = x;
+        // SAFETY: the template is a comment, so no instruction: no memory access, no flags,
+        // and the tied register keeps its value
+        unsafe {
+            core::arch::asm!("/* {0} */", inout(reg) x, options(pure, nomem, nostack, preserves_flags))
+        };
+        x
+    }
+    #[cfg(not(target_arch = "riscv32"))]
+    x
+}
+
+/// Takes `cost` ergs from resources that are their ergs alone ([`ErgsOnly`]) on the low 32-bit
+/// word of the ergs: `true` if it could, else `false`, with nothing charged.
+///
+/// For `cost <= 2^31` the low word minus `cost` has its top bit clear only if the low word is
+/// at least `cost` (otherwise the difference is in `[-2^31, 0)`), so then nothing is borrowed
+/// from the high word and the result is the charge (C2 of [`ErgsOnly`]). Every other case (a
+/// low word below `cost`, one that stays at 2^31 or more after the subtraction, or a cost
+/// above 2^31) is left to the caller, which runs the original function on the same resources:
+/// a charge that fails, or one that borrows from the high word as `Ergs::charge` does.
+///
+/// [`ErgsOnly`]: zk_ee::system::ErgsOnly
+#[inline(always)]
+fn take_from_low_word<R: Resources>(resources: &mut R, cost: u64) -> bool {
+    debug_assert!(R::ERGS_ONLY.holds());
+    if cost > LOW_WORD_CHARGE_MAX {
+        return false;
+    }
+    let ergs = resources.ergs().as_u64();
+    let high = opaque((ergs >> 32) as u32);
+    let with_low = |low: u32| {
+        R::from_ergs(R::Ergs::from_computational(
+            ((high as u64) << 32) | low as u64,
+        ))
+    };
+    // in place, and given back if short: only the new low word is live after the subtraction
+    let low = opaque((ergs as u32).wrapping_sub(cost as u32));
+    *resources = with_low(low);
+    if (low as i32) < 0 {
+        core::hint::cold_path();
+        *resources = with_low(low.wrapping_add(cost as u32));
+        return false;
+    }
+    true
+}
+
+/// [`charge_step`], first on the low word of the ergs if the resources are their ergs alone
+/// ([`take_from_low_word`]). The same result and resources in every case; for other resources
+/// it is [`charge_step`].
+#[inline(always)]
+pub(crate) fn fast_charge_step<R: Resources>(
+    resources: &mut R,
+    gas: u64,
+    native: u64,
+) -> InstructionResult {
+    if const { R::ERGS_ONLY.holds() } {
+        // the checked operations only decide whether to try: in every other case `charge_step`
+        // computes the costs itself, overflow included
+        if let (Some(ergs), Some(_)) = (
+            R::Ergs::from_legacy_gas(gas),
+            native.checked_add(STEP_NATIVE_COST),
+        ) {
+            if take_from_low_word(resources, ergs.as_u64()) {
+                return Ok(());
+            }
+        }
+    }
+    charge_step(resources, gas, native)
+}
+
+/// [`fast_charge_step`] for [`spend_gas_and_native`]
+#[inline(always)]
+pub(crate) fn fast_spend_gas_and_native<R: Resources>(
+    resources: &mut R,
+    gas: u64,
+    native: u64,
+) -> InstructionResult {
+    if const { R::ERGS_ONLY.holds() } {
+        if let Some(ergs) = R::Ergs::from_legacy_gas(gas) {
+            if take_from_low_word(resources, ergs.as_u64()) {
+                return Ok(());
+            }
+        }
+    }
+    spend_gas_and_native(resources, gas, native)
+}
+
 /// Charges the growth of the heap from `current_msize` to `new_msize` (both multiples of 32)
 #[inline(always)]
 pub(crate) fn pay_for_memory_growth<R: Resources>(
@@ -537,8 +655,14 @@ pub(crate) unsafe fn write_be_word(src: *mut U256, dst: *mut u8) {
 
 #[cfg(test)]
 mod tests {
-    use super::StackTop;
+    use super::{
+        charge_step, fast_charge_step, fast_spend_gas_and_native, spend_gas_and_native,
+        take_from_low_word, StackTop, LOW_WORD_CHARGE_MAX,
+    };
+    use crate::InstructionResult;
     use u256::U256;
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative, GasOnlyResources};
+    use zk_ee::system::{Computational, Ergs, ErgsResource, Resource, Resources};
 
     const GARBAGE: U256 = U256::from_limbs([0xa5a5_a5a5_a5a5_a5a5; 4]);
 
@@ -579,5 +703,327 @@ mod tests {
         let limbs = expected[values.len() + 1].as_limbs_mut();
         limbs[..3].copy_from_slice(address.as_limbs());
         assert_eq!(buffer, expected);
+    }
+
+    // --- the low word of gas-only resources ----------------------------------------------
+
+    fn amount<R: Resources>(ergs: u64, native: u64) -> R {
+        R::from_ergs_and_native(
+            R::Ergs::from_computational(ergs),
+            R::Native::from_computational(native),
+        )
+    }
+
+    fn next(x: &mut u64) -> u64 {
+        *x = x
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        *x
+    }
+
+    /// Budgets at the edges of the low word: around 2^31 and 2^32 and their multiples, the
+    /// largest ergs (`i64::MAX`) and above, up to `u64::MAX`
+    fn budgets() -> Vec<u64> {
+        let mut values = vec![
+            0,
+            1,
+            2,
+            3,
+            20,
+            2300,
+            (1 << 31) - 2,
+            (1 << 31) - 1,
+            1 << 31,
+            (1 << 31) + 1,
+            (1 << 31) + 2,
+            (1 << 32) - 2,
+            (1 << 32) - 1,
+            1 << 32,
+            (1 << 32) + 1,
+            (1 << 32) + 2,
+            (3 << 31) - 1,
+            3 << 31,
+            (3 << 31) + 1,
+            (1 << 35) + 7,
+            i64::MAX as u64 - 1,
+            i64::MAX as u64,
+            1 << 63,
+            (1 << 63) + 1,
+            u64::MAX - (1 << 31),
+            u64::MAX - 1,
+            u64::MAX,
+        ];
+        let mut x = 0x2545_f491_4f6c_dd1d;
+        for _ in 0..6 {
+            let r = next(&mut x);
+            values.extend([r, r >> 31, r >> 33]);
+        }
+        values
+    }
+
+    /// Gas costs: those of the instructions, the largest the low word takes (2^31) and around
+    /// it, around 2^32, and costs that don't convert at 256 ergs per gas; plus the budget and
+    /// around it (in gas), for exact exhaustion
+    fn gas_costs<R: Resources>(budget: u64) -> Vec<u64> {
+        let gas = budget / R::Ergs::from_legacy_gas(1).unwrap().as_u64();
+        let mut costs = vec![
+            0,
+            1,
+            2,
+            3,
+            8,
+            10,
+            (1 << 23) - 1,
+            1 << 23,
+            (1 << 23) + 1,
+            (1 << 31) - 1,
+            1 << 31,
+            (1 << 31) + 1,
+            (1 << 32) - 1,
+            1 << 32,
+            (1 << 32) + 1,
+            i64::MAX as u64,
+            u64::MAX / 256 + 1,
+            u64::MAX,
+        ];
+        costs.extend([gas.wrapping_sub(1), gas, gas.wrapping_add(1)]);
+        costs
+    }
+
+    /// Native costs, up to the largest the step's native can be added to (see
+    /// `overflowing_step_native_runs_the_original` for the others)
+    const NATIVE: [u64; 3] = [0, 20, u64::MAX - 20];
+
+    /// Both charges of a step on the same resources, the fast one and the original one: the
+    /// same result and resources, or the same panic (with overflow checks)
+    fn check_step<R: Resources + std::panic::RefUnwindSafe>(initial: &R, gas: u64, native: u64) {
+        let run = |f: fn(&mut R, u64, u64) -> InstructionResult| {
+            std::panic::catch_unwind(|| {
+                let mut r = initial.clone();
+                let result = f(&mut r, gas, native);
+                (result, r)
+            })
+        };
+        for (fast, original) in [
+            (
+                fast_charge_step::<R> as fn(&mut R, u64, u64) -> InstructionResult,
+                charge_step::<R> as fn(&mut R, u64, u64) -> InstructionResult,
+            ),
+            (fast_spend_gas_and_native::<R>, spend_gas_and_native::<R>),
+        ] {
+            match (run(fast), run(original)) {
+                (Ok(fast), Ok(original)) => {
+                    assert_eq!(fast, original, "{initial:?} {gas} {native}")
+                }
+                (Err(_), Err(_)) => {}
+                _ => panic!("only one side panicked: {initial:?} {gas} {native}"),
+            }
+        }
+    }
+
+    /// Every charge of an inlined instruction, from every budget, against the original
+    /// function, for gas-only resources (at 1 and 256 ergs per gas) and for the resources of
+    /// the ZKsync OS STF (where the fast functions are the original ones)
+    fn check_single_charges<R: Resources + std::panic::RefUnwindSafe>(natives: &[u64]) {
+        for ergs in budgets() {
+            for &budget_native in natives {
+                let initial = amount::<R>(ergs, budget_native);
+                for gas in gas_costs::<R>(ergs) {
+                    for native in NATIVE {
+                        check_step(&initial, gas, native);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn single_charges_match_the_original() {
+        assert!(GasOnlyResources::ERGS_ONLY.holds());
+        assert!(BaseResources::<(), 256>::ERGS_ONLY.holds());
+        assert!(!BaseResources::<DecreasingNative>::ERGS_ONLY.holds());
+        check_single_charges::<GasOnlyResources>(&[0]);
+        check_single_charges::<BaseResources<(), 256>>(&[0]);
+        check_single_charges::<BaseResources<DecreasingNative>>(&[0, 20, u64::MAX]);
+    }
+
+    /// The low word takes exactly the charges of at most 2^31 it can pay without a borrow: the
+    /// ones whose low word stays below 2^31 after the subtraction. It takes them as the
+    /// original charge does, and leaves the others alone.
+    #[test]
+    fn low_word_takes_exactly_the_borrow_free_charges() {
+        type R = GasOnlyResources;
+        let mut costs = vec![
+            0,
+            1,
+            2,
+            3,
+            20,
+            (1 << 31) - 1,
+            1 << 31,
+            (1 << 31) + 1,
+            u64::MAX,
+        ];
+        let mut x = 7;
+        for _ in 0..16 {
+            costs.push(next(&mut x) >> 33);
+        }
+        let mut taken = 0;
+        for ergs in budgets() {
+            for &cost in &costs {
+                let mut r = R::from_ergs(Ergs(ergs));
+                let low = (ergs as u32).wrapping_sub(cost as u32);
+                let expected = cost <= LOW_WORD_CHARGE_MAX && (low as i32) >= 0;
+                assert_eq!(take_from_low_word(&mut r, cost), expected, "{ergs} {cost}");
+                if expected {
+                    taken += 1;
+                    assert!(ergs >= cost && (ergs as u32) >= cost as u32);
+                    let mut original = R::from_ergs(Ergs(ergs));
+                    assert_eq!(original.charge(&R::from_ergs(Ergs(cost))), Ok(()));
+                    assert_eq!(r, original, "{ergs} {cost}");
+                } else {
+                    assert_eq!(r, R::from_ergs(Ergs(ergs)), "{ergs} {cost}");
+                }
+            }
+        }
+        assert!(taken > 0);
+    }
+
+    /// The edges themselves: a budget below 2^31 is paid down in the low word until a charge
+    /// it can't pay, which then fails as the original one does (out of gas, ergs empty); one of
+    /// 2^31 or more leaves the low word to the original charge whenever it would borrow
+    #[test]
+    fn budgets_at_the_edges() {
+        type R = GasOnlyResources;
+        let ok: InstructionResult = Ok(());
+        for (ergs, gas, left) in [
+            ((1 << 31) - 1, (1 << 31) - 1, Some(0)),
+            ((1 << 31) - 1, 1 << 31, None),
+            (1 << 31, 1 << 31, Some(0)),
+            (1 << 31, 1, Some((1 << 31) - 1)),
+            ((1 << 31) + 1, 2, Some((1 << 31) - 1)),
+            ((1 << 32) - 1, 1, Some((1 << 32) - 2)),
+            (1 << 32, 1, Some((1 << 32) - 1)),
+            ((1 << 32) + 1, 2, Some((1 << 32) - 1)),
+            ((1 << 32) + 1, (1 << 31) + 1, Some(1 << 31)),
+            (i64::MAX as u64, 3, Some(i64::MAX as u64 - 3)),
+            (u64::MAX, 3, Some(u64::MAX - 3)),
+            (2, 3, None),
+            (0, 0, Some(0)),
+            (0, 1, None),
+        ] {
+            let mut fast = R::from_ergs(Ergs(ergs));
+            let mut original = fast.clone();
+            let result = fast_charge_step(&mut fast, gas, 0);
+            assert_eq!(result, charge_step(&mut original, gas, 0), "{ergs} {gas}");
+            assert_eq!(fast, original);
+            match left {
+                Some(left) => {
+                    assert_eq!(result, ok);
+                    assert_eq!(fast.ergs().0, left);
+                }
+                None => {
+                    assert!(result.is_err());
+                    assert_eq!(fast.ergs().0, 0);
+                }
+            }
+        }
+    }
+
+    /// A step native that overflows when the step's native is added runs the original
+    /// function: the same panic with overflow checks, the same result without
+    #[test]
+    fn overflowing_step_native_runs_the_original() {
+        for ergs in [0, 1000, (1 << 31) + 1, u64::MAX] {
+            for gas in [0, 3, u64::MAX] {
+                for native in [u64::MAX - 19, u64::MAX] {
+                    check_step(&GasOnlyResources::from_ergs(Ergs(ergs)), gas, native);
+                    check_step(
+                        &amount::<BaseResources<DecreasingNative>>(ergs, 100),
+                        gas,
+                        native,
+                    );
+                }
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Op {
+        Step(u64, u64),
+        GasAndNative(u64, u64),
+        /// A charge of all that is left, or of one more
+        Exhaust(u64),
+        /// CALL or CREATE: everything goes to the callee, which gives back what it didn't spend
+        CallAndReturn(u64),
+        /// Out of gas in an outlined instruction
+        ExhaustErgs,
+    }
+
+    /// Sequences of charges from the budgets at the edges, compared with the original
+    /// functions after every step
+    fn check_sequences<R: Resources>(steps: usize) {
+        let ops = [
+            Op::Step(3, 30),
+            Op::Step(2, 0),
+            Op::Step(1 << 23, 0),
+            Op::Step((1 << 31) - 1, 0),
+            Op::GasAndNative(1, 20),
+            Op::GasAndNative((1 << 31) + 1, 0),
+            Op::Exhaust(0),
+            Op::Exhaust(1),
+            Op::CallAndReturn(700),
+            Op::CallAndReturn(1 << 31),
+            Op::ExhaustErgs,
+        ];
+        let mut x = 0x0123_4567_89ab_cdef;
+        for ergs in budgets() {
+            let mut fast = amount::<R>(ergs, 1 << 40);
+            let mut original = fast.clone();
+            for _ in 0..steps {
+                let op = ops[(next(&mut x) >> 33) as usize % ops.len()];
+                let (got, expected) = match op {
+                    Op::Step(gas, native) => (
+                        fast_charge_step(&mut fast, gas, native),
+                        charge_step(&mut original, gas, native),
+                    ),
+                    Op::GasAndNative(gas, native) => (
+                        fast_spend_gas_and_native(&mut fast, gas, native),
+                        spend_gas_and_native(&mut original, gas, native),
+                    ),
+                    Op::Exhaust(more) => {
+                        let gas = original.legacy_gas() + more;
+                        (
+                            fast_spend_gas_and_native(&mut fast, gas, 0),
+                            spend_gas_and_native(&mut original, gas, 0),
+                        )
+                    }
+                    Op::CallAndReturn(spent) => {
+                        let call = |r: &mut R| {
+                            let mut taken = r.take();
+                            let _ = charge_step(&mut taken, spent, spent);
+                            r.reclaim(taken);
+                        };
+                        call(&mut fast);
+                        call(&mut original);
+                        (Ok(()), Ok(()))
+                    }
+                    Op::ExhaustErgs => {
+                        fast.exhaust_ergs();
+                        original.exhaust_ergs();
+                        (Ok(()), Ok(()))
+                    }
+                };
+                assert_eq!(got, expected, "{ergs} {op:?}");
+                assert_eq!(fast, original, "{ergs} {op:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn sequences_match_the_original() {
+        check_sequences::<GasOnlyResources>(300);
+        check_sequences::<BaseResources<(), 256>>(300);
+        check_sequences::<BaseResources<DecreasingNative>>(100);
     }
 }

@@ -432,6 +432,99 @@ pub trait Resources:
     fn charge_native(&mut self, native: u64) -> Result<(), SystemError> {
         self.charge(&Self::from_native(Self::Native::from_computational(native)))
     }
+
+    /// Whether the resources are their ergs alone (see [ErgsOnly]). The default says no, and
+    /// only this crate can say yes.
+    const ERGS_ONLY: ErgsOnly<Self> = ErgsOnly::NO;
+}
+
+/// The value of [Resources::ERGS_ONLY] for `R`. Anything but [ErgsOnly::NO] asserts, for every
+/// state `r` and all amounts `e` and `n`:
+/// - (C1) the state is its ergs: `R::from_ergs(r.ergs()) == r`, and
+///   `R::Ergs::from_computational(e).as_u64() == e`;
+/// - (C2) a charge the ergs can pay succeeds and takes only them: if `r.ergs().as_u64() >= e`,
+///   then `r.charge(&R::from_ergs_and_native(R::Ergs::from_computational(e),
+///   R::Native::from_computational(n)))` is `Ok` and leaves
+///   `R::from_ergs(R::Ergs::from_computational(r.ergs().as_u64() - e))`.
+///
+/// Nothing is asserted about failing charges: callers run `charge` itself for those (the EVM
+/// interpreter takes the charges it can from the low word of the ergs, see its `hot` module).
+///
+/// Only this crate can make another value, and a value is for one type, so a value of another
+/// type doesn't fit:
+///
+/// ```compile_fail,E0308
+/// use zk_ee::reference_implementations::GasOnlyResources;
+/// use zk_ee::system::{ErgsOnly, Resources};
+/// struct Mine;
+/// const FORM: ErgsOnly<Mine> = <GasOnlyResources as Resources>::ERGS_ONLY;
+/// ```
+pub struct ErgsOnly<R: ?Sized>(bool, core::marker::PhantomData<fn() -> R>);
+
+impl<R: ?Sized> ErgsOnly<R> {
+    /// Nothing is asserted
+    pub const NO: Self = Self(false, core::marker::PhantomData);
+
+    /// For a composite of ergs and a native resource that states `native`, whose `Resources`
+    /// impl has been checked against (C1) and (C2) for an untracked native resource
+    pub(crate) const fn if_native_untracked<N: ?Sized>(native: Untracked<N>) -> Self {
+        Self(native.0, core::marker::PhantomData)
+    }
+
+    /// Whether (C1) and (C2) hold
+    #[inline(always)]
+    pub const fn holds(&self) -> bool {
+        self.0
+    }
+}
+
+/// Whether a native resource is tracked (see [Untracked]). The default says nothing, which keeps
+/// the resources that contain it from being [ErgsOnly]:
+///
+/// ```
+/// use zk_ee::system::NativeTracking;
+/// struct Mine;
+/// impl NativeTracking for Mine {}
+/// ```
+pub trait NativeTracking {
+    const UNTRACKED: Untracked<Self> = Untracked::NO;
+}
+
+/// The value of [NativeTracking::UNTRACKED] for `T`. [Untracked::YES] asserts that `T` has a
+/// single value (it carries no state) and that every charge of it succeeds.
+///
+/// Only this crate can make [Untracked::YES], so an implementation elsewhere can't claim it,
+/// neither by naming it:
+///
+/// ```compile_fail,E0624
+/// use zk_ee::system::{NativeTracking, Untracked};
+/// struct Mine;
+/// impl NativeTracking for Mine {
+///     const UNTRACKED: Untracked<Self> = Untracked::YES;
+/// }
+/// ```
+///
+/// nor by taking the value of another type:
+///
+/// ```compile_fail,E0308
+/// use zk_ee::system::{NativeTracking, Untracked};
+/// struct Mine;
+/// impl NativeTracking for Mine {
+///     const UNTRACKED: Untracked<Self> = <() as NativeTracking>::UNTRACKED;
+/// }
+/// ```
+pub struct Untracked<T: ?Sized>(bool, core::marker::PhantomData<fn() -> T>);
+
+impl<T: ?Sized> Untracked<T> {
+    /// Nothing is asserted
+    pub const NO: Self = Self(false, core::marker::PhantomData);
+    /// A single value, and every charge succeeds
+    pub(crate) const YES: Self = Self(true, core::marker::PhantomData);
+}
+
+/// The native resource of the systems that meter only ergs (see its [Resource] impl)
+impl NativeTracking for () {
+    const UNTRACKED: Untracked<Self> = Untracked::YES;
 }
 
 #[cfg(test)]
