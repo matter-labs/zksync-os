@@ -37,6 +37,106 @@ use zk_ee::system::tracer::evm_tracer::EvmTracer;
 /// Address derivation and other helpers shared with the first interpreter
 type V1<'a, S> = crate::Interpreter<'a, S>;
 
+const WORD_COPY_LEN: usize = 32;
+
+/// A copy of one word whose aligned source loads and destination stores are in bounds.
+struct WordCopy {
+    src: *const u32,
+    misalignment: usize,
+    dst: *mut u32,
+}
+
+impl WordCopy {
+    #[inline(always)]
+    fn plan(
+        memory_offset: &U256,
+        source_offset: &U256,
+        len: &U256,
+        source: &[u8],
+        heap: &mut [u8],
+    ) -> Option<Self> {
+        let (d, s, l) = (
+            memory_offset.as_limbs(),
+            source_offset.as_limbs(),
+            len.as_limbs(),
+        );
+        if l[0] != WORD_COPY_LEN as u64 {
+            return None;
+        }
+        if (l[1]
+            | l[2]
+            | l[3]
+            | (d[0] >> 32)
+            | d[1]
+            | d[2]
+            | d[3]
+            | (s[0] >> 32)
+            | s[1]
+            | s[2]
+            | s[3])
+            != 0
+        {
+            return None;
+        }
+        let (memory_offset, source_offset) = (d[0] as usize, s[0] as usize);
+        // Frame heaps start empty; resize_heap is their only length change. It
+        // keeps len <= u32::MAX - 31 and len % 32 == 0, so this also proves
+        // the generic resize_heap would neither reject nor grow the heap.
+        if memory_offset.saturating_add(WORD_COPY_LEN) > heap.len() {
+            return None;
+        }
+        let dst = heap.as_mut_ptr().wrapping_add(memory_offset);
+        if !dst.addr().is_multiple_of(4) {
+            return None;
+        }
+        let available = source.len().checked_sub(source_offset)?;
+        if available < WORD_COPY_LEN {
+            return None;
+        }
+        let start = source.as_ptr().wrapping_add(source_offset);
+        let misalignment = start.addr() % 4;
+        // A misaligned window needs the aligned word on each side as well.
+        if misalignment != 0
+            && (source_offset < misalignment || available < WORD_COPY_LEN + 4 - misalignment)
+        {
+            return None;
+        }
+        Some(Self {
+            src: start.wrapping_sub(misalignment).cast(),
+            misalignment,
+            dst: dst.cast(),
+        })
+    }
+
+    /// # Safety
+    /// The disjoint source and heap passed to `plan` have not moved or shrunk.
+    #[inline(always)]
+    unsafe fn run(self) {
+        let Self {
+            src,
+            misalignment,
+            dst,
+        } = self;
+        debug_assert!(src.is_aligned() && dst.is_aligned());
+        if misalignment == 0 {
+            for i in 0..8 {
+                dst.add(i).write(src.add(i).read());
+            }
+        } else {
+            // Merge little-endian aligned words into the requested byte window.
+            let right = 8 * misalignment as u32;
+            let left = 32 - right;
+            let mut low = u32::from_le(src.read());
+            for i in 0..8 {
+                let high = u32::from_le(src.add(i + 1).read());
+                dst.add(i)
+                    .write(u32::to_le((low >> right) | (high << left)));
+                low = high;
+            }
+        }
+    }
+}
+
 /// Grows the heap to cover `..max_offset` (the end of the accessed range, computed once by
 /// the caller with a saturating add), charging the expansion.
 ///
@@ -333,6 +433,32 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn codecopy(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
+        if let Some((memory_offset, source_offset, len)) = self.stack.peek_3() {
+            if let Some(copy) = WordCopy::plan(
+                memory_offset,
+                source_offset,
+                len,
+                cold.bytecode,
+                &mut cold.heap,
+            ) {
+                self.stack.pop_3()?;
+                let (gas_cost, native_cost) =
+                    gas_utils::copy_cost_plus_very_low_gas(WORD_COPY_LEN as u64)?;
+                charge_step(
+                    &mut self.resources,
+                    gas_cost,
+                    native_cost + CODECOPY_NATIVE_COST,
+                )?;
+                // SAFETY: plan checked both ranges; code and this frame's heap are disjoint.
+                unsafe { copy.run() };
+                return Ok(());
+            }
+        }
+        self.codecopy_generic(cold)
+    }
+
+    #[inline(never)]
+    fn codecopy_generic(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
@@ -381,6 +507,32 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
 
     #[inline(never)]
     pub(crate) fn returndatacopy(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
+        if let Some((memory_offset, source_offset, len)) = self.stack.peek_3() {
+            if let Some(copy) = WordCopy::plan(
+                memory_offset,
+                source_offset,
+                len,
+                cold.returndata,
+                &mut cold.heap,
+            ) {
+                self.stack.pop_3()?;
+                let (gas_cost, native_cost) =
+                    gas_utils::copy_cost_plus_very_low_gas(WORD_COPY_LEN as u64)?;
+                charge_step(
+                    &mut self.resources,
+                    gas_cost,
+                    RETURNDATACOPY_NATIVE_COST + native_cost,
+                )?;
+                // SAFETY: plan checked both ranges; returndata and this frame's heap are disjoint.
+                unsafe { copy.run() };
+                return Ok(());
+            }
+        }
+        self.returndatacopy_generic(cold)
+    }
+
+    #[inline(never)]
+    fn returndatacopy_generic(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len_u64 = cast_to_u64(len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
@@ -1141,5 +1293,194 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
             full_caller_resources: all_resources,
         });
         Err(ExitCode::ExternalCall)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WordCopy, WORD_COPY_LEN};
+    use u256::U256;
+    use zk_ee::utils::copy_and_zeropad_nonoverlapping;
+
+    #[repr(align(32))]
+    struct Aligned32([u8; 256]);
+
+    fn u32_operand(value: &U256) -> Option<usize> {
+        let limbs = value.as_limbs();
+        if limbs[0] > u32::MAX as u64 || limbs[1..].iter().any(|limb| *limb != 0) {
+            None
+        } else {
+            Some(limbs[0] as usize)
+        }
+    }
+
+    // Independent predicate for P1-P6, using integer end bounds and address
+    // arithmetic instead of the plan's subtraction and pointer construction.
+    fn reference_plan(d: &U256, s: &U256, len: &U256, source: &[u8], heap: &[u8]) -> bool {
+        if len != &U256::from(WORD_COPY_LEN as u64) {
+            return false;
+        }
+        let (Some(d), Some(s)) = (u32_operand(d), u32_operand(s)) else {
+            return false;
+        };
+        let Some(dst_end) = d.checked_add(WORD_COPY_LEN) else {
+            return false;
+        };
+        if dst_end > heap.len() || !(heap.as_ptr().addr() + d).is_multiple_of(4) {
+            return false;
+        }
+        let Some(src_end) = s.checked_add(WORD_COPY_LEN) else {
+            return false;
+        };
+        if src_end > source.len() {
+            return false;
+        }
+        let misalignment = (source.as_ptr().addr() + s) % 4;
+        misalignment == 0
+            || (s >= misalignment && s + WORD_COPY_LEN + 4 - misalignment <= source.len())
+    }
+
+    fn check_case(d: &U256, s: &U256, len: &U256, source: &[u8], heap: &mut [u8], initial: &[u8]) {
+        let expected_hit = reference_plan(d, s, len, source, heap);
+        let plan = WordCopy::plan(d, s, len, source, heap);
+        assert_eq!(
+            plan.is_some(),
+            expected_hit,
+            "d={d:?}, s={s:?}, len={len:?}, source_len={}, heap_len={}",
+            source.len(),
+            heap.len()
+        );
+        if let Some(plan) = plan {
+            let d = u32_operand(d).unwrap();
+            let s = u32_operand(s).unwrap();
+            assert!(source.len() - s >= WORD_COPY_LEN);
+            assert!(d + WORD_COPY_LEN <= initial.len());
+            let mut expected = initial.to_vec();
+            copy_and_zeropad_nonoverlapping(&source[s..], &mut expected[d..d + WORD_COPY_LEN]);
+            // SAFETY: the plan was made for these unchanged, disjoint slices.
+            unsafe { plan.run() };
+            assert_eq!(heap, expected, "d={d}, s={s}, source_len={}", source.len());
+            assert_eq!(&heap[..d], &initial[..d]);
+            assert_eq!(&heap[d + WORD_COPY_LEN..], &initial[d + WORD_COPY_LEN..]);
+            heap.copy_from_slice(initial);
+        }
+    }
+
+    /// The full grid on the host; a small boundary grid under Miri to check
+    /// source-slice provenance and alignment of every word access.
+    #[test]
+    fn word_copy_plan_and_run_match_generic_copy() {
+        if cfg!(miri) {
+            let mut source_backing = [0xa5; 96];
+            for (i, byte) in source_backing.iter_mut().enumerate() {
+                *byte = (i as u8).wrapping_mul(29).wrapping_add(7);
+            }
+            for source_base in 0..4 {
+                for heap_base in 0..2 {
+                    let mut heap_backing = Aligned32([0x5a; 256]);
+                    let heap = &mut heap_backing.0[heap_base..heap_base + 64];
+                    let initial = heap.to_vec();
+                    for (source_len, source_offset, memory_offset) in [
+                        (31, 0, 0),
+                        (32, 0, 0),
+                        (35, 1, 3),
+                        (36, 2, 4),
+                        (37, 3, 31),
+                        (40, 4, 32),
+                        (64, 0, 3),
+                        (64, 5, 33),
+                    ] {
+                        let source = &source_backing[source_base..source_base + source_len];
+                        check_case(
+                            &U256::from(memory_offset as u64),
+                            &U256::from(source_offset as u64),
+                            &U256::from(32u64),
+                            source,
+                            heap,
+                            &initial,
+                        );
+                    }
+                }
+            }
+            let source = &source_backing[1..65];
+            let mut heap_backing = Aligned32([0x5a; 256]);
+            let heap = &mut heap_backing.0[..64];
+            let initial = heap.to_vec();
+            for (d, s, len) in [
+                (U256::from(0u64), U256::from(0u64), U256::from(0u64)),
+                (U256::from(0u64), U256::from(0u64), U256::from(31u64)),
+                (U256::from(0u64), U256::from(0u64), U256::from(33u64)),
+                (U256::from(1u64 << 32), U256::from(0u64), U256::from(32u64)),
+                (U256::from(0u64), U256::from(1u64 << 32), U256::from(32u64)),
+                (
+                    U256::from_limbs([0, 0, 1, 0]),
+                    U256::from(0u64),
+                    U256::from(32u64),
+                ),
+                (
+                    U256::from(0u64),
+                    U256::from_limbs([0, 0, 1, 0]),
+                    U256::from(32u64),
+                ),
+            ] {
+                check_case(&d, &s, &len, source, heap, &initial);
+            }
+            return;
+        }
+        let large = [
+            U256::from((u32::MAX - 31) as u64),
+            U256::from(u32::MAX as u64),
+            U256::from(1u64 << 32),
+            U256::from_limbs([0, 1, 0, 0]),
+            U256::from_limbs([64, 0, 1, 0]),
+            U256::from_limbs([0, 0, 0, 1u64 << 63]),
+        ];
+        let mut lengths: Vec<U256> = (0..=33).map(|value| U256::from(value as u64)).collect();
+        lengths.push(U256::from(64u64));
+        for bit in [32, 64, 128, 255] {
+            let mut limbs = [0u64; 4];
+            limbs[0] = 32;
+            limbs[bit / 64] |= 1u64 << (bit % 64);
+            lengths.push(U256::from_limbs(limbs));
+        }
+        let source_lens = [0, 1, 31, 32, 33, 34, 35, 36, 37, 40, 64, 100];
+        let heap_lens = [0, 32, 64, 96, 128];
+
+        for base in 0..4 {
+            for n in source_lens {
+                let mut backing = [0xa5; 128];
+                let mut state = 0x9e37_79b9u32;
+                for byte in &mut backing[8 + base..8 + base + n] {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    *byte = state as u8;
+                }
+                let source = &backing[8 + base..8 + base + n];
+                for h in heap_lens {
+                    for heap_base in [0, 1] {
+                        let mut backing_heap = Aligned32([0; 256]);
+                        for (i, byte) in backing_heap.0.iter_mut().enumerate() {
+                            *byte = (i as u8).wrapping_mul(29).wrapping_add(7);
+                        }
+                        let heap = &mut backing_heap.0[heap_base..heap_base + h];
+                        let initial = heap.to_vec();
+                        let mut destinations: Vec<U256> =
+                            (0..=h + 33).map(|value| U256::from(value as u64)).collect();
+                        let mut sources: Vec<U256> =
+                            (0..=n + 5).map(|value| U256::from(value as u64)).collect();
+                        destinations.extend(large.iter().cloned());
+                        sources.extend(large.iter().cloned());
+                        for len in &lengths {
+                            for d in &destinations {
+                                for s in &sources {
+                                    check_case(d, s, len, source, heap, &initial);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

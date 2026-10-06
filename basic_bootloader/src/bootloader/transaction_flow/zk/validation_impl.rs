@@ -7,7 +7,8 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2TxIntrinsicNativeInput,
+    calculate_tx_intrinsic_gas, count_zero_bytes, create_resources_for_tx, get_gas_price,
+    L2TxIntrinsicNativeInput,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -546,7 +547,7 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     system: &mut System<S>,
     calldata: &[u8],
 ) -> (u64, u64) {
-    let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
+    let zero_bytes = count_zero_bytes(calldata) as u64;
     let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
     let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);

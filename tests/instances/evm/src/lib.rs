@@ -18,6 +18,7 @@ use rig::{
     TestingFramework,
 };
 
+mod copy_opcodes;
 mod test_support;
 
 // Constructor/runtime behavior during CREATE.

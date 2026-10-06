@@ -107,7 +107,26 @@ impl<T: Sized, const N: usize, A: Allocator + Clone> Stack<T, A> for ListVec<T, 
         ListVecIter::new_from_parts(outer, inner, self.len())
     }
 
-    // TODO: implement customized iter_skip_n for better performance
+    /// Returns an iterator that skips the first `n` elements.
+    ///
+    /// Jumps straight to the node holding element `n` (O(n / N) node hops) instead of
+    /// stepping over `n` elements, and clones of the result do not re-skip.
+    fn iter_skip_n<'a>(&'a self, n: usize) -> impl ExactSizeIterator<Item = &'a T> + Clone
+    where
+        T: 'a,
+    {
+        let len = self.len();
+        let mut outer = self.0.iter();
+        if n >= len {
+            // Nothing left to yield (same as `iter().skip(n)` for `n >= len`).
+            return ListVecIter::new_from_parts(outer, None, 0);
+        }
+        // All nodes but the last are full, so element `n` is at offset `n % N` of node `n / N`.
+        // As `n < len`, that node exists and holds more than `n % N` elements.
+        let inner = outer.nth(n / N).map(|node| node[n % N..].iter());
+        ListVecIter::new_from_parts(outer, inner, len - n)
+    }
+
     // TODO: optimized truncate?
 }
 
@@ -361,5 +380,83 @@ mod tests {
 
         assert_eq!(collected1, collected2);
         assert_eq!(collected1, vec![&1, &2, &3]);
+    }
+
+    /// Checks `iter_skip_n(n)` against `iter().skip(n)` for every `n` in `0..=len + 3`:
+    /// same elements, exact `len()` at every step, and clones taken mid-iteration
+    /// yield the same remaining sequence as the original.
+    fn check_iter_skip_n_matches_skip<const N: usize>(stack: &ListVec<usize, N, Global>) {
+        let len = stack.len();
+        let all: Vec<usize> = stack.iter().copied().collect();
+        assert_eq!(all, (0..len).collect::<Vec<usize>>());
+
+        for n in 0..=len + 3 {
+            let expected: Vec<&usize> = stack.iter().skip(n).collect();
+            let expected_len = len.saturating_sub(n);
+            assert_eq!(expected.len(), expected_len);
+            assert_eq!(stack.iter_skip_n(n).collect::<Vec<&usize>>(), expected);
+
+            let mut iter = stack.iter_skip_n(n);
+            for k in 0..=expected_len {
+                assert_eq!(iter.len(), expected_len - k, "N={N} len={len} n={n} k={k}");
+                let clone = iter.clone();
+                assert_eq!(clone.len(), iter.len());
+                assert_eq!(clone.collect::<Vec<&usize>>(), expected[k..]);
+                assert_eq!(iter.next(), expected.get(k).copied());
+            }
+            assert_eq!(iter.len(), 0);
+            assert_eq!(iter.next(), None);
+        }
+    }
+
+    /// Runs the differential check on stacks of every length in `0..=100`, built by
+    /// pushing only, and by overshooting then shrinking via `pop` and via `truncate`
+    /// (so partial last nodes also arise from shrinking).
+    fn check_iter_skip_n_all_lengths<const N: usize>() {
+        for len in 0..=100 {
+            let mut pushed = ListVec::<usize, N, Global>::new_in(Global);
+            for i in 0..len {
+                pushed.push(i);
+            }
+            check_iter_skip_n_matches_skip(&pushed);
+
+            let mut popped = ListVec::<usize, N, Global>::new_in(Global);
+            for i in 0..len + N + 1 {
+                popped.push(i);
+            }
+            for _ in 0..N + 1 {
+                popped.pop();
+            }
+            assert_eq!(popped.len(), len);
+            check_iter_skip_n_matches_skip(&popped);
+
+            let mut truncated = ListVec::<usize, N, Global>::new_in(Global);
+            for i in 0..len + 2 * N + 3 {
+                truncated.push(i);
+            }
+            truncated.truncate(len);
+            assert_eq!(truncated.len(), len);
+            check_iter_skip_n_matches_skip(&truncated);
+        }
+    }
+
+    #[test]
+    fn test_iter_skip_n_matches_skip_node_size_1() {
+        check_iter_skip_n_all_lengths::<1>();
+    }
+
+    #[test]
+    fn test_iter_skip_n_matches_skip_node_size_2() {
+        check_iter_skip_n_all_lengths::<2>();
+    }
+
+    #[test]
+    fn test_iter_skip_n_matches_skip_node_size_3() {
+        check_iter_skip_n_all_lengths::<3>();
+    }
+
+    #[test]
+    fn test_iter_skip_n_matches_skip_node_size_32() {
+        check_iter_skip_n_all_lengths::<32>();
     }
 }

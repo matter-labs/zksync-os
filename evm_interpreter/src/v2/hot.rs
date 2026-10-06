@@ -162,6 +162,22 @@ impl StackTop {
         self.pop_3_ptr().map(|(a, b, c)| unsafe { (&*a, &*b, &*c) })
     }
 
+    /// The top three values in pop order, without changing the stack
+    #[inline(always)]
+    pub fn peek_3(&self) -> Option<(&U256, &U256, &U256)> {
+        if self.depth < 3 {
+            return None;
+        }
+        // SAFETY: these are initialized slots of the stack
+        unsafe {
+            Some((
+                &*self.sp.wrapping_sub(1),
+                &*self.sp.wrapping_sub(2),
+                &*self.sp.wrapping_sub(3),
+            ))
+        }
+    }
+
     #[inline(always)]
     pub fn pop_4(&mut self) -> Result<(&U256, &U256, &U256, &U256), ExitCode> {
         // SAFETY: initialized slots of the stack
@@ -231,29 +247,31 @@ impl StackTop {
         Ok(())
     }
 
+    // The small pushes write the whole slot with plain word stores: on the proving target
+    // eight stores are cheaper than the zeroing delegation plus the stores of the low words.
+
     #[inline(always)]
     pub fn push_zero(&mut self) -> InstructionResult {
-        self.push_slot_zeroed().map(|_| ())
+        let slot = self.push_slot()?;
+        // SAFETY: a free slot of the stack
+        unsafe { slot.write(U256::ZERO) };
+        Ok(())
     }
 
     #[inline(always)]
     pub fn push_u64(&mut self, value: u64) -> InstructionResult {
         let slot = self.push_slot()?;
         // SAFETY: a free slot of the stack
-        unsafe { U256::write_u64_into_ptr(slot, value) };
+        unsafe { slot.write(U256::from_limbs([value, 0, 0, 0])) };
         Ok(())
     }
 
     #[inline(always)]
     pub fn push_b160(&mut self, address: ruint::aliases::B160) -> InstructionResult {
-        let slot = self.push_slot_zeroed()?;
-        // SAFETY: an initialized slot of the stack
-        unsafe {
-            let limbs = (*slot).as_limbs_mut();
-            limbs[0] = address.as_limbs()[0];
-            limbs[1] = address.as_limbs()[1];
-            limbs[2] = address.as_limbs()[2];
-        }
+        let slot = self.push_slot()?;
+        let limbs = address.as_limbs();
+        // SAFETY: a free slot of the stack
+        unsafe { slot.write(U256::from_limbs([limbs[0], limbs[1], limbs[2], 0])) };
         Ok(())
     }
 
@@ -350,9 +368,10 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub fn fetch_and_advance(&mut self) -> u8 {
         self.ip = self.ip.wrapping_add(1);
         if S::CODE_IS_PADDED {
-            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes, and `ip`
-            // never gets further than 33 bytes past its end (a `STOP` is read there at
-            // the latest, see `CODE_PADDING_BYTES`)
+            // SAFETY: the code is followed by `CODE_PADDING_BYTES` zero bytes (in the system's
+            // buffer or in a padded copy, see `EthereumLikeTypes::CODE_IS_PADDED`), and `ip`
+            // never gets further than 33 bytes past its end (a `STOP` is read there at the
+            // latest, see `CODE_PADDING_BYTES`)
             unsafe { self.ip.sub(1).read() }
         } else if self.ip <= self.code_end {
             // SAFETY: in bounds of the code
@@ -514,4 +533,51 @@ pub(crate) unsafe fn read_be_word(src: *const u8, dst: *mut U256) {
 #[inline(always)]
 pub(crate) unsafe fn write_be_word(src: *mut U256, dst: *mut u8) {
     U256::write_slot_as_be_bytes(src, dst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StackTop;
+    use u256::U256;
+
+    const GARBAGE: U256 = U256::from_limbs([0xa5a5_a5a5_a5a5_a5a5; 4]);
+
+    /// A stack over a buffer of garbage slots, as a reused stack buffer is
+    fn garbage_stack(buffer: &mut [U256]) -> StackTop {
+        buffer.fill(GARBAGE);
+        StackTop {
+            sp: buffer.as_mut_ptr(),
+            depth: 0,
+        }
+    }
+
+    /// The small pushes write the same slot as the zeroing writes they replaced
+    #[test]
+    fn small_pushes_match_zeroing_writes() {
+        let values = [0, 1, 0xff, u32::MAX as u64, 1 << 32, u64::MAX - 1, u64::MAX];
+        let address =
+            ruint::aliases::B160::from_limbs([u64::MAX, 0x0123_4567_89ab_cdef, u32::MAX as u64]);
+        let mut buffer = [GARBAGE; 16];
+        let mut stack = garbage_stack(&mut buffer);
+        for value in values {
+            stack.push_u64(value).unwrap();
+        }
+        stack.push_zero().unwrap();
+        stack.push_b160(address).unwrap();
+        assert_eq!(stack.depth, values.len() + 2);
+
+        let mut expected = [GARBAGE; 16];
+        for (i, value) in values.into_iter().enumerate() {
+            // SAFETY: a slot of the buffer
+            unsafe { U256::write_u64_into_ptr(&mut expected[i], value) };
+        }
+        // SAFETY: slots of the buffer
+        unsafe {
+            U256::write_zero_into_ptr(&mut expected[values.len()]);
+            U256::write_zero_into_ptr(&mut expected[values.len() + 1]);
+        }
+        let limbs = expected[values.len() + 1].as_limbs_mut();
+        limbs[..3].copy_from_slice(address.as_limbs());
+        assert_eq!(buffer, expected);
+    }
 }

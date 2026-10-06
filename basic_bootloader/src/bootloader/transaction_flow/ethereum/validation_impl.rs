@@ -5,6 +5,7 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
+use crate::bootloader::transaction_flow::gas_helpers::count_zero_bytes;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use crypto::secp256k1::SECP256K1N_HALF;
@@ -138,7 +139,7 @@ where
 
     // EIP-7623
     let (calldata_tokens, minimal_gas_used) = {
-        let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
+        let zero_bytes = count_zero_bytes(calldata) as u64;
         let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
         let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
         let non_zero_bytes_factor =
