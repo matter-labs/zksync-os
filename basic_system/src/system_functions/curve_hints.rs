@@ -11,6 +11,9 @@
 //! A wrong hint fails an assertion: hints come from the prover's own oracle, never from
 //! external input, so a bad one is a broken prover rather than a case to recover from.
 
+mod bls12_381_extension;
+pub use bls12_381_extension::{bls12_381_fq2_inverse, bls12_381_fq2_sqrt, Bls12381Fq2Divider};
+
 use crate::system_functions::field_ops::{
     query_field_hint, query_field_hint_into, read_hint_answer, send_field_hint_query, FieldHintOp,
     HintAnswer, HintTarget,
@@ -156,6 +159,16 @@ pub mod guest_layout {
         size: 160,
     };
 
+    pub const BLS12_381_G2_AFFINE: AffinePoint = AffinePoint {
+        x: 0,
+        y: 128,
+        infinity: 256,
+        size: 288,
+    };
+    pub const BLS12_381_PAIR_G1: usize = 0;
+    pub const BLS12_381_PAIR_G2: usize = 160;
+    pub const BLS12_381_PAIR_SIZE: usize = 448;
+
     /// Byte offsets of the points of a `(G1Affine, G2Affine)` pair of the bn254 pairing input, and
     /// its size in bytes
     pub const BN254_PAIR_G1: usize = 0;
@@ -186,6 +199,11 @@ const _: () = {
     assert_affine!(bn254::G1Affine, BN254_G1_AFFINE);
     assert_affine!(bn254::G2Affine, BN254_G2_AFFINE);
     assert_affine!(bls12_381::G1Affine, BLS12_381_G1_AFFINE);
+
+    assert_affine!(bls12_381::G2Affine, BLS12_381_G2_AFFINE);
+    assert!(offset_of!(Bls12381Pair, g1) == BLS12_381_PAIR_G1);
+    assert!(offset_of!(Bls12381Pair, g2) == BLS12_381_PAIR_G2);
+    assert!(size_of::<Bls12381Pair>() == BLS12_381_PAIR_SIZE);
 
     type Bn254Pair = (bn254::G1Affine, bn254::G2Affine);
     assert!(offset_of!(Bn254Pair, 0) == BN254_PAIR_G1);
@@ -528,6 +546,14 @@ pub fn bls12_381_fq_sqrt<O: IOOracle>(
     }
 }
 
+/// A validated arbitrary pairing operand. Explicit layout avoids Rust tuple field reordering.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Bls12381Pair {
+    pub g1: crypto::bls12_381::G1Affine,
+    pub g2: crypto::bls12_381::G2Affine,
+}
+
 /// The prover's claim about a pairing product `f`, with the witness it takes to settle it
 pub enum PairingClaim<F12, F6> {
     /// `f` is the identity: the residue witness `c`, `d = c^-1` (for bn254; only `d` for
@@ -702,6 +728,33 @@ pub fn bls12_381_kzg_residue_witness<O: IOOracle>(
         .expect("must send the field hint query");
     let is_identity: bool = read_hint_answer(oracle).expect("the hint answer is well-formed");
     let claim = if is_identity {
+        let (d, s): (Fq12, Fq6) = read_hint_answer(oracle).expect("the hint answer is well-formed");
+        PairingClaim::Identity {
+            c: Fq12::zero(),
+            d,
+            s,
+        }
+    } else {
+        PairingClaim::NotIdentity {
+            f_inverse: read_hint_answer(oracle).expect("the hint answer is well-formed"),
+        }
+    };
+    oracle
+        .finish_query()
+        .expect("the hint answer has no excess data");
+    claim
+}
+
+/// The residue claim of an arbitrary validated BLS12-381 pairing product.
+pub fn bls12_381_pairing_residue_witness<O: IOOracle>(
+    oracle: &mut O,
+    pairs: &[Bls12381Pair],
+) -> PairingClaim<crypto::bls12_381::Fq12, crypto::bls12_381::Fq6> {
+    use crypto::bls12_381::{Fq12, Fq6};
+    send_field_hint_query(oracle, FieldHintOp::Bls12381PairingResidueWitness, pairs)
+        .expect("must send the field hint query");
+    let identity: bool = read_hint_answer(oracle).expect("the hint answer is well-formed");
+    let claim = if identity {
         let (d, s): (Fq12, Fq6) = read_hint_answer(oracle).expect("the hint answer is well-formed");
         PairingClaim::Identity {
             c: Fq12::zero(),
@@ -907,7 +960,8 @@ pub(crate) mod tests {
                 let index = match op {
                     _ if self.last_word => words.len() - 1,
                     FieldHintOp::Bn254PairingResidueWitness
-                    | FieldHintOp::Bls12381KzgResidueWitness => 1,
+                    | FieldHintOp::Bls12381KzgResidueWitness
+                    | FieldHintOp::Bls12381PairingResidueWitness => 1,
                     _ => 0,
                 };
                 words[index] ^= 1;
@@ -936,7 +990,8 @@ pub(crate) mod tests {
         ) {
             match read_op(memory, input_word) {
                 FieldHintOp::Bn254PairingResidueWitness
-                | FieldHintOp::Bls12381KzgResidueWitness => native_run_responses.extend(
+                | FieldHintOp::Bls12381KzgResidueWitness
+                | FieldHintOp::Bls12381PairingResidueWitness => native_run_responses.extend(
                     callable_oracles::field_hints::not_identity_claim(memory, input_word),
                 ),
                 _ => self.0.process_memory_query(

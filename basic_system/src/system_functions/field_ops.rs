@@ -85,11 +85,14 @@ pub enum FieldHintOp {
     /// bls12-381 base field division: the numerator and the denominator (two adjacent
     /// elements) in, the quotient out
     Bls12381BaseFieldDivision,
+    /// Arbitrary validated BLS12-381 affine pairs (`curve_hints::Bls12381Pair`) in;
+    /// identity flag then `d, s` for an identity, otherwise the conjugated Miller loop inverse.
+    Bls12381PairingResidueWitness,
 }
 
 impl FieldHintOp {
     pub fn parse_u32(value: u32) -> Option<Self> {
-        const ALL: [FieldHintOp; 14] = [
+        const ALL: [FieldHintOp; 15] = [
             FieldHintOp::Secp256k1BaseFieldSqrt,
             FieldHintOp::Secp256k1BaseFieldInverse,
             FieldHintOp::Secp256k1ScalarFieldInverse,
@@ -104,6 +107,7 @@ impl FieldHintOp {
             FieldHintOp::Secp256k1BaseFieldDivision,
             FieldHintOp::Bn254BaseFieldDivision,
             FieldHintOp::Bls12381BaseFieldDivision,
+            FieldHintOp::Bls12381PairingResidueWitness,
         ];
         ALL.into_iter().find(|op| *op as u32 == value)
     }
