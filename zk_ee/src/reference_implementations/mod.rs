@@ -153,11 +153,18 @@ impl<Native: Resource, const GAS_TO_ERGS_FACTOR: u64> Resource
     }
 }
 
-impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
-    for BaseResources<Native, GAS_TO_ERGS_FACTOR>
+impl<
+        Native: Resource + Computational + crate::system::NativeTracking,
+        const GAS_TO_ERGS_FACTOR: u64,
+    > Resources for BaseResources<Native, GAS_TO_ERGS_FACTOR>
 {
     type Native = Native;
     type Ergs = Ergs<GAS_TO_ERGS_FACTOR>;
+    // With an untracked native resource: (C1) the native field has a single value, and the
+    // fields have plain accessors and constructors; (C2) `charge` is `Ergs::charge`, which
+    // succeeds and subtracts when the ergs can pay, then the native charge, which succeeds.
+    const ERGS_ONLY: crate::system::ErgsOnly<Self> =
+        crate::system::ErgsOnly::if_native_untracked(Native::UNTRACKED);
 
     #[inline(always)]
     fn from_ergs(ergs: Self::Ergs) -> Self {
@@ -219,11 +226,15 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
     }
 }
 
+impl crate::system::NativeTracking for DecreasingNative {}
+
 #[cfg(test)]
 mod tests {
-    use crate::system::{errors::system::SystemError, Ergs, Resource, Resources};
+    use crate::system::{
+        errors::system::SystemError, Computational, Ergs, NativeTracking, Resource, Resources,
+    };
 
-    use super::{BaseResources, DecreasingNative};
+    use super::{BaseResources, DecreasingNative, GasOnlyResources};
 
     #[test]
     fn test_oog_does_not_charge_native() {
@@ -240,5 +251,119 @@ mod tests {
             SystemError::LeafRuntime(crate::system::errors::runtime::RuntimeError::OutOfErgs(_))
         )));
         assert_eq!(resources.native().0, 100);
+    }
+
+    /// A native resource that says nothing about its tracking
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct OpaqueNative;
+
+    impl Resource for OpaqueNative {
+        const FORMAL_INFINITE: Self = Self;
+        fn empty() -> Self {
+            Self
+        }
+        fn is_empty(&self) -> bool {
+            true
+        }
+        fn charge(&mut self, _to_charge: &Self) -> Result<(), SystemError> {
+            Ok(())
+        }
+        fn charge_unchecked(&mut self, _to_charge: &Self) {}
+        fn has_enough(&self, _to_spend: &Self) -> bool {
+            true
+        }
+        fn reclaim(&mut self, _to_reclaim: Self) {}
+        fn reclaim_withheld(&mut self, _to_reclaim: Self) {}
+        fn diff(&self, _other: Self) -> Self {
+            Self
+        }
+        fn remaining(&self) -> Self {
+            Self
+        }
+    }
+
+    impl Computational for OpaqueNative {
+        fn from_computational(_value: u64) -> Self {
+            Self
+        }
+        fn as_u64(&self) -> u64 {
+            0
+        }
+    }
+
+    impl NativeTracking for OpaqueNative {}
+
+    #[test]
+    fn ergs_only_forms() {
+        assert!(GasOnlyResources::ERGS_ONLY.holds());
+        assert!(BaseResources::<(), 256>::ERGS_ONLY.holds());
+        assert!(!BaseResources::<DecreasingNative>::ERGS_ONLY.holds());
+        assert!(!BaseResources::<DecreasingNative, 1>::ERGS_ONLY.holds());
+        // even a native resource that behaves as `()` must be stated untracked by this crate
+        assert!(!BaseResources::<OpaqueNative, 1>::ERGS_ONLY.holds());
+    }
+
+    fn grid() -> Vec<u64> {
+        let mut values = vec![
+            0,
+            1,
+            19,
+            20,
+            (1 << 31) - 1,
+            1 << 31,
+            (1 << 31) + 1,
+            (1 << 32) - 1,
+            1 << 32,
+            (1 << 32) + 1,
+            3 << 31,
+            i64::MAX as u64,
+            1 << 63,
+            u64::MAX - 1,
+            u64::MAX,
+        ];
+        let mut x = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..8 {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            values.extend([x, x >> 33]);
+        }
+        values
+    }
+
+    /// (C1) and (C2) of `Resources::ERGS_ONLY` for the resources that say it holds
+    fn check_ergs_only_contract<R: Resources>() {
+        assert!(R::ERGS_ONLY.holds());
+        for ergs in grid() {
+            let r = R::from_ergs_and_native(
+                R::Ergs::from_computational(ergs),
+                R::Native::from_computational(ergs),
+            );
+            assert_eq!(R::from_ergs(r.ergs()), r);
+            assert_eq!(r.ergs().as_u64(), ergs);
+            for cost in grid() {
+                if ergs < cost {
+                    continue;
+                }
+                for native in [0, 20, 1 << 31, u64::MAX] {
+                    let mut charged = r.clone();
+                    let cost = R::from_ergs_and_native(
+                        R::Ergs::from_computational(cost),
+                        R::Native::from_computational(native),
+                    );
+                    assert!(charged.charge(&cost).is_ok());
+                    assert_eq!(
+                        charged,
+                        R::from_ergs(R::Ergs::from_computational(ergs - cost.ergs().as_u64()))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ergs_only_contract_holds() {
+        check_ergs_only_contract::<GasOnlyResources>();
+        check_ergs_only_contract::<BaseResources<(), 256>>();
     }
 }

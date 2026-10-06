@@ -3,22 +3,30 @@
 
 use u256::U256;
 use zk_ee::system::evm::EvmError;
-use zk_ee::system::{EthereumLikeTypes, Resource};
+use zk_ee::system::{EthereumLikeTypes, Resource, Resources};
 
-use super::hot::{
-    charge_step, read_be_word, spend_gas_and_native, spend_native, write_be_word, Hot,
-};
+use super::hot::{read_be_word, spend_native, write_be_word, Hot};
 use super::ops_cold::resize_heap_by_value;
 use super::{cast_to_usize, ColdFrameParts};
 use crate::gas_constants;
 use crate::i256::i256_cmp;
 use crate::instructions::bitwise::apply_sar;
 use crate::native_resource_constants::*;
-use crate::{ExitCode, InstructionResult};
+use crate::opcodes;
+use crate::{ExitCode, InstructionResult, STACK_SIZE};
 
 /// JUMP / JUMPI charge the destination JUMPDEST and skip its dispatch on the proving target
 /// only, so that host tracers keep seeing a JUMPDEST step (see `crate::instructions::control_flow`).
 const INLINE_JUMPDEST: bool = cfg!(target_arch = "riscv32");
+
+/// PUSH2 also runs a JUMP or JUMPI right after it on the proving target only (see
+/// [`Hot::push2`]): the host dispatches both, so its tracers see every step.
+/// `evm_fuse_push2_jumps` turns it on for host tests. Only for gas-only resources (the Ethereum
+/// STF, see `Resources::ERGS_ONLY`).
+const FUSE_PUSH2_JUMPS: bool = cfg!(any(target_arch = "riscv32", evm_fuse_push2_jumps));
+
+// `push2` tells the two jumps apart from their distance to JUMP
+const _: () = assert!(opcodes::JUMPI == opcodes::JUMP + 1);
 
 /// Reads an immediate of `N <= 8` bytes that runs past the end of the code (zero padded)
 #[cold]
@@ -84,14 +92,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn pop(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, POP_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, POP_NATIVE_COST)?;
         self.stack.pop_and_ignore()
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn push0(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, PUSH0_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, PUSH0_NATIVE_COST)?;
         self.stack.push_zero()
     }
 
@@ -102,11 +110,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn push_small<const N: usize>(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            PUSH_NATIVE_COSTS[N],
-        )?;
+        self.charge_step(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         self.ip = self.ip.wrapping_add(N);
         let value = if S::CODE_IS_PADDED || self.ip <= self.code_end {
             let mut acc = 0u64;
@@ -122,15 +126,126 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         self.stack.push_u64(value)
     }
 
+    /// PUSH2, which on the proving target also runs a JUMP or JUMPI right after it, for gas-only
+    /// resources. The destination then stays in a register: no slot is written, and there is no
+    /// second
+    /// dispatch and no 256-bit destination check. Each instruction is still charged by its own
+    /// `charge_step`, and fails with the same error at the same point and with the same stack,
+    /// as when the two are dispatched one after the other.
+    ///
+    /// Keep it in sync with `push_small::<2>`. It differs in the bound on unpadded code
+    /// (strict, for the peek), the depth test before the peek and the peek itself.
+    #[cfg_attr(not(opcode_profile), inline(always))]
+    #[cfg_attr(opcode_profile, inline(never))]
+    pub fn push2(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
+        if !FUSE_PUSH2_JUMPS || !const { <S::Resources as Resources>::ERGS_ONLY.holds() } {
+            return self.push_small::<2>();
+        }
+        self.charge_step(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[2])?;
+        self.ip = self.ip.wrapping_add(2);
+        // Unpadded code: the byte after the immediate must be in the code too, since it is
+        // peeked below. An immediate that ends the code exactly takes the other branch, which
+        // reads it the same.
+        if S::CODE_IS_PADDED || self.ip < self.code_end {
+            // SAFETY: the whole immediate is in the code, or in its zero padding
+            let value =
+                unsafe { ((self.ip.sub(2).read() as u64) << 8) | self.ip.sub(1).read() as u64 };
+            // Only if the push itself would succeed, and only on a code byte (not on the
+            // padding of padded code): that byte is the one the next fetch would dispatch.
+            if self.stack.depth < STACK_SIZE && (!S::CODE_IS_PADDED || self.ip < self.code_end) {
+                // SAFETY: `ip < code_end`
+                let next = unsafe { self.ip.read() };
+                if next.wrapping_sub(opcodes::JUMP) < 2 {
+                    let fused = if next == opcodes::JUMP {
+                        self.jump_after_push2(cold, value as usize)
+                    // JUMPI also pops the value under the destination: on an empty stack it
+                    // is left to the dispatch, which fails it after both charges
+                    } else if self.stack.depth != 0 {
+                        self.jumpi_after_push2(cold, value as usize)
+                    } else {
+                        Ok(self.stack.push_u64(value))
+                    };
+                    return match fused {
+                        Ok(result) => result,
+                        Err(error) => {
+                            // the jump's charge failed, when the dispatched PUSH2 has pushed
+                            // its value (there is room: see above)
+                            core::hint::cold_path();
+                            let pushed = self.stack.push_u64(value);
+                            debug_assert!(pushed.is_ok());
+                            Err(error)
+                        }
+                    };
+                }
+            }
+            self.stack.push_u64(value)
+        } else {
+            // the immediate ends at or past the end of the code: never fused
+            // SAFETY: bounds checked per byte
+            let value =
+                unsafe { read_immediate_truncated::<2>(self.ip.wrapping_sub(2), self.code_end) };
+            self.stack.push_u64(value)
+        }
+    }
+
+    /// The JUMP at `ip`, after a PUSH2 of `dest` that was charged and whose stack check passed
+    /// ([`Self::push2`]). The destination doesn't go to the stack, since the jump would pop it
+    /// at once. The outer error is a failed charge of the JUMP, for which `push2` pushes the
+    /// destination after all; the inner result is that of the jump.
+    #[inline(always)]
+    fn jump_after_push2(
+        &mut self,
+        cold: &ColdFrameParts<'_, S>,
+        dest: usize,
+    ) -> Result<InstructionResult, ExitCode> {
+        // where the PUSH2 ends and the JUMP starts when the two are dispatched (so that the
+        // marker count is the same)
+        cycle_marker::opcode_end!("PUSH2");
+        cycle_marker::opcode_start!();
+        // past the JUMP, as its fetch leaves `ip`
+        self.ip = self.ip.wrapping_add(1);
+        self.charge_step(gas_constants::MID, JUMP_NATIVE_COST)?;
+        // a pushed `u16` always passes `cast_to_usize`
+        Ok(if cold.is_valid_jumpdest(dest) {
+            self.land_on_jumpdest(cold, dest)
+        } else {
+            Err(EvmError::InvalidJump.into())
+        })
+    }
+
+    /// [`Self::jump_after_push2`] for a JUMPI, on a stack of at least one value
+    #[inline(always)]
+    fn jumpi_after_push2(
+        &mut self,
+        cold: &ColdFrameParts<'_, S>,
+        dest: usize,
+    ) -> Result<InstructionResult, ExitCode> {
+        cycle_marker::opcode_end!("PUSH2");
+        cycle_marker::opcode_start!();
+        self.ip = self.ip.wrapping_add(1);
+        self.charge_step(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
+        // the condition is the value under the destination, i.e. JUMPI's second pop (`push2`
+        // checked that there is one)
+        let condition = match self.stack.pop_1() {
+            Ok(condition) => condition,
+            Err(error) => return Ok(Err(error)),
+        };
+        if condition.is_zero() {
+            // the destination is not checked
+            return Ok(Ok(()));
+        }
+        Ok(if cold.is_valid_jumpdest(dest) {
+            self.land_on_jumpdest(cold, dest)
+        } else {
+            Err(EvmError::InvalidJump.into())
+        })
+    }
+
     /// PUSH9..=PUSH32: the immediate is written straight into the slot, reversed
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn push_wide<const N: usize>(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            PUSH_NATIVE_COSTS[N],
-        )?;
+        self.charge_step(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         // On the proving target PUSH20 and PUSH32 assemble the immediate with `rev8`: they
         // carry almost all of the measured saving, other sizes save under a cycle per
         // push. Misaligned immediates take the helper's shift/glue path; the byte loop
@@ -186,18 +301,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn dup_op<const N: usize>(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, DUP_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
         self.stack.dup::<N>()
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn swap_op<const N: usize>(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            SWAP_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
         self.stack.swap::<N>()
     }
 
@@ -206,7 +317,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn add(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, ADD_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::AddAssign::add_assign(op2, op1);
         Ok(())
@@ -215,7 +326,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn mul(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::LOW, MUL_NATIVE_COST)?;
+        self.charge_step(gas_constants::LOW, MUL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         op2.wrapping_mul_assign(op1);
         Ok(())
@@ -224,7 +335,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn sub(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SUB_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SUB_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         // op1 - op2, stored in op2
         op2.overflowing_sub_assign_reversed(op1);
@@ -236,7 +347,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn lt(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, LT_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, LT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         less_than_into(op1, op2);
         Ok(())
@@ -245,7 +356,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn gt(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, GT_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, GT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         greater_than_into(op1, op2);
         Ok(())
@@ -254,7 +365,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn slt(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SLT_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SLT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if i256_cmp(op1, op2) == core::cmp::Ordering::Less {
             U256::write_one(op2);
@@ -267,7 +378,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn sgt(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SGT_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SGT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if i256_cmp(op1, op2) == core::cmp::Ordering::Greater {
             U256::write_one(op2);
@@ -280,7 +391,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn eq(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, EQ_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, EQ_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if op1.eq(op2) {
             U256::write_one(op2);
@@ -293,11 +404,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn iszero(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            ISZERO_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
         let top = self.stack.top_mut()?;
         if top.is_zero() {
             U256::write_one(top);
@@ -310,7 +417,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitand(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, AND_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, AND_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::BitAndAssign::bitand_assign(op2, op1);
         Ok(())
@@ -319,7 +426,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitor(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, OR_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, OR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::BitOrAssign::bitor_assign(op2, op1);
         Ok(())
@@ -328,7 +435,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn bitxor(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, XOR_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, XOR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::BitXorAssign::bitxor_assign(op2, op1);
         Ok(())
@@ -337,7 +444,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn not(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, NOT_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, NOT_NATIVE_COST)?;
         let top = self.stack.top_mut()?;
         top.not_mut();
         Ok(())
@@ -346,11 +453,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn byte(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            BYTE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, BYTE_NATIVE_COST)?;
         let (offset, src) = self.stack.pop_1_and_peek_mut()?;
         if let Some(offset) = offset.try_to_usize_capped::<32>() {
             let ret = src.byte(31 - offset);
@@ -365,7 +468,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn shl(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SHL_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         match op1.try_to_usize() {
             Some(shift) if shift < 256 => *op2 <<= shift as u32,
@@ -377,7 +480,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn shr(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SHR_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         match op1.try_to_usize() {
             Some(shift) if shift < 256 => *op2 >>= shift as u32,
@@ -389,7 +492,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn sar(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::VERYLOW, SAR_NATIVE_COST)?;
+        self.charge_step(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         apply_sar(op1, op2);
         Ok(())
@@ -404,11 +507,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         if INLINE_JUMPDEST {
             // Charged separately from the JUMP / JUMPI base, so an invalid destination or the
             // not-taken branch doesn't pay JUMPDEST gas/native.
-            spend_gas_and_native(
-                &mut self.resources,
-                gas_constants::JUMPDEST,
-                JUMPDEST_NATIVE_COST,
-            )?;
+            self.spend_gas_and_native(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)?;
             self.ip = start.wrapping_add(dest + 1);
             // Synthetic cycle_marker pair, so the proving-side marker count balances the
             // host-side one, where JUMPDEST is still dispatched.
@@ -423,7 +522,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn jump(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::MID, JUMP_NATIVE_COST)?;
+        self.charge_step(gas_constants::MID, JUMP_NATIVE_COST)?;
         let dest = self.stack.pop_1()?;
         let dest = cast_to_usize(dest, EvmError::InvalidJump.into())?;
         if cold.is_valid_jumpdest(dest) {
@@ -436,7 +535,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn jumpi(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::HIGH, JUMPI_NATIVE_COST)?;
+        self.charge_step(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
         let (dest, value) = self.stack.pop_2()?;
         if value.is_zero() {
             return Ok(());
@@ -454,17 +553,13 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn jumpdest(&mut self) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::JUMPDEST,
-            JUMPDEST_NATIVE_COST,
-        )
+        self.charge_step(gas_constants::JUMPDEST, JUMPDEST_NATIVE_COST)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn pc(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, PC_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, PC_NATIVE_COST)?;
         let pc = self.ip.addr() - cold.bytecode.as_ptr().addr() - 1;
         self.stack.push_u64(pc as u64)
     }
@@ -496,11 +591,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn mload(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            MLOAD_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let top = self.stack.top_ptr()?;
         // SAFETY: an initialized slot of the stack
         let index = cast_to_usize(unsafe { &*top }, EvmError::InvalidOperandOOG.into())?;
@@ -513,11 +604,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn mstore(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            MSTORE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2_ptr()?;
         // SAFETY: initialized slots of the stack, still valid after the pop
         let index = cast_to_usize(unsafe { &*index }, EvmError::InvalidOperandOOG.into())?;
@@ -530,11 +617,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn mstore8(&mut self, cold: &mut ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            MSTORE8_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let index = cast_to_usize(index, EvmError::InvalidOperandOOG.into())?;
         let value = value.byte(0);
@@ -547,7 +630,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn msize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, MSIZE_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = cold.heap.len();
         debug_assert!(len.next_multiple_of(32) == len);
         self.stack.push_u64(len as u64)
@@ -558,51 +641,35 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn address(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::BASE,
-            ADDRESS_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::BASE, ADDRESS_NATIVE_COST)?;
         self.stack.push_b160(cold.address)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn caller(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, CALLER_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, CALLER_NATIVE_COST)?;
         self.stack.push_b160(cold.caller)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn callvalue(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::BASE,
-            CALLVALUE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::BASE, CALLVALUE_NATIVE_COST)?;
         self.stack.push(&cold.call_value)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn calldatasize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::BASE,
-            CALLDATASIZE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::BASE, CALLDATASIZE_NATIVE_COST)?;
         self.stack.push_u64(cold.calldata.len() as u64)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn calldataload(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::VERYLOW,
-            CALLDATALOAD_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
         let top = self.stack.top_ptr()?;
         let calldata = cold.calldata;
         // SAFETY: an initialized slot of the stack
@@ -635,11 +702,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn codesize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::BASE,
-            CODESIZE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::BASE, CODESIZE_NATIVE_COST)?;
         self.stack
             .push_u64(cold.bytecode_preprocessing.original_bytecode_len as u64)
     }
@@ -647,18 +710,14 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn returndatasize(&mut self, cold: &ColdFrameParts<'_, S>) -> InstructionResult {
-        charge_step(
-            &mut self.resources,
-            gas_constants::BASE,
-            RETURNDATASIZE_NATIVE_COST,
-        )?;
+        self.charge_step(gas_constants::BASE, RETURNDATASIZE_NATIVE_COST)?;
         self.stack.push_u64(cold.returndata.len() as u64)
     }
 
     #[cfg_attr(not(opcode_profile), inline(always))]
     #[cfg_attr(opcode_profile, inline(never))]
     pub fn gas(&mut self) -> InstructionResult {
-        charge_step(&mut self.resources, gas_constants::BASE, GAS_NATIVE_COST)?;
+        self.charge_step(gas_constants::BASE, GAS_NATIVE_COST)?;
         let gas_left = self.gas_left();
         self.stack.push_u64(gas_left)
     }
