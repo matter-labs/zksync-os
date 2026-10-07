@@ -1,3 +1,4 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use zk_ee::{system::IOTeardown, types_config::EthereumIOTypesConfig};
 
 use crate::bootloader::block_flow::{
@@ -40,7 +41,7 @@ where
 
 pub trait EthereumLikeBasicSTF: BasicSTF
 where
-    Self: EthereumLikeTypes,
+    Self: EthereumLikeSystem,
     <Self as SystemTypes>::IO: IOSubsystemExt + IOTeardown<EthereumIOTypesConfig>,
 {
 }

@@ -7,6 +7,7 @@ use alloy::consensus::Header;
 use alloy_rlp::Decodable;
 use anyhow::Context;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::block_header::BlobSchedule;
+use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::linkage::ProgramOutput;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::state_consistency::{
     verify_state_consistency, StateConsistencyOutput,
 };
@@ -57,6 +58,7 @@ pub fn make_state_oracle(fixture: &GlamsterdamBlock, mode: RunMode) -> ZkEENonDe
         parents,
         preimages,
         access_list_encoding(fixture),
+        Vec::new(),
         mode,
     )
 }
@@ -69,6 +71,7 @@ pub fn make_state_oracle_from_parts(
     mut parents: Vec<(Header, Vec<u8>)>,
     preimages: impl IntoIterator<Item = Vec<u8>>,
     access_list_encoding: Vec<u8>,
+    withdrawals_encoding: Vec<u8>,
     mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     // depth 0 is the parent
@@ -96,7 +99,7 @@ pub fn make_state_oracle_from_parts(
         target_header_encoding,
     });
     oracle.add_external_processor(EthereumCLResponder {
-        withdrawals_list: Vec::new(),
+        withdrawals_list: withdrawals_encoding,
         parent_headers_list,
         parent_headers_encodings_list,
     });
@@ -193,6 +196,13 @@ pub fn run_on_simulator(path: &Path, app: &str) -> anyhow::Result<()> {
             .run_with_source(make_state_oracle(&fixture, RunMode::RiscVRun))
             .context("transpiler execution failed")?;
         anyhow::ensure!(execution.reached_end, "the program did not reach the end");
+        // the program publishes the hash of its linkage output, with a clear access mask
+        let expected = ProgramOutput::of_pre_execution(&output, Global)
+            .map_err(|e| anyhow::anyhow!("linkage output: {e:?}"))?;
+        anyhow::ensure!(
+            execution.receipt.output == expected.hash_words(),
+            "the program's output is not the hash of the linkage output"
+        );
         total += execution.cycles_executed as u64;
         println!(
             "{:>10} {:>10} {:>9} {:>9} {:>14}",
@@ -383,6 +393,7 @@ mod tests {
             vec![(parent, parent_encoding)],
             store.into_values(),
             bal,
+            Vec::new(),
             RunMode::NativeRunSavingForRiscV,
         );
         let mut source = ReadWitnessSource::new(oracle);

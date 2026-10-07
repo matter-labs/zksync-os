@@ -99,7 +99,7 @@ pub fn build_node(
     }
     let first = &entries[0].0;
     let mut common = 0;
-    while depth + common < 64
+    while entries.iter().all(|(n, _)| n.len() > depth + common)
         && entries
             .iter()
             .all(|(n, _)| n[depth + common] == first[depth + common])
@@ -141,10 +141,20 @@ pub fn build_trie(
     entries: &[([u8; 32], Vec<u8>)],
     store: &mut BTreeMap<Bytes32, Vec<u8>>,
 ) -> [u8; 32] {
-    let mut entries: Vec<(Vec<u8>, Vec<u8>)> = entries
+    let entries: Vec<(Vec<u8>, Vec<u8>)> = entries
         .iter()
         .map(|(key, value)| (key_nibbles(key), value.clone()))
         .collect();
+    build_trie_with_paths(entries, store)
+}
+
+/// Builds the trie of `entries` given as (nibble path, full RLP item of the
+/// leaf value) for keys of any length, such as the `rlp(index)` keys of the
+/// transactions and receipts tries
+pub fn build_trie_with_paths(
+    mut entries: Vec<(Vec<u8>, Vec<u8>)>,
+    store: &mut BTreeMap<Bytes32, Vec<u8>>,
+) -> [u8; 32] {
     entries.sort();
     if entries.is_empty() {
         return EMPTY_ROOT_HASH.as_u8_array();
@@ -153,4 +163,10 @@ pub fn build_trie(
     let hash = *Keccak256::digest(&root);
     store.insert(Bytes32::from_array(hash), root);
     hash
+}
+
+/// The nibbles of the key of item `index` of a transactions or receipts trie
+pub fn index_key_nibbles(index: u32) -> Vec<u8> {
+    let key = rlp_integer(&index.to_be_bytes());
+    key.iter().flat_map(|b| [b >> 4, b & 0xf]).collect()
 }

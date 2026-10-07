@@ -1,3 +1,4 @@
+pub use crate::bootloader::supported_ees::EthereumLikeSystem;
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
@@ -8,7 +9,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, IOTeardown, System, SystemTypes};
+use zk_ee::system::{IOSubsystemExt, IOTeardown, System, SystemTypes};
 
 pub mod block_flow;
 pub mod run_single_interaction;
@@ -55,7 +56,7 @@ pub const DEBUG_OUTPUT: bool = false;
 /// This bootloader uses the State Transition Function (STF) trait to compose
 /// different execution phases (metadata init, system init, transaction loop, finalization)
 /// into a complete block execution pipeline.
-pub struct BasicBootloader<S: EthereumLikeTypes, F: BasicTransactionFlow<S>>
+pub struct BasicBootloader<S: EthereumLikeSystem, F: BasicTransactionFlow<S>>
 where
     S::IO: IOSubsystemExt,
 {

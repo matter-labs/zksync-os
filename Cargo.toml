@@ -92,6 +92,8 @@ default-members = [
 exclude = [
     "zksync_os",
     "circuit_test_program",
+    "binaries/glamsterdam_pre_execution",
+    "binaries/glamsterdam_tx_range",
 ]
 
 [workspace.package]

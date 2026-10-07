@@ -1,3 +1,4 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use core::fmt::Write;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -8,10 +9,10 @@ use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::AccountDataRequest;
 use zk_ee::system::Computational;
+use zk_ee::system::IOSubsystem;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
 use zk_ee::utils::exact_size_chain::ExactSizeChain;
 use zk_ee::utils::{u256_to_usize_saturated, Bytes32};
 
@@ -38,7 +39,7 @@ const MAX_CONSOLIDATION_REQUESTS_PER_BLOCK: usize = 2;
 const CONSOLIDATION_REQUEST_SSZ_SERIALIZATION_LEN: usize = 20 + 48 + 48;
 
 // NOTE: even though the spec says SSZ.encode (that is NOT a concatenation of element for the list), it actually appends nothing if there are no interactions
-pub fn eip7251_system_part<S: EthereumLikeTypes>(
+pub fn eip7251_system_part<S: EthereumLikeSystem>(
     system: &mut System<S>,
     requests_hasher: &mut impl crypto::sha256::Digest,
 ) -> Result<bool, SystemError>
@@ -223,7 +224,7 @@ where
     Ok(true)
 }
 
-fn update_excess_consolidation_requests_and_reset_count<S: EthereumLikeTypes>(
+fn update_excess_consolidation_requests_and_reset_count<S: EthereumLikeSystem>(
     system: &mut System<S>,
 ) -> Result<(), SystemError>
 where

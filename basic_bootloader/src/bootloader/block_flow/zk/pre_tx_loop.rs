@@ -1,3 +1,4 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::IOResultKeeper;
@@ -12,7 +13,7 @@ use crate::bootloader::{
 };
 use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
 
-impl<S: EthereumLikeTypes, EA: TxHashesAccumulator> PreTxLoopOp<S> for ZKHeaderStructurePreTxOp<EA>
+impl<S: EthereumLikeSystem, EA: TxHashesAccumulator> PreTxLoopOp<S> for ZKHeaderStructurePreTxOp<EA>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificMetadata

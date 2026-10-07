@@ -1,5 +1,6 @@
 use super::*;
 use basic_bootloader::bootloader::block_flow::ethereum::*;
+use basic_bootloader::bootloader::supported_ees::EthereumLikeSystem;
 use basic_system::system_implementation::ethereum_storage_model::{
     vec_trait::{BiVecCtor, VecCtor},
     EthereumStorageModel,
@@ -32,6 +33,13 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypes<O> {
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;
+}
+
+impl<O: IOOracle> EthereumLikeSystem for EthereumStorageSystemTypes<O> {
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
 }
 
 impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypes<O> {
@@ -81,6 +89,13 @@ impl<O: IOOracle> SystemTypes for EthereumStorageSystemTypesWithPostOps<O> {
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = EthereumBlockMetadata;
+}
+
+impl<O: IOOracle> EthereumLikeSystem for EthereumStorageSystemTypesWithPostOps<O> {
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
 }
 
 impl<O: IOOracle> EthereumLikeTypes for EthereumStorageSystemTypesWithPostOps<O> {

@@ -39,6 +39,12 @@ pub const SHL: u8 = 0x1b;
 pub const SHR: u8 = 0x1c;
 pub const SAR: u8 = 0x1d;
 pub const CLZ: u8 = 0x1e;
+/// EIP-7843
+pub const SLOTNUM: u8 = 0x4b;
+/// EIP-8024
+pub const DUPN: u8 = 0xe6;
+pub const SWAPN: u8 = 0xe7;
+pub const EXCHANGE: u8 = 0xe8;
 pub const SHA3: u8 = 0x20;
 pub const POP: u8 = 0x50;
 pub const MLOAD: u8 = 0x51;
@@ -263,7 +269,7 @@ pub const OPCODE_JUMPMAP: [Option<&'static str>; 256] = [
     /* 0x48 */ Some("BASEFEE"),
     /* 0x49 */ Some("BLOBHASH"),
     /* 0x4a */ Some("BLOBBASEFEE"),
-    /* 0x4b */ None,
+    /* 0x4b */ Some("SLOTNUM"),
     /* 0x4c */ None,
     /* 0x4d */ None,
     /* 0x4e */ None,
@@ -418,9 +424,9 @@ pub const OPCODE_JUMPMAP: [Option<&'static str>; 256] = [
     /* 0xe3 */ None,
     /* 0xe4 */ None,
     /* 0xe5 */ None,
-    /* 0xe6 */ None,
-    /* 0xe7 */ None,
-    /* 0xe8 */ None,
+    /* 0xe6 */ Some("DUPN"),
+    /* 0xe7 */ Some("SWAPN"),
+    /* 0xe8 */ Some("EXCHANGE"),
     /* 0xe9 */ None,
     /* 0xea */ None,
     /* 0xeb */ None,

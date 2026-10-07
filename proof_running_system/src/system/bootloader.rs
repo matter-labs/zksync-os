@@ -235,13 +235,44 @@ pub fn run_proving_inner<
     unsafe { core::mem::transmute(public_input) }
 }
 
+/// A Glamsterdam transaction range as a program: runs the transactions of the
+/// witnessed range against the block access list and the receipts, and returns
+/// the hash of its linkage output (`ethereum_glamsterdam::linkage::ProgramOutput`).
+/// See `basic_bootloader::...::ethereum_glamsterdam::tx_range`.
+#[cfg(feature = "glamsterdam_range")]
+pub fn run_glamsterdam_range<I: NonDeterminismCSRSourceImplementation, L: Logger + Default>(
+) -> [u32; 8] {
+    use crate::system::GlamsterdamProvingSystemTypes;
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::linkage::ProgramOutput;
+    use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
+    use basic_bootloader::bootloader::transaction_flow::ethereum_glamsterdam::GlamsterdamTransactionFlow;
+
+    let oracle = CsrBasedIOOracle::<I>::init();
+    let chain_config = ChainConfig::default();
+    let (_oracle, output) = BasicBootloader::<
+        GlamsterdamProvingSystemTypes<CsrBasedIOOracle<I>, L>,
+        GlamsterdamTransactionFlow<GlamsterdamProvingSystemTypes<CsrBasedIOOracle<I>, L>>,
+    >::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+        oracle,
+        &mut (),
+        &mut NopResultKeeper::default(),
+        &mut NopTracer::default(),
+        &mut NopTxValidator,
+        chain_config,
+    )
+    .expect("the range must be valid");
+    ProgramOutput::of_range(&output).hash_words()
+}
+
 /// The Glamsterdam pre-execution check as a program: verifies the state
 /// consistency of the block (header, parent, block access list applied to the
-/// state) and returns the computed state root. See
-/// `basic_bootloader::...::ethereum_glamsterdam::state_consistency`.
+/// state) and returns the hash of its linkage output
+/// (`ethereum_glamsterdam::linkage::ProgramOutput`, with a clear access mask).
+/// See `basic_bootloader::...::ethereum_glamsterdam::state_consistency`.
 #[cfg(feature = "glamsterdam_state_consistency")]
 pub fn run_glamsterdam_state_consistency<I: NonDeterminismCSRSourceImplementation>() -> [u32; 8] {
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::block_header::BlobSchedule;
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::linkage::ProgramOutput;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::state_consistency::verify_state_consistency;
 
     let mut oracle = CsrBasedIOOracle::<I>::init();
@@ -252,16 +283,7 @@ pub fn run_glamsterdam_state_consistency<I: NonDeterminismCSRSourceImplementatio
         BootloaderAllocator::default(),
     )
     .expect("the state must be consistent");
-    let mut words = [0u32; 8];
-    for (word, chunk) in words.iter_mut().zip(
-        output
-            .computed_state_root
-            .as_u8_array_ref()
-            .as_chunks::<4>()
-            .0
-            .iter(),
-    ) {
-        *word = u32::from_le_bytes(*chunk);
-    }
-    words
+    ProgramOutput::of_pre_execution(&output, BootloaderAllocator::default())
+        .expect("the linkage output must be computable")
+        .hash_words()
 }

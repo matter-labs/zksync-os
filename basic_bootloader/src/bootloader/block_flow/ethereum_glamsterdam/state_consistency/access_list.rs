@@ -2,8 +2,9 @@
 //!
 //! Nothing is materialized: every reader is a cursor over the payload of one
 //! RLP list, and the caller pulls the entries in order. The readers check the
-//! encoding only; the ordering and uniqueness rules are checked by the caller
-//! as it consumes the entries (see `collect`).
+//! encoding only; [`validate`] walks the whole list once, checking the
+//! EIP-7928 ordering and uniqueness rules and counting the entries, so the
+//! later walks (which fill the tables) trust the encoding.
 //!
 //! ```text
 //! BlockAccessList = [AccountChanges, ...]
@@ -15,7 +16,7 @@
 //! CodeChange      = [block_access_index, new_code]
 //! ```
 
-use super::super::GlamsterdamError;
+use super::super::{GlamsterdamError, EIP_7954_MAX_CODE_SIZE};
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::Rlp;
 use ruint::aliases::B160;
@@ -206,87 +207,6 @@ impl<'a> SlotChangesReader<'a> {
     }
 }
 
-/// A source of block access list entries, consumed in order: the accounts, and
-/// for every account its slot changes, storage reads, balance, nonce and code
-/// changes, so the walk does not depend on the encoding. The RLP readers
-/// above are the source of the RLP witness.
-pub trait AccessListSource<'a> {
-    type Account<'s>: AccountSource<'a>
-    where
-        Self: 's;
-
-    fn next_account(&mut self) -> Result<Option<Self::Account<'_>>>;
-}
-
-pub trait AccountSource<'a> {
-    type Slot<'s>: SlotSource<'a>
-    where
-        Self: 's;
-
-    fn address(&self) -> B160;
-    fn next_slot_changes(&mut self) -> Result<Option<Self::Slot<'_>>>;
-    fn next_storage_read(&mut self) -> Result<Option<Bytes32>>;
-    /// `(block_access_index, post_balance)`, the balance as its RLP item in the witness
-    fn next_balance_change(&mut self) -> Result<Option<(u32, &'a [u8])>>;
-    /// `(block_access_index, new_nonce)`, the nonce as its RLP item in the witness
-    fn next_nonce_change(&mut self) -> Result<Option<(u32, &'a [u8])>>;
-    /// `(block_access_index, new_code)`, the code living in the witness buffer
-    fn next_code_change(&mut self) -> Result<Option<(u32, &'a [u8])>>;
-}
-
-pub trait SlotSource<'a> {
-    /// The slot key, big-endian
-    fn slot(&self) -> Bytes32;
-    /// `(block_access_index, new_value)`, the value as its RLP item in the witness
-    fn next_change(&mut self) -> Result<Option<(u32, &'a [u8])>>;
-}
-
-impl<'a> AccessListSource<'a> for BlockAccessListReader<'a> {
-    type Account<'s>
-        = AccountChangesReader<'a>
-    where
-        Self: 's;
-
-    fn next_account(&mut self) -> Result<Option<Self::Account<'_>>> {
-        BlockAccessListReader::next_account(self)
-    }
-}
-
-impl<'a> AccountSource<'a> for AccountChangesReader<'a> {
-    type Slot<'s>
-        = SlotChangesReader<'a>
-    where
-        Self: 's;
-
-    fn address(&self) -> B160 {
-        self.address
-    }
-    fn next_slot_changes(&mut self) -> Result<Option<Self::Slot<'_>>> {
-        AccountChangesReader::next_slot_changes(self)
-    }
-    fn next_storage_read(&mut self) -> Result<Option<Bytes32>> {
-        AccountChangesReader::next_storage_read(self)
-    }
-    fn next_balance_change(&mut self) -> Result<Option<(u32, &'a [u8])>> {
-        AccountChangesReader::next_balance_change(self)
-    }
-    fn next_nonce_change(&mut self) -> Result<Option<(u32, &'a [u8])>> {
-        AccountChangesReader::next_nonce_change(self)
-    }
-    fn next_code_change(&mut self) -> Result<Option<(u32, &'a [u8])>> {
-        AccountChangesReader::next_code_change(self)
-    }
-}
-
-impl<'a> SlotSource<'a> for SlotChangesReader<'a> {
-    fn slot(&self) -> Bytes32 {
-        self.slot
-    }
-    fn next_change(&mut self) -> Result<Option<(u32, &'a [u8])>> {
-        SlotChangesReader::next_change(self)
-    }
-}
-
 /// Sizes of an access list, for allocating the tables up front
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AccessListCounts {
@@ -295,26 +215,141 @@ pub struct AccessListCounts {
     pub slots: usize,
     /// The largest number of slots of one account
     pub max_slots_of_account: usize,
+    /// Indexed changes (slot, balance, nonce and code) over all accounts
+    pub changes: usize,
+    /// The largest block access index of a change, zero without changes
+    pub max_access_index: u32,
 }
 
-/// Walks a source once to count its entries. Only the encoding is checked here.
-pub fn count<'a>(source: &mut impl AccessListSource<'a>) -> Result<AccessListCounts> {
+/// Which EIP-7928 rules [`validate`] checks besides the encoding
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Validation {
+    /// Everything: the pre-execution check validates the access list in full
+    Full,
+    /// Only what the per-transaction-range check relies on: the change lists
+    /// of a slot or an account field are strictly ascending in the access
+    /// index, so the last change is the post-block value and a (field,
+    /// index) pair is unique. The ordering of addresses and slot keys is not
+    /// checked, as the access list is the same one the pre-execution check
+    /// validated in full (the two are linked by its hash).
+    Changes,
+}
+
+/// Walks the encoding once: the readers check the encoding, and the entries
+/// are checked against the rules `validation` selects. Returns the counts for
+/// sizing the tables. The code size limit (EIP-7954) is checked always.
+pub fn validate(encoding: &[u8], validation: Validation) -> Result<AccessListCounts> {
+    use GlamsterdamError::AccessListOrdering;
+    let full = validation == Validation::Full;
+
     let mut counts = AccessListCounts::default();
-    while let Some(mut account) = source.next_account()? {
+    let mut max_index = 0u32;
+    let mut changes = 0usize;
+    // strictly ascending indices of a change list
+    let mut ascending = |previous: &mut Option<u32>, index: u32, what: &'static str| {
+        if previous.is_some_and(|previous| index <= previous) {
+            return Err(AccessListOrdering(what));
+        }
+        *previous = Some(index);
+        max_index = max_index.max(index);
+        changes += 1;
+        Ok(())
+    };
+
+    let mut reader = BlockAccessListReader::new(encoding)?;
+    let mut previous_address = None;
+    while let Some(mut account) = reader.next_account()? {
         counts.accounts += 1;
+        if full {
+            let address = account.address.to_be_bytes::<20>();
+            if previous_address.is_some_and(|previous| address <= previous) {
+                return Err(AccessListOrdering("addresses not strictly ascending"));
+            }
+            previous_address = Some(address);
+        }
+
+        // written slots: ascending keys, each with ascending changes
+        let mut written = account; // a second cursor over the written slots
         let mut slots = 0usize;
+        let mut previous_slot = None;
         while let Some(mut slot) = account.next_slot_changes()? {
             slots += 1;
-            while slot.next_change()?.is_some() {}
+            if full {
+                let key = *slot.slot.as_u8_array_ref();
+                if previous_slot.is_some_and(|previous| key <= previous) {
+                    return Err(AccessListOrdering("written slots not strictly ascending"));
+                }
+                previous_slot = Some(key);
+            }
+            let mut previous_index = None;
+            while let Some((index, _)) = slot.next_change()? {
+                ascending(
+                    &mut previous_index,
+                    index,
+                    "slot changes not strictly ascending",
+                )?;
+            }
+            if previous_index.is_none() {
+                return Err(AccessListOrdering("slot without changes"));
+            }
         }
-        while account.next_storage_read()?.is_some() {
+
+        // read slots: ascending, and none of them written (both lists are
+        // ascending, so one cursor over the written ones suffices)
+        let mut previous_slot = None;
+        let mut next_written = if full {
+            written.next_slot_changes()?.map(|slot| slot.slot)
+        } else {
+            None
+        };
+        while let Some(slot) = account.next_storage_read()? {
             slots += 1;
+            if full {
+                let key = *slot.as_u8_array_ref();
+                if previous_slot.is_some_and(|previous| key <= previous) {
+                    return Err(AccessListOrdering("read slots not strictly ascending"));
+                }
+                previous_slot = Some(key);
+                while next_written.is_some_and(|written| written.as_u8_array_ref() < &key) {
+                    next_written = written.next_slot_changes()?.map(|slot| slot.slot);
+                }
+                if next_written == Some(slot) {
+                    return Err(AccessListOrdering("slot both written and read"));
+                }
+            }
         }
-        while account.next_balance_change()?.is_some() {}
-        while account.next_nonce_change()?.is_some() {}
-        while account.next_code_change()?.is_some() {}
         counts.slots += slots;
         counts.max_slots_of_account = counts.max_slots_of_account.max(slots);
+
+        let mut previous_index = None;
+        while let Some((index, _)) = account.next_balance_change()? {
+            ascending(
+                &mut previous_index,
+                index,
+                "balance changes not strictly ascending",
+            )?;
+        }
+        let mut previous_index = None;
+        while let Some((index, _)) = account.next_nonce_change()? {
+            ascending(
+                &mut previous_index,
+                index,
+                "nonce changes not strictly ascending",
+            )?;
+        }
+        let mut previous_index = None;
+        while let Some((index, code)) = account.next_code_change()? {
+            ascending(
+                &mut previous_index,
+                index,
+                "code changes not strictly ascending",
+            )?;
+            if code.len() > EIP_7954_MAX_CODE_SIZE {
+                return Err(GlamsterdamError::CodeSizeExceeded);
+            }
+        }
     }
+    counts.changes = changes;
+    counts.max_access_index = max_index;
     Ok(counts)
 }

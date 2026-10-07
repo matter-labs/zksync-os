@@ -1,5 +1,6 @@
 use super::*;
 use crate::bootloader::block_flow::tx_loop::TxLoopOp;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use crate::bootloader::transaction_flow::MinimalTransactionOutput;
 use evm_interpreter::precompile_addresses::PRECOMPILE_ADDRESSES_LOWS;
@@ -9,7 +10,7 @@ use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::UsizeAlignedByteBox;
 
-impl<S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>> TxLoopOp<S> for EthereumLoopOp
+impl<S: EthereumLikeSystem<Metadata = EthereumBlockMetadata>> TxLoopOp<S> for EthereumLoopOp
 where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
@@ -41,7 +42,7 @@ where
 // TODO: unify with ZK version
 pub fn generic_loop_op<
     'a,
-    S: EthereumLikeTypes,
+    S: EthereumLikeSystem,
     Config: BasicBootloaderExecutionConfig,
     F: BasicTransactionFlow<S>,
 >(
@@ -114,7 +115,7 @@ where
                 cycle_marker::start!("process_transaction");
 
                 let tx_result = BasicBootloader::<S, F>::process_transaction::<Config>(
-                    initial_calldata_buffer,
+                    crate::bootloader::transaction::TxBytes::Owned(initial_calldata_buffer),
                     system,
                     system_functions,
                     memories.reborrow(),

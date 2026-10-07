@@ -355,6 +355,25 @@ where
         Some(Ok((next_tx_len_bytes, buffer)))
     }
 
+    ///
+    /// Begins the next transaction with bytes that live for the whole run (a
+    /// transactions trie leaf the witness exposes, for instance): `provider`
+    /// takes the next transaction, with its number for the logs, from the IO.
+    /// Returns None when there are no more transactions to process.
+    ///
+    pub fn try_begin_next_static_tx<E>(
+        &mut self,
+        provider: impl FnOnce(&mut S::IO) -> Result<Option<(u32, &'static [u8])>, E>,
+    ) -> Option<Result<(u32, &'static [u8]), E>> {
+        let next = match provider(&mut self.io) {
+            Ok(None) => return None,
+            Ok(Some(next)) => next,
+            Err(e) => return Some(Err(e)),
+        };
+        self.io.begin_next_tx();
+        Some(Ok(next))
+    }
+
     pub fn get_bytes_from_query(
         &mut self,
         length_query_id: u32, // must return number of bytes

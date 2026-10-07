@@ -1,4 +1,5 @@
 use super::*;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
@@ -99,7 +100,7 @@ fn write_pubdata<
 }
 
 /// Helper method to create block header.
-fn form_block_header<S: EthereumLikeTypes>(
+fn form_block_header<S: EthereumLikeSystem>(
     system: &System<S>,
     transactions_root: Bytes32,
     receipts_root: Bytes32,

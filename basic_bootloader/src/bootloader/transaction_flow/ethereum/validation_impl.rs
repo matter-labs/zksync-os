@@ -2,6 +2,7 @@ use super::*;
 use crate::bootloader::constants::*;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::authorization_list::parse_authorization_list_and_apply_delegations;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
@@ -20,11 +21,11 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::MAX_BLOBS_PER_TX;
-use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
+use zk_ee::system::{errors::system::SystemError, System};
 use zk_ee::system_log;
 use zk_ee::utils::{u256_mul_by_word, u256_to_u64_saturated};
 
-fn create_resources_for_tx<S: EthereumLikeTypes>(
+fn create_resources_for_tx<S: EthereumLikeSystem>(
     gas_limit: u64,
     is_deployment: bool,
     calldata_len: u64,
@@ -62,7 +63,7 @@ fn create_resources_for_tx<S: EthereumLikeTypes>(
 }
 
 // effective_gas_price, priority_fee_per_gas
-fn get_gas_prices<S: EthereumLikeTypes>(
+fn get_gas_prices<S: EthereumLikeSystem>(
     system: &mut System<S>,
     max_fee_per_gas: &U256,
     max_priority_fee_per_gas: Option<&U256>,
@@ -101,7 +102,7 @@ fn get_gas_prices<S: EthereumLikeTypes>(
 ///
 /// NOTE: This function will open and close IO frame
 pub(crate) fn validate_and_compute_fee_for_transaction<
-    S: EthereumLikeTypes,
+    S: EthereumLikeSystem,
     Config: BasicBootloaderExecutionConfig,
 >(
     system: &mut System<S>,

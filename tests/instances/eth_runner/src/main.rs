@@ -7,6 +7,7 @@ mod block_hashes;
 mod calltrace;
 mod ethproofs;
 mod glamsterdam;
+mod glamsterdam_range;
 mod glamsterdam_state;
 mod live_run;
 mod native_model;
@@ -133,17 +134,56 @@ enum Command {
         #[arg(long)]
         block_dir: Option<String>,
     },
+    /// Diff our EVM steps of one transaction of a Glamsterdam fixture against the
+    /// node's `debug_traceTransaction` struct logs (stack/memory/storage disabled).
+    GlamsterdamTraceDiff {
+        #[arg(long)]
+        block_dir: String,
+        /// The transaction's index in the block
+        #[arg(long)]
+        tx: u32,
+        /// The node trace (JSON-RPC response)
+        #[arg(long)]
+        trace: String,
+    },
+    /// Run the Glamsterdam fixtures as ranges on the RISC-V simulator with the
+    /// `glamsterdam_tx_range` program (`binaries/build.sh`) and report the cycles.
+    GlamsterdamRangeCycles {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+        /// The program to run: a dist directory (relative to the workspace root), or
+        /// the name of a dist under `zksync_os/dist`.
+        #[arg(long, default_value = "binaries/glamsterdam_tx_range/dist")]
+        app: String,
+        /// Split every block into this many ranges by gas (one: the whole block).
+        #[arg(long, default_value_t = 1)]
+        parts: u32,
+    },
+    /// Run the transactions of the Glamsterdam fixtures as ranges against their
+    /// block access lists and receipts (host run) and aggregate the ranges.
+    GlamsterdamRange {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+        /// Split every block into this many ranges by gas (one: the whole block).
+        #[arg(long, default_value_t = 1)]
+        parts: u32,
+    },
     /// Run the Glamsterdam state consistency check on the RISC-V simulator over
     /// stored fixtures and print the cycles per block. Needs the
-    /// `glamsterdam_state_consistency` guest (`zksync_os/dump_bin.sh --type
-    /// glamsterdam-state-consistency`), or any dist built from it (`--app`).
+    /// `glamsterdam_pre_execution` program (`binaries/build.sh`), or any dist built
+    /// from it (`--app`).
     GlamsterdamStateConsistencyCycles {
         /// One fixture directory, or a directory of fixture directories
         /// (defaults to `glamsterdam_blocks/` in this crate).
         #[arg(long)]
         block_dir: Option<String>,
-        /// The program distribution under `zksync_os/dist` to run.
-        #[arg(long, default_value = "glamsterdam_state_consistency")]
+        /// The program to run: a dist directory (relative to the workspace root), or
+        /// the name of a dist under `zksync_os/dist`.
+        #[arg(long, default_value = "binaries/glamsterdam_pre_execution/dist")]
         app: String,
     },
     /// Profile the Glamsterdam state consistency check on the RISC-V simulator
@@ -462,6 +502,37 @@ fn main() -> anyhow::Result<()> {
                 "Fetched {} block(s) into {}: {fetched:?}",
                 fetched.len(),
                 output_dir.display()
+            );
+            Ok(())
+        }
+        Command::GlamsterdamTraceDiff {
+            block_dir,
+            tx,
+            trace,
+        } => {
+            let fixture =
+                glamsterdam::GlamsterdamBlock::from_dir(std::path::Path::new(&block_dir))?;
+            let tries = glamsterdam_range::IndexTries::of(&fixture)?;
+            glamsterdam_range::trace_diff(&fixture, &tries, tx, std::path::Path::new(&trace))
+        }
+        Command::GlamsterdamRangeCycles {
+            block_dir,
+            app,
+            parts,
+        } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            glamsterdam_range::run_on_simulator(&block_dir, &app, parts)
+        }
+        Command::GlamsterdamRange { block_dir, parts } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            let checked = glamsterdam_range::check_path(&block_dir, parts)?;
+            println!(
+                "Transaction ranges hold for {checked} fixture(s) under {}",
+                block_dir.display()
             );
             Ok(())
         }

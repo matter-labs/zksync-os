@@ -23,17 +23,18 @@
 //! `VALIDATE_EOA_SIGNATURE = false` for tx signatures.
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::fri_verifier::verify_fri_statement_stream;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction::Transaction;
 use zk_ee::oracle::query_ids::FRI_PROOF_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::constants::MAX_FRI_STATEMENTS_PER_TX;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
+use zk_ee::system::{IOSubsystemExt, System};
 use zk_ee::utils::Bytes32;
 
 /// Structural admission checks for a `FriProofTx`'s statement-hash
 /// list: enforce chain-config FRI support, cap against `MAX_FRI_STATEMENTS_PER_TX`,
 /// and dedup. Returns the unique hash list in declaration order.
-pub(super) fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
+pub(super) fn build_verified_fri_statements_list<S: EthereumLikeSystem>(
     system: &System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<arrayvec::ArrayVec<Bytes32, MAX_FRI_STATEMENTS_PER_TX>, TxError> {
@@ -70,7 +71,7 @@ pub(super) fn build_verified_fri_statements_list<S: EthereumLikeTypes>(
 
 /// Drive the `FRI_PROOF_QUERY_ID` oracle query for each hash in
 /// `verified` and dispatch to the target-specific verifier.
-pub(super) fn drive_fri_verification<S: EthereumLikeTypes>(
+pub(super) fn drive_fri_verification<S: EthereumLikeSystem>(
     system: &mut System<S>,
     verified: &[Bytes32],
 ) -> Result<(), TxError>
@@ -86,7 +87,7 @@ where
 /// Issue the `FRI_PROOF_QUERY_ID` oracle query for a single claimed
 /// `statement_versioned_hash`, then verify the proof using the
 /// target-specific verifier backend.
-fn verify_fri_statement<S: EthereumLikeTypes>(
+fn verify_fri_statement<S: EthereumLikeSystem>(
     system: &mut System<S>,
     statement_versioned_hash: Bytes32,
 ) -> Result<(), TxError>

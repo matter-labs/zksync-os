@@ -7,16 +7,23 @@
 //! the header's state root through the access list alone; the transactions
 //! are then checked against the access list independently.
 //!
-//! Nothing here depends on the `System` traits: the functions take an oracle
-//! and an allocator only, so they run natively and on the proving target
-//! without the rest of the bootloader.
+//! Nothing in [`state_consistency`] depends on the `System` traits: its
+//! functions take an oracle and an allocator only, so they run natively and
+//! on the proving target without the rest of the bootloader. The transaction
+//! ranges ([`tx_range`]) run the transactions and the system calls of the
+//! block, including the EIP-8282 builder request contracts
+//! ([`eip_8282_builder_requests`]).
 //!
 //! [EIP-7928]: https://eips.ethereum.org/EIPS/eip-7928
 //! [EIP-7843]: https://eips.ethereum.org/EIPS/eip-7843
 
 pub mod block_header;
+pub mod eip_8282_builder_requests;
+pub mod index_mask;
+pub mod linkage;
 pub mod oracle_queries;
 pub mod state_consistency;
+pub mod tx_range;
 
 /// EIP-7954: the largest code an account can hold, in bytes (was EIP-170's 24 KiB)
 pub const EIP_7954_MAX_CODE_SIZE: usize = 0x10000;
@@ -60,4 +67,14 @@ pub enum GlamsterdamError {
     SlotEncoding,
     /// The state root computed from the access list differs from the header's
     StateRootMismatch,
+    /// A lookup in the transactions or receipts trie hit malformed or missing data
+    IndexTrie(&'static str),
+    /// A receipt does not decode
+    ReceiptEncoding,
+    /// The witnessed block access index range is empty or malformed
+    AccessIndexRange,
+    /// A witnessed initial value table is malformed
+    InitialValuesEncoding,
+    /// The outputs of the ranges of a block do not aggregate to the block
+    Aggregation(&'static str),
 }

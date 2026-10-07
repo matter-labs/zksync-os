@@ -1,3 +1,4 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use zk_ee::{system::AccountDataRequest, utils::UsizeAlignedByteBox};
 
 use super::*;
@@ -8,7 +9,7 @@ use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{IOTeardown, Resource};
 
 impl<
-        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+        S: EthereumLikeSystem<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
         BlockEA: TxHashesAccumulator,
         BatchEA: TxHashesAccumulator,
     > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
@@ -91,7 +92,7 @@ where
                         BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::process_transaction::<
                             Config,
                         >(
-                            initial_calldata_buffer,
+                            crate::bootloader::transaction::TxBytes::Owned(initial_calldata_buffer),
                             system,
                             system_functions,
                             memories.reborrow(),

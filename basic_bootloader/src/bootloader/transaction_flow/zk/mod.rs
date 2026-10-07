@@ -4,6 +4,8 @@ use crate::bootloader::errors::{BootloaderInterfaceError, BootloaderSubsystemErr
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::supported_ees::errors::EESubsystemError;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
+use crate::bootloader::supported_ees::EvmInterpreterExt;
 use crate::bootloader::transaction::Transaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_pubdata, get_resources_to_charge_for_pubdata, ResourcesForTx,
@@ -31,9 +33,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
-use zk_ee::system::{
-    errors::runtime::RuntimeError, logger::Logger, EthereumLikeTypes, System, SystemTypes, *,
-};
+use zk_ee::system::{errors::runtime::RuntimeError, logger::Logger, System, SystemTypes, *};
 use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
@@ -46,7 +46,7 @@ mod fri;
 pub mod process_l1_transaction;
 mod validation_impl;
 
-pub struct ZkTransactionFlowOnlyEOA<S: EthereumLikeTypes> {
+pub struct ZkTransactionFlowOnlyEOA<S: EthereumLikeSystem> {
     _marker: core::marker::PhantomData<S>,
 }
 
@@ -107,7 +107,7 @@ impl<'a> MinimalTransactionOutput<'a> for ZkTxResult<'a> {
     }
 }
 
-pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
+pub struct TxContextForPreAndPostProcessing<S: EthereumLikeSystem> {
     pub resources: ResourcesForTx<S>,
     pub tx_hash: Bytes32,
     pub fee_to_prepay: U256,
@@ -147,7 +147,7 @@ pub struct TxContextForPreAndPostProcessing<S: EthereumLikeTypes> {
     pub statement_versioned_hashes_num: u64,
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
+impl<S: EthereumLikeSystem> core::fmt::Debug for TxContextForPreAndPostProcessing<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("TxContextForPreAndPostProcessing")
             .field("resources", &self.resources)
@@ -184,12 +184,12 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
 /// Otherwise, these values needs to be recomputed after reverting
 /// state changes.
 ///
-pub struct CachedPubdataInfo<S: EthereumLikeTypes> {
+pub struct CachedPubdataInfo<S: EthereumLikeSystem> {
     pubdata_used: u64,
     to_charge_for_pubdata: S::Resources,
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
+impl<S: EthereumLikeSystem> core::fmt::Debug for CachedPubdataInfo<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CachedPubdataInfo")
             .field("pubdata_used", &self.pubdata_used)
@@ -198,7 +198,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for CachedPubdataInfo<S> {
     }
 }
 
-impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
+impl<S: EthereumLikeSystem> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificMetadata
@@ -643,7 +643,7 @@ where
     }
 }
 
-impl<S: EthereumLikeTypes> ZkTransactionFlowOnlyEOA<S>
+impl<S: EthereumLikeSystem> ZkTransactionFlowOnlyEOA<S>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificMetadata

@@ -3,6 +3,7 @@
 //!
 
 use crate::bootloader::errors::InvalidTransaction;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::BootloaderSubsystemError;
 use core::fmt::Write;
 use crypto::MiniDigest;
@@ -15,14 +16,14 @@ use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
 use zk_ee::system::SystemFunctionsExt;
-use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
+use zk_ee::system::{AccountDataRequest, IOSubsystemExt, Resources, System};
 use zk_ee::system_log;
 use zk_ee::{internal_error, wrap_error};
 
 use super::rlp_encoded::AuthorizationList;
 use super::TxError;
 
-pub fn parse_authorization_list_and_apply_delegations<S: EthereumLikeTypes>(
+pub fn parse_authorization_list_and_apply_delegations<S: EthereumLikeSystem>(
     system: &mut System<S>,
     resources: &mut S::Resources,
     auth_list: AuthorizationList<'_>,
@@ -59,7 +60,7 @@ where
 }
 
 // Magic byte from EIP-7702
-const EIP7702_MAGIC: u8 = 0x05;
+pub(crate) const EIP7702_MAGIC: u8 = 0x05;
 
 /// Validate and apply an authorization list item, following EIP-7702:
 /// 0. Pre-charge for intrinsic gas cost of delegation (PER_AUTH_BASE_COST).
@@ -80,7 +81,7 @@ const EIP7702_MAGIC: u8 = 0x05;
 /// Note that if any of these checks fail, the function returns
 /// false.
 #[inline]
-fn validate_and_apply_delegation<S: EthereumLikeTypes>(
+fn validate_and_apply_delegation<S: EthereumLikeSystem>(
     system: &mut System<S>,
     resources: &mut S::Resources,
     auth_chain_id: &U256,
@@ -199,7 +200,7 @@ where
     Ok(true)
 }
 
-fn compute_auth_message_signed_hash<S: EthereumLikeTypes>(
+pub(crate) fn compute_auth_message_signed_hash<S: EthereumLikeSystem>(
     resources: &mut S::Resources,
     auth_chain_id: &U256,
     auth_nonce: u64,
@@ -224,7 +225,7 @@ fn compute_auth_message_signed_hash<S: EthereumLikeTypes>(
     Ok(*hasher.finalize_reset())
 }
 
-fn recover_authority<S: EthereumLikeTypes>(
+pub(crate) fn recover_authority<S: EthereumLikeSystem>(
     system: &mut System<S>,
     resources: &mut S::Resources,
     auth_sig_data: (u8, &[u8], &[u8]),

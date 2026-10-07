@@ -1,18 +1,18 @@
 use super::*;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
+use crate::bootloader::transaction::TxBytes;
 use crate::bootloader::BasicBootloader;
 use crate::bootloader::InvalidTransaction;
 use core::fmt::Write;
-use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system_log;
-use zk_ee::utils::UsizeAlignedByteBox;
 
-impl<'a, S: EthereumLikeTypes + 'a, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+impl<'a, S: EthereumLikeSystem + 'a, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {
     /// Main transaction processing entrypoint
     pub fn process_transaction<Config: BasicBootloaderExecutionConfig>(
-        initial_calldata_buffer: UsizeAlignedByteBox<S::Allocator>,
+        initial_calldata_buffer: TxBytes<S::Allocator>,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
@@ -98,6 +98,13 @@ where
             gas_limit: transaction.gas_limit(),
         };
         let pre_validation = validator.begin_tx(&ctx);
+
+        let blob_gas = transaction
+            .blobs()
+            .map_or(0, |blobs| blobs.count as u64 * zk_ee::system::GAS_PER_BLOB);
+        block_data_keeper
+            .admit_transaction(transaction.gas_limit(), blob_gas)
+            .map_err(TxError::Validation)?;
 
         if let Err(validation_err) = pre_validation {
             system_log!(

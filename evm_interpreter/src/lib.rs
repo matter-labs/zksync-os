@@ -58,6 +58,7 @@ pub mod precompile_addresses;
 pub mod u256_helpers;
 pub mod utils;
 pub mod v2;
+pub mod v3;
 
 pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentType::EVM;
 

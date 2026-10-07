@@ -1,3 +1,4 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
 use basic_system::system_implementation::ethereum_storage_model::BoxInterner;
 use basic_system::system_implementation::ethereum_storage_model::EthereumMPT;
@@ -10,7 +11,6 @@ use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::Computational;
-use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
@@ -66,7 +66,7 @@ impl<'a> RlpListDecode<'a> for WithdrawalRequest<'a> {
     }
 }
 
-pub(crate) fn process_withdrawals_list<'a, S: EthereumLikeTypes, VC: VecLikeCtor>(
+pub(crate) fn process_withdrawals_list<'a, S: EthereumLikeSystem, VC: VecLikeCtor>(
     system: &mut System<S>,
     list: WithdrawalsList<'a>,
 ) -> Result<Bytes32, InternalError>

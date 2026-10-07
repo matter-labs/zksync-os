@@ -1,9 +1,10 @@
 use super::Transaction;
 use crate::bootloader::errors::TxError;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use zk_ee::system::Resources;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
-    system::{EthereumLikeTypes, IOSubsystemExt, System},
+    system::{IOSubsystemExt, System},
     utils::Bytes32,
 };
 
@@ -13,7 +14,7 @@ use zk_ee::{
 /// before execution.
 ///
 /// Returns Ok on success, or `TxError` if an IO operation fails.
-pub fn parse_and_warm_up_access_list<S: EthereumLikeTypes>(
+pub fn parse_and_warm_up_access_list<S: EthereumLikeSystem>(
     system: &mut System<S>,
     resources: &mut S::Resources,
     transaction: &Transaction<S::Allocator>,

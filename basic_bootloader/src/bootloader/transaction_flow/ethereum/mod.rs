@@ -3,6 +3,8 @@ use crate::bootloader::block_flow::ethereum::metadata_op::EthereumBlockMetadata;
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::supported_ees::errors::EESubsystemError;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
+use crate::bootloader::supported_ees::EvmInterpreterExt;
 use crate::bootloader::transaction_flow::BasicTransactionFlow;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
@@ -28,7 +30,7 @@ use zk_ee::wrap_error;
 
 pub mod tx_level_metadata;
 
-pub struct EthereumTransactionFlow<S: EthereumLikeTypes> {
+pub struct EthereumTransactionFlow<S: EthereumLikeSystem> {
     _marker: core::marker::PhantomData<S>,
 }
 
@@ -83,11 +85,11 @@ impl<'a> MinimalTransactionOutput<'a> for EthereumTxResult<'a> {
 
 mod validation_impl;
 
-pub struct ResourcesForEthereumTx<S: EthereumLikeTypes> {
+pub struct ResourcesForEthereumTx<S: EthereumLikeSystem> {
     pub main_resources: S::Resources,
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForEthereumTx<S> {
+impl<S: EthereumLikeSystem> core::fmt::Debug for ResourcesForEthereumTx<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ResourcesForEthereumTx")
             .field("gas", &self.main_resources.legacy_gas())
@@ -96,7 +98,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForEthereumTx<S> {
     }
 }
 
-pub struct EthereumTxContext<S: EthereumLikeTypes> {
+pub struct EthereumTxContext<S: EthereumLikeSystem> {
     pub resources: ResourcesForEthereumTx<S>,
     // pub tx_hash: Bytes32,
     pub fee_to_prepay: U256,
@@ -109,7 +111,7 @@ pub struct EthereumTxContext<S: EthereumLikeTypes> {
     pub tx_level_metadata: EthereumTransactionMetadata<{ MAX_BLOBS_PER_TX }>,
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for EthereumTxContext<S> {
+impl<S: EthereumLikeSystem> core::fmt::Debug for EthereumTxContext<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("TxContextForPreAndPostProcessing")
             .field("resources", &self.resources)
@@ -126,7 +128,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for EthereumTxContext<S> {
     }
 }
 
-impl<S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>> BasicTransactionFlow<S>
+impl<S: EthereumLikeSystem<Metadata = EthereumBlockMetadata>> BasicTransactionFlow<S>
     for EthereumTransactionFlow<S>
 where
     S::IO: IOSubsystemExt,
@@ -594,7 +596,7 @@ where
     }
 }
 
-impl<S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>> EthereumTransactionFlow<S>
+impl<S: EthereumLikeSystem<Metadata = EthereumBlockMetadata>> EthereumTransactionFlow<S>
 where
     S::IO: IOSubsystemExt,
 {

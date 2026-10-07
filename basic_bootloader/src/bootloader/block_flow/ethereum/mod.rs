@@ -33,7 +33,7 @@ pub struct EthereumPostOp<VC: VecLikeCtor, const PROOF_ENV: bool> {
 pub struct EthereumLoopOp;
 
 mod block_data;
-mod block_hashes_cache;
+pub(crate) mod block_hashes_cache;
 pub(crate) mod block_header;
 pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::NopCommitmentGenerator;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
@@ -18,7 +19,7 @@ impl<
         SF: StackFactory<N>,
         const N: usize,
         O: IOOracle,
-        S: EthereumLikeTypes<
+        S: EthereumLikeSystem<
             IO = FullIO<
                 A,
                 R,

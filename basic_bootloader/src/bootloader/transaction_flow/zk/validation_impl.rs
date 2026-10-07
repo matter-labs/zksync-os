@@ -1,6 +1,7 @@
 use super::TxContextForPreAndPostProcessing;
 use crate::bootloader::constants::*;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
@@ -27,7 +28,7 @@ use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::{errors::system::SystemError, Computational, EthereumLikeTypes, System};
+use zk_ee::system::{errors::system::SystemError, Computational, System};
 use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{ErgsResource, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
@@ -43,7 +44,7 @@ use zk_ee::{utils::*, wrap_error};
 /// or mark delegation
 ///
 pub(crate) fn validate_and_compute_fee_for_transaction<
-    S: EthereumLikeTypes,
+    S: EthereumLikeSystem,
     Config: BasicBootloaderExecutionConfig,
 >(
     system: &mut System<S>,
@@ -559,7 +560,7 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
 }
 
 #[cfg(feature = "fri_precompile")]
-fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+fn maybe_drive_fri_verification<S: EthereumLikeSystem, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<
@@ -582,7 +583,7 @@ where
 }
 
 #[cfg(not(feature = "fri_precompile"))]
-fn maybe_drive_fri_verification<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+fn maybe_drive_fri_verification<S: EthereumLikeSystem, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     transaction: &Transaction<S::Allocator>,
 ) -> Result<

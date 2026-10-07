@@ -17,6 +17,16 @@ where
         context: &F::TransactionContext,
         result: &ExecutionResult<'_, <S as SystemTypes>::IOTypes>,
     );
+
+    /// Whether the block has the capacity left for a transaction with these limits,
+    /// checked before the transaction is validated; the default admits everything
+    fn admit_transaction(
+        &self,
+        _gas_limit: u64,
+        _blob_gas: u64,
+    ) -> Result<(), crate::bootloader::errors::InvalidTransaction> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

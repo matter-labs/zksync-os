@@ -1,4 +1,5 @@
 use super::*;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use core::marker::PhantomData;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificMetadata;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
@@ -43,7 +44,7 @@ pub struct ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 /// for gas, native, pubdata or logs.
 /// If one such limit is reached, return the corresponding validation
 /// error.
-fn check_for_block_limits<S: EthereumLikeTypes>(
+fn check_for_block_limits<S: EthereumLikeSystem>(
     system: &mut System<S>,
     gas_used: u64,
     computational_native_used: u64,

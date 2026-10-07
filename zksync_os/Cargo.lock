@@ -268,6 +268,7 @@ dependencies = [
  "paste",
  "ruint",
  "serde-big-array",
+ "storage_models",
  "strum_macros",
  "system_hooks",
  "zk_ee",

@@ -185,11 +185,25 @@ pub fn load_program() -> anyhow::Result<Program> {
 }
 
 /// Loads an arbitrary program distribution under `zksync_os/dist/<app>`.
+/// Loads a program: `app` is either the name of a dist under `zksync_os/dist` or a path
+/// to a dist directory (one with a `/`, relative to the workspace root unless absolute)
 pub fn load_program_for(app: &str) -> anyhow::Result<Program> {
-    let dist_dir = rig::chain::get_zksync_os_dist_dir(&Some(app.to_string()));
+    let dist_dir = if app.contains('/') {
+        let path = PathBuf::from(app);
+        if path.is_absolute() {
+            path
+        } else {
+            PathBuf::from(
+                std::env::var("CARGO_WORKSPACE_DIR").context("CARGO_WORKSPACE_DIR is not set")?,
+            )
+            .join(path)
+        }
+    } else {
+        rig::chain::get_zksync_os_dist_dir(&Some(app.to_string()))
+    };
     Program::load(&dist_dir).with_context(|| {
         format!(
-            "failed to load the `{app}` program from {}; build it with `zksync_os/dump_bin.sh --type eth-stf-fusaka` (or `eth-stf-fusaka-debug` for `{ETHPROOFS_DEBUG_APP}`)",
+            "failed to load the `{app}` program from {}; build it with `zksync_os/dump_bin.sh --type eth-stf-fusaka` (or `eth-stf-fusaka-debug` for `{ETHPROOFS_DEBUG_APP}`), or `binaries/build.sh` for the Glamsterdam programs",
             dist_dir.display()
         )
     })

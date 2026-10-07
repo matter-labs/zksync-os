@@ -1,12 +1,13 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use core::fmt::Write;
 use ruint::aliases::B160;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::AccountDataRequest;
+use zk_ee::system::IOSubsystem;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resource;
 use zk_ee::system::System;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
 use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 
@@ -15,7 +16,7 @@ pub const HISTORY_STORAGE_ADDRESS: B160 =
 
 const HISTORY_SERVE_WINDOW: u64 = 8191;
 
-pub fn eip2935_system_part<S: EthereumLikeTypes>(system: &mut System<S>) -> Result<(), SystemError>
+pub fn eip2935_system_part<S: EthereumLikeSystem>(system: &mut System<S>) -> Result<(), SystemError>
 where
     S::IO: IOSubsystemExt,
 {

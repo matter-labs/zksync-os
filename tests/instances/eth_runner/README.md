@@ -139,19 +139,14 @@ cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-state-c
 (also the `glamsterdam_state_consistency_holds` test). The report ends with the byte
 sizes of the initial account and slot value streams: the pre-block leaves as they come
 out of the trie, each as `length byte || RLP item` (length zero for a missing leaf),
-with offset tables by index.
+by address index and by slot position (the ranges witness these tables, linked by their hashes).
 
-`glamsterdam-state-consistency-cycles` runs the same check on the RISC-V simulator and
-prints the cycles per block. It needs the `glamsterdam_state_consistency` guest: build it
-with `zksync_os/dump_bin.sh --type glamsterdam-state-consistency`, or with a plain
-`cargo build --release --features proving,eth_runner,eth_stf,fusaka-bpo-2,glamsterdam_state_consistency`
-in `zksync_os/` followed by the three `cargo objcopy` steps of `airbender-build` into
-`zksync_os/dist/glamsterdam_state_consistency/` (`--app` selects another dist built the
-same way). A build without the M extension needs the `riscv32i-unknown-none-elf` target
-and the config's rustflags passed through `RUSTFLAGS` without `+m` (`-C target-feature=-m`
-on the risc0 target keeps `zmmul`, so the multiplications stay); it measured 1.6% more
-cycles over the ten fixtures (469.5M against 462.2M). Run it with `CARGO_WORKSPACE_DIR`
-pointing at the repository root:
+`glamsterdam-state-consistency-cycles` runs the same check on the RISC-V simulator with
+the `glamsterdam_pre_execution` program (`binaries/build.sh`, see `binaries/README.md`;
+`--app` selects another dist), checks that the program returns the hash of its linkage
+output (`ethereum_glamsterdam::linkage::ProgramOutput` with a clear access mask) and
+prints the cycles per block. The program builds for the standard
+`riscv32i-unknown-none-elf` target without the M extension.
 
 ```raw
 CARGO_WORKSPACE_DIR=$PWD/ cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-state-consistency-cycles
@@ -161,3 +156,34 @@ A witness experiment (the access list as RLP bytes parsed lazily, versus word-al
 entries RLP-encoded into the hasher while read) ran the whole check both ways on the
 ten Sepolia fixtures: 463.8M against 464.1M cycles in total, within noise, with the
 structured witness twice the size, so the RLP witness is the one used.
+
+#### Transaction ranges
+
+The second part of the Glamsterdam STF runs a range of block access indices (the
+pre-transaction system calls at index 0, the transactions, the post-transaction
+operations at index n+1) with the state the access list declares, checking every
+transaction against its receipt and its state changes against the list (see
+`basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range`). The
+transactions run on the third-generation EVM interpreter (`evm_interpreter::v3`) with
+the two-dimensional gas of EIP-8037.
+
+```raw
+cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-range
+```
+
+runs every fixture as one whole-block range on the host; `--parts N` splits every block
+into N ranges of roughly equal cumulative gas (the receipts' running total) and
+aggregates their outputs (`tx_range::aggregation`): the ranges must tile the block, run
+on the pre-execution check's header and initial value tables (by hash), link their gas
+sums, and the union of the accounts and slots they accessed must be the whole access
+list, so that a list with entries nothing accessed is rejected (also the
+`whole_block_ranges_run_the_fixtures`, `split_ranges_agree_with_the_whole_block` and
+`subranges_aggregate_to_the_block` tests). `glamsterdam-range-cycles` does the same on
+the RISC-V simulator with the `glamsterdam_tx_range` program (`binaries/build.sh`, see
+`binaries/README.md`), also with `--parts`, checks that every program returns the hash
+of its linkage output (`ethereum_glamsterdam::linkage::ProgramOutput`, the public
+output every Glamsterdam program publishes and the aggregation links), and prints the
+cycles per range and per block.
+`glamsterdam-trace-diff --block-dir DIR --tx N --trace FILE` diffs our EVM steps of one
+transaction (depth, program counter, gas) against the node's `debug_traceTransaction`
+struct logs saved in `FILE`, to find where an execution diverges.

@@ -1,3 +1,4 @@
+use basic_bootloader::bootloader::supported_ees::EthereumLikeSystem;
 use std::alloc::Global;
 
 use basic_bootloader::bootloader::block_flow::TransactionsRollingKeccakHasher;
@@ -26,6 +27,7 @@ use zk_ee::system::{EthereumLikeTypes, SystemTypes};
 use zk_ee::types_config::EthereumIOTypesConfig;
 
 pub mod ethereum;
+pub mod glamsterdam;
 
 /// Logger implementation selected based on compilation features
 #[cfg(not(feature = "no_print"))]
@@ -84,6 +86,13 @@ impl<O: IOOracle, const PROOF_ENV: bool> SystemTypes for ForwardSystemTypes<O, P
 
 /// Marker implementation indicating Ethereum-like execution semantics
 impl<O: IOOracle, const PROOF_ENV: bool> EthereumLikeTypes for ForwardSystemTypes<O, PROOF_ENV> {}
+
+impl<O: IOOracle, const PROOF_ENV: bool> EthereumLikeSystem for ForwardSystemTypes<O, PROOF_ENV> {
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
+}
 
 /// STF implementation for sequencing system
 impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, false> {
@@ -157,6 +166,13 @@ impl<O: IOOracle> SystemTypes for BatchProverInputSystemTypes<O> {
 }
 
 impl<O: IOOracle> EthereumLikeTypes for BatchProverInputSystemTypes<O> {}
+
+impl<O: IOOracle> EthereumLikeSystem for BatchProverInputSystemTypes<O> {
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
+}
 
 impl<O: IOOracle> BasicSTF for BatchProverInputSystemTypes<O> {
     // This only disables the per-block enforced-tx accumulator. In the batch

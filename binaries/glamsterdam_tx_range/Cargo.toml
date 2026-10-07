@@ -1,0 +1,53 @@
+[package]
+name = "glamsterdam_tx_range"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/zksync-os/"
+license = "MIT OR Apache-2.0"
+keywords = ["blockchain", "zksync", "zk", "risc-v"]
+categories = ["cryptography"]
+description = "A Glamsterdam transaction range (transactions checked against the block access list and the receipts) as an Airbender guest program"
+
+# One program, one configuration: the features of the proving system this
+# program needs are fixed here, there are no variants to select at build time.
+
+[dependencies]
+airbender = { package = "airbender-sdk", path = "../../../airbender-platform/crates/airbender-sdk", default-features = false, features = ["allocator-custom", "ram-1gb"] }
+proof_running_system = { path = "../../proof_running_system", default-features = false, features = [
+    "proving",
+    "eth_runner",
+    "eth_stf",
+    "le_storage_slots",
+    "fusaka-bpo-2",
+    "glamsterdam_range",
+] }
+
+[profile.dev]
+opt-level = 0
+lto = false
+codegen-units = 1
+panic = "abort"
+debug = true
+
+[profile.dev.package."*"]
+opt-level = 0
+lto = false
+codegen-units = 1
+panic = "abort"
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+
+[profile.release.package."*"]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false

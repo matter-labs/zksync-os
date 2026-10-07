@@ -6,6 +6,7 @@ use crate::bootloader::constants::{
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
@@ -32,9 +33,9 @@ use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::{NopTracer, Tracer};
 use zk_ee::system::validator::{NopTxValidator, TxValidator};
 use zk_ee::system::Resource;
+use zk_ee::system::Resources;
 use zk_ee::system::System;
 use zk_ee::system::{AccountDataRequest, CompletedExecution, Computational};
-use zk_ee::system::{EthereumLikeTypes, Resources};
 #[allow(unused_imports)]
 use zk_ee::system::{IOSubsystem, IOSubsystemExt, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
@@ -58,7 +59,7 @@ const fn simulation_pubdata_extra(simulation: bool, pubdata_content: PubdataCont
 
 pub(crate) fn process_l1_transaction<
     'a,
-    S: EthereumLikeTypes + 'a,
+    S: EthereumLikeSystem + 'a,
     Config: BasicBootloaderExecutionConfig,
 >(
     system: &mut System<S>,
@@ -463,7 +464,7 @@ where
     })
 }
 
-struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
+struct ResourceAndFeeInfo<S: EthereumLikeSystem> {
     resources: ResourcesForTx<S>,
     native_per_pubdata: u64,
     native_per_gas: u64,
@@ -499,7 +500,7 @@ fn intrinsic_native_used_for_l1_verification(
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
 ///
-fn prepare_and_check_resources<'a, S: EthereumLikeTypes + 'a>(
+fn prepare_and_check_resources<'a, S: EthereumLikeSystem + 'a>(
     system: &mut System<S>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
     gas_limit: u64,
@@ -601,7 +602,7 @@ where
 /// post-execution asset-tracker notification calls. The returndata from
 /// the main tx call is saved in `returndata` so it can be restored
 /// into the return buffer after the asset-tracker calls complete.
-struct L1ExecutionOutcome<S: EthereumLikeTypes> {
+struct L1ExecutionOutcome<S: EthereumLikeSystem> {
     is_success: bool,
     returndata: Vec<u8, S::Allocator>,
     pubdata_used: u64,
@@ -616,7 +617,7 @@ struct L1ExecutionOutcome<S: EthereumLikeTypes> {
 /// transitive callee preimage loaded by the real execution path is admitted as
 /// block-level `Accepted`. Raw preimages intentionally survive frame rollback;
 /// storage, events, logs, and messages do not.
-pub(crate) fn prewarm_l1_postprocessing<S: EthereumLikeTypes>(
+pub(crate) fn prewarm_l1_postprocessing<S: EthereumLikeSystem>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     mut memories: RunnerMemoryBuffers<'_>,
@@ -678,7 +679,7 @@ where
 /// accounting. An EVM-level revert is harmless: the proxy and implementation
 /// preimages loaded before the revert have already been admitted, while
 /// subsystem failures still propagate.
-fn prewarm_l2_chain_asset_handler<'a, S: EthereumLikeTypes + 'a>(
+fn prewarm_l2_chain_asset_handler<'a, S: EthereumLikeSystem + 'a>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
@@ -723,7 +724,7 @@ where
 /// attacker-controlled execution can exhaust the transaction-local cache
 /// budget. Contract preimages are admitted at block level by
 /// `prewarm_l1_postprocessing`.
-fn prewarm_l1_postprocessing_balance_accounts<S: EthereumLikeTypes>(
+fn prewarm_l1_postprocessing_balance_accounts<S: EthereumLikeSystem>(
     system: &mut System<S>,
     refund_recipient: B160,
 ) -> Result<(), BootloaderSubsystemError>
@@ -746,7 +747,7 @@ where
 
 fn execute_l1_transaction_and_notify_result<
     'a,
-    S: EthereumLikeTypes + 'a,
+    S: EthereumLikeSystem + 'a,
     Config: BasicBootloaderExecutionConfig,
 >(
     system: &mut System<S>,
@@ -921,7 +922,7 @@ where
 ///
 /// Notify the asset tracker BEFORE changing balances/totalSupply, so that
 /// _needToForceSetAssetMigrationOnL2 can use totalSupply() == 0 consistently.
-fn mint_base_token<'a, S: EthereumLikeTypes + 'a, Config: BasicBootloaderExecutionConfig>(
+fn mint_base_token<'a, S: EthereumLikeSystem + 'a, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
@@ -956,7 +957,7 @@ where
 /// Returns `TreasuryTransferFailed` if:
 /// - Treasury has insufficient balance
 /// - Balance overflow occurs
-pub fn transfer_from_treasury<'a, S: EthereumLikeTypes + 'a>(
+pub fn transfer_from_treasury<'a, S: EthereumLikeSystem + 'a>(
     system: &mut System<S>,
     nominal_token_value: &U256,
     to: &B160,
@@ -1035,7 +1036,7 @@ where
 /// If no contract is deployed at L2AssetTracker, the call succeeds silently
 /// (a call to an empty address returns success with no returndata in EVM).
 /// However, we are certain that L2AssetTracker is available after the upgrade.
-fn notify_l2_asset_tracker<'a, S: EthereumLikeTypes + 'a>(
+fn notify_l2_asset_tracker<'a, S: EthereumLikeSystem + 'a>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
     memories: RunnerMemoryBuffers<'a>,
@@ -1108,7 +1109,7 @@ where
 ///
 /// This is the chain tokens are bridged *from* during L1→L2 deposits,
 /// passed as `_fromChainId` to `handleFinalizeBaseTokenBridgingOnL2`.
-fn read_l1_chain_id<S: EthereumLikeTypes>(system: &mut System<S>) -> U256
+fn read_l1_chain_id<S: EthereumLikeSystem>(system: &mut System<S>) -> U256
 where
     S::IO: IOSubsystemExt,
 {

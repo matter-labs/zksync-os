@@ -14,6 +14,7 @@
 //! assembled from the nonce and balance items of the witness, the new storage
 //! root and the code hash.
 
+use super::super::index_mask::IndexMask;
 use super::super::GlamsterdamError;
 use super::{
     SlotAccess, Tables, ACCOUNT_BALANCE_CHANGED, ACCOUNT_CODE_CHANGED, ACCOUNT_NONCE_CHANGED,
@@ -149,11 +150,12 @@ fn push_entry<A: Allocator>(
     Ok(offset)
 }
 
-/// The initial value streams and their offset tables, written in trie order
+/// The initial value streams and their offset tables, written in trie order,
+/// and the fresh account mask (zeroed, with a bit per account)
 pub(super) struct InitialValues<'t, A: Allocator> {
     pub accounts: &'t mut Vec<u8, A>,
     pub account_offsets: &'t mut Vec<u32, A>,
-    pub fresh_accounts: &'t mut [u8],
+    pub fresh_accounts: &'t mut IndexMask<A>,
     pub slots: &'t mut Vec<u8, A>,
     pub slot_offsets: &'t mut Vec<u32, A>,
 }
@@ -180,7 +182,7 @@ pub(super) fn apply_access_list<'e, O: IOOracle, A: Allocator + Clone>(
     debug_assert!(initial.account_offsets.is_empty() && initial.slot_offsets.is_empty());
     if initial.account_offsets.capacity() < num_accounts
         || initial.slot_offsets.capacity() < num_slots
-        || initial.fresh_accounts.len() < num_accounts
+        || (initial.fresh_accounts.len() as usize) < num_accounts
     {
         return Err(GlamsterdamError::Capacity("initial value tables"));
     }
@@ -223,7 +225,9 @@ pub(super) fn apply_access_list<'e, O: IOOracle, A: Allocator + Clone>(
             None => AccountLeaf::EMPTY,
         };
         account_offsets[address_index].write(push_entry(initial.accounts, existing)?);
-        initial.fresh_accounts[address_index] = existing.is_none() as u8;
+        if existing.is_none() {
+            initial.fresh_accounts.set(address_index as u32);
+        }
 
         // the storage trie
         let slots = access.slots_start as usize..access.slots_end as usize;

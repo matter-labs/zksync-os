@@ -10,16 +10,83 @@ use zk_ee::{
     wrap_error,
 };
 
+use evm_interpreter::errors::{EvmErrors, EvmSubsystemError};
+use zk_ee::types_config::SystemIOTypesConfig;
+
+/// The inherent interface of an EVM interpreter version beyond the execution
+/// environment trait: what the bootloader calls on the interpreter type itself.
+pub trait EvmInterpreterExt<S: SystemTypes> {
+    /// Hands resources back to the frame
+    fn reclaim_resources(&mut self, resources: S::Resources);
+
+    /// Address of a contract deployed by `deployer_address` with `deployer_nonce` (CREATE)
+    fn derive_address_for_deployment_create(
+        resources: &mut S::Resources,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        deployer_nonce: u64,
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError>;
+}
+
+impl<'a, S: EthereumLikeTypes> EvmInterpreterExt<S> for evm_interpreter::v2::Interpreter<'a, S> {
+    fn reclaim_resources(&mut self, resources: S::Resources) {
+        evm_interpreter::v2::Interpreter::reclaim_resources(self, resources)
+    }
+
+    fn derive_address_for_deployment_create(
+        resources: &mut S::Resources,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        deployer_nonce: u64,
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
+        evm_interpreter::v2::Interpreter::<S>::derive_address_for_deployment_create(
+            resources,
+            deployer_address,
+            deployer_nonce,
+        )
+    }
+}
+
+impl<'a, S: evm_interpreter::v3::GlamsterdamTypes> EvmInterpreterExt<S>
+    for evm_interpreter::v3::Interpreter<'a, S>
+{
+    fn reclaim_resources(&mut self, resources: S::Resources) {
+        evm_interpreter::v3::Interpreter::reclaim_resources(self, resources)
+    }
+
+    fn derive_address_for_deployment_create(
+        resources: &mut S::Resources,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        deployer_nonce: u64,
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
+        evm_interpreter::v3::Interpreter::<S>::derive_address_for_deployment_create(
+            resources,
+            deployer_address,
+            deployer_nonce,
+        )
+    }
+}
+
+/// An Ethereum-like system together with the EVM interpreter version it runs:
+/// the bootloader dispatches EVM frames to `EVM`.
+pub trait EthereumLikeSystem: EthereumLikeTypes + Sized {
+    type EVM<'a>: ExecutionEnvironment<
+            'a,
+            Self,
+            EvmErrors,
+            SubsystemError = evm_interpreter::errors::EvmSubsystemError,
+        > + EvmInterpreterExt<Self>
+    where
+        Self: 'a;
+}
+
 #[allow(type_alias_bounds)]
-pub type SystemBoundEVMInterpreter<'a, S: EthereumLikeTypes> =
-    evm_interpreter::v2::Interpreter<'a, S>;
+pub type SystemBoundEVMInterpreter<'a, S: EthereumLikeSystem> = S::EVM<'a>;
 
 #[repr(u8)]
-pub enum SupportedEEVMState<'a, S: EthereumLikeTypes> {
+pub enum SupportedEEVMState<'a, S: EthereumLikeSystem + 'a> {
     EVM(SystemBoundEVMInterpreter<'a, S>) = EVM_EE_BYTE,
 }
 
-impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
+impl<'ee, S: EthereumLikeSystem + 'ee> SupportedEEVMState<'ee, S> {
     pub fn needs_scratch_space(&self) -> bool {
         match self {
             SupportedEEVMState::EVM(..) => SystemBoundEVMInterpreter::<S>::NEEDS_SCRATCH_SPACE,
@@ -64,7 +131,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         system: &mut System<S>,
     ) -> Result<Self, EESubsystemError> {
         match ee_type {
-            ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::new(system)
+            ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::<S>::new(system)
                 .map(Self::EVM)
                 .map_err(wrap_error!()),
             ExecutionEnvironmentType::NoEE => Err(interface_error!(

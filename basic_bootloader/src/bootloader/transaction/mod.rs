@@ -8,6 +8,7 @@
 //!
 
 use super::errors::TxError;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
@@ -24,7 +25,6 @@ use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::system::SystemError;
-use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
@@ -51,6 +51,30 @@ pub enum Transaction<A: Allocator> {
     Abi(AbiEncodedTransaction<A>),
 }
 
+/// The bytes of a transaction: read from the oracle into an owned buffer, or exposed by
+/// the witness for the whole run (a leaf of the transactions trie)
+pub enum TxBytes<A: Allocator> {
+    Owned(UsizeAlignedByteBox<A>),
+    Static(&'static [u8]),
+}
+
+impl<A: Allocator> TxBytes<A> {
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(buffer) => buffer.as_slice(),
+            Self::Static(bytes) => bytes,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+}
+
 impl<A: Allocator> core::fmt::Debug for Transaction<A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -62,8 +86,8 @@ impl<A: Allocator> core::fmt::Debug for Transaction<A> {
 
 impl<A: Allocator> Transaction<A> {
     /// Parse a transaction from a raw buffer using the system IO oracle.
-    pub fn try_from_buffer<S: EthereumLikeTypes<Allocator = A>>(
-        buffer: UsizeAlignedByteBox<A>,
+    pub fn try_from_buffer<S: EthereumLikeSystem<Allocator = A>>(
+        buffer: TxBytes<A>,
         system: &mut System<S>,
     ) -> Result<Self, TxError>
     where
@@ -83,6 +107,10 @@ impl<A: Allocator> Transaction<A> {
                 Ok(Self::Rlp(tx))
             }
             TxEncodingFormat::Abi => {
+                // an ABI transaction is always read into its own buffer
+                let TxBytes::Owned(buffer) = buffer else {
+                    return Err(TxError::Validation(InvalidTransaction::InvalidEncoding));
+                };
                 let tx = AbiEncodedTransaction::try_from_buffer(buffer)
                     .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
                 Ok(Self::Abi(tx))

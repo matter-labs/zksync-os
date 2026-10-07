@@ -17,6 +17,7 @@ use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
 use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::stf::BasicSTF;
 use basic_bootloader::bootloader::stf::EthereumLikeBasicSTF;
+use basic_bootloader::bootloader::supported_ees::EthereumLikeSystem;
 #[allow(unused_imports)]
 use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
@@ -80,6 +81,13 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
 }
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}
+
+impl<O: IOOracle, L: Logger + Default> EthereumLikeSystem for ProofRunningSystemTypes<O, L> {
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
+}
 
 #[cfg(not(any(feature = "multiblock-batch", feature = "state-diffs-pi")))]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
@@ -161,6 +169,15 @@ impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes
     const CODE_IS_PADDED: bool = true;
 }
 
+impl<O: IOOracle, L: Logger + Default> EthereumLikeSystem
+    for EthereumStorageSystemTypesWithPostOps<O, L>
+{
+    type EVM<'a>
+        = evm_interpreter::v2::Interpreter<'a, Self>
+    where
+        Self: 'a;
+}
+
 impl<O: IOOracle, L: Logger + Default> BasicSTF for EthereumStorageSystemTypesWithPostOps<O, L> {
     type BlockDataKeeper =
         EthereumBasicTransactionDataKeeper<BootloaderAllocator, BootloaderAllocator>;
@@ -175,6 +192,71 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for EthereumStorageSystemTypesWi
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF
     for EthereumStorageSystemTypesWithPostOps<O, L>
+{
+}
+
+/// The system types of a Glamsterdam transaction range in the proving environment
+/// (see `forward_system::system::system_types::glamsterdam`)
+pub struct GlamsterdamProvingSystemTypes<O, L>(O, L);
+
+impl<O: IOOracle, L: Logger + Default> SystemTypes for GlamsterdamProvingSystemTypes<O, L> {
+    type IOTypes = EthereumIOTypesConfig;
+    type Resources = zk_ee::reference_implementations::GlamsterdamResources<()>;
+    type IO = basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::io::GlamsterdamIO<
+        Self::Allocator,
+        Self::Resources,
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::storage_policy::GlamsterdamStorageAccessCostModel,
+        LVStackFactory,
+        32,
+        O,
+        true,
+    >;
+    type SystemFunctions = NoStdSystemFunctions<true>;
+    type SystemFunctionsExt = NoStdSystemFunctions<true>;
+    type Allocator = BootloaderAllocator;
+    type Logger = L;
+    type Metadata =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::metadata_op::GlamsterdamBlockMetadata;
+}
+
+impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for GlamsterdamProvingSystemTypes<O, L> {
+    const CODE_IS_PADDED: bool = true;
+}
+
+impl<O: IOOracle, L: Logger + Default> EthereumLikeSystem for GlamsterdamProvingSystemTypes<O, L> {
+    type EVM<'a>
+        = evm_interpreter::v3::Interpreter<'a, Self>
+    where
+        Self: 'a;
+}
+
+impl<O: IOOracle, L: Logger + Default> evm_interpreter::v3::GlamsterdamTypes
+    for GlamsterdamProvingSystemTypes<O, L>
+{
+    fn slot_number(metadata: &Self::Metadata) -> u64 {
+        metadata.block_level.slot_number()
+    }
+}
+
+impl<O: IOOracle, L: Logger + Default> BasicSTF for GlamsterdamProvingSystemTypes<O, L> {
+    type BlockDataKeeper =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamRangeData<BootloaderAllocator>;
+    type BatchDataKeeper = ();
+    type BlockHeader =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::block_header::GlamsterdamHeader;
+    type MetadataOp =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::metadata_op::GlamsterdamMetadataOp;
+    type PostSystemInitOp = EthereumPostInitOp;
+    type PreTxLoopOp =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamPreOp;
+    type TxLoopOp =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamLoopOp;
+    type PostTxLoopOp =
+        basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamPostOp<BiVecCtor>;
+}
+
+impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF
+    for GlamsterdamProvingSystemTypes<O, L>
 {
 }
 

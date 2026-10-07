@@ -1,7 +1,7 @@
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use core::fmt::Write;
 use zk_ee::system::{
-    errors::internal::InternalError, Computational, EthereumLikeTypes, IOSubsystem, Resource,
-    Resources, System,
+    errors::internal::InternalError, Computational, IOSubsystem, Resource, Resources, System,
 };
 use zk_ee::{internal_error, system_log};
 
@@ -16,7 +16,7 @@ pub(crate) struct RefundInfo {
     pub(crate) native_used: u64,
 }
 
-pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
+pub(crate) fn compute_gas_refund<S: EthereumLikeSystem>(
     system: &mut System<S>,
     to_charge_for_pubdata: S::Resources,
     gas_limit: u64,

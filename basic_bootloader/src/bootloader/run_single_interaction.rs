@@ -1,18 +1,19 @@
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use errors::BootloaderSubsystemError;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::internal_error;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::Resources;
+use zk_ee::system::System;
 use zk_ee::system::{
     AccountDataRequest, CallModifier, CompletedExecution, ExternalCallRequest, IOSubsystemExt,
 };
-use zk_ee::system::{EthereumLikeTypes, System};
 use zk_ee::system_log;
 
 use super::*;
 
-impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+impl<S: EthereumLikeSystem, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {

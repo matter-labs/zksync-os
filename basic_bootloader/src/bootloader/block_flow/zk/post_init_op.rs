@@ -1,7 +1,8 @@
 use super::*;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use zk_ee::system::errors::internal::InternalError;
 
-impl<S: EthereumLikeTypes> PostSystemInitOp<S> for ZKHeaderPostInitOp
+impl<S: EthereumLikeSystem> PostSystemInitOp<S> for ZKHeaderPostInitOp
 where
     S::IO: IOSubsystemExt,
 {

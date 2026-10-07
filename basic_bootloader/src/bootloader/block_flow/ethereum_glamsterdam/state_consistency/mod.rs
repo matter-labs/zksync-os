@@ -6,38 +6,43 @@
 //! 1. witnesses the target header and the parent header, checks that the
 //!    latter is the parent and that the fee fields follow from it;
 //! 2. witnesses the RLP encoding of the block access list, checks it against
-//!    the header's `block_access_list_hash`, and walks it lazily: every address and
-//!    every slot key gets a dense index (an interner) and its trie key
-//!    (keccak), the EIP-7928 ordering and uniqueness rules are checked, and
-//!    the post-block value of every changed field is recorded in flat tables
-//!    indexed by those indices ([`AccountAccess`], [`SlotAccess`]);
+//!    the header's `block_access_list_hash`, validates it in full (the
+//!    encoding, the EIP-7928 ordering and uniqueness rules, the code size
+//!    limit) while counting its entries, then walks it again: every address
+//!    and every slot key gets a dense index (an interner) and its trie key
+//!    (keccak), and the post-block value of every changed field is recorded
+//!    in flat tables indexed by those indices ([`AccountAccess`],
+//!    [`SlotAccess`]);
 //! 3. applies the changes to the state with the stack MPT, sorted by trie
 //!    key, recording the pre-block leaf of every account and slot in the
 //!    access list as it comes out of the trie
 //!    ([`StateConsistencyOutput::initial_accounts`],
 //!    [`StateConsistencyOutput::initial_slots`]) and whether an account did not
 //!    exist before the block ([`StateConsistencyOutput::fresh_accounts`]);
-//! 4. compares the resulting root with the header's state root.
+//! 4. compares the resulting root with the header's state root;
+//! 5. reorders the recorded leaves by address index and slot position: the
+//!    three initial value tables, in that layout, are what the transaction
+//!    ranges witness, linked to this check by their hashes
+//!    ([`StateConsistencyOutput::initial_values_hashes`]).
 //!
-//! The tables are sized from a counting pass over the access list, so nothing
+//! The tables are sized from the counts of the validating pass, so nothing
 //! grows afterwards (the proving-target allocator cannot reallocate).
 
 pub mod access_list;
 mod apply;
 
 use super::block_header::{BlobSchedule, GlamsterdamHeader};
+use super::index_mask::IndexMask;
 use super::oracle_queries::{
     ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_DATA_QUERY_ID, ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_LEN_QUERY_ID,
 };
-use super::{GlamsterdamError, EIP_7954_MAX_CODE_SIZE};
+use super::GlamsterdamError;
 use crate::bootloader::block_flow::ethereum::oracle_queries::{
     ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
     ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID, ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
     ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
 };
-use access_list::{
-    AccessListCounts, AccessListSource, AccountSource, BlockAccessListReader, SlotSource,
-};
+use access_list::{AccessListCounts, BlockAccessListReader, Validation};
 use alloc::vec::Vec;
 use basic_system::system_implementation::ethereum_storage_model::interner::{
     AddressKey, Interner, SlotKey,
@@ -47,35 +52,6 @@ use basic_system::system_implementation::ethereum_storage_model::interner::{
 /// interners skip the last-key fast path
 pub type AccessListInterner<K, A> = Interner<K, A, false>;
 
-// The tables that get hashed are byte streams, `u32` offsets and `u32` mask
-// words: the words must have the same byte image on every target, so both
-// must be little-endian.
-const _: () = assert!(cfg!(target_endian = "little"));
-
-/// The bytes of a slice of densely packed elements
-fn packed_bytes<T>(elements: &[T]) -> &[u8] {
-    // SAFETY: the element types are asserted above to have no padding, so every
-    // byte is initialized, and the slice covers the same allocation
-    unsafe {
-        core::slice::from_raw_parts(
-            elements.as_ptr().cast::<u8>(),
-            core::mem::size_of_val(elements),
-        )
-    }
-}
-
-/// The bytes of a `u32` word slice, little-endian
-fn word_bytes_mut(words: &mut [u32]) -> &mut [u8] {
-    // SAFETY: `u32` has no padding, the slice covers the same allocation, and the
-    // borrow is exclusive
-    unsafe {
-        core::slice::from_raw_parts_mut(
-            words.as_mut_ptr().cast::<u8>(),
-            core::mem::size_of_val(words),
-        )
-    }
-}
-use alloc::boxed::Box;
 use core::alloc::Allocator;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
@@ -176,21 +152,20 @@ pub struct StateConsistencyOutput<A: Allocator> {
 
     /// Pre-block leaves of the accounts, as entries `length byte || RLP item`
     /// of the leaf value (the list `[nonce, balance, storage_root, code_hash]`),
-    /// a length of zero for an account that had no leaf. In trie order; see
-    /// `initial_account_offsets`.
+    /// a length of zero for an account that had no leaf, by address index
     pub initial_accounts: Vec<u8, A>,
-    /// Offset of the entry of every account in `initial_accounts`, by address index
+    /// Offset of the entry of every account in `initial_accounts`, by address
+    /// index. Derived from the stream (an entry follows the previous one), so
+    /// not part of what the ranges witness.
     pub initial_account_offsets: Vec<u32, A>,
-    /// `1` where the account had no leaf before the block, by address index:
-    /// one byte per account in `u32` words (little-endian), zero padded to
-    /// the last word, so the mask has the same bytes on every target
-    pub fresh_accounts: Box<[u32], A>,
+    /// The accounts that had no leaf before the block, by address index
+    pub fresh_accounts: IndexMask<A>,
     /// Pre-block leaves of the slots, as entries `length byte || RLP item` of
     /// the leaf value (the minimal big-endian integer), a length of zero for a
-    /// slot without a leaf (a zero value). In trie order; see
-    /// `initial_slot_offsets`.
+    /// slot without a leaf (a zero value), by position in `slots`
     pub initial_slots: Vec<u8, A>,
-    /// Offset of the entry of every slot in `initial_slots`, aligned with `slots`
+    /// Offset of the entry of every slot in `initial_slots`, by position;
+    /// derived like `initial_account_offsets`
     pub initial_slot_offsets: Vec<u32, A>,
 
     /// The state root after the access list is applied; equals the header's
@@ -208,14 +183,27 @@ impl<A: Allocator> StateConsistencyOutput<A> {
         &self.initial_slots
     }
 
-    /// `fresh_accounts` as bytes: one per account, then zero padding to a word
+    /// `fresh_accounts` as the bytes that get hashed
     pub fn fresh_accounts_bytes(&self) -> &[u8] {
-        packed_bytes(&self.fresh_accounts)
+        self.fresh_accounts.bytes()
+    }
+
+    /// keccak of the three initial value tables, in the order the ranges
+    /// witness them (`initial_accounts`, `fresh_accounts`, `initial_slots`):
+    /// what links a range's tables to this check
+    pub fn initial_values_hashes(&self) -> [Bytes32; 3] {
+        let mut hasher = Keccak256::new();
+        [
+            self.initial_accounts_bytes(),
+            self.fresh_accounts_bytes(),
+            self.initial_slots_bytes(),
+        ]
+        .map(|table| keccak(&mut hasher, table))
     }
 
     /// Whether the account had no leaf before the block
     pub fn is_fresh(&self, address_index: u32) -> bool {
-        self.fresh_accounts_bytes()[address_index as usize] != 0
+        self.fresh_accounts.get(address_index)
     }
 
     /// The RLP item of the pre-block leaf of an account, `None` without a leaf
@@ -241,6 +229,22 @@ fn stream_entry(stream: &[u8], offset: u32) -> Option<&[u8]> {
     let offset = offset as usize;
     let len = stream[offset] as usize;
     (len != 0).then(|| &stream[offset + 1..offset + 1 + len])
+}
+
+/// Reorders a stream of `length byte || item` entries, written in trie order,
+/// by index: `offsets[i]` is the entry of index `i`, every entry exactly once.
+/// Afterwards the stream holds the entries in index order and `offsets[i]` is
+/// the position of the entry of index `i` in it.
+fn reorder_by_index<A: Allocator>(stream: &mut Vec<u8, A>, offsets: &mut [u32], allocator: A) {
+    let mut ordered = Vec::with_capacity_in(stream.len(), allocator);
+    for offset in offsets.iter_mut() {
+        let at = *offset as usize;
+        let len = stream[at] as usize;
+        *offset = ordered.len() as u32;
+        ordered.extend_from_slice(&stream[at..at + 1 + len]);
+    }
+    debug_assert_eq!(ordered.len(), stream.len());
+    *stream = ordered;
 }
 
 fn keccak(hasher: &mut Keccak256, data: &[u8]) -> Bytes32 {
@@ -308,15 +312,9 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
     if keccak(&mut hasher, encoding) != header.block_access_list_hash {
         return Err(GlamsterdamError::AccessListHash);
     }
-    let counts = access_list::count(&mut BlockAccessListReader::new(encoding)?)?;
+    let counts = access_list::validate(encoding, Validation::Full)?;
     let mut tables = Tables::with_counts(&counts, allocator.clone())?;
-    collect(
-        &mut BlockAccessListReader::new(encoding)?,
-        encoding,
-        &counts,
-        &mut tables,
-        &mut hasher,
-    )?;
+    collect_tables(encoding, &counts, &mut tables, &mut hasher)?;
 
     // The streams take at most one longest entry per element; the offset tables
     // and the mask are written by index in the trie walk (see `apply`).
@@ -328,12 +326,7 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
     let mut initial_slots =
         Vec::with_capacity_in(counts.slots * apply::MAX_SLOT_ENTRY_LEN, allocator.clone());
     let mut initial_slot_offsets = Vec::with_capacity_in(counts.slots, allocator.clone());
-    // one byte per account in zeroed words (the padding is hashed too)
-    let mut fresh_accounts: Box<[u32], A> = {
-        let zeroed = Box::new_zeroed_slice_in(counts.accounts.div_ceil(4), allocator.clone());
-        // SAFETY: zero is a valid `u32`
-        unsafe { zeroed.assume_init() }
-    };
+    let mut fresh_accounts = IndexMask::zeroed(counts.accounts, allocator.clone())?;
 
     let computed_state_root = apply::apply_access_list(
         oracle,
@@ -343,17 +336,25 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
         apply::InitialValues {
             accounts: &mut initial_accounts,
             account_offsets: &mut initial_account_offsets,
-            fresh_accounts: &mut word_bytes_mut(&mut fresh_accounts)[..counts.accounts],
+            fresh_accounts: &mut fresh_accounts,
             slots: &mut initial_slots,
             slot_offsets: &mut initial_slot_offsets,
         },
         counts.max_slots_of_account,
         &mut hasher,
-        allocator,
+        allocator.clone(),
     )?;
     if computed_state_root != header.base.state_root {
         return Err(GlamsterdamError::StateRootMismatch);
     }
+
+    // the layout the ranges witness: by index, so no offsets travel with the streams
+    reorder_by_index(
+        &mut initial_accounts,
+        &mut initial_account_offsets,
+        allocator.clone(),
+    );
+    reorder_by_index(&mut initial_slots, &mut initial_slot_offsets, allocator);
 
     let Tables {
         addresses,
@@ -387,7 +388,7 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
 }
 
 /// The tables filled by the access list walk
-pub(super) struct Tables<A: Allocator> {
+pub struct Tables<A: Allocator> {
     pub addresses: AccessListInterner<AddressKey, A>,
     pub address_hashes: Vec<(Bytes32, u32), A>,
     pub slot_keys: AccessListInterner<SlotKey, A>,
@@ -397,7 +398,7 @@ pub(super) struct Tables<A: Allocator> {
 }
 
 impl<A: Allocator + Clone> Tables<A> {
-    fn with_counts(counts: &AccessListCounts, allocator: A) -> Result<Self, GlamsterdamError> {
+    pub fn with_counts(counts: &AccessListCounts, allocator: A) -> Result<Self, GlamsterdamError> {
         if counts.accounts >= u32::MAX as usize {
             return Err(GlamsterdamError::Capacity("accounts"));
         }
@@ -416,35 +417,25 @@ impl<A: Allocator + Clone> Tables<A> {
     }
 }
 
-/// Walks the access list, checking the EIP-7928 ordering and uniqueness rules,
-/// interning the keys and filling the tables. `encoding` is the buffer the
-/// source reads, which the code changes are located in.
-fn collect<'a, A: Allocator + Clone, S: AccessListSource<'a>>(
-    source: &mut S,
+/// Walks a validated access list (see [`access_list::validate`]), interning
+/// the keys and filling the tables; `counts` are the counts of the validation.
+/// The ordering rules are not checked again; the index of every address is its
+/// position, which is checked as the interner reports a repeated address.
+pub fn collect_tables<A: Allocator + Clone>(
     encoding: &[u8],
     counts: &AccessListCounts,
     tables: &mut Tables<A>,
     hasher: &mut Keccak256,
 ) -> Result<(), GlamsterdamError> {
-    use GlamsterdamError::AccessListOrdering;
-
-    let mut previous_address = None;
-    while let Some(mut account) = source.next_account()? {
-        let address = account.address();
-        let address_bytes = address.to_be_bytes::<20>();
-        if let Some(previous) = previous_address {
-            if address_bytes <= previous {
-                return Err(AccessListOrdering("addresses not strictly ascending"));
-            }
-        }
-        previous_address = Some(address_bytes);
+    let mut reader = BlockAccessListReader::new(encoding)?;
+    while let Some(mut account) = reader.next_account()? {
+        let address_bytes = account.address.to_be_bytes::<20>();
         let address_index = tables
             .addresses
-            .intern(&AddressKey(address))
+            .intern(&AddressKey(account.address))
             .map_err(|_| GlamsterdamError::Capacity("addresses"))?;
-        // ascending addresses are distinct, so the index is the position
         if address_index as usize != tables.accounts.len() {
-            return Err(AccessListOrdering("duplicate address"));
+            return Err(GlamsterdamError::AccessListOrdering("duplicate address"));
         }
         let address_hash = keccak(hasher, &address_bytes);
         tables.address_hashes.push((address_hash, address_index));
@@ -455,27 +446,15 @@ fn collect<'a, A: Allocator + Clone, S: AccessListSource<'a>>(
             ..AccountAccess::default()
         };
 
-        let mut previous_slot = None;
         while let Some(mut slot) = account.next_slot_changes()? {
-            let slot_key = slot.slot();
-            if let Some(previous) = previous_slot {
-                if slot_key.as_u8_array_ref() <= &previous {
-                    return Err(AccessListOrdering("written slots not strictly ascending"));
-                }
-            }
-            previous_slot = Some(*slot_key.as_u8_array_ref());
-            let key_index = intern_slot_key(tables, &slot_key, hasher)?;
-            let mut previous_index = None;
+            let key_index = intern_slot_key(tables, &slot.slot, hasher)?;
+            // the changes are ascending in the index: the last one is the post-block value
             let mut post_value = None;
-            while let Some((index, value)) = slot.next_change()? {
-                if previous_index.is_some_and(|previous| index <= previous) {
-                    return Err(AccessListOrdering("slot changes not strictly ascending"));
-                }
-                previous_index = Some(index);
+            while let Some((_, value)) = slot.next_change()? {
                 post_value = Some(value);
             }
             let Some(post_value) = post_value else {
-                return Err(AccessListOrdering("slot without changes"));
+                return Err(GlamsterdamError::AccessListOrdering("slot without changes"));
             };
             tables.slots.push(SlotAccess {
                 address_index,
@@ -485,34 +464,7 @@ fn collect<'a, A: Allocator + Clone, S: AccessListSource<'a>>(
             });
             access.flags |= ACCOUNT_STORAGE_WRITTEN;
         }
-        let written_end = tables.slots.len();
-
-        // read slots: ascending, and none of them written (both lists are
-        // ascending, so one pointer over the written ones suffices)
-        let mut previous_slot = None;
-        let mut written = access.slots_start as usize;
         while let Some(slot) = account.next_storage_read()? {
-            if let Some(previous) = previous_slot {
-                if slot.as_u8_array_ref() <= &previous {
-                    return Err(AccessListOrdering("read slots not strictly ascending"));
-                }
-            }
-            previous_slot = Some(*slot.as_u8_array_ref());
-            while written < written_end
-                && tables
-                    .slot_keys
-                    .key(tables.slots[written].key_index)
-                    .0
-                    .as_u8_array_ref()
-                    < slot.as_u8_array_ref()
-            {
-                written += 1;
-            }
-            if written < written_end
-                && tables.slot_keys.key(tables.slots[written].key_index).0 == slot
-            {
-                return Err(AccessListOrdering("slot both written and read"));
-            }
             let key_index = intern_slot_key(tables, &slot, hasher)?;
             tables.slots.push(SlotAccess {
                 address_index,
@@ -524,33 +476,15 @@ fn collect<'a, A: Allocator + Clone, S: AccessListSource<'a>>(
         }
         access.slots_end = tables.slots.len() as u32;
 
-        let mut previous_index = None;
-        while let Some((index, balance)) = account.next_balance_change()? {
-            if previous_index.is_some_and(|previous| index <= previous) {
-                return Err(AccessListOrdering("balance changes not strictly ascending"));
-            }
-            previous_index = Some(index);
+        while let Some((_, balance)) = account.next_balance_change()? {
             access.post_balance = EncodingSlice::of(encoding, balance);
             access.flags |= ACCOUNT_BALANCE_CHANGED;
         }
-        let mut previous_index = None;
-        while let Some((index, nonce)) = account.next_nonce_change()? {
-            if previous_index.is_some_and(|previous| index <= previous) {
-                return Err(AccessListOrdering("nonce changes not strictly ascending"));
-            }
-            previous_index = Some(index);
+        while let Some((_, nonce)) = account.next_nonce_change()? {
             access.post_nonce = EncodingSlice::of(encoding, nonce);
             access.flags |= ACCOUNT_NONCE_CHANGED;
         }
-        let mut previous_index = None;
-        while let Some((index, code)) = account.next_code_change()? {
-            if previous_index.is_some_and(|previous| index <= previous) {
-                return Err(AccessListOrdering("code changes not strictly ascending"));
-            }
-            previous_index = Some(index);
-            if code.len() > EIP_7954_MAX_CODE_SIZE {
-                return Err(GlamsterdamError::CodeSizeExceeded);
-            }
+        while let Some((_, code)) = account.next_code_change()? {
             access.post_code_hash = keccak(hasher, code);
             access.post_code = EncodingSlice::of(encoding, code);
             access.flags |= ACCOUNT_CODE_CHANGED;

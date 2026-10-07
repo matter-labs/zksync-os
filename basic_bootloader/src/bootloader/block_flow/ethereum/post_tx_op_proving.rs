@@ -10,6 +10,7 @@ use crate::bootloader::block_flow::ethereum::{
     },
     withdrawals::WithdrawalsList,
 };
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::ethereum_storage_model::EthereumStorageModel;
 use basic_system::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH;
@@ -35,7 +36,7 @@ impl<
         VC: VecLikeCtor,
         O: IOOracle,
         const N: usize,
-        S: EthereumLikeTypes<
+        S: EthereumLikeSystem<
             IO = FullIO<A, R, P, SF, N, O, EthereumStorageModel<A, R, P, SF, N, true>, true>,
             Metadata = EthereumBlockMetadata,
         >,
@@ -165,7 +166,7 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
         SF: StackFactory<N>,
         O: IOOracle,
         const N: usize,
-        S: EthereumLikeTypes<
+        S: EthereumLikeSystem<
             IO = FullIO<A, R, P, SF, N, O, EthereumStorageModel<A, R, P, SF, N, true>, true>,
             Metadata = EthereumBlockMetadata,
         >,

@@ -59,8 +59,6 @@ eth_runner = ["proof_running_system/eth_runner"]
 # The Ethereum STF keeps storage slot keys and values little-endian (see basic_system)
 eth_stf = ["proof_running_system/eth_stf", "le_storage_slots"]
 evm_tester = ["proof_running_system/evm_tester"]
-# The Glamsterdam pre-execution (state consistency) check instead of the STF
-glamsterdam_state_consistency = ["proof_running_system/glamsterdam_state_consistency"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
 # Selects the BPO2 blob-count schedule; default is base-Osaka.

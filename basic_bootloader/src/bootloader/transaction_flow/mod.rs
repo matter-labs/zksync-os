@@ -18,6 +18,7 @@ use super::transaction::abi_encoded::AbiEncodedTransaction;
 use super::transaction::Transaction;
 
 pub mod ethereum;
+pub mod ethereum_glamsterdam;
 pub mod gas_helpers;
 pub mod logs_bloom;
 pub mod process_transaction;

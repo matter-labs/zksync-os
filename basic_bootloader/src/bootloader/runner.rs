@@ -1,4 +1,5 @@
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
@@ -31,7 +32,7 @@ use super::errors::BootloaderSubsystemError;
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
-pub fn run_till_completion<'a, S: EthereumLikeTypes>(
+pub fn run_till_completion<'a, S: EthereumLikeSystem>(
     memories: RunnerMemoryBuffers<'a>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
@@ -79,7 +80,7 @@ impl RunnerMemoryBuffers<'_> {
     }
 }
 
-struct ExecutionContext<'a, 'm, S: EthereumLikeTypes> {
+struct ExecutionContext<'a, 'm, S: EthereumLikeSystem> {
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     callstack_height: usize,
@@ -89,7 +90,7 @@ struct ExecutionContext<'a, 'm, S: EthereumLikeTypes> {
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
+impl<'external, S: EthereumLikeSystem> ExecutionContext<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,
@@ -631,7 +632,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
 }
 
 /// Read callee properties, charge for it, calculate resources for callee
-fn read_callee_and_prepare_frame_state<'a, S: EthereumLikeTypes, const IS_ENTRY_FRAME: bool>(
+fn read_callee_and_prepare_frame_state<'a, S: EthereumLikeSystem, const IS_ENTRY_FRAME: bool>(
     system: &mut System<S>,
     caller_ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<'a, S>,
@@ -761,7 +762,7 @@ pub fn parse_delegation(delegation: &[u8]) -> Result<B160, InternalError> {
 }
 
 /// Charge for reading account properties and perform actual read
-fn read_callee_account_properties<'a, S: EthereumLikeTypes>(
+fn read_callee_account_properties<'a, S: EthereumLikeSystem>(
     system: &mut System<S>,
     caller_ee_type: ExecutionEnvironmentType,
     resources: &mut S::Resources,
@@ -890,7 +891,7 @@ const EMPTY_CODE_HASH: Bytes32 =
 /// the address is already taken (a collision) follows from its nonce and code hash, so the
 /// account's code is never loaded: the real execution does not read it either, and the witness
 /// of a block need not contain it.
-fn read_deployment_target_properties<'a, S: EthereumLikeTypes>(
+fn read_deployment_target_properties<'a, S: EthereumLikeSystem>(
     system: &mut System<S>,
     caller_ee_type: ExecutionEnvironmentType,
     resources: &mut S::Resources,
@@ -944,7 +945,7 @@ where
 /// This needs to be a separate function so the stack memory
 /// that this (unfortunately) allocates gets cleaned up.
 #[inline(never)]
-fn create_ee<'a, S: EthereumLikeTypes>(
+fn create_ee<'a, S: EthereumLikeSystem>(
     ee_type: ExecutionEnvironmentType,
     system: &mut System<S>,
 ) -> Result<Box<SupportedEEVMState<'a, S>, S::Allocator>, BootloaderSubsystemError> {

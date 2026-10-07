@@ -434,6 +434,57 @@ pub trait Resources:
     }
 }
 
+///
+/// Resources with the state gas dimension of EIP-8037: state creation (new
+/// accounts, new storage slots, deployed code, delegation indicators) is paid in
+/// state gas, which is drawn from a reservoir first and, once the reservoir is
+/// empty, from the ergs (the "spill"). The reservoir is bounded by the
+/// transaction gas limit, which fits in a `u32`.
+///
+/// A frame's reservoir rides into a call in full (no 63/64 rule) and comes back
+/// with it; a frame that fails refills its state charges to its entry level (the
+/// baseline, kept by the frame) and hands any spill back to its ergs. Refunds
+/// of state gas credit the pools in the reverse order of charging: the ergs up
+/// to the spill, then the reservoir.
+///
+/// Invariant kept by every operation: the reservoir and the spill are never
+/// both non-zero (a charge spills only once the reservoir is empty, a credit
+/// repays the spill before it fills the reservoir, and a reclaim repays the
+/// spill from the reclaimed reservoir).
+///
+pub trait StateGasResources: Resources {
+    /// The state gas reservoir
+    fn state_gas(&self) -> u32;
+
+    /// Ergs spent on state charges since the last refill, not yet credited back
+    fn state_gas_spilled(&self) -> u32;
+
+    /// Adds to the reservoir (a transaction's grant, or a child's)
+    fn add_state_gas(&mut self, amount: u32);
+
+    /// Empties the reservoir, for a child frame
+    fn drain_state_gas(&mut self) -> u32;
+
+    /// Charges state gas: from the reservoir, then from the ergs as spill. Out
+    /// of ergs when both together do not cover `amount`; the ergs are exhausted
+    /// then, as for any failed charge.
+    fn charge_state_gas(&mut self, amount: u32) -> Result<(), SystemError>;
+
+    /// Credits state gas back: the ergs up to the spill first, the reservoir
+    /// for the rest
+    fn credit_state_gas(&mut self, amount: u32);
+
+    /// Rolls the state gas back to `baseline` (the reservoir at the frame's
+    /// entry): the spill returns to the ergs, the reservoir is refilled
+    fn restore_state_gas(&mut self, baseline: u32);
+
+    /// Marks the state gas spent so far as not refillable by a later
+    /// [`Self::restore_state_gas`] (the delegations a transaction applied
+    /// survive a failure of its code): the spill is folded out and returned,
+    /// the reservoir stays as it is and becomes the new baseline
+    fn commit_state_gas(&mut self) -> u32;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

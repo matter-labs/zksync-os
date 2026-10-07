@@ -17,6 +17,7 @@ alloy = { workspace = true, features = ["full", "ssz", "trie"] }
 serde_json = { workspace = true, features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"] }
 zk_ee = { path = "../../../zk_ee" }
+storage_models = { path = "../../../storage_models" }
 basic_system = { path = "../../../basic_system" }
 forward_system = { path = "../../../forward_system" }
 basic_bootloader = { path = "../../../basic_bootloader" }

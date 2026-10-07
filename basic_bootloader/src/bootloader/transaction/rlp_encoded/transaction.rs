@@ -9,16 +9,16 @@ use crate::bootloader::transaction::rlp_encoded::transaction_types::eip_7702_tx:
 use core::alloc::Allocator;
 
 use super::*;
+use crate::bootloader::transaction::TxBytes;
 use ruint::aliases::{B160, U256};
 use transaction_types::eip_4844_tx::BlobHashesList;
 use zk_ee::system::MAX_TX_GAS_LIMIT;
 use zk_ee::system::{Resources, GAS_PER_BLOB};
-use zk_ee::utils::UsizeAlignedByteBox;
 
 // NOTE: this is self-reference, but relatively easy one. Do NOT derive clone one it,
 // as it's unsound
 pub struct RlpEncodedTransaction<A: Allocator> {
-    buffer: UsizeAlignedByteBox<A>,
+    buffer: TxBytes<A>,
     inner: RlpEncodedTxInner<'static>,
     chain_id: u64,
     sig_hash: Bytes32,
@@ -50,7 +50,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
     }
 
     pub fn parse_from_buffer(
-        buffer: UsizeAlignedByteBox<A>,
+        buffer: TxBytes<A>,
         expected_chain_id: u64,
         from: B160,
     ) -> Result<Self, TxError> {

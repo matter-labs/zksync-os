@@ -105,11 +105,7 @@ case "$TYPE" in
     FEATURES="$FEATURES,evm_tester"
     APP_NAME="evm_tester"
     ;;
-  glamsterdam-state-consistency)
-    # The Glamsterdam pre-execution check alone (`eth_runner glamsterdam-state-consistency-cycles`)
-    FEATURES="$FEATURES,eth_runner,eth_stf,fusaka-bpo-2,glamsterdam_state_consistency"
-    APP_NAME="glamsterdam_state_consistency"
-    ;;
+
   "")
     echo "Missing --type argument"
     echo "$USAGE"

@@ -1,6 +1,7 @@
 use crate::bootloader::block_flow::ethereum::mpt_leaf::CellEnvelope;
 use crate::bootloader::block_flow::ethereum::rlp_ordering_and_key_for_index;
 use crate::bootloader::rlp::ReceiptEncoder;
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use crate::bootloader::transaction_flow::logs_bloom::LogsBloom;
 use crate::bootloader::BasicTransactionFlow;
@@ -96,7 +97,7 @@ impl<A: Allocator + Clone, B: Allocator> EthereumBasicTransactionDataKeeper<A, B
         }
     }
 
-    pub fn compute_header_values<S: EthereumLikeTypes, VC: VecLikeCtor>(
+    pub fn compute_header_values<S: EthereumLikeSystem, VC: VecLikeCtor>(
         self,
         system: &System<S>,
     ) -> EthereumBasicTransactionDataKeeperHeaderValues
@@ -241,7 +242,7 @@ impl<A: Allocator + Clone, B: Allocator> EthereumBasicTransactionDataKeeper<A, B
     }
 }
 
-impl<A: Allocator + Clone, S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>>
+impl<A: Allocator + Clone, S: EthereumLikeSystem<Metadata = EthereumBlockMetadata>>
     BlockTransactionsDataKeeper<S, EthereumTransactionFlow<S>>
     for EthereumBasicTransactionDataKeeper<A, S::Allocator>
 where

@@ -11,6 +11,7 @@ use crate::bootloader::constants::{
     L2_TX_INTRINSIC_PUBDATA_PER_AUTHORIZATION, SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_COST,
     SERVICE_TX_INTRINSIC_COMPUTATIONAL_NATIVE_PER_CALLDATA_BYTE, TX_INTRINSIC_GAS,
 };
+use crate::bootloader::supported_ees::EthereumLikeSystem;
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
 use zk_ee::common_structs::da_commitment_scheme::PubdataContent;
@@ -22,7 +23,7 @@ use zk_ee::system::{Computational, ErgsResource, Resources};
 use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
 use zk_ee::system_log;
 
-pub struct ResourcesForTx<S: EthereumLikeTypes> {
+pub struct ResourcesForTx<S: EthereumLikeSystem> {
     // Resources to run the transaction.
     // These will be capped to MAX_NATIVE_COMPUTATIONAL, to prevent
     // transaction from using too many native computational resources.
@@ -32,7 +33,7 @@ pub struct ResourcesForTx<S: EthereumLikeTypes> {
     pub withheld: S::Resources,
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
+impl<S: EthereumLikeSystem> core::fmt::Debug for ResourcesForTx<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ResourcesForTx")
             .field("gas", &self.main_resources.legacy_gas())
@@ -213,7 +214,7 @@ pub fn calculate_l2_tx_intrinsic_pubdata(
 /// Charges are saturating: on underflow the running counter goes to 0, the
 /// first observed failure is recorded, and remaining charges still apply.
 ///
-pub fn create_resources_for_tx<S: EthereumLikeTypes>(
+pub fn create_resources_for_tx<S: EthereumLikeSystem>(
     gas_limit: u64,
     free_native: bool,
     native_prepaid_from_gas: u64,
@@ -300,7 +301,7 @@ where
 /// Note: if base_pubdata is greater than the current counter, this function
 /// returns 0.
 ///
-pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
+pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeSystem>(
     system: &mut System<S>,
     native_per_pubdata: u64,
     base_pubdata: Option<u64>,
@@ -323,7 +324,7 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
 /// Returns if the check succeeded, the resources to charge
 /// for pubdata and the net pubdata used.
 ///
-pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
+pub fn check_enough_resources_for_pubdata<S: EthereumLikeSystem>(
     system: &mut System<S>,
     native_per_pubdata: u64,
     resources: &S::Resources,
@@ -339,7 +340,7 @@ pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
 ///
 /// Get the gas price for a transaction.
 ///
-pub(crate) fn get_gas_price<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
+pub(crate) fn get_gas_price<S: EthereumLikeSystem, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     max_fee_per_gas: &U256,
     max_priority_fee_per_gas: Option<&U256>,
