@@ -90,7 +90,12 @@ impl InternKey for SlotKey {}
 
 /// Assigns dense indices to distinct keys, in order of first appearance: the
 /// index of a new key is the number of keys seen before it.
-pub struct Interner<K: InternKey, A: Allocator> {
+///
+/// `CACHE_LAST` keeps the last key and its index for a compare before the hash
+/// probe, which pays off when consecutive lookups repeat the key (the storage
+/// ops of a contract). A walk over keys that are already distinct, like a
+/// block access list, turns it off.
+pub struct Interner<K: InternKey, A: Allocator, const CACHE_LAST: bool = true> {
     /// Key -> index, allocated once for `max_keys` keys so it never grows
     indices: HashMap<K, u32, BuildWordHasher, A>,
     /// The keys by index, for the reports and the state commitment. Pushed as
@@ -103,7 +108,7 @@ pub struct Interner<K: InternKey, A: Allocator> {
     last: Option<(K, u32)>,
 }
 
-impl<K: InternKey, A: Allocator> Interner<K, A> {
+impl<K: InternKey, A: Allocator, const CACHE_LAST: bool> Interner<K, A, CACHE_LAST> {
     /// An interner of at most `max_keys` keys
     pub fn new_in(max_keys: usize, alloc: A) -> Self
     where
@@ -149,9 +154,11 @@ impl<K: InternKey, A: Allocator> Interner<K, A> {
     /// when the interner is full.
     #[inline(always)]
     pub fn intern(&mut self, key: &K) -> Result<u32, InternalError> {
-        if let Some((last_key, index)) = &self.last {
-            if last_key == key {
-                return Ok(*index);
+        if CACHE_LAST {
+            if let Some((last_key, index)) = &self.last {
+                if last_key == key {
+                    return Ok(*index);
+                }
             }
         }
         let index = match self.indices.entry(*key) {
@@ -167,7 +174,9 @@ impl<K: InternKey, A: Allocator> Interner<K, A> {
                 index
             }
         };
-        self.last = Some((*key, index));
+        if CACHE_LAST {
+            self.last = Some((*key, index));
+        }
         Ok(index)
     }
 }

@@ -10,6 +10,7 @@ mod tx_loop;
 
 pub mod eip_2935_historical_block_hash;
 pub mod ethereum;
+pub mod ethereum_glamsterdam;
 pub mod zk;
 
 pub use self::block_data_keeper::{BlockTransactionsDataKeeper, NopTransactionDataKeeper};

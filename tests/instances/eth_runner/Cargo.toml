@@ -13,12 +13,15 @@ categories = ["cryptography"]
 serde = { workspace = true, features = ["derive", "std"] }
 ruint = { workspace = true }
 
-alloy = { workspace = true, features = ["full", "ssz"] }
+alloy = { workspace = true, features = ["full", "ssz", "trie"] }
 serde_json = { workspace = true, features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"] }
 zk_ee = { path = "../../../zk_ee" }
 basic_system = { path = "../../../basic_system" }
 forward_system = { path = "../../../forward_system" }
+basic_bootloader = { path = "../../../basic_bootloader" }
+oracle_provider = { path = "../../../oracle_provider" }
+alloy-rlp = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = { workspace = true }
 ureq = { version = "3", features = ["json", "gzip"] }

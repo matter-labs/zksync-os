@@ -65,5 +65,8 @@ eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "
 # Additional features used for eth_stf in eth_runner
 eth_stf = []
 
+# The Glamsterdam pre-execution (state consistency) check as a program (`run_glamsterdam_state_consistency`)
+glamsterdam_state_consistency = []
+
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]

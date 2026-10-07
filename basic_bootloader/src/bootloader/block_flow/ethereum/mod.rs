@@ -34,7 +34,7 @@ pub struct EthereumLoopOp;
 
 mod block_data;
 mod block_hashes_cache;
-mod block_header;
+pub(crate) mod block_header;
 pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;
 pub mod eip_7002_withdrawal_contract;
@@ -47,7 +47,7 @@ mod post_init_op;
 mod post_tx_op_proving;
 mod post_tx_op_sequencing;
 mod pre_tx_loop;
-mod utils;
+pub(crate) mod utils;
 pub(crate) mod withdrawals;
 
 pub use self::block_data::*;

@@ -234,3 +234,34 @@ pub fn run_proving_inner<
 
     unsafe { core::mem::transmute(public_input) }
 }
+
+/// The Glamsterdam pre-execution check as a program: verifies the state
+/// consistency of the block (header, parent, block access list applied to the
+/// state) and returns the computed state root. See
+/// `basic_bootloader::...::ethereum_glamsterdam::state_consistency`.
+#[cfg(feature = "glamsterdam_state_consistency")]
+pub fn run_glamsterdam_state_consistency<I: NonDeterminismCSRSourceImplementation>() -> [u32; 8] {
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::block_header::BlobSchedule;
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::state_consistency::verify_state_consistency;
+
+    let mut oracle = CsrBasedIOOracle::<I>::init();
+    let output = verify_state_consistency(
+        &mut oracle,
+        &BlobSchedule::BPO2,
+        1 << 32,
+        BootloaderAllocator::default(),
+    )
+    .expect("the state must be consistent");
+    let mut words = [0u32; 8];
+    for (word, chunk) in words.iter_mut().zip(
+        output
+            .computed_state_root
+            .as_u8_array_ref()
+            .as_chunks::<4>()
+            .0
+            .iter(),
+    ) {
+        *word = u32::from_le_bytes(*chunk);
+    }
+    words
+}

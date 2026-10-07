@@ -21,7 +21,9 @@ pub mod vec_trait;
 
 use crate::system_implementation::ethereum_storage_model::mpt::EMPTY_SLICE_ENCODING;
 
-pub use self::persist_changes::{digits_from_key, MPTWithInterner};
+pub use self::persist_changes::{
+    digits_from_key, MPTWithInterner, MptPreimagesOracle, SortedMPTWithInterner,
+};
 pub use self::storage_model::EthereumStorageModel;
 
 use zk_ee::utils::Bytes32;
@@ -33,10 +35,12 @@ pub use self::caches::account_properties::ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_I
 pub use self::caches::preimage::{
     ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID, ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
 };
+#[cfg(any(test, feature = "testing"))]
+pub use self::mpt::reference_trie;
 pub use self::mpt::{
-    BoxInterner, ByteBuffer, EthereumMPT, Interner, InterningBuffer, InterningWordBuffer,
-    LazyEncodable, LazyLeafValue, LeafValue, MPTInternalCapacities, Path, PreimagesOracle,
-    RLPSlice, EMPTY_ROOT_HASH,
+    BoxInterner, BoxInternerCtor, ByteBuffer, EthereumMPT, Interner, InternerCtor, InterningBuffer,
+    InterningWordBuffer, LazyEncodable, LazyLeafValue, LeafValue, MPTInternalCapacities, Path,
+    PreimagesOracle, RLPSlice, StackMPT, TrieKey, EMPTY_ROOT_HASH,
 };
 pub use self::persist_changes::{
     ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,

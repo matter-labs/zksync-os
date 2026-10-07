@@ -45,7 +45,16 @@ use proof_running_system::system::bootloader::OptionalGlobalAllocator;
 #[global_allocator]
 static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 
+#[cfg(not(feature = "glamsterdam_state_consistency"))]
 #[airbender::main(allocator_init = init_allocator)]
 fn main() -> [u32; 8] {
     run_proving::<CSRBasedNonDeterminismSource, LoggerTy>()
+}
+
+#[cfg(feature = "glamsterdam_state_consistency")]
+#[airbender::main(allocator_init = init_allocator)]
+fn main() -> [u32; 8] {
+    proof_running_system::system::bootloader::run_glamsterdam_state_consistency::<
+        CSRBasedNonDeterminismSource,
+    >()
 }

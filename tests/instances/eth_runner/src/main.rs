@@ -1,10 +1,13 @@
 #![recursion_limit = "1024"]
+#![feature(allocator_api)]
 
 use clap::{Parser, Subcommand};
 mod block;
 mod block_hashes;
 mod calltrace;
 mod ethproofs;
+mod glamsterdam;
+mod glamsterdam_state;
 mod live_run;
 mod native_model;
 mod post_check;
@@ -96,6 +99,72 @@ enum Command {
         /// Path to the block directory
         #[arg(long)]
         block_dir: String,
+    },
+    /// Fetch Glamsterdam block fixtures (block with transactions, execution
+    /// witness, block access list, raw header) from a Geth node into
+    /// `<output-dir>/<block>/`. Only finalized blocks are accepted.
+    GlamsterdamFetch {
+        /// Geth JSON-RPC endpoint with the `debug` namespace enabled.
+        #[arg(long)]
+        endpoint: String,
+        /// First block of the range.
+        #[arg(long)]
+        first_block: u64,
+        /// Number of consecutive blocks to fetch.
+        #[arg(long, default_value_t = 1)]
+        count: u64,
+        /// Where to store the fixtures (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        output_dir: Option<String>,
+    },
+    /// Load Glamsterdam fixtures and check their internal consistency (header
+    /// RLP and hash, block access list hash, access indices, parent header).
+    GlamsterdamCheck {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+    },
+    /// Run the Glamsterdam state consistency check (header, parent, block access
+    /// list applied to the state) natively over stored fixtures.
+    GlamsterdamStateConsistency {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+    },
+    /// Run the Glamsterdam state consistency check on the RISC-V simulator over
+    /// stored fixtures and print the cycles per block. Needs the
+    /// `glamsterdam_state_consistency` guest (`zksync_os/dump_bin.sh --type
+    /// glamsterdam-state-consistency`), or any dist built from it (`--app`).
+    GlamsterdamStateConsistencyCycles {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+        /// The program distribution under `zksync_os/dist` to run.
+        #[arg(long, default_value = "glamsterdam_state_consistency")]
+        app: String,
+    },
+    /// Profile the Glamsterdam state consistency check on the RISC-V simulator
+    /// over one fixture and write a flamegraph (the `--app` dist must carry
+    /// debug info, see `zksync_os/debug_symbols.toml`).
+    GlamsterdamStateConsistencyFlamegraph {
+        /// The fixture directory
+        #[arg(long)]
+        block_dir: String,
+        /// The program distribution under `zksync_os/dist` to run.
+        #[arg(long, default_value = "glamsterdam_state_consistency_debug")]
+        app: String,
+        /// Output SVG path
+        #[arg(long)]
+        output: String,
+        /// One stack sample every this many cycles
+        #[arg(long, default_value_t = 100)]
+        sampling_rate: usize,
+        /// Reverse the stack order (leaf functions at the root)
+        #[arg(long, default_value_t = false)]
+        inverse: bool,
     },
     /// Fetch an Ethereum block + execution witness from a Reth node and record
     /// its prover input (Ethproofs flow, no proving).
@@ -379,6 +448,64 @@ fn main() -> anyhow::Result<()> {
             );
             Ok(())
         }
+        Command::GlamsterdamFetch {
+            endpoint,
+            first_block,
+            count,
+            output_dir,
+        } => {
+            let output_dir = output_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            let fetched = glamsterdam::fetch(&endpoint, first_block, count, &output_dir)?;
+            println!(
+                "Fetched {} block(s) into {}: {fetched:?}",
+                fetched.len(),
+                output_dir.display()
+            );
+            Ok(())
+        }
+        Command::GlamsterdamStateConsistency { block_dir } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            let checked = glamsterdam_state::check_path(&block_dir)?;
+            println!(
+                "State consistency holds for {checked} fixture(s) under {}",
+                block_dir.display()
+            );
+            Ok(())
+        }
+        Command::GlamsterdamStateConsistencyCycles { block_dir, app } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            glamsterdam_state::run_on_simulator(&block_dir, &app)
+        }
+        Command::GlamsterdamStateConsistencyFlamegraph {
+            block_dir,
+            app,
+            output,
+            sampling_rate,
+            inverse,
+        } => {
+            glamsterdam_state::flamegraph(
+                std::path::Path::new(&block_dir),
+                &app,
+                std::path::Path::new(&output),
+                sampling_rate,
+                inverse,
+            )?;
+            Ok(())
+        }
+        Command::GlamsterdamCheck { block_dir } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            let checked = glamsterdam::check_path(&block_dir)?;
+            println!("Checked {checked} fixture(s) under {}", block_dir.display());
+            Ok(())
+        }
         Command::EthproofsCollect {
             reth_endpoint,
             count,
@@ -469,5 +596,29 @@ mod test {
             proof.prove_result.proof.debug_info()
         );
         assert!(proof.program_cycles > 0);
+    }
+
+    /// Every Glamsterdam fixture under `glamsterdam_blocks/` parses with the
+    /// current types and is internally consistent: header RLP and hash, block
+    /// access list hash, access indices, parent header in the witness. See
+    /// `glamsterdam::GlamsterdamBlock::check`.
+    #[test]
+    fn glamsterdam_fixtures_are_consistent() {
+        rig::init_logger();
+        let fixture_dir = crate::glamsterdam::default_fixture_dir();
+        let checked =
+            crate::glamsterdam::check_path(&fixture_dir).expect("fixtures must be consistent");
+        assert!(checked > 0);
+    }
+
+    /// The Glamsterdam state consistency check (parent state root -> header
+    /// state root through the block access list) holds on every stored fixture.
+    #[test]
+    fn glamsterdam_state_consistency_holds() {
+        rig::init_logger();
+        let fixture_dir = crate::glamsterdam::default_fixture_dir();
+        let checked = crate::glamsterdam_state::check_path(&fixture_dir)
+            .expect("state consistency must hold");
+        assert!(checked > 0);
     }
 }

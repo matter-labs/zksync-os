@@ -208,8 +208,12 @@ struct Line<'a> {
     num_children: u8,
     /// Leaf and extension
     segment: Segment,
-    /// Leaf: full RLP item of the value
+    /// Leaf: the RLP item of the value is `value_prefix[..value_prefix_len] || value`. A
+    /// value parsed from a node or interned whole has no prefix; one set by `set_borrowed`
+    /// keeps its string header here and borrows the payload from the caller.
     value: &'a [u8],
+    value_prefix: [u8; 2],
+    value_prefix_len: u8,
     /// Extension
     child: ChildRef<'a>,
     /// Branch
@@ -225,9 +229,37 @@ impl<'a> Line<'a> {
         num_children: 0,
         segment: Segment::EMPTY,
         value: &[],
+        value_prefix: [0; 2],
+        value_prefix_len: 0,
         child: ChildRef::EMPTY,
         children: [ChildRef::EMPTY; 16],
     };
+
+    #[inline(always)]
+    fn set_value(&mut self, value: ValueRef<'a>) {
+        self.value = value.payload;
+        self.value_prefix = value.prefix;
+        self.value_prefix_len = value.prefix_len;
+    }
+
+    #[inline(always)]
+    fn value_ref(&self) -> ValueRef<'a> {
+        ValueRef {
+            prefix: self.value_prefix,
+            prefix_len: self.value_prefix_len,
+            payload: self.value,
+        }
+    }
+
+    /// The data of the leaf's value item (the item without its string header)
+    fn value_data(&self) -> Result<&'a [u8], ()> {
+        if self.value_prefix_len == 0 {
+            Ok(RLPSlice::from_slice(self.value)?.data())
+        } else {
+            // the prefix is the string header, the payload its data
+            Ok(self.value)
+        }
+    }
 
     fn validate(&self) -> Result<(), ()> {
         let depth = self.depth as usize;
@@ -275,7 +307,7 @@ impl<'a> Line<'a> {
             if is_leaf {
                 // value must be a string item
                 let _ = RLPSlice::from_slice(piece_1)?;
-                self.value = piece_1;
+                self.set_value(ValueRef::whole(piece_1));
                 self.kind = Kind::Leaf;
             } else {
                 if self.segment.len == 0 {
@@ -355,12 +387,55 @@ enum Cursor {
 // The deepest chain is 64 branches and a leaf with an empty segment
 const MAX_LINES: usize = 66;
 
+/// A leaf value as two pieces: the RLP item is `prefix[..prefix_len] || payload`
+#[derive(Clone, Copy)]
+pub struct ValueRef<'a> {
+    pub prefix: [u8; 2],
+    pub prefix_len: u8,
+    pub payload: &'a [u8],
+}
+
+impl<'a> ValueRef<'a> {
+    /// A whole RLP item
+    pub fn whole(item: &'a [u8]) -> Self {
+        Self {
+            prefix: [0; 2],
+            prefix_len: 0,
+            payload: item,
+        }
+    }
+
+    /// An item of up to two header bytes followed by `payload`
+    pub fn with_prefix(prefix: &[u8], payload: &'a [u8]) -> Result<Self, ()> {
+        if prefix.len() > 2 {
+            return Err(());
+        }
+        let mut bytes = [0u8; 2];
+        bytes[..prefix.len()].copy_from_slice(prefix);
+        Ok(Self {
+            prefix: bytes,
+            prefix_len: prefix.len() as u8,
+            payload,
+        })
+    }
+
+    #[inline(always)]
+    fn prefix(&self) -> &[u8] {
+        &self.prefix[..self.prefix_len as usize]
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.prefix_len as usize + self.payload.len()
+    }
+}
+
 /// Full encoding of a leaf (payload is the value item) or extension (payload is the child key)
 fn encode_short_node<'a>(
     interner: &mut (impl Interner<'a> + 'a),
     is_leaf: bool,
     segment: &[u8],
-    payload: &[u8],
+    payload: ValueRef<'_>,
 ) -> Result<&'a [u8], ()> {
     let compact_len = segment.len() / 2 + 1;
     // single byte of compact encoding is always below 0x80
@@ -373,7 +448,10 @@ fn encode_short_node<'a>(
         buffer.write_byte(0x80 + compact_len as u8);
     }
     write_nibbles(&mut buffer, is_leaf, segment);
-    buffer.write_slice(payload);
+    if payload.prefix_len != 0 {
+        buffer.write_slice(payload.prefix());
+    }
+    buffer.write_slice(payload.payload);
 
     Ok(buffer.flush())
 }
@@ -572,6 +650,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
             line.kind = Kind::Empty;
             line.modified = false;
             line.value = &[];
+            line.value_prefix_len = 0;
             line.child = ChildRef::EMPTY;
             line.children = [ChildRef::EMPTY; 16];
         }
@@ -651,12 +730,12 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
     }
 
     /// Push a new leaf for the current key with the segment starting at `depth`
-    fn push_leaf(&mut self, depth: usize, parent_slot: u8, value: &'a [u8]) -> Result<(), ()> {
+    fn push_leaf(&mut self, depth: usize, parent_slot: u8, value: ValueRef<'a>) -> Result<(), ()> {
         let key = self.key;
         let line = self.push_slot(depth, parent_slot, true)?;
         line.kind = Kind::Leaf;
         line.segment.set_from_key(&key, depth);
-        line.value = value;
+        line.set_value(value);
         line.validate()
     }
 
@@ -745,7 +824,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 Kind::Leaf => {
                     let common = key.common_prefix_with_segment(depth, top.segment.as_slice());
                     if common == top.segment.len as usize {
-                        let data = RLPSlice::from_slice(top.value)?.data();
+                        let data = top.value_data()?;
                         self.cursor = Cursor::AtLeaf;
                         return Ok(Some(data));
                     } else {
@@ -767,6 +846,28 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
         hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         let value = interner.intern_slice(value)?;
+        self.set_value(ValueRef::whole(value), interner, hasher)
+    }
+
+    /// Insert or update the value at the key of the last `seek`, as an RLP item of up to two
+    /// header bytes (`prefix`) followed by a payload that the caller keeps alive for `'a`:
+    /// nothing is copied until the leaf is encoded.
+    pub fn set_borrowed(
+        &mut self,
+        prefix: &[u8],
+        payload: &'a [u8],
+        interner: &mut (impl Interner<'a> + 'a),
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
+    ) -> Result<(), ()> {
+        self.set_value(ValueRef::with_prefix(prefix, payload)?, interner, hasher)
+    }
+
+    fn set_value(
+        &mut self,
+        value: ValueRef<'a>,
+        interner: &mut (impl Interner<'a> + 'a),
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
+    ) -> Result<(), ()> {
         let key = self.key;
         match self.cursor {
             Cursor::Invalid => return Err(()),
@@ -775,7 +876,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 if top.kind != Kind::Leaf {
                     return Err(());
                 }
-                top.value = value;
+                top.set_value(value);
                 top.modified = true;
             }
             Cursor::EmptyTrie => {
@@ -800,7 +901,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 let depth = top.depth as usize;
                 top.kind = Kind::Leaf;
                 top.segment.set_from_key(&key, depth);
-                top.value = value;
+                top.set_value(value);
                 top.modified = true;
             }
             Cursor::DivergedExtension { common } => {
@@ -814,7 +915,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                     let depth = top.depth as usize;
                     top.kind = Kind::Leaf;
                     top.segment.set_from_key(&key, depth);
-                    top.value = value;
+                    top.set_value(value);
                     top.modified = true;
                     self.cursor = Cursor::AtLeaf;
                     return Ok(());
@@ -826,7 +927,8 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 let old_ref = if rest.is_empty() {
                     child
                 } else {
-                    let encoding = encode_short_node(interner, false, rest, child.key)?;
+                    let encoding =
+                        encode_short_node(interner, false, rest, ValueRef::whole(child.key))?;
                     make_ref(encoding, interner, hasher)?
                 };
                 self.split(common, old_nibble, old_ref, value)?;
@@ -836,7 +938,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 if top.kind != Kind::Leaf {
                     return Err(());
                 }
-                let old_value = top.value;
+                let old_value = top.value_ref();
                 let common = common as usize;
                 let segment = top.segment;
                 let old_nibble = segment.nibbles[common];
@@ -858,7 +960,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
         common: usize,
         old_nibble: u8,
         old_ref: ChildRef<'a>,
-        value: &'a [u8],
+        value: ValueRef<'a>,
     ) -> Result<(), ()> {
         let key = self.key;
         let top_index = self.num_lines.checked_sub(1).ok_or(())?;
@@ -951,7 +1053,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                 interner,
                 true,
                 line.segment.as_slice(),
-                line.value,
+                line.value_ref(),
             )?),
             Kind::Extension => {
                 if line.child.is_empty() {
@@ -964,7 +1066,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                         interner,
                         false,
                         line.segment.as_slice(),
-                        line.child.key,
+                        ValueRef::whole(line.child.key),
                     )?)
                 }
             }
@@ -1019,8 +1121,12 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                         segment,
                         payload,
                     } => {
-                        let encoding =
-                            encode_short_node(interner, is_leaf, segment.as_slice(), payload)?;
+                        let encoding = encode_short_node(
+                            interner,
+                            is_leaf,
+                            segment.as_slice(),
+                            ValueRef::whole(payload),
+                        )?;
                         make_ref(encoding, interner, hasher)?
                     }
                 };
@@ -1048,7 +1154,7 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                                     interner,
                                     is_leaf,
                                     segment.as_slice(),
-                                    payload,
+                                    ValueRef::whole(payload),
                                 )?;
                                 *slot = make_ref(encoding, interner, hasher)?;
                             }
@@ -1073,7 +1179,8 @@ impl<'a, A: Allocator + Clone> StackMPT<'a, A> {
                             parent.segment = joined;
                             if is_leaf {
                                 parent.kind = Kind::Leaf;
-                                parent.value = payload;
+                                // a collapsed child is parsed from a node: its item is whole
+                                parent.set_value(ValueRef::whole(payload));
                             } else {
                                 parent.child = ChildRef {
                                     key: payload,

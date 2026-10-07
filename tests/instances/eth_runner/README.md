@@ -103,3 +103,61 @@ stream and ignores guest writes, and reports the setup and execution time of eac
 ```raw
 cargo run -p eth_runner --release --features rig/eth_stf,fusaka-bpo-2 -- ethproofs-compare-oracles --block-dir tests/instances/eth_runner/blocks/25990540 --runs 3
 ```
+
+### Glamsterdam fixtures
+
+Glamsterdam changes the block format (EIP-7928 block-level access lists, EIP-7843
+slot number in the header), so its test data lives apart from the pre-Glamsterdam
+blocks, under `glamsterdam_blocks/<block>/`, and has its own entry points. Each
+fixture holds the raw JSON-RPC responses of a Geth node, written verbatim:
+`block.json` (`eth_getBlockByNumber` with transactions), `witness.json`
+(`debug_executionWitness`), `block_access_list.json` (`eth_getBlockAccessList`),
+`raw_header.json` (`debug_getRawHeader`), `raw_block.json` (`debug_getRawBlock`) and
+`raw_receipts.json` (`debug_getRawReceipts`).
+
+```raw
+# fetch 10 consecutive finalized blocks from a Geth node with the debug namespace
+cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-fetch --endpoint ENDPOINT --first-block 11861541 --count 10
+# re-check the stored fixtures: header RLP and hash, block access list hash,
+# access indices, parent header in the witness, transactions and receipts roots
+cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-check
+```
+
+The `glamsterdam_fixtures_are_consistent` test runs the same checks over every
+stored fixture.
+
+The Glamsterdam state consistency check
+(`basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::state_consistency`)
+witnesses the header, its parent and the block access list, applies the access list
+to the parent state with the stack MPT and compares the root with the header's,
+without executing a transaction. It runs natively over the fixtures with:
+
+```raw
+cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-state-consistency
+```
+
+(also the `glamsterdam_state_consistency_holds` test). The report ends with the byte
+sizes of the initial account and slot value streams: the pre-block leaves as they come
+out of the trie, each as `length byte || RLP item` (length zero for a missing leaf),
+with offset tables by index.
+
+`glamsterdam-state-consistency-cycles` runs the same check on the RISC-V simulator and
+prints the cycles per block. It needs the `glamsterdam_state_consistency` guest: build it
+with `zksync_os/dump_bin.sh --type glamsterdam-state-consistency`, or with a plain
+`cargo build --release --features proving,eth_runner,eth_stf,fusaka-bpo-2,glamsterdam_state_consistency`
+in `zksync_os/` followed by the three `cargo objcopy` steps of `airbender-build` into
+`zksync_os/dist/glamsterdam_state_consistency/` (`--app` selects another dist built the
+same way). A build without the M extension needs the `riscv32i-unknown-none-elf` target
+and the config's rustflags passed through `RUSTFLAGS` without `+m` (`-C target-feature=-m`
+on the risc0 target keeps `zmmul`, so the multiplications stay); it measured 1.6% more
+cycles over the ten fixtures (469.5M against 462.2M). Run it with `CARGO_WORKSPACE_DIR`
+pointing at the repository root:
+
+```raw
+CARGO_WORKSPACE_DIR=$PWD/ cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-state-consistency-cycles
+```
+
+A witness experiment (the access list as RLP bytes parsed lazily, versus word-aligned
+entries RLP-encoded into the hasher while read) ran the whole check both ways on the
+ten Sepolia fixtures: 463.8M against 464.1M cycles in total, within noise, with the
+structured witness twice the size, so the RLP witness is the one used.

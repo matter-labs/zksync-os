@@ -3,6 +3,8 @@ mod lazy_leaf_value;
 mod nodes;
 mod parse_node;
 mod preimages;
+#[cfg(any(test, feature = "testing"))]
+pub mod reference_trie;
 mod rlp;
 mod stack_trie;
 mod trie;

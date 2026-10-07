@@ -4,124 +4,23 @@ use crate::system_implementation::ethereum_storage_model::mpt::tests::reth_trie:
 use alloy_primitives::{B256, U256};
 use reth_trie_common::{HashBuilder, Nibbles};
 
-// Reference trie builder that keeps every node, so the stack trie can unfold them
-
-fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
-    let payload: Vec<u8> = items.concat();
-    let mut out = Vec::new();
-    if payload.len() <= 55 {
-        out.push(0xc0 + payload.len() as u8);
-    } else if payload.len() < 256 {
-        out.extend_from_slice(&[0xf8, payload.len() as u8]);
-    } else {
-        out.extend_from_slice(&[0xf9, (payload.len() >> 8) as u8, payload.len() as u8]);
-    }
-    out.extend_from_slice(&payload);
-    out
-}
-
-fn compact(nibbles: &[u8], is_leaf: bool) -> Vec<u8> {
-    let mut out = Vec::new();
-    let odd = nibbles.len() % 2 == 1;
-    let mut first = if is_leaf { 0x20 } else { 0x00 };
-    let rest = if odd {
-        first |= 0x10 | nibbles[0];
-        &nibbles[1..]
-    } else {
-        nibbles
-    };
-    out.push(first);
-    for pair in rest.chunks(2) {
-        out.push((pair[0] << 4) | pair[1]);
-    }
-    out
-}
-
-fn node_ref(encoding: Vec<u8>, store: &mut BTreeMap<Bytes32, Vec<u8>>) -> Vec<u8> {
-    if encoding.len() >= 32 {
-        let hash = *Keccak256::digest(&encoding);
-        store.insert(Bytes32::from_array(hash), encoding);
-        let mut out = vec![0x80 + 32];
-        out.extend_from_slice(&hash);
-        out
-    } else {
-        encoding
-    }
-}
-
-/// `entries` are (64 nibbles, full RLP item of the value), sorted by nibbles
-fn build_node(
-    entries: &[(Vec<u8>, Vec<u8>)],
-    depth: usize,
-    store: &mut BTreeMap<Bytes32, Vec<u8>>,
-) -> Vec<u8> {
-    assert!(entries.is_empty() == false);
-    if entries.len() == 1 {
-        let (nibbles, value) = &entries[0];
-        return rlp_list(&[
-            rlp_encode_short_slice(&compact(&nibbles[depth..], true)),
-            value.clone(),
-        ]);
-    }
-    let first = &entries[0].0;
-    let mut common = 0;
-    while depth + common < 64
-        && entries
-            .iter()
-            .all(|(n, _)| n[depth + common] == first[depth + common])
-    {
-        common += 1;
-    }
-    if common > 0 {
-        let child = build_node(entries, depth + common, store);
-        let child_ref = node_ref(child, store);
-        return rlp_list(&[
-            rlp_encode_short_slice(&compact(&first[depth..depth + common], false)),
-            child_ref,
-        ]);
-    }
-    let mut items = Vec::with_capacity(17);
-    let mut start = 0;
-    for nibble in 0..16u8 {
-        let end = start
-            + entries[start..]
-                .iter()
-                .take_while(|(n, _)| n[depth] == nibble)
-                .count();
-        if end == start {
-            items.push(vec![0x80]);
-        } else {
-            let child = build_node(&entries[start..end], depth + 1, store);
-            items.push(node_ref(child, store));
-        }
-        start = end;
-    }
-    assert_eq!(start, entries.len());
-    items.push(vec![0x80]);
-    rlp_list(&items)
-}
+use crate::system_implementation::ethereum_storage_model::mpt::reference_trie::build_trie;
 
 fn build_reference_trie(
     state: &BTreeMap<B256, U256>,
     store: &mut BTreeMap<Bytes32, Vec<u8>>,
 ) -> [u8; 32] {
-    let entries: Vec<(Vec<u8>, Vec<u8>)> = state
+    let entries: Vec<([u8; 32], Vec<u8>)> = state
         .iter()
         .filter(|(_, v)| v.is_zero() == false)
         .map(|(k, v)| {
             (
-                byte_path_to_path_digits(k),
+                k.0,
                 rlp_encode_short_slice(&alloy_rlp::encode_fixed_size(v)),
             )
         })
         .collect();
-    if entries.is_empty() {
-        return EMPTY_ROOT_HASH.as_u8_array();
-    }
-    let root = build_node(&entries, 0, store);
-    let hash = *Keccak256::digest(&root);
-    store.insert(Bytes32::from_array(hash), root);
-    hash
+    build_trie(&entries, store)
 }
 
 fn reth_root(state: &BTreeMap<B256, U256>) -> [u8; 32] {

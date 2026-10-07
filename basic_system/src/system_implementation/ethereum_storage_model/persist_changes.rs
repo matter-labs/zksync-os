@@ -33,7 +33,8 @@ use zk_ee::utils::{Bytes32, USIZE_SIZE};
 
 use super::vec_trait::VecLikeCtor;
 
-struct OracleProxy<'o, O: IOOracle>(&'o mut O);
+/// Serves MPT node preimages from the oracle (`MptPreimageByteLenQuery` + `MptPreimageWordsQuery`).
+pub struct MptPreimagesOracle<'o, O: IOOracle>(pub &'o mut O);
 
 pub const ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID: u32 =
     STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | 0x81;
@@ -58,7 +59,7 @@ impl DynamicOracleQuery for MptPreimageWordsQuery {
 
 const LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 34;
 
-impl<'o, O: IOOracle> PreimagesOracle for OracleProxy<'o, O> {
+impl<'o, O: IOOracle> PreimagesOracle for MptPreimagesOracle<'o, O> {
     fn provide_preimage<'a, I: super::Interner<'a> + 'a>(
         &mut self,
         key: &[u8; 32],
@@ -225,8 +226,13 @@ impl<'a, A: Allocator + Clone + 'a, IC: InternerCtor<A>> SortedMPTWithInterner<'
     const INTERNER_DEFAULT_CAPACITY: usize = 1 << 25; // 32 Mb
 
     pub fn new_in(allocator: A) -> Self {
+        Self::new_with_capacity_in(Self::INTERNER_DEFAULT_CAPACITY, allocator)
+    }
+
+    /// With a node interner of `interner_byte_capacity` bytes
+    pub fn new_with_capacity_in(interner_byte_capacity: usize, allocator: A) -> Self {
         let interner =
-            IC::make_interner_with_capacity_in(Self::INTERNER_DEFAULT_CAPACITY, allocator.clone());
+            IC::make_interner_with_capacity_in(interner_byte_capacity, allocator.clone());
         let mpt = StackMPT::new_in(allocator);
 
         Self { interner, mpt }
@@ -261,6 +267,17 @@ impl<'a, A: Allocator + Clone + 'a, IC: InternerCtor<A>> SortedMPTWithInterner<'
         hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
     ) -> Result<(), ()> {
         self.mpt.set(value, &mut self.interner, hasher)
+    }
+
+    /// See [`StackMPT::set_borrowed`]
+    pub fn set_borrowed(
+        &mut self,
+        prefix: &[u8],
+        payload: &'a [u8],
+        hasher: &mut impl MiniDigest<HashOutput: core::ops::Deref<Target = [u8; 32]>>,
+    ) -> Result<(), ()> {
+        self.mpt
+            .set_borrowed(prefix, payload, &mut self.interner, hasher)
     }
 
     pub fn delete(&mut self) -> Result<(), ()> {
@@ -306,6 +323,17 @@ impl EthereumStoragePersister {
         value: &Bytes32,
         buffer: &'a mut [MaybeUninit<u8>; LEAF_VALUE_PRE_ENCODING_MAX_LEN],
     ) -> &'a [u8] {
+        encode_slot_value_for_leaf(value, buffer)
+    }
+}
+
+/// The leaf value of a non-zero storage slot: `rlp(rlp(value as a minimal big-endian integer))`,
+/// the outer string being the leaf's value item.
+fn encode_slot_value_for_leaf<'a>(
+    value: &Bytes32,
+    buffer: &'a mut [MaybeUninit<u8>; LEAF_VALUE_PRE_ENCODING_MAX_LEN],
+) -> &'a [u8] {
+    {
         // NOTE: we need to actually do value -> shortest BE slice,
         // then encode such slice as RLP, and then again encode such slice as RLP to place it directly into leaf
         let byte_len = value.num_trailing_nonzero_bytes();
@@ -340,7 +368,9 @@ impl EthereumStoragePersister {
 
         unsafe { core::slice::from_raw_parts(buffer.as_ptr().cast::<u8>().cast(), offset) }
     }
+}
 
+impl EthereumStoragePersister {
     #[allow(dead_code)]
     fn encode_slot_value_inner<'a>(
         value: &Bytes32,
@@ -391,7 +421,7 @@ impl EthereumStoragePersister {
     ) -> Result<Bytes32, InternalError> {
         let _ = logger.write_fmt(format_args!("Beginning MTP updates\n"));
 
-        let mut preimage_oracle = OracleProxy(oracle);
+        let mut preimage_oracle = MptPreimagesOracle(oracle);
         let slot_keys = interners.slot_keys();
         let addresses = interners.addresses();
         // trie keys of the slot keys, by interned index, hashed on first use; sized

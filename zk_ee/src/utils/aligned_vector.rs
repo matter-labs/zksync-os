@@ -67,6 +67,23 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         }
     }
 
+    /// A zeroed buffer of `byte_len` bytes. The allocation is rounded up to whole words and
+    /// every byte of it is initialized, so no uninitialized byte is ever observable.
+    pub fn zeroed_in(byte_len: usize, allocator: A) -> Self {
+        let num_usize_words = num_usize_words_for_u8_capacity(byte_len);
+        let mut inner: alloc::boxed::Box<[MaybeUninit<usize>], A> =
+            alloc::boxed::Box::new_uninit_slice_in(num_usize_words, allocator);
+        for word in inner.iter_mut() {
+            word.write(0);
+        }
+
+        Self {
+            inner,
+            byte_capacity: byte_len,
+            initialized_bytes: num_usize_words * USIZE_SIZE,
+        }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         debug_assert!(self.inner.len() * USIZE_SIZE >= self.byte_capacity);
         assert!(
@@ -80,6 +97,24 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
 
     pub fn len(&self) -> usize {
         self.byte_capacity
+    }
+
+    /// The (initialized) contents, for writing in place
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        assert!(
+            self.initialized_bytes >= self.byte_capacity,
+            "trying to access {} bytes, but only {} bytes are initialized",
+            self.byte_capacity,
+            self.initialized_bytes
+        );
+        // SAFETY: the first `byte_capacity` bytes are initialized (checked above), and they
+        // are within the allocation
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.inner.as_mut_ptr().cast::<u8>(),
+                self.byte_capacity,
+            )
+        }
     }
 
     /// The number of `usize` words of the buffer

@@ -390,7 +390,7 @@ fn decompress_response(
 }
 
 /// Sends JSON-RPC request to endpoint with retry logic and compression support.
-fn send(endpoint: &str, body: serde_json::Value) -> Result<String> {
+pub(crate) fn send(endpoint: &str, body: serde_json::Value) -> Result<String> {
     use std::time::Instant;
 
     let request_size = serde_json::to_string(&body)?.len();
