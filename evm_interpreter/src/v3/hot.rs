@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use u256::U256;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::evm::EvmError;
-use zk_ee::system::{Computational, ErgsResource, Resource, Resources};
+use zk_ee::system::{Resource, Resources};
 
 use super::GlamsterdamTypes;
 
@@ -446,42 +446,35 @@ fn charge_failed(e: SystemError) -> ExitCode {
     }
 }
 
+/// Charges only the "native" (proving) resource
 #[inline(always)]
-fn charge<R: Resources>(resources: &mut R, cost: &R) -> InstructionResult {
-    match resources.charge(cost) {
+pub(crate) fn spend_native<R: Resources>(resources: &mut R, native: u64) -> InstructionResult {
+    match resources.charge_native(native) {
         Ok(()) => Ok(()),
         Err(e) => Err(charge_failed(e)),
     }
 }
 
-/// Charges only the "native" (proving) resource
-#[inline(always)]
-pub(crate) fn spend_native<R: Resources>(resources: &mut R, native: u64) -> InstructionResult {
-    let cost = R::from_native(Computational::from_computational(native));
-    charge(resources, &cost)
-}
-
 /// Charges gas only (variable costs charged after the step charge)
 #[inline(always)]
-pub(crate) fn spend_gas<R: Resources>(resources: &mut R, gas: u64) -> InstructionResult {
-    let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
-        return Err(EvmError::OutOfGas.into());
-    };
-    charge(resources, &R::from_ergs(ergs))
+pub(crate) fn spend_gas<R: Resources>(resources: &mut R, gas: u32) -> InstructionResult {
+    match resources.charge_legacy_gas(gas) {
+        Ok(()) => Ok(()),
+        Err(e) => Err(charge_failed(e)),
+    }
 }
 
 /// Charges gas and native
 #[inline(always)]
 pub(crate) fn spend_gas_and_native<R: Resources>(
     resources: &mut R,
-    gas: u64,
+    gas: u32,
     native: u64,
 ) -> InstructionResult {
-    let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
-        return Err(EvmError::OutOfGas.into());
-    };
-    let cost = R::from_ergs_and_native(ergs, Computational::from_computational(native));
-    charge(resources, &cost)
+    match resources.charge_legacy_gas_and_native(gas, native) {
+        Ok(()) => Ok(()),
+        Err(e) => Err(charge_failed(e)),
+    }
 }
 
 /// The first charge of an instruction: its gas and native cost together with the native cost
@@ -490,22 +483,15 @@ pub(crate) fn spend_gas_and_native<R: Resources>(
 #[inline(always)]
 pub(crate) fn charge_step<R: Resources>(
     resources: &mut R,
-    gas: u64,
+    gas: u32,
     native: u64,
 ) -> InstructionResult {
-    let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
-        spend_native(resources, STEP_NATIVE_COST)?;
-        return Err(EvmError::OutOfGas.into());
-    };
-    let cost = R::from_ergs_and_native(
-        ergs,
-        Computational::from_computational(native + STEP_NATIVE_COST),
-    );
-    match resources.charge(&cost) {
+    match resources.charge_legacy_gas_and_native(gas, native + STEP_NATIVE_COST) {
         Ok(()) => Ok(()),
         Err(e) => {
             if let SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) = &e {
-                // ergs are checked first and nothing is charged then
+                // the gas is checked first and nothing is charged then; the step is
+                // still paid
                 spend_native(resources, STEP_NATIVE_COST)?;
             }
             Err(charge_failed(e))
@@ -528,9 +514,9 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
     // 2 MiB, i.e. nearly always): the 64-bit products are emulated on the proving target
     let end_cost = if new_heap_size_words < (1 << 16) {
         let words = new_heap_size_words as u32;
-        (MEMORY as u32 * words + (words * words) / 512) as u64
+        (MEMORY * words + (words * words) / 512) as u64
     } else {
-        MEMORY
+        (MEMORY as u64)
             .saturating_mul(new_heap_size_words)
             .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512)
     };
@@ -538,7 +524,11 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
     let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
         HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
     );
-    spend_gas_and_native(resources, net_cost_gas, net_cost_native)?;
+    spend_gas_and_native(
+        resources,
+        crate::gas::gas_utils::gas_u32(net_cost_gas)?,
+        net_cost_native,
+    )?;
     *gas_paid_for_heap_growth = end_cost;
     Ok(())
 }

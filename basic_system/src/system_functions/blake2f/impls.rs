@@ -1,10 +1,11 @@
 use zk_ee::out_of_return_memory;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::system::{Resources, SystemFunction};
 
 use super::mixing_function::*;
 use super::*;
 
-pub const GAS_PER_ROUND: u64 = 1;
+pub const GAS_PER_ROUND: u32 = 1;
 pub const INPUT_LEN: usize = 213;
 
 #[cfg(target_endian = "big")]
@@ -89,10 +90,10 @@ fn blake2f_as_system_function_inner<
     }
     // we will very quickly parse number of round
     let num_rounds = u32::from_be_bytes(input.as_chunks::<4>().0[0]);
-    let cost_gas = (num_rounds as u64) * GAS_PER_ROUND;
+    let cost_gas = (num_rounds as u64) * GAS_PER_ROUND as u64;
     let cost_native = crate::cost_constants::BLAKE2F_BASE_NATIVE_COST
         + crate::cost_constants::BLAKE2F_PER_ROUND_NATIVE_COST * (num_rounds as u64);
-    resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
+    resources.charge_legacy_gas_and_native(legacy_gas_u32(cost_gas)?, cost_native)?;
 
     let (mut state, message_block, (t0, t1), finalization_flag) =
         parse_blake2_state(input[4..].try_into().unwrap());

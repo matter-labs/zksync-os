@@ -273,7 +273,9 @@ impl<
         let gas = match ee_type {
             ExecutionEnvironmentType::NoEE => 0,
             ExecutionEnvironmentType::EVM => {
-                LOG + LOGTOPIC * topics.len() as u64 + LOGDATA * data.len() as u64
+                LOG as u64
+                    + LOGTOPIC as u64 * topics.len() as u64
+                    + LOGDATA as u64 * data.len() as u64
             }
         };
         // the same native charge as `FullIO`: the receipt hashing of the log
@@ -287,7 +289,7 @@ impl<
             + EVENT_TOPIC_NATIVE_COST * topics.len() as u64
             + EVENT_DATA_PER_BYTE_COST * data.len() as u64
             + receipt_hash_native;
-        resources.charge_legacy_gas_and_native(gas, native)?;
+        resources.charge_legacy_gas_and_native(zk_ee::system::legacy_gas_u32(gas)?, native)?;
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.events_storage
             .push_event(self.tx_number, address, topics, data)

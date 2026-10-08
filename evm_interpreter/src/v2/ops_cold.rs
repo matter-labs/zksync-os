@@ -228,7 +228,11 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
     pub(crate) fn exp(&mut self) -> InstructionResult {
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some((gas_cost, native_cost)) = exp_cost(op2) {
-            charge_step(&mut self.resources, gas_cost, native_cost)?;
+            charge_step(
+                &mut self.resources,
+                gas_utils::gas_u32(gas_cost)?,
+                native_cost,
+            )?;
         } else {
             return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
@@ -338,7 +342,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
             &mut self.resources,
-            gas_cost,
+            gas_utils::gas_u32(gas_cost)?,
             native_cost + CODECOPY_NATIVE_COST,
         )?;
         let len = cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
@@ -362,7 +366,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
             &mut self.resources,
-            gas_cost,
+            gas_utils::gas_u32(gas_cost)?,
             CALLDATACOPY_NATIVE_COST + native_cost,
         )?;
         let len = cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
@@ -386,7 +390,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
             &mut self.resources,
-            gas_cost,
+            gas_utils::gas_u32(gas_cost)?,
             RETURNDATACOPY_NATIVE_COST + native_cost,
         )?;
         let len = cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
@@ -415,7 +419,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
         charge_step(
             &mut self.resources,
-            gas_cost,
+            gas_utils::gas_u32(gas_cost)?,
             native_cost + MCOPY_NATIVE_COST,
         )?;
         let len = cast_to_usize(len, EvmError::InvalidOperandOOG.into())?;
@@ -464,7 +468,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
         charge_step(
             &mut self.resources,
-            gas_cost,
+            gas_utils::gas_u32(gas_cost)?,
             native_cost + EXTCODECOPY_NATIVE_COST,
         )?;
         copy_and_zeropad_nonoverlapping(source, &mut cold.heap[memory_offset..memory_offset + len]);
@@ -835,7 +839,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         if cold.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
-        if !TRANSIENT && self.gas_left() <= CALL_STIPEND {
+        if !TRANSIENT && self.gas_left() <= CALL_STIPEND as u64 {
             return Err(EvmError::InvalidOperandOOG.into());
         }
         let le: bool = <S::IO as zk_ee::system::IOSubsystem>::STORAGE_SLOTS_LE;
@@ -1018,8 +1022,8 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         } else {
             INITCODE_WORD_COST
         };
-        let initcode_cost = cost_per_word * (len as u64).div_ceil(32);
-        spend_gas(&mut self.resources, initcode_cost)?;
+        let initcode_cost = (cost_per_word as u64) * (len as u64).div_ceil(32);
+        spend_gas(&mut self.resources, gas_utils::gas_u32(initcode_cost)?)?;
         // can not overflow: the heap was resized with the same values
         let deployment_code = code_offset..code_offset + len;
 
@@ -1132,7 +1136,7 @@ impl<'h, S: EthereumLikeTypes> Hot<'h, S> {
         let all_resources = self.resources.take();
         cold.pending_call = Some(EVMCallRequest {
             ergs_to_pass: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
-                gas_to_pass,
+                gas_utils::gas_u32_saturating(gas_to_pass),
             ),
             call_value: value,
             destination_address: to,

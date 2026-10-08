@@ -566,7 +566,7 @@ impl<'a, S: EthereumLikeTypes> Interpreter<'a, S> {
 ///
 pub fn keccak256_gas_cost(len: usize) -> u64 {
     let words = len.div_ceil(32);
-    SHA3.saturating_add(SHA3WORD.saturating_mul(words as u64))
+    (SHA3 as u64).saturating_add((SHA3WORD as u64).saturating_mul(words as u64))
 }
 
 #[cfg(test)]

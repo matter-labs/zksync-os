@@ -14,6 +14,7 @@ use zk_ee::system::base_system_functions::{
     Bn254PairingCheckErrors, Bn254PairingCheckInterfaceError, SystemFunctionExt,
 };
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::system::logger::Logger;
 use zk_ee::{interface_error, out_of_return_memory};
 
@@ -46,8 +47,10 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254PairingChec
         cycle_marker::wrap_with_resources!("bn254_pairing", resources, {
             let oracle = if USE_ADVICE { Some(oracle) } else { None };
             let num_pairs = src.len() / 192;
-            let gas_cost = BN254_PAIRING_STATIC_COST_GAS
-                + BN254_PAIRING_COST_PER_PAIR_GAS * (num_pairs as u64);
+            let gas_cost = legacy_gas_u32(
+                BN254_PAIRING_STATIC_COST_GAS as u64
+                    + BN254_PAIRING_COST_PER_PAIR_GAS as u64 * (num_pairs as u64),
+            )?;
             // Pairing has a large fixed cost (final exponentiation) charged once
             // when there is any pairing work, plus a per-pair Miller-loop cost.
             let native_cost = if num_pairs == 0 {

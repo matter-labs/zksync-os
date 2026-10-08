@@ -1,21 +1,21 @@
 use zk_ee::native_with_delegations;
 
 // Legacy (EVM) gas costs. They are converted to ergs by the resources implementation.
-pub const BLAKE2S256_PER_ROUND_COST_GAS: u64 = 1;
+pub const BLAKE2S256_PER_ROUND_COST_GAS: u32 = 1;
 
-pub const SHA256_STATIC_COST_GAS: u64 = 60;
-pub const SHA256_PER_WORD_COST_GAS: u64 = 12;
+pub const SHA256_STATIC_COST_GAS: u32 = 60;
+pub const SHA256_PER_WORD_COST_GAS: u32 = 12;
 
-pub const RIPEMD_160_STATIC_COST_GAS: u64 = 600;
-pub const RIPEMD_160_PER_WORD_COST_GAS: u64 = 120;
-pub const MODEXP_MINIMAL_COST_GAS: u64 = 500;
-pub const P256_VERIFY_COST_GAS: u64 = 6900;
-pub const ECRECOVER_COST_GAS: u64 = 3000;
-pub const BN254_ECADD_COST_GAS: u64 = 150;
-pub const BN254_ECMUL_COST_GAS: u64 = 6000;
-pub const BN254_PAIRING_STATIC_COST_GAS: u64 = 45000;
-pub const BN254_PAIRING_COST_PER_PAIR_GAS: u64 = 34000;
-pub const POINT_EVALUATION_COST_GAS: u64 = 50_000;
+pub const RIPEMD_160_STATIC_COST_GAS: u32 = 600;
+pub const RIPEMD_160_PER_WORD_COST_GAS: u32 = 120;
+pub const MODEXP_MINIMAL_COST_GAS: u32 = 500;
+pub const P256_VERIFY_COST_GAS: u32 = 6900;
+pub const ECRECOVER_COST_GAS: u32 = 3000;
+pub const BN254_ECADD_COST_GAS: u32 = 150;
+pub const BN254_ECMUL_COST_GAS: u32 = 6000;
+pub const BN254_PAIRING_STATIC_COST_GAS: u32 = 45000;
+pub const BN254_PAIRING_COST_PER_PAIR_GAS: u32 = 34000;
+pub const POINT_EVALUATION_COST_GAS: u32 = 50_000;
 
 pub const ECRECOVER_NATIVE_COST: u64 = native_with_delegations!(240_000, 32_000, 0);
 /// Native costs for keccak256 hashing.

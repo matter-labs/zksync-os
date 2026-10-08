@@ -1,13 +1,14 @@
 use super::*;
 use alloc::vec::Vec;
 use crypto::{ark_ec::pairing::Pairing, bls12_381::curves::Bls12_381};
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::{
     out_of_return_memory,
     system::{Resources, SystemFunction},
 };
 
-pub const BLS12_381_PAIRING_FIXED_GAS: u64 = 37700;
-pub const BLS12_381_PAIRING_PER_PAIR_GAS: u64 = 32600;
+pub const BLS12_381_PAIRING_FIXED_GAS: u32 = 37700;
+pub const BLS12_381_PAIRING_PER_PAIR_GAS: u32 = 32600;
 
 pub const BLS12_381_PAIR_LEN: usize = G1_SERIALIZATION_LEN + G2_SERIALIZATION_LEN;
 
@@ -48,8 +49,10 @@ fn bls12_381_pairing_as_system_function_inner<
     }
 
     let num_pairs = input.len() / BLS12_381_PAIR_LEN;
-    let cost_gas =
-        (num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS;
+    let cost_gas = legacy_gas_u32(
+        (num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS as u64
+            + BLS12_381_PAIRING_FIXED_GAS as u64,
+    )?;
     let cost_native = crate::cost_constants::BLS12_381_PAIRING_NATIVE_COST
         + crate::cost_constants::BLS12_381_PAIRING_PER_PAIR_NATIVE_COST
             .saturating_mul(num_pairs as u64);

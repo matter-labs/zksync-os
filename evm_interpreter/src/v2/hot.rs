@@ -412,7 +412,7 @@ pub(crate) fn spend_native<R: Resources>(resources: &mut R, native: u64) -> Inst
 
 /// Charges gas only (variable costs charged after the step charge)
 #[inline(always)]
-pub(crate) fn spend_gas<R: Resources>(resources: &mut R, gas: u64) -> InstructionResult {
+pub(crate) fn spend_gas<R: Resources>(resources: &mut R, gas: u32) -> InstructionResult {
     let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
         return Err(EvmError::OutOfGas.into());
     };
@@ -423,7 +423,7 @@ pub(crate) fn spend_gas<R: Resources>(resources: &mut R, gas: u64) -> Instructio
 #[inline(always)]
 pub(crate) fn spend_gas_and_native<R: Resources>(
     resources: &mut R,
-    gas: u64,
+    gas: u32,
     native: u64,
 ) -> InstructionResult {
     let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
@@ -439,7 +439,7 @@ pub(crate) fn spend_gas_and_native<R: Resources>(
 #[inline(always)]
 pub(crate) fn charge_step<R: Resources>(
     resources: &mut R,
-    gas: u64,
+    gas: u32,
     native: u64,
 ) -> InstructionResult {
     let Some(ergs) = R::Ergs::from_legacy_gas(gas) else {
@@ -477,9 +477,9 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
     // 2 MiB, i.e. nearly always): the 64-bit products are emulated on the proving target
     let end_cost = if new_heap_size_words < (1 << 16) {
         let words = new_heap_size_words as u32;
-        (MEMORY as u32 * words + (words * words) / 512) as u64
+        (MEMORY * words + (words * words) / 512) as u64
     } else {
-        MEMORY
+        (MEMORY as u64)
             .saturating_mul(new_heap_size_words)
             .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512)
     };
@@ -487,7 +487,11 @@ pub(crate) fn pay_for_memory_growth<R: Resources>(
     let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
         HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
     );
-    spend_gas_and_native(resources, net_cost_gas, net_cost_native)?;
+    spend_gas_and_native(
+        resources,
+        crate::gas::gas_utils::gas_u32(net_cost_gas)?,
+        net_cost_native,
+    )?;
     *gas_paid_for_heap_growth = end_cost;
     Ok(())
 }

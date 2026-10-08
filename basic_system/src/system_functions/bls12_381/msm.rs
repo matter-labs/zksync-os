@@ -1,10 +1,11 @@
 use super::*;
 use alloc::vec::Vec;
 use crypto::ark_ec::CurveGroup;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::system::{Resources, SystemFunction};
 
-pub const BLS12_381_G1_MSM_PER_POINT_GAS: u64 = 12000;
-pub const BLS12_381_G2_MSM_PER_POINT_GAS: u64 = 22500;
+pub const BLS12_381_G1_MSM_PER_POINT_GAS: u32 = 12000;
+pub const BLS12_381_G2_MSM_PER_POINT_GAS: u32 = 22500;
 
 pub const G1_MSM_PAIR_LEN: usize = SCALAR_SERIALIZATION_LEN + G1_SERIALIZATION_LEN;
 pub const G2_MSM_PAIR_LEN: usize = SCALAR_SERIALIZATION_LEN + G2_SERIALIZATION_LEN;
@@ -206,10 +207,10 @@ fn bls12_381_g1_msm_as_system_function_inner<
     let cost = compute_cost(
         input.len(),
         G1_MSM_PAIR_LEN,
-        BLS12_381_G1_MSM_PER_POINT_GAS,
+        BLS12_381_G1_MSM_PER_POINT_GAS as u64,
         &DISCOUNT_TABLE_G1_MSM,
     );
-    let cost_gas = cost;
+    let cost_gas = legacy_gas_u32(cost)?;
     let cost_native = compute_cost(
         input.len(),
         G1_MSM_PAIR_LEN,
@@ -287,10 +288,10 @@ fn bls12_381_g2_msm_as_system_function_inner<
     let cost = compute_cost(
         input.len(),
         G2_MSM_PAIR_LEN,
-        BLS12_381_G2_MSM_PER_POINT_GAS,
+        BLS12_381_G2_MSM_PER_POINT_GAS as u64,
         &DISCOUNT_TABLE_G2_MSM,
     );
-    let cost_gas = cost;
+    let cost_gas = legacy_gas_u32(cost)?;
     let cost_native = compute_cost(
         input.len(),
         G2_MSM_PAIR_LEN,

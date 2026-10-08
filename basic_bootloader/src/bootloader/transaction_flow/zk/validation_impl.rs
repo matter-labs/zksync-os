@@ -67,8 +67,7 @@ where
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
     require!(
-        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(tx_gas_limit).as_u64()
-            < u64::MAX,
+        tx_gas_limit <= <S::Resources as Resources>::MAX_LEGACY_GAS as u64,
         InvalidTransaction::CallerGasLimitTooHigh,
         system
     )?;
@@ -518,7 +517,7 @@ where
         fee_to_prepay,
         gas_price,
         minimal_ergs_to_charge: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
-            minimal_gas_used,
+            minimal_gas_used as u32,
         ),
         originator_nonce_to_use: old_nonce,
         tx_hash,

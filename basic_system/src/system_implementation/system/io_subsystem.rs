@@ -28,6 +28,7 @@ use zk_ee::common_structs::{
     L2_TO_L1_LOG_SERIALIZE_SIZE,
 };
 use zk_ee::interface_error;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
     system::{
@@ -230,9 +231,9 @@ impl<
         let gas = match ee_type {
             ExecutionEnvironmentType::NoEE => 0,
             ExecutionEnvironmentType::EVM => {
-                let static_cost = LOG;
-                let topic_cost = LOGTOPIC * (topics.len() as u64);
-                let len_cost = (data.len() as u64) * LOGDATA;
+                let static_cost = LOG as u64;
+                let topic_cost = LOGTOPIC as u64 * (topics.len() as u64);
+                let len_cost = (data.len() as u64) * LOGDATA as u64;
                 static_cost + topic_cost + len_cost
             }
         };
@@ -252,7 +253,7 @@ impl<
             + EVENT_TOPIC_NATIVE_COST * (topics.len() as u64)
             + EVENT_DATA_PER_BYTE_COST * (data.len() as u64)
             + receipt_hash_native;
-        resources.charge_legacy_gas_and_native(gas, native)?;
+        resources.charge_legacy_gas_and_native(legacy_gas_u32(gas)?, native)?;
 
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.events_storage

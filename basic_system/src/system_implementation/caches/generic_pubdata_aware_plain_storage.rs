@@ -725,7 +725,7 @@ mod tests {
         let (value, gas, native) = read(&mut cache, &mut oracle, &new_slot());
         assert_eq!(oracle.queries, 1);
         assert_eq!(value, Bytes32::ZERO);
-        assert_eq!(gas, WARM_STORAGE_READ_COST, "warm by EIP-2929");
+        assert_eq!(gas, WARM_STORAGE_READ_COST as u64, "warm by EIP-2929");
         assert_eq!(
             native,
             WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST,
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(oracle.queries, 1);
         assert_eq!(
             (gas, native),
-            (WARM_STORAGE_READ_COST, WARM_STORAGE_READ_NATIVE_COST)
+            (WARM_STORAGE_READ_COST as u64, WARM_STORAGE_READ_NATIVE_COST)
         );
     }
 
@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(value, existing_value());
         assert_eq!(
             (gas, native),
-            (WARM_STORAGE_READ_COST, WARM_STORAGE_READ_NATIVE_COST)
+            (WARM_STORAGE_READ_COST as u64, WARM_STORAGE_READ_NATIVE_COST)
         );
     }
 
@@ -785,7 +785,7 @@ mod tests {
         // cold again, and the NEW read extra was rolled back with its payer
         let (_, gas, native) = read(&mut cache, &mut oracle, &new_slot());
         assert_eq!(oracle.queries, 1);
-        assert_eq!(gas, COLD_SLOAD_COST);
+        assert_eq!(gas, COLD_SLOAD_COST as u64);
         assert_eq!(
             native,
             WARM_STORAGE_READ_NATIVE_COST + COLD_NEW_STORAGE_READ_NATIVE_COST
@@ -806,7 +806,7 @@ mod tests {
         let (value, gas, native) = read(&mut cache, &mut oracle, &existing_slot());
         assert_eq!(oracle.queries, 1);
         assert_eq!(value, existing_value());
-        assert_eq!(gas, COLD_SLOAD_COST);
+        assert_eq!(gas, COLD_SLOAD_COST as u64);
         assert_eq!(
             native,
             WARM_STORAGE_READ_NATIVE_COST + COLD_EXISTING_STORAGE_READ_NATIVE_COST
@@ -826,7 +826,7 @@ mod tests {
         assert_eq!(value, existing_value());
         assert_eq!(
             (gas, native),
-            (WARM_STORAGE_READ_COST, WARM_STORAGE_READ_NATIVE_COST)
+            (WARM_STORAGE_READ_COST as u64, WARM_STORAGE_READ_NATIVE_COST)
         );
     }
 
@@ -852,7 +852,7 @@ mod tests {
         let gas = spent.ergs().0 / TestResources::from_legacy_gas_saturating(1).ergs().0;
         assert_eq!(
             gas,
-            WARM_STORAGE_READ_COST + SSTORE_SET_EXTRA,
+            (WARM_STORAGE_READ_COST + SSTORE_SET_EXTRA) as u64,
             "no cold surcharge for a slot warmed by the access list"
         );
         assert!(

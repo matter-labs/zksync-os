@@ -94,8 +94,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         // Charge for copy cost
         let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
-        self.gas
-            .spend_step_gas_and_native(gas_cost, native_cost + EXTCODECOPY_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(
+            gas_utils::gas_u32(gas_cost)?,
+            native_cost + EXTCODECOPY_NATIVE_COST,
+        )?;
 
         copy_and_zeropad_nonoverlapping(source, &mut self.heap[memory_offset..memory_offset + len]);
 
@@ -234,7 +236,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.is_static_frame() {
             return Err(EvmError::StateChangeDuringStaticCall.into());
         }
-        if self.gas.gas_left() <= CALL_STIPEND {
+        if self.gas.gas_left() <= CALL_STIPEND as u64 {
             return Err(EvmError::InvalidOperandOOG.into());
         }
         let le: bool = <S::IO as zk_ee::system::IOSubsystem>::STORAGE_SLOTS_LE;
@@ -475,8 +477,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         } else {
             INITCODE_WORD_COST
         };
-        let initcode_cost = cost_per_word * (len as u64).div_ceil(32);
-        self.gas.spend_gas(initcode_cost)?;
+        let initcode_cost = (cost_per_word as u64) * (len as u64).div_ceil(32);
+        self.gas.spend_gas(gas_utils::gas_u32(initcode_cost)?)?;
         let end = code_offset + len; // can not overflow as we resized heap above using same values
 
         // TODO: not necessary once heaps get the same treatment as calldata
@@ -634,7 +636,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         *external_call_dest = Some(EVMCallRequest {
             ergs_to_pass: <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(
-                *gas_to_pass,
+                gas_utils::gas_u32_saturating(*gas_to_pass),
             ),
             call_value: value,
             destination_address: to,

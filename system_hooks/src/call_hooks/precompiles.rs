@@ -14,6 +14,7 @@
 //!
 use super::super::*;
 use core::fmt::Write;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::system_log;
 use zk_ee::{
     define_subsystem, internal_error, out_of_return_memory,
@@ -123,7 +124,7 @@ impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPreco
         cycle_marker::wrap_with_resources!("id", resources, {
             let cost_gas = ID_STATIC_COST_GAS + ID_WORD_COST_GAS * (src.len() as u64).div_ceil(32);
             let cost_native = ID_BASE_NATIVE_COST + ID_BYTE_NATIVE_COST * (src.len() as u64);
-            resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
+            resources.charge_legacy_gas_and_native(legacy_gas_u32(cost_gas)?, cost_native)?;
             dst.try_extend(src.iter().cloned())
                 .map_err(|_| out_of_return_memory!())?;
             Ok(())

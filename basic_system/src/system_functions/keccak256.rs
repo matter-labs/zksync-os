@@ -2,6 +2,7 @@ use zk_ee::common_traits::TryExtend;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{Keccak256Errors, SystemFunction};
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::legacy_gas_u32;
 
 use super::*;
 
@@ -82,7 +83,7 @@ fn charge_for_keccak256<R: Resources>(
     len: usize,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Keccak256Errors>> {
-    let gas_cost = evm_interpreter::keccak256_gas_cost(len);
+    let gas_cost = legacy_gas_u32(evm_interpreter::keccak256_gas_cost(len))?;
     let native_cost = keccak256_native_cost_u64(len);
     resources.charge_legacy_gas_and_native(gas_cost, native_cost)?;
 

@@ -87,8 +87,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         let len_u64 = Self::cast_to_u64(&len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
-        self.gas
-            .spend_step_gas_and_native(gas_cost, native_cost + MCOPY_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(
+            gas_utils::gas_u32(gas_cost)?,
+            native_cost + MCOPY_NATIVE_COST,
+        )?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
 
         if len == 0 {

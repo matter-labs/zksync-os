@@ -179,14 +179,15 @@ pub trait ErgsResource:
     /// Number of ergs in one unit of legacy gas.
     const GAS_TO_ERGS_FACTOR: u64;
 
-    /// Largest amount of legacy gas representable as ergs (see [Ergs::MAX_ERGS]).
-    const MAX_LEGACY_GAS: u64 = Ergs::<1>::MAX_ERGS / Self::GAS_TO_ERGS_FACTOR;
+    /// Largest amount of legacy gas of one transaction: every `u32` amount is
+    /// representable as ergs (the block gas limit is not bounded by this).
+    const MAX_LEGACY_GAS: u32 = u32::MAX;
 
     /// Converts legacy gas to ergs, `None` if it doesn't fit.
-    fn from_legacy_gas(gas: u64) -> Option<Self>;
+    fn from_legacy_gas(gas: u32) -> Option<Self>;
 
     /// Converts legacy gas to ergs, saturating if it doesn't fit.
-    fn from_legacy_gas_saturating(gas: u64) -> Self;
+    fn from_legacy_gas_saturating(gas: u32) -> Self;
 
     /// Converts ergs to legacy gas, rounding down.
     fn as_legacy_gas(&self) -> u64;
@@ -208,23 +209,16 @@ impl<const GAS_TO_ERGS_FACTOR: u64> ErgsResource for Ergs<GAS_TO_ERGS_FACTOR> {
     };
 
     #[inline(always)]
-    fn from_legacy_gas(gas: u64) -> Option<Self> {
+    fn from_legacy_gas(gas: u32) -> Option<Self> {
         let () = Self::FACTOR_IN_RANGE;
-        if GAS_TO_ERGS_FACTOR == 1 {
-            Some(Self(gas))
-        } else {
-            gas.checked_mul(GAS_TO_ERGS_FACTOR).map(Self)
-        }
+        // a `u32` times a factor of at most `DEFAULT_GAS_TO_ERGS_FACTOR` fits
+        Some(Self(gas as u64 * GAS_TO_ERGS_FACTOR))
     }
 
     #[inline(always)]
-    fn from_legacy_gas_saturating(gas: u64) -> Self {
+    fn from_legacy_gas_saturating(gas: u32) -> Self {
         let () = Self::FACTOR_IN_RANGE;
-        if GAS_TO_ERGS_FACTOR == 1 {
-            Self(gas)
-        } else {
-            Self(gas.saturating_mul(GAS_TO_ERGS_FACTOR))
-        }
+        Self(gas as u64 * GAS_TO_ERGS_FACTOR)
     }
 
     #[inline(always)]
@@ -332,6 +326,134 @@ impl<const GAS_TO_ERGS_FACTOR: u64> Resource for Ergs<GAS_TO_ERGS_FACTOR> {
 /// Legacy (EVM) gas is never converted by callers: the `*_legacy_gas*` helpers
 /// convert it through [Resources::Ergs].
 ///
+/// Ergs on a 32-bit counter, for a system whose execution gas is bounded per
+/// transaction (EIP-7825 caps it at `2^24`, and a state gas spill repaid into
+/// the execution gas is bounded by the same cap): one word on the RISC-V
+/// target instead of two, over the full `u32` range. The gas to ergs factor
+/// is one. A charge is a subtraction with its borrow (one branch), and a
+/// legacy gas amount fits when its high word is zero (one test).
+#[derive(Clone, Copy, core::fmt::Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Ergs32(pub u32);
+
+impl Ergs32 {
+    /// Largest ergs value: the whole range
+    pub const MAX_ERGS: u32 = u32::MAX;
+
+    #[inline(always)]
+    fn saturated(value: u64) -> Self {
+        Self(value.min(Self::MAX_ERGS as u64) as u32)
+    }
+}
+
+impl core::ops::Add for Ergs32 {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl ErgsResource for Ergs32 {
+    const GAS_TO_ERGS_FACTOR: u64 = 1;
+
+    #[inline(always)]
+    fn from_legacy_gas(gas: u32) -> Option<Self> {
+        Some(Self(gas))
+    }
+
+    #[inline(always)]
+    fn from_legacy_gas_saturating(gas: u32) -> Self {
+        Self(gas)
+    }
+
+    #[inline(always)]
+    fn as_legacy_gas(&self) -> u64 {
+        self.0 as u64
+    }
+
+    #[inline(always)]
+    fn as_legacy_gas_ceil(&self) -> u64 {
+        self.0 as u64
+    }
+
+    #[inline(always)]
+    fn times(self, coeff: u64) -> Self {
+        Self::saturated((self.0 as u64).saturating_mul(coeff))
+    }
+}
+
+impl Computational for Ergs32 {
+    #[inline(always)]
+    fn from_computational(value: u64) -> Self {
+        Self::saturated(value)
+    }
+
+    #[inline(always)]
+    fn as_u64(&self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl Resource for Ergs32 {
+    const FORMAL_INFINITE: Self = Self(Self::MAX_ERGS);
+
+    fn empty() -> Self {
+        Self(0)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn has_enough(&self, to_spend: &Self) -> bool {
+        self >= to_spend
+    }
+
+    #[inline(always)]
+    fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
+        // the subtraction and its borrow: one branch (see `Ergs::charge` for why
+        // the failure path stays inline)
+        let (remaining, borrow) = self.0.overflowing_sub(to_charge.0);
+        // the hint keeps the success path as the fall-through of the branch: with
+        // the failure path laid out first, every charge of the interpreter's
+        // handlers took an extra jump (measured as 5% of the cycles)
+        if core::hint::unlikely(borrow) {
+            self.0 = 0;
+            Err(out_of_ergs_error!())
+        } else {
+            self.0 = remaining;
+            Ok(())
+        }
+    }
+
+    fn charge_unchecked(&mut self, to_charge: &Self) {
+        self.0 -= to_charge.0
+    }
+
+    fn reclaim(&mut self, to_reclaim: Self) {
+        self.0 = self.0.saturating_add(to_reclaim.0)
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.0 = self.0.saturating_add(to_reclaim.0)
+    }
+
+    fn diff(&self, other: Self) -> Self {
+        Self(self.0.abs_diff(other.0))
+    }
+
+    fn remaining(&self) -> Self {
+        *self
+    }
+}
+
+/// A legacy gas amount computed in `u64` (lengths times rates) as the `u32`
+/// amount a charge takes: an amount beyond the range is out of ergs, as no
+/// transaction can pay it
+#[inline(always)]
+pub fn legacy_gas_u32(gas: u64) -> Result<u32, SystemError> {
+    u32::try_from(gas).map_err(|_| out_of_ergs_error!())
+}
+
 pub trait Resources:
     'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq + Resource
 {
@@ -341,9 +463,10 @@ pub trait Resources:
     /// Type of the EE resource.
     type Ergs: ErgsResource;
 
-    /// Largest amount of legacy gas representable by [Resources::Ergs]. Block and
-    /// transaction gas limits of a system are bounded by it.
-    const MAX_LEGACY_GAS: u64 = <Self::Ergs as ErgsResource>::MAX_LEGACY_GAS;
+    /// Largest amount of legacy gas of one transaction representable by
+    /// [Resources::Ergs]; transaction gas limits are bounded by it, block gas
+    /// limits are not.
+    const MAX_LEGACY_GAS: u32 = <Self::Ergs as ErgsResource>::MAX_LEGACY_GAS;
 
     /// Constructor from EE resource, all other resources are set to empty.
     fn from_ergs(ergs: Self::Ergs) -> Self;
@@ -386,13 +509,13 @@ pub trait Resources:
 
     /// Constructor from legacy gas, `None` if it doesn't fit into ergs.
     #[inline(always)]
-    fn from_legacy_gas(gas: u64) -> Option<Self> {
+    fn from_legacy_gas(gas: u32) -> Option<Self> {
         Self::Ergs::from_legacy_gas(gas).map(Self::from_ergs)
     }
 
     /// Constructor from legacy gas, saturating if it doesn't fit into ergs.
     #[inline(always)]
-    fn from_legacy_gas_saturating(gas: u64) -> Self {
+    fn from_legacy_gas_saturating(gas: u32) -> Self {
         Self::from_ergs(Self::Ergs::from_legacy_gas_saturating(gas))
     }
 
@@ -404,14 +527,14 @@ pub trait Resources:
 
     /// Increments the EE resource by an amount of legacy gas (saturating).
     #[inline(always)]
-    fn add_legacy_gas(&mut self, gas: u64) {
+    fn add_legacy_gas(&mut self, gas: u32) {
         self.add_ergs(Self::Ergs::from_legacy_gas_saturating(gas))
     }
 
     /// Charges an amount of legacy gas. Fails with out of ergs if the amount
     /// doesn't fit into ergs.
     #[inline(always)]
-    fn charge_legacy_gas(&mut self, gas: u64) -> Result<(), SystemError> {
+    fn charge_legacy_gas(&mut self, gas: u32) -> Result<(), SystemError> {
         let ergs = Self::Ergs::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
         self.charge(&Self::from_ergs(ergs))
     }
@@ -419,7 +542,7 @@ pub trait Resources:
     /// Charges an amount of legacy gas and native resources. Fails with out of
     /// ergs if the gas amount doesn't fit into ergs.
     #[inline(always)]
-    fn charge_legacy_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), SystemError> {
+    fn charge_legacy_gas_and_native(&mut self, gas: u32, native: u64) -> Result<(), SystemError> {
         let ergs = Self::Ergs::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
         self.charge(&Self::from_ergs_and_native(
             ergs,
@@ -490,34 +613,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ergs32_charges_and_bounds() {
+        let mut e = Ergs32(100);
+        e.charge(&Ergs32(60)).unwrap();
+        assert_eq!(e, Ergs32(40));
+        assert!(e.charge(&Ergs32(41)).is_err());
+        assert_eq!(e, Ergs32(0));
+        let mut infinite = Ergs32::FORMAL_INFINITE;
+        infinite.charge(&Ergs32(Ergs32::MAX_ERGS)).unwrap();
+        assert_eq!(infinite, Ergs32(0));
+        assert_eq!(Ergs32::from_legacy_gas(1 << 24), Some(Ergs32(1 << 24)));
+        assert_eq!(Ergs32::from_legacy_gas(u32::MAX), Some(Ergs32(u32::MAX)));
+        assert_eq!(
+            Ergs32::from_legacy_gas_saturating(u32::MAX),
+            Ergs32(u32::MAX)
+        );
+        assert_eq!(Ergs32(7).times(u64::MAX), Ergs32(Ergs32::MAX_ERGS));
+        assert_eq!(Ergs32::MAX_LEGACY_GAS, u32::MAX);
+        assert_eq!(Ergs32(u32::MAX) + Ergs32(1), Ergs32(u32::MAX));
+    }
+
+    #[test]
     fn legacy_gas_conversions() {
         let ergs = Ergs::<256>::from_legacy_gas(10).unwrap();
         assert_eq!(ergs.as_u64(), 2560);
         assert_eq!(ergs.as_legacy_gas(), 10);
         assert_eq!(Ergs::<256>(2561).as_legacy_gas(), 10);
         assert_eq!(Ergs::<256>(2561).as_legacy_gas_ceil(), 11);
-        assert!(Ergs::<256>::from_legacy_gas(u64::MAX / 256 + 1).is_none());
+        // a `u32` amount always fits, with any factor
         assert_eq!(
-            Ergs::<256>::from_legacy_gas_saturating(u64::MAX / 256 + 1).as_u64(),
-            u64::MAX
+            Ergs::<256>::from_legacy_gas(u32::MAX).unwrap().as_u64(),
+            u32::MAX as u64 * 256
         );
         assert_eq!(
-            <Ergs<256> as ErgsResource>::MAX_LEGACY_GAS,
-            (i64::MAX as u64) / 256
+            Ergs::<256>::from_legacy_gas_saturating(u32::MAX).as_u64(),
+            u32::MAX as u64 * 256
         );
+        // the transaction gas bound is the `u32` range for every factor
+        assert_eq!(<Ergs<256> as ErgsResource>::MAX_LEGACY_GAS, u32::MAX);
 
-        let unit = Ergs::<1>::from_legacy_gas(u64::MAX).unwrap();
-        assert_eq!(unit.as_u64(), u64::MAX);
-        assert_eq!(unit.as_legacy_gas(), u64::MAX);
-        assert_eq!(unit.as_legacy_gas_ceil(), u64::MAX);
-        assert_eq!(<Ergs<1> as ErgsResource>::MAX_LEGACY_GAS, i64::MAX as u64);
+        let unit = Ergs::<1>::from_legacy_gas(u32::MAX).unwrap();
+        assert_eq!(unit.as_u64(), u32::MAX as u64);
+        assert_eq!(unit.as_legacy_gas(), u32::MAX as u64);
+        assert_eq!(unit.as_legacy_gas_ceil(), u32::MAX as u64);
+        assert_eq!(<Ergs<1> as ErgsResource>::MAX_LEGACY_GAS, u32::MAX);
         assert_eq!(
             <crate::reference_implementations::GasOnlyResources as Resources>::MAX_LEGACY_GAS,
-            i64::MAX as u64
+            u32::MAX
         );
         assert_eq!(
             <crate::reference_implementations::BaseResources<()> as Resources>::MAX_LEGACY_GAS,
-            (i64::MAX as u64) / 256
+            u32::MAX
         );
     }
 

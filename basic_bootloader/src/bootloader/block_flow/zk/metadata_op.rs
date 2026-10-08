@@ -32,9 +32,11 @@ impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>
             metadata.chain_config.max_tx_gas_limit(),
         );
 
-        // Both limits must be representable as ergs of this system.
-        let max_gas = <S::Resources as Resources>::MAX_LEGACY_GAS;
-        if metadata.block_gas_limit() > max_gas || individual_tx_gas_limit > max_gas {
+        // The block limit is bounded by the system's constant, a transaction's limit
+        // by what the ergs of this system represent.
+        if metadata.block_gas_limit() > crate::bootloader::constants::MAX_BLOCK_GAS_LIMIT
+            || individual_tx_gas_limit > <S::Resources as Resources>::MAX_LEGACY_GAS as u64
+        {
             return Err(internal_error!("block or tx gas limit is too high"));
         }
 

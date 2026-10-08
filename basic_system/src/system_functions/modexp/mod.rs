@@ -1,4 +1,5 @@
 use super::*;
+use zk_ee::system::legacy_gas_u32;
 
 use alloc::vec::Vec;
 use ruint::aliases::U256;
@@ -268,7 +269,7 @@ fn modexp_as_system_function_inner<
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
     let minimal_native = <R::Native as Computational>::from_computational(MODEXP_BASE_NATIVE_COST);
-    if resources.legacy_gas() < MODEXP_MINIMAL_COST_GAS {
+    if resources.legacy_gas() < MODEXP_MINIMAL_COST_GAS as u64 {
         return Err(out_of_ergs_error!().into());
     }
     if !resources.native().has_enough(&minimal_native) {
@@ -388,7 +389,8 @@ fn modexp_as_system_function_inner<
     // large allocations / zero-fills before any commensurate charge (relevant
     // when the EIP-7823 length cap is not enabled).
     let gas = gas_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
-    let ergs = <R::Ergs as ErgsResource>::from_legacy_gas(gas).ok_or(out_of_ergs_error!())?;
+    let ergs = <R::Ergs as ErgsResource>::from_legacy_gas(legacy_gas_u32(gas)?)
+        .ok_or(out_of_ergs_error!())?;
     let conservative_native =
         native_cost::<R>(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     if !resources.ergs().has_enough(&ergs) {

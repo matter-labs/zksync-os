@@ -21,7 +21,7 @@ use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 use zk_ee::system::metadata::dynamic_metadata_responder::DynamicMetadataResponder;
 use zk_ee::system::metadata::system_metadata::SystemMetadata;
-use zk_ee::system::{Resources, SystemTypes, GAS_PER_BLOB, MAX_BLOBS_PER_TX};
+use zk_ee::system::{SystemTypes, GAS_PER_BLOB, MAX_BLOBS_PER_TX};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -135,9 +135,8 @@ impl<S: SystemTypes<Metadata = GlamsterdamBlockMetadata>> MetadataInitOp<S>
     ) -> Result<S::Metadata, InternalError> {
         base_chain_config.validate()?;
         let header = GlamsterdamHeaderAndHistory::new(oracle, allocator)?;
-        if header.block_gas_limit() > <S::Resources as Resources>::MAX_LEGACY_GAS {
-            return Err(internal_error!("block gas limit is too high"));
-        }
+        // the block gas limit is a `u64` the keeper sums in; the transactions' gas limits
+        // are bounded by `TX_MAX_TOTAL_GAS_LIMIT` at validation
         let chain_config = ChainConfig::new(
             header.chain_id,
             base_chain_config.fri_proof_verification_enabled(),

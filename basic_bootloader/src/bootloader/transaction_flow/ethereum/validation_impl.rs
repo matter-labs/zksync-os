@@ -38,7 +38,7 @@ fn create_resources_for_tx<S: EthereumLikeSystem>(
         }
         intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
         let initcode_gas_cost =
-            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
+            evm_interpreter::gas_constants::INITCODE_WORD_COST as u64 * calldata_len.div_ceil(32);
         intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
     }
     intrinsic_overhead =
@@ -51,7 +51,8 @@ fn create_resources_for_tx<S: EthereumLikeSystem>(
     } else {
         let gas_limit_for_tx = gas_limit - intrinsic_overhead;
         // we checked at the very start that the gas limit fits into ergs
-        let ergs = <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx);
+        let ergs =
+            <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx as u32);
         let native_limit =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
                 u64::MAX,
@@ -117,8 +118,7 @@ where
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
     require!(
-        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(tx_gas_limit).as_u64()
-            < u64::MAX,
+        tx_gas_limit <= <S::Resources as Resources>::MAX_LEGACY_GAS as u64,
         internal_error!("TX gas limit overflows ergs counter"),
         system
     )?;

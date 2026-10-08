@@ -1,4 +1,5 @@
 use super::*;
+use zk_ee::system::legacy_gas_u32;
 
 use crate::cost_constants::{
     RIPEMD160_BASE_NATIVE_COST, RIPEMD160_CHUNK_SIZE, RIPEMD160_ROUND_NATIVE_COST,
@@ -46,7 +47,9 @@ fn ripemd160_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     resources: &mut R,
 ) -> Result<(), SystemError> {
     let word_size = (input.len() as u64).div_ceil(32);
-    let gas_cost = RIPEMD_160_STATIC_COST_GAS + RIPEMD_160_PER_WORD_COST_GAS * word_size;
+    let gas_cost = legacy_gas_u32(
+        RIPEMD_160_STATIC_COST_GAS as u64 + RIPEMD_160_PER_WORD_COST_GAS as u64 * word_size,
+    )?;
     let native_cost =
         RIPEMD160_BASE_NATIVE_COST + nb_rounds(input.len()) * RIPEMD160_ROUND_NATIVE_COST;
     resources.charge_legacy_gas_and_native(gas_cost, native_cost)?;

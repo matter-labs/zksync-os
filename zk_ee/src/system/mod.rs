@@ -35,7 +35,7 @@ pub const MAX_GLOBAL_CALLS_STACK_DEPTH: usize = 1024; // even though we do not h
 /// with the default gas to ergs factor. Where a system type is available,
 /// prefer `<S::Resources as Resources>::MAX_LEGACY_GAS`; every valid factor
 /// (see [Ergs]) admits at least this limit.
-pub const MAX_BLOCK_GAS_LIMIT: u64 = <Ergs as ErgsResource>::MAX_LEGACY_GAS;
+pub const MAX_BLOCK_GAS_LIMIT: u64 = i64::MAX as u64;
 // Currently we don't have a separate individual tx gas limit,
 // so the maximum tx gas limit is the same as the block gas limit.
 pub const MAX_TX_GAS_LIMIT: u64 = MAX_BLOCK_GAS_LIMIT;

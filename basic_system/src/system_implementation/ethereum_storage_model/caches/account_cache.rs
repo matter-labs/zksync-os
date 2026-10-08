@@ -37,6 +37,7 @@ use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::memory_io::OracleQuery;
 use zk_ee::oracle::IOOracle;
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::system::BalanceSubsystemError;
 use zk_ee::system::Computational;
 use zk_ee::system::DeconstructionSubsystemError;
@@ -602,8 +603,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             ExecutionEnvironmentType::NoEE => (),
             ExecutionEnvironmentType::EVM => {
                 use evm_interpreter::gas_constants::CODEDEPOSIT;
-                let code_deposit_cost = CODEDEPOSIT.saturating_mul(deployed_code.len() as u64);
-                resources.charge_legacy_gas(code_deposit_cost)?;
+                let code_deposit_cost =
+                    (CODEDEPOSIT as u64).saturating_mul(deployed_code.len() as u64);
+                resources.charge_legacy_gas(legacy_gas_u32(code_deposit_cost)?)?;
             }
         }
 

@@ -5,6 +5,7 @@
 #![feature(box_into_inner)]
 #![feature(btreemap_alloc)]
 #![feature(const_trait_impl)]
+#![feature(likely_unlikely)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::needless_lifetimes)]

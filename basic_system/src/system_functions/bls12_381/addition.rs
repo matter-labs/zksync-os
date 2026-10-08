@@ -3,8 +3,8 @@ use zk_ee::system::{Resources, SystemFunction};
 
 use super::*;
 
-pub const BLS12_381_G1_ADDITION_GAS: u64 = 375;
-pub const BLS12_381_G2_ADDITION_GAS: u64 = 600;
+pub const BLS12_381_G1_ADDITION_GAS: u32 = 375;
+pub const BLS12_381_G2_ADDITION_GAS: u32 = 600;
 
 pub struct Bls12381G1AdditionPrecompile;
 

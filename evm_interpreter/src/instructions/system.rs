@@ -109,8 +109,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len_u64 = Self::cast_to_u64(&len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
-        self.gas
-            .spend_step_gas_and_native(gas_cost, native_cost + CODECOPY_NATIVE_COST)?;
+        self.gas.spend_step_gas_and_native(
+            gas_utils::gas_u32(gas_cost)?,
+            native_cost + CODECOPY_NATIVE_COST,
+        )?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
         if len == 0 {
             return Ok(());
@@ -194,8 +196,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len_u64 = Self::cast_to_u64(&len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
-        self.gas
-            .spend_step_gas_and_native(gas_cost, CALLDATACOPY_NATIVE_COST + native_cost)?;
+        self.gas.spend_step_gas_and_native(
+            gas_utils::gas_u32(gas_cost)?,
+            CALLDATACOPY_NATIVE_COST + native_cost,
+        )?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
         if len == 0 {
             return Ok(());
@@ -234,8 +238,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len_u64 = Self::cast_to_u64(&len, EvmError::InvalidOperandOOG.into())?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len_u64)?;
-        self.gas
-            .spend_step_gas_and_native(gas_cost, RETURNDATACOPY_NATIVE_COST + native_cost)?;
+        self.gas.spend_step_gas_and_native(
+            gas_utils::gas_u32(gas_cost)?,
+            RETURNDATACOPY_NATIVE_COST + native_cost,
+        )?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
         let source_offset =
             Self::cast_to_usize(&source_offset, EvmError::InvalidOperandOOG.into())?;

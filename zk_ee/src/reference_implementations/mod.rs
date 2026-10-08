@@ -7,8 +7,8 @@
 use crate::{
     out_of_native_resources,
     system::{
-        errors::system::SystemError, Computational, Ergs, Resource, Resources, StateGasResources,
-        DEFAULT_GAS_TO_ERGS_FACTOR,
+        errors::system::SystemError, Computational, Ergs, Ergs32, Resource, Resources,
+        StateGasResources, DEFAULT_GAS_TO_ERGS_FACTOR,
     },
 };
 
@@ -224,7 +224,9 @@ impl<Native: Resource + Computational, const GAS_TO_ERGS_FACTOR: u64> Resources
 /// resource.
 #[derive(Clone, core::fmt::Debug, PartialEq, Eq, Default)]
 pub struct GlamsterdamResources<Native: Resource> {
-    ergs: Ergs<1>,
+    /// Execution gas as ergs 1:1 on a 32-bit counter (the per-transaction cap of
+    /// EIP-7825 bounds it)
+    ergs: Ergs32,
     native: Native,
     /// The state gas reservoir
     state_gas: u32,
@@ -240,7 +242,7 @@ impl<Native: Resource> GlamsterdamResources<Native> {
     #[inline(always)]
     fn repay_spill(&mut self) {
         let repayment = self.state_gas.min(self.state_gas_spilled);
-        self.ergs.0 += repayment as u64;
+        self.ergs.0 += repayment;
         self.state_gas -= repayment;
         self.state_gas_spilled -= repayment;
     }
@@ -248,7 +250,7 @@ impl<Native: Resource> GlamsterdamResources<Native> {
 
 impl<Native: Resource> Resource for GlamsterdamResources<Native> {
     const FORMAL_INFINITE: Self = Self {
-        ergs: Ergs::FORMAL_INFINITE,
+        ergs: Ergs32::FORMAL_INFINITE,
         native: Native::FORMAL_INFINITE,
         state_gas: 0,
         state_gas_spilled: 0,
@@ -256,7 +258,7 @@ impl<Native: Resource> Resource for GlamsterdamResources<Native> {
 
     fn empty() -> Self {
         Self {
-            ergs: Ergs::empty(),
+            ergs: Ergs32::empty(),
             native: Native::empty(),
             state_gas: 0,
             state_gas_spilled: 0,
@@ -327,7 +329,7 @@ impl<Native: Resource> Resource for GlamsterdamResources<Native> {
 
 impl<Native: Resource + Computational> Resources for GlamsterdamResources<Native> {
     type Native = Native;
-    type Ergs = Ergs<1>;
+    type Ergs = Ergs32;
 
     #[inline(always)]
     fn from_ergs(ergs: Self::Ergs) -> Self {
@@ -371,7 +373,7 @@ impl<Native: Resource + Computational> Resources for GlamsterdamResources<Native
 
     #[inline(always)]
     fn exhaust_ergs(&mut self) {
-        self.ergs = Ergs::empty()
+        self.ergs = Ergs32::empty()
     }
 
     fn give_native_to(&mut self, other: &mut Self) {
@@ -386,10 +388,24 @@ impl<Native: Resource + Computational> Resources for GlamsterdamResources<Native
 
     fn with_infinite_ergs<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let old_ergs = self.ergs;
-        self.ergs = Ergs::FORMAL_INFINITE;
+        self.ergs = Ergs32::FORMAL_INFINITE;
         let o = f(self);
         self.ergs = old_ergs;
         o
+    }
+
+    /// Straight to the counter: one subtraction with its borrow (no resources
+    /// value is built)
+    #[inline(always)]
+    fn charge_legacy_gas(&mut self, gas: u32) -> Result<(), SystemError> {
+        self.ergs.charge(&Ergs32(gas))
+    }
+
+    /// The ergs first (nothing is charged when they run out), then the native
+    #[inline(always)]
+    fn charge_legacy_gas_and_native(&mut self, gas: u32, native: u64) -> Result<(), SystemError> {
+        self.charge_legacy_gas(gas)?;
+        self.native.charge(&Native::from_computational(native))
     }
 }
 
@@ -419,7 +435,7 @@ impl<Native: Resource + Computational> StateGasResources for GlamsterdamResource
             return Ok(());
         }
         let remainder = amount - self.state_gas;
-        match self.ergs.0.checked_sub(remainder as u64) {
+        match self.ergs.0.checked_sub(remainder) {
             Some(ergs) => {
                 self.ergs.0 = ergs;
                 self.state_gas = 0;
@@ -427,7 +443,7 @@ impl<Native: Resource + Computational> StateGasResources for GlamsterdamResource
                 Ok(())
             }
             None => {
-                self.ergs = Ergs::empty();
+                self.ergs = Ergs32::empty();
                 Err(crate::out_of_ergs_error!())
             }
         }
@@ -435,13 +451,13 @@ impl<Native: Resource + Computational> StateGasResources for GlamsterdamResource
 
     fn credit_state_gas(&mut self, amount: u32) {
         let to_ergs = amount.min(self.state_gas_spilled);
-        self.ergs.0 += to_ergs as u64;
+        self.ergs.0 += to_ergs;
         self.state_gas_spilled -= to_ergs;
         self.state_gas += amount - to_ergs;
     }
 
     fn restore_state_gas(&mut self, baseline: u32) {
-        self.ergs.0 += self.state_gas_spilled as u64;
+        self.ergs.0 += self.state_gas_spilled;
         self.state_gas_spilled = 0;
         self.state_gas = baseline;
     }
@@ -454,15 +470,15 @@ impl<Native: Resource + Computational> StateGasResources for GlamsterdamResource
 #[cfg(test)]
 mod tests {
     use crate::system::{
-        errors::system::SystemError, Ergs, Resource, Resources, StateGasResources,
+        errors::system::SystemError, Ergs, Ergs32, Resource, Resources, StateGasResources,
     };
 
     use super::{BaseResources, DecreasingNative, GlamsterdamResources};
 
     type G = GlamsterdamResources<()>;
 
-    fn glamsterdam(ergs: u64, state_gas: u32) -> G {
-        let mut r = G::from_ergs(Ergs(ergs));
+    fn glamsterdam(ergs: u32, state_gas: u32) -> G {
+        let mut r = G::from_ergs(Ergs32(ergs));
         r.add_state_gas(state_gas);
         r
     }
@@ -512,7 +528,7 @@ mod tests {
     fn restore_refills_to_the_baseline() {
         let mut r = glamsterdam(1000, 100);
         r.charge_state_gas(400).unwrap();
-        r.charge(&G::from_ergs(Ergs(50))).unwrap();
+        r.charge(&G::from_ergs(Ergs32(50))).unwrap();
         r.restore_state_gas(100);
         assert_eq!(
             (r.ergs().0, r.state_gas(), r.state_gas_spilled()),
@@ -555,7 +571,7 @@ mod tests {
     #[test]
     fn plain_charges_leave_the_state_gas_alone() {
         let mut r = glamsterdam(100, 50);
-        assert!(r.charge(&G::from_ergs(Ergs(101))).is_err());
+        assert!(r.charge(&G::from_ergs(Ergs32(101))).is_err());
         assert_eq!(
             (r.ergs().0, r.state_gas(), r.state_gas_spilled()),
             (0, 50, 0)

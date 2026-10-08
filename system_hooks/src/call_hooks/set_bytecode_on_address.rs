@@ -10,6 +10,7 @@ use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
+use zk_ee::system::legacy_gas_u32;
 use zk_ee::utils::Bytes32;
 use zk_ee::{internal_error, out_of_return_memory, system_log};
 
@@ -169,7 +170,9 @@ where
     // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
 
     // Charge extra gas for `set_bytecode_details`
-    resources.charge_legacy_gas(set_bytecode_details_extra_gas(bytecode_length))?;
+    resources.charge_legacy_gas(legacy_gas_u32(set_bytecode_details_extra_gas(
+        bytecode_length,
+    ))?)?;
 
     system.set_bytecode_details(
         resources,

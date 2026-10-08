@@ -152,7 +152,7 @@ pub fn calculate_tx_intrinsic_gas(
     if is_deployment {
         intrinsic_gas = intrinsic_gas.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
         let initcode_gas_cost =
-            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
+            evm_interpreter::gas_constants::INITCODE_WORD_COST as u64 * calldata_len.div_ceil(32);
         intrinsic_gas = intrinsic_gas.saturating_add(initcode_gas_cost);
     }
     intrinsic_gas =
@@ -160,11 +160,12 @@ pub fn calculate_tx_intrinsic_gas(
 
     // EIP-2930 access list: per-address + per-storage-key.
     intrinsic_gas = intrinsic_gas.saturating_add(
-        access_list_accounts.saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS),
+        access_list_accounts
+            .saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_ADDRESS as u64),
     );
     intrinsic_gas = intrinsic_gas.saturating_add(
         access_list_storage_keys
-            .saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY),
+            .saturating_mul(evm_interpreter::gas_constants::ACCESS_LIST_STORAGE_KEY as u64),
     );
 
     // EIP-7702 authorization list: per-authorization. We precharge the
@@ -172,7 +173,7 @@ pub fn calculate_tx_intrinsic_gas(
     // delta (NEWACCOUNT - PER_AUTH_BASE_COST) is added back as a gas refund
     // inside `validate_and_apply_delegation`.
     intrinsic_gas = intrinsic_gas.saturating_add(
-        authorization_list_num.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT),
+        authorization_list_num.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT as u64),
     );
 
     // FRI statements reserve a user-visible gas surcharge. The verifier cost
@@ -282,7 +283,9 @@ where
             0
         }
     };
-    let ergs = <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx);
+    // the transaction's gas limit was checked to fit at validation
+    let ergs =
+        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(gas_limit_for_tx as u32);
 
     let main_resources = S::Resources::from_ergs_and_native(ergs, native_limit);
     (

@@ -49,10 +49,10 @@ pub fn calculate_intrinsic_cost<A: core::alloc::Allocator>(
     let mut recipient_execution_gas = 0u64;
     let mut init_code_gas = 0u64;
     if is_create {
-        recipient_execution_gas = CREATE_ACCESS;
-        init_code_gas = CODE_INIT_PER_WORD * (calldata.len() as u64).div_ceil(32);
+        recipient_execution_gas = CREATE_ACCESS as u64;
+        init_code_gas = CODE_INIT_PER_WORD as u64 * (calldata.len() as u64).div_ceil(32);
     } else if !is_self_transfer {
-        recipient_execution_gas = COLD_ACCOUNT_ACCESS;
+        recipient_execution_gas = COLD_ACCOUNT_ACCESS as u64;
         if !transaction.value().is_zero() {
             recipient_execution_gas += TX_VALUE_COST;
         }
@@ -184,7 +184,8 @@ where
     let execution_gas = core::cmp::min(TX_MAX_GAS_LIMIT - intrinsic.execution, evm_gas);
     let state_gas_reservoir = (evm_gas - execution_gas) as u32;
     let mut resources = S::Resources::from_ergs_and_native(
-        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(execution_gas),
+        // at most `TX_MAX_GAS_LIMIT`
+        <S::Resources as Resources>::Ergs::from_legacy_gas_saturating(execution_gas as u32),
         <S::Resources as Resources>::Native::from_computational(u64::MAX),
     );
     resources.add_state_gas(state_gas_reservoir);

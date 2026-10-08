@@ -2,8 +2,8 @@ use zk_ee::system::{Resources, SystemFunction};
 
 use super::*;
 
-pub const BLS12_381_FIELD_TO_G1_GAS: u64 = 5500;
-pub const BLS12_381_FIELD_EXT_TO_G2_GAS: u64 = 23800;
+pub const BLS12_381_FIELD_TO_G1_GAS: u32 = 5500;
+pub const BLS12_381_FIELD_EXT_TO_G2_GAS: u32 = 23800;
 
 pub struct Bls12381G1MappingPrecompile;
 

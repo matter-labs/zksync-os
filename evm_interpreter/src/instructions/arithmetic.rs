@@ -1,4 +1,5 @@
 use super::*;
+use crate::gas::gas_utils;
 use crate::u256_helpers::*;
 use native_resource_constants::*;
 use zk_ee::system::{IOSubsystemExt, System, SystemFunctionsExt};
@@ -131,7 +132,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn eval_exp(&mut self) -> InstructionResult {
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some((gas_cost, native_cost)) = exp_cost(&op2) {
-            self.gas.spend_step_gas_and_native(gas_cost, native_cost)?;
+            self.gas
+                .spend_step_gas_and_native(gas_utils::gas_u32(gas_cost)?, native_cost)?;
         } else {
             return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
@@ -189,14 +191,14 @@ pub(crate) fn reduce_mod_max(product_lo: &mut U256, product_hi: &U256, out: &mut
 
 pub fn exp_cost(power: &U256) -> Option<(u64, u64)> {
     if power.is_zero() {
-        Some((gas_constants::EXP, EXP_BASE_NATIVE_COST))
+        Some((gas_constants::EXP as u64, EXP_BASE_NATIVE_COST))
     } else {
         let gas_byte: u64 = 50;
         // 50 * 33 never overflows u64
         let num_bytes = log2floor(power) / 8 + 1;
         let gas_cost = gas_byte
             .checked_mul(num_bytes)?
-            .checked_add(gas_constants::EXP)?;
+            .checked_add(gas_constants::EXP as u64)?;
         let native_cost =
             EXP_BASE_NATIVE_COST.checked_add(EXP_PER_BYTE_NATIVE_COST.checked_mul(num_bytes)?)?;
         Some((gas_cost, native_cost))

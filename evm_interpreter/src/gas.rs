@@ -67,7 +67,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     }
 
     #[inline(always)]
-    pub(crate) fn spend_gas(&mut self, to_spend: u64) -> Result<(), ExitCode> {
+    pub(crate) fn spend_gas(&mut self, to_spend: u32) -> Result<(), ExitCode> {
         let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(to_spend) else {
             return Err(EvmError::OutOfGas.into());
         };
@@ -77,7 +77,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
     #[inline(always)]
     /// Spend gas and "native" (proving) resource. This double accounting approach is used to keep track of actual proving cost
-    pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
+    pub(crate) fn spend_gas_and_native(&mut self, gas: u32, native: u64) -> Result<(), ExitCode> {
         let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(gas) else {
             return Err(EvmError::OutOfGas.into());
         };
@@ -125,7 +125,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     /// same, including out of gas, where the step is still paid as it used to be charged first.
     pub(crate) fn spend_step_gas_and_native(
         &mut self,
-        gas: u64,
+        gas: u32,
         native: u64,
     ) -> Result<(), ExitCode> {
         let Some(ergs_cost) = <S::Resources as Resources>::Ergs::from_legacy_gas(gas) else {
@@ -160,14 +160,14 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
         debug_assert_eq!(new_heap_size_words * 32, new_msize as u64);
 
-        let end_cost = crate::gas_constants::MEMORY
+        let end_cost = (crate::gas_constants::MEMORY as u64)
             .saturating_mul(new_heap_size_words)
             .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512);
         let net_cost_gas = end_cost - self.gas_paid_for_heap_growth;
         let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
             HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
         );
-        self.spend_gas_and_native(net_cost_gas, net_cost_native)?;
+        self.spend_gas_and_native(gas_utils::gas_u32(net_cost_gas)?, net_cost_native)?;
 
         self.gas_paid_for_heap_growth = end_cost;
 
@@ -181,12 +181,26 @@ pub mod gas_utils {
 
     use crate::ExitCode;
 
+    /// A dynamic gas cost, computed in `u64`, as the `u32` amount a charge takes:
+    /// a cost beyond the range is out of gas
+    #[inline(always)]
+    pub(crate) fn gas_u32(gas: u64) -> Result<u32, ExitCode> {
+        u32::try_from(gas).map_err(|_| EvmError::OutOfGas.into())
+    }
+
+    /// A `u64` gas amount to pass on, clamped to the range: the 63/64 rule caps
+    /// it by what the frame has, which fits
+    #[inline(always)]
+    pub(crate) fn gas_u32_saturating(gas: u64) -> u32 {
+        u32::try_from(gas).unwrap_or(u32::MAX)
+    }
+
     #[inline]
     /// Returns gas and natve cost of copying 'len' bytes
     pub(crate) fn copy_cost(len: u64) -> Result<(u64, u64), ExitCode> {
         let get_cost = |len: u64| -> Option<(u64, u64)> {
             let num_words = len.checked_next_multiple_of(32)? / 32;
-            let gas = crate::gas_constants::COPY.checked_mul(num_words)?;
+            let gas = (crate::gas_constants::COPY as u64).checked_mul(num_words)?;
             let native = crate::native_resource_constants::COPY_BYTE_NATIVE_COST
                 .checked_mul(len)?
                 .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
@@ -199,7 +213,7 @@ pub mod gas_utils {
     /// Returns gas and natve cost of copying 'len' bytes. Gas is additionally increased by VERYLOW - often used by EVM opcodes
     pub(crate) fn copy_cost_plus_very_low_gas(len: u64) -> Result<(u64, u64), ExitCode> {
         let (gas_cost, native_cost) = copy_cost(len)?;
-        if let Some(gas_cost) = gas_cost.checked_add(crate::gas_constants::VERYLOW) {
+        if let Some(gas_cost) = gas_cost.checked_add(crate::gas_constants::VERYLOW as u64) {
             Ok((gas_cost, native_cost))
         } else {
             Err(EvmError::OutOfGas.into())
@@ -213,6 +227,7 @@ pub mod gas_utils {
         // We need to apply the rule over gas, not ergs
         let gas = ergs.as_legacy_gas();
         // `(gas / 64) * factor <= ergs`, so the subtraction can't underflow
-        E::from_computational(ergs.as_u64() - E::from_legacy_gas_saturating(gas / 64).as_u64())
+        let sixty_fourth = u32::try_from(gas / 64).unwrap_or(u32::MAX);
+        E::from_computational(ergs.as_u64() - E::from_legacy_gas_saturating(sixty_fourth).as_u64())
     }
 }
