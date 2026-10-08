@@ -546,6 +546,14 @@ where
         let header: &PectraForkHeader = &system.metadata.block_level.header.base;
         if whole_block {
             if data.keeper.block_gas_used() != header.gas_used {
+                let mut logger = system.get_logger();
+                let _ = logger.write_fmt(format_args!(
+                    "Block gas used diverged: header {}, ours max({} execution, {} state), cumulative {}\n",
+                    header.gas_used,
+                    data.keeper.block_execution_gas_used,
+                    data.keeper.block_state_gas_used,
+                    data.keeper.cumulative_gas_used
+                ));
                 return Err(internal_error!("gas used diverged").into());
             }
             if data.keeper.block_bloom != header.logs_bloom {

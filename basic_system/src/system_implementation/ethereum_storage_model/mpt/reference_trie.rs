@@ -15,15 +15,22 @@ pub fn rlp_string(slice: &[u8]) -> Vec<u8> {
     if slice.len() == 1 && slice[0] < 0x80 {
         return slice.to_vec();
     }
-    let mut out = Vec::new();
-    if slice.len() <= 55 {
-        out.push(0x80 + slice.len() as u8);
-    } else if slice.len() < 256 {
-        out.extend_from_slice(&[0xb8, slice.len() as u8]);
-    } else {
-        out.extend_from_slice(&[0xb9, (slice.len() >> 8) as u8, slice.len() as u8]);
-    }
+    let mut out = rlp_header(0x80, slice.len());
     out.extend_from_slice(slice);
+    out
+}
+
+/// The RLP header of a string (`base` 0x80) or list (`base` 0xc0) payload of
+/// `len` bytes: the short form below 56 bytes, else the length's minimal
+/// big-endian bytes after `base + 55 + their count`
+fn rlp_header(base: u8, len: usize) -> Vec<u8> {
+    if len <= 55 {
+        return alloc::vec![base + len as u8];
+    }
+    let be = len.to_be_bytes();
+    let first = be.iter().position(|b| *b != 0).unwrap_or(be.len());
+    let mut out = alloc::vec![base + 55 + (be.len() - first) as u8];
+    out.extend_from_slice(&be[first..]);
     out
 }
 
@@ -36,14 +43,7 @@ pub fn rlp_integer(be: &[u8]) -> Vec<u8> {
 /// RLP of a list of already encoded items
 pub fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {
     let payload: Vec<u8> = items.concat();
-    let mut out = Vec::new();
-    if payload.len() <= 55 {
-        out.push(0xc0 + payload.len() as u8);
-    } else if payload.len() < 256 {
-        out.extend_from_slice(&[0xf8, payload.len() as u8]);
-    } else {
-        out.extend_from_slice(&[0xf9, (payload.len() >> 8) as u8, payload.len() as u8]);
-    }
+    let mut out = rlp_header(0xc0, payload.len());
     out.extend_from_slice(&payload);
     out
 }
@@ -169,4 +169,26 @@ pub fn build_trie_with_paths(
 pub fn index_key_nibbles(index: u32) -> Vec<u8> {
     let key = rlp_integer(&index.to_be_bytes());
     key.iter().flat_map(|b| [b >> 4, b & 0xf]).collect()
+}
+
+#[cfg(test)]
+mod rlp_header_tests {
+    use super::*;
+
+    /// The headers of long strings and lists carry the length's minimal bytes
+    #[test]
+    fn long_lengths() {
+        let short = rlp_string(&[7u8; 55]);
+        assert_eq!(short[0], 0x80 + 55);
+        let one_byte = rlp_string(&[7u8; 56]);
+        assert_eq!(&one_byte[..2], &[0xb8, 56]);
+        let two_bytes = rlp_string(&[7u8; 300]);
+        assert_eq!(&two_bytes[..3], &[0xb9, 0x01, 0x2c]);
+        let three_bytes = rlp_string(&[7u8; 70_000]);
+        assert_eq!(&three_bytes[..4], &[0xba, 0x01, 0x11, 0x70]);
+        assert_eq!(three_bytes.len(), 4 + 70_000);
+        let list = rlp_list(&[three_bytes.clone()]);
+        assert_eq!(&list[..4], &[0xfa, 0x01, 0x11, 0x74]);
+        assert_eq!(rlp_list(&[]), alloc::vec![0xc0]);
+    }
 }

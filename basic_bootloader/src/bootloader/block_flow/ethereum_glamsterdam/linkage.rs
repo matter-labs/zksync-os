@@ -21,48 +21,62 @@ use zk_ee::utils::Bytes32;
 
 type Result<T> = core::result::Result<T, GlamsterdamError>;
 
-/// What every program of a block publishes, hashed
+/// What every program of a block publishes, hashed. `#[repr(C)]` and dense
+/// (asserted below): the hash is taken over the structure's own bytes, the
+/// count little-endian, as [`ProgramOutput::as_bytes`] exposes them.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProgramOutput {
     /// The header hash
-    pub block_hash: Bytes32,
+    pub block_hash: [u8; 32],
     /// keccak of the pre-block account leaf table (`InitialValues::accounts`)
-    pub initial_accounts: Bytes32,
+    pub initial_accounts: [u8; 32],
     /// keccak of the pre-block slot leaf table (`InitialValues::slots`)
-    pub initial_slots: Bytes32,
+    pub initial_slots: [u8; 32],
     /// keccak of the fresh account mask (`InitialValues::fresh_accounts`)
-    pub fresh_accounts_mask: Bytes32,
+    pub fresh_accounts_mask: [u8; 32],
     /// keccak of the mask of the access list records the program accessed
-    /// (the accounts by address index, then the slots by position), all clear
-    /// for the pre-execution check
-    pub bal_mask: Bytes32,
+    /// (the accounts by address index, then the slots by position). A pure
+    /// marker for the pre-execution check, which accesses nothing: all zero.
+    pub bal_mask: [u8; 32],
     /// The number of records of the access list (accounts and slots): the
-    /// length of `bal_mask`'s preimage
+    /// length of a range's mask, the one field the consistency of the programs
+    /// is checked on besides the hashes
     pub num_unique_bal_records: u32,
 }
 
-impl ProgramOutput {
-    /// The dense encoding: the fields in order, the count little-endian
-    pub const ENCODED_LEN: usize = 5 * 32 + 4;
+/// The length of the structure, which is its own encoding
+pub const ENCODING_LEN: usize = 5 * 32 + 4;
 
-    pub fn encode(&self) -> [u8; Self::ENCODED_LEN] {
-        let mut bytes = [0u8; Self::ENCODED_LEN];
-        for (chunk, field) in bytes.as_chunks_mut::<32>().0.iter_mut().zip([
-            &self.block_hash,
-            &self.initial_accounts,
-            &self.initial_slots,
-            &self.fresh_accounts_mask,
-            &self.bal_mask,
-        ]) {
-            *chunk = field.as_u8_array();
-        }
-        bytes[5 * 32..].copy_from_slice(&self.num_unique_bal_records.to_le_bytes());
-        bytes
+// Dense: the five byte arrays are 1-aligned and the count sits right after
+// them, so there is no padding anywhere and every byte is initialized.
+const _: () = {
+    assert!(core::mem::size_of::<ProgramOutput>() == ENCODING_LEN);
+    assert!(core::mem::align_of::<ProgramOutput>() == 4);
+    assert!(core::mem::offset_of!(ProgramOutput, block_hash) == 0);
+    assert!(core::mem::offset_of!(ProgramOutput, initial_accounts) == 32);
+    assert!(core::mem::offset_of!(ProgramOutput, initial_slots) == 64);
+    assert!(core::mem::offset_of!(ProgramOutput, fresh_accounts_mask) == 96);
+    assert!(core::mem::offset_of!(ProgramOutput, bal_mask) == 128);
+    assert!(core::mem::offset_of!(ProgramOutput, num_unique_bal_records) == 160);
+    // the count's bytes are its little-endian encoding on every target
+    assert!(cfg!(target_endian = "little"));
+};
+
+impl ProgramOutput {
+    pub const ENCODING_LEN: usize = ENCODING_LEN;
+
+    /// The structure's bytes: its encoding, without a copy
+    pub fn as_bytes(&self) -> &[u8; ENCODING_LEN] {
+        // SAFETY: the structure is `repr(C)` with no padding (asserted above),
+        // so its `ENCODING_LEN` bytes are all initialized, and the reference
+        // keeps it alive and unaliased for writes
+        unsafe { &*(self as *const Self as *const [u8; ENCODING_LEN]) }
     }
 
-    /// keccak of the encoding: the public output of the program
+    /// keccak of the bytes: the public output of the program
     pub fn hash(&self) -> Bytes32 {
-        keccak(&self.encode())
+        keccak(self.as_bytes())
     }
 
     /// The hash as the words a program returns
@@ -77,35 +91,32 @@ impl ProgramOutput {
         words
     }
 
-    /// The output of the pre-execution check: the tables it produced and a
-    /// clear mask
-    pub fn of_pre_execution<A: Allocator>(
-        state: &StateConsistencyOutput<A>,
-        allocator: A,
-    ) -> Result<Self> {
-        let [initial_accounts, fresh_accounts_mask, initial_slots] = state.initial_values_hashes();
-        let num_records = state.counts.accounts + state.counts.slots;
-        let clear = IndexMask::zeroed(num_records, allocator)?;
-        Ok(Self {
-            block_hash: state.header_hash,
+    /// The output of the pre-execution check: the tables it produced, the
+    /// marker mask and the number of records of the access list
+    pub fn of_pre_execution<A: Allocator>(state: &StateConsistencyOutput<A>) -> Self {
+        let [initial_accounts, fresh_accounts_mask, initial_slots] =
+            state.initial_values_hashes().map(|hash| hash.as_u8_array());
+        Self {
+            block_hash: state.header_hash.as_u8_array(),
             initial_accounts,
             initial_slots,
             fresh_accounts_mask,
-            bal_mask: mask_hash(&clear),
-            num_unique_bal_records: clear.len(),
-        })
+            bal_mask: [0; 32],
+            num_unique_bal_records: (state.counts.accounts + state.counts.slots) as u32,
+        }
     }
 
     /// The output of a transaction range: the tables it witnessed and the
     /// records it accessed
     pub fn of_range<A: Allocator>(output: &GlamsterdamRangeOutput<A>) -> Self {
-        let [initial_accounts, fresh_accounts_mask, initial_slots] = output.initial_values.hashes;
+        let [initial_accounts, fresh_accounts_mask, initial_slots] =
+            output.initial_values.hashes.map(|hash| hash.as_u8_array());
         Self {
-            block_hash: output.header_hash,
+            block_hash: output.header_hash.as_u8_array(),
             initial_accounts,
             initial_slots,
             fresh_accounts_mask,
-            bal_mask: mask_hash(&output.accessed),
+            bal_mask: mask_hash(&output.accessed).as_u8_array(),
             num_unique_bal_records: output.accessed.len(),
         }
     }
@@ -152,10 +163,10 @@ impl<A: Allocator> LinkageAggregation<A> {
         if pre_execution.hash() != public_output {
             return Err(fail("the pre-execution output is not the proven one"));
         }
-        let union = IndexMask::zeroed(pre_execution.num_unique_bal_records as usize, allocator)?;
-        if mask_hash(&union) != pre_execution.bal_mask {
-            return Err(fail("the pre-execution check must publish a clear mask"));
+        if pre_execution.bal_mask != [0; 32] {
+            return Err(fail("the pre-execution check publishes no mask"));
         }
+        let union = IndexMask::zeroed(pre_execution.num_unique_bal_records as usize, allocator)?;
         Ok(Self {
             pre_execution: *pre_execution,
             union,
@@ -177,7 +188,7 @@ impl<A: Allocator> LinkageAggregation<A> {
         if !self.pre_execution.same_block(range) {
             return Err(fail("the range describes another block or other tables"));
         }
-        if mask_hash(bal_mask) != range.bal_mask {
+        if mask_hash(bal_mask).as_u8_array() != range.bal_mask {
             return Err(fail("the mask is not the range's"));
         }
         self.union.or_assign(bal_mask)
@@ -199,25 +210,25 @@ mod tests {
     use super::*;
     use std::alloc::Global;
 
-    fn output(num: u32, mask: &IndexMask<Global>) -> ProgramOutput {
+    fn output(num: u32, mask: Option<&IndexMask<Global>>) -> ProgramOutput {
         ProgramOutput {
-            block_hash: Bytes32::from_array([1; 32]),
-            initial_accounts: Bytes32::from_array([2; 32]),
-            initial_slots: Bytes32::from_array([3; 32]),
-            fresh_accounts_mask: Bytes32::from_array([4; 32]),
-            bal_mask: mask_hash(mask),
+            block_hash: [1; 32],
+            initial_accounts: [2; 32],
+            initial_slots: [3; 32],
+            fresh_accounts_mask: [4; 32],
+            bal_mask: mask.map_or([0; 32], |mask| mask_hash(mask).as_u8_array()),
             num_unique_bal_records: num,
         }
     }
 
     #[test]
-    fn encoding_is_dense_and_the_hash_covers_it() {
-        let clear = IndexMask::zeroed(40, Global).unwrap();
-        let out = output(40, &clear);
-        let encoded = out.encode();
-        assert_eq!(encoded.len(), 164);
-        assert_eq!(&encoded[..32], &[1; 32]);
-        assert_eq!(&encoded[160..], &40u32.to_le_bytes());
+    fn the_bytes_are_the_encoding_and_the_hash_covers_them() {
+        let out = output(40, None);
+        let bytes = out.as_bytes();
+        assert_eq!(bytes.len(), 164);
+        assert_eq!(&bytes[..32], &[1; 32]);
+        assert_eq!(&bytes[128..160], &[0; 32]);
+        assert_eq!(&bytes[160..], &40u32.to_le_bytes());
         let mut other = out;
         other.num_unique_bal_records = 41;
         assert_ne!(out.hash(), other.hash());
@@ -227,12 +238,11 @@ mod tests {
 
     #[test]
     fn aggregation_requires_full_union() {
-        let clear = IndexMask::zeroed(40, Global).unwrap();
-        let pre = output(40, &clear);
+        let pre = output(40, None);
         let first = IndexMask::from_flags((0..40).map(|i| i < 25), Global).unwrap();
         let second = IndexMask::from_flags((0..40).map(|i| i >= 20), Global).unwrap();
-        let first_out = output(40, &first);
-        let second_out = output(40, &second);
+        let first_out = output(40, Some(&first));
+        let second_out = output(40, Some(&second));
 
         let mut aggregation = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
         aggregation
@@ -247,14 +257,18 @@ mod tests {
         partial.add(first_out.hash(), &first_out, &first).unwrap();
         assert!(partial.finish().is_err());
 
-        // a wrong public output, a mask that is not the range's, another block, a dirty pre-execution mask
+        // a wrong public output, a mask that is not the range's, another block, a
+        // pre-execution output that carries a mask, a wrong record count
         let mut wrong = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
         assert!(wrong.add(second_out.hash(), &first_out, &first).is_err());
         assert!(wrong.add(first_out.hash(), &first_out, &second).is_err());
         let mut foreign = first_out;
-        foreign.block_hash = Bytes32::ZERO;
+        foreign.block_hash = [0; 32];
         assert!(wrong.add(foreign.hash(), &foreign, &first).is_err());
-        assert!(LinkageAggregation::new(pre.hash(), &first_out, Global).is_err());
-        assert!(LinkageAggregation::new(first_out.hash(), &pre, Global).is_err());
+        assert!(LinkageAggregation::new(first_out.hash(), &first_out, Global).is_err());
+        let mut short = output(39, None);
+        short.num_unique_bal_records = 39;
+        let mut counted = LinkageAggregation::new(short.hash(), &short, Global).unwrap();
+        assert!(counted.add(first_out.hash(), &first_out, &first).is_err());
     }
 }

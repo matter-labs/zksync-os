@@ -188,17 +188,24 @@ impl<A: Allocator> StateConsistencyOutput<A> {
         self.fresh_accounts.bytes()
     }
 
-    /// keccak of the three initial value tables, in the order the ranges
-    /// witness them (`initial_accounts`, `fresh_accounts`, `initial_slots`):
-    /// what links a range's tables to this check
-    pub fn initial_values_hashes(&self) -> [Bytes32; 3] {
-        let mut hasher = Keccak256::new();
+    /// The three initial value tables as the ranges witness them, in the
+    /// order they witness them (`initial_accounts`, `fresh_accounts`,
+    /// `initial_slots`): the preimages of [`Self::initial_values_hashes`],
+    /// what a range's oracle serves (see `tx_range::witness::InitialValues`)
+    pub fn initial_value_tables(&self) -> [&[u8]; 3] {
         [
             self.initial_accounts_bytes(),
             self.fresh_accounts_bytes(),
             self.initial_slots_bytes(),
         ]
-        .map(|table| keccak(&mut hasher, table))
+    }
+
+    /// keccak of the three initial value tables, in the order the ranges
+    /// witness them: what links a range's tables to this check
+    pub fn initial_values_hashes(&self) -> [Bytes32; 3] {
+        let mut hasher = Keccak256::new();
+        self.initial_value_tables()
+            .map(|table| keccak(&mut hasher, table))
     }
 
     /// Whether the account had no leaf before the block

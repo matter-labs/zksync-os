@@ -178,7 +178,43 @@ on the pre-execution check's header and initial value tables (by hash), link the
 sums, and the union of the accounts and slots they accessed must be the whole access
 list, so that a list with entries nothing accessed is rejected (also the
 `whole_block_ranges_run_the_fixtures`, `split_ranges_agree_with_the_whole_block` and
-`subranges_aggregate_to_the_block` tests). `glamsterdam-range-cycles` does the same on
+`subranges_aggregate_to_the_block` tests).
+
+`glamsterdam-self-consistency [--parts N]` is the self-consistency check of the two
+programs over the stored fixtures: the pre-execution check and every range run natively
+first with the oracle's responses recorded as the RISC-V guest reads them, then on the
+simulator from the recorded words alone, and each program's public output must be the
+hash of the linkage output of its native run; the ranges run from the initial value
+tables of the one native pre-execution run and all outputs are aggregated.
+`glamsterdam-follow --endpoint URL [--first-block N] [--count N] [--parts N] [--keep]`
+is its long-running form over live Sepolia: it fetches every finalized block as it comes
+into `glamsterdam_follow/<block>/`, checks it, and keeps going. A failing or panicking
+block does not stop it: its fixture is kept with `failure.txt`, `initial_values.bin` and
+`ranges.txt` next to it for a replay, and its number goes to `diverging_blocks.txt`; the
+cycles and gas of every block and range are appended to `blocks.csv` and `ranges.csv`
+in the work directory. Both commands print one line per stage of every block (fetch,
+native run and simulator run of the pre-execution check and of each range, with the
+cycles, the recorded words and the timings, then the aggregation) and a summary line per
+block, so a run is followed from its log:
+
+```bash
+cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-follow --endpoint "$GLAMSTERDAM_ENDPOINT" --parts 3 2>&1 | tee glamsterdam_follow.log
+```
+
+The ignored tests `fixtures_are_self_consistent` and `sepolia_blocks_are_self_consistent`
+(endpoint from `GLAMSTERDAM_ENDPOINT`, block count from `GLAMSTERDAM_BLOCKS`) run the
+same two checks.
+
+Two findings of the first live runs are worth knowing: the transactions and receipts tries
+are rebuilt from the RPC data before a block runs and must reproduce the header's roots
+(the header is the trusted value, the rebuilt nodes only serve the trie descents), which
+caught an RLP length bug for items of 64 KiB and more; and a failed creation transaction
+refilled the NEW_ACCOUNT state gas of its target twice (the frame's restore repays the
+spill, and the root frame credited it again), caught by a reverted and by a halted
+creation. The chain matches the EIP-8037 text: the charge is refilled on a revert and
+burned with the execution gas on a halt.
+
+`glamsterdam-range-cycles` does the same on
 the RISC-V simulator with the `glamsterdam_tx_range` program (`binaries/build.sh`, see
 `binaries/README.md`), also with `--parts`, checks that every program returns the hash
 of its linkage output (`ethereum_glamsterdam::linkage::ProgramOutput`, the public

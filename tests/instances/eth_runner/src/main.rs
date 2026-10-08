@@ -7,6 +7,7 @@ mod block_hashes;
 mod calltrace;
 mod ethproofs;
 mod glamsterdam;
+mod glamsterdam_consistency;
 mod glamsterdam_range;
 mod glamsterdam_state;
 mod live_run;
@@ -160,6 +161,52 @@ enum Command {
         /// Split every block into this many ranges by gas (one: the whole block).
         #[arg(long, default_value_t = 1)]
         parts: u32,
+    },
+    /// Check the self-consistency of the Glamsterdam programs over stored fixtures:
+    /// every program natively with the oracle responses recorded, then on the RISC-V
+    /// simulator from the recording alone, with the public outputs checked against
+    /// the native linkage outputs and the ranges aggregated.
+    GlamsterdamSelfConsistency {
+        /// One fixture directory, or a directory of fixture directories
+        /// (defaults to `glamsterdam_blocks/` in this crate).
+        #[arg(long)]
+        block_dir: Option<String>,
+        /// Split every block into this many ranges by gas.
+        #[arg(long, default_value_t = 3)]
+        parts: u32,
+        /// The pre-execution program's dist directory.
+        #[arg(long, default_value = glamsterdam_consistency::PRE_EXECUTION_APP)]
+        pre_execution_app: String,
+        /// The transaction range program's dist directory.
+        #[arg(long, default_value = glamsterdam_consistency::TX_RANGE_APP)]
+        tx_range_app: String,
+    },
+    /// Follow Sepolia: fetch every finalized block from a Geth node as it comes and run
+    /// the self-consistency check over it (the long-running form of
+    /// `glamsterdam-self-consistency`).
+    GlamsterdamFollow {
+        /// Geth JSON-RPC endpoint with the `debug` namespace enabled.
+        #[arg(long)]
+        endpoint: String,
+        /// The first block (defaults to the finalized head).
+        #[arg(long)]
+        first_block: Option<u64>,
+        /// How many blocks to check (forever by default).
+        #[arg(long)]
+        count: Option<u64>,
+        /// Where the fixtures are fetched to (defaults to `glamsterdam_follow/` in this crate).
+        #[arg(long)]
+        work_dir: Option<String>,
+        /// Keep the fetched fixtures instead of removing each after its check.
+        #[arg(long, default_value_t = false)]
+        keep: bool,
+        /// Split every block into this many ranges by gas.
+        #[arg(long, default_value_t = 3)]
+        parts: u32,
+        #[arg(long, default_value = glamsterdam_consistency::PRE_EXECUTION_APP)]
+        pre_execution_app: String,
+        #[arg(long, default_value = glamsterdam_consistency::TX_RANGE_APP)]
+        tx_range_app: String,
     },
     /// Run the transactions of the Glamsterdam fixtures as ranges against their
     /// block access lists and receipts (host run) and aggregate the ranges.
@@ -524,6 +571,64 @@ fn main() -> anyhow::Result<()> {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(glamsterdam::default_fixture_dir);
             glamsterdam_range::run_on_simulator(&block_dir, &app, parts)
+        }
+        Command::GlamsterdamSelfConsistency {
+            block_dir,
+            parts,
+            pre_execution_app,
+            tx_range_app,
+        } => {
+            let block_dir = block_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(glamsterdam::default_fixture_dir);
+            let programs =
+                glamsterdam_consistency::Programs::load(&pre_execution_app, &tx_range_app)?;
+            let reports = glamsterdam_consistency::check_path(&block_dir, &programs, parts)?;
+            let total: u64 = reports.iter().map(|r| r.total_cycles()).sum();
+            let gas: u64 = reports.iter().map(|r| r.gas_used).sum();
+            println!(
+                "{} block(s) self-consistent: {total} cycles over {gas} gas ({:.2}/gas)",
+                reports.len(),
+                total as f64 / gas.max(1) as f64
+            );
+            Ok(())
+        }
+        Command::GlamsterdamFollow {
+            endpoint,
+            first_block,
+            count,
+            work_dir,
+            keep,
+            parts,
+            pre_execution_app,
+            tx_range_app,
+        } => {
+            let work_dir = work_dir.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("glamsterdam_follow")
+            });
+            let programs =
+                glamsterdam_consistency::Programs::load(&pre_execution_app, &tx_range_app)?;
+            let summary = glamsterdam_consistency::follow(
+                &endpoint,
+                first_block,
+                count,
+                &work_dir,
+                &programs,
+                parts,
+                keep,
+            )?;
+            println!(
+                "{} block(s) self-consistent, {} diverging {:?}; tables in {}",
+                summary.reports.len(),
+                summary.failed.len(),
+                summary.failed,
+                work_dir.display()
+            );
+            if summary.failed.is_empty() {
+                Ok(())
+            } else {
+                anyhow::bail!("{} block(s) diverged", summary.failed.len())
+            }
         }
         Command::GlamsterdamRange { block_dir, parts } => {
             let block_dir = block_dir

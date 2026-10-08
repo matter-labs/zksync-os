@@ -355,7 +355,7 @@ impl<'ee, S: GlamsterdamTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inter
 
         let EnvironmentParameters {
             scratch_space_len: _,
-            callstack_depth: _,
+            callstack_depth,
             callee_account_properties,
         } = environment_parameters;
 
@@ -365,8 +365,12 @@ impl<'ee, S: GlamsterdamTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inter
         let mut this_address = callee;
 
         self.cold.state_gas_baseline = available_resources.state_gas();
-        self.cold.account_creation_charged =
-            account_creation_charged(&callee_account_properties, modifier, &nominal_token_value);
+        // The creation of the root frame's account is charged by the transaction flow
+        // before dispatch, as a spill the frame's restore to its baseline repays on a
+        // failure: crediting it here as well would refill it twice. Only a frame entered
+        // from a call or a creation refills what its caller charged.
+        self.cold.account_creation_charged = callstack_depth > 0
+            && account_creation_charged(&callee_account_properties, modifier, &nominal_token_value);
 
         if modifier == CallModifier::Constructor {
             // the code to execute is in the calldata
@@ -685,12 +689,14 @@ impl<'ee, S: GlamsterdamTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inter
     {
         // A call that never enters its frame refills the creation of its account, which
         // its caller charged: credited to the callee's resources, which go back to the
-        // caller (the same as crediting the caller after the merge)
-        let creation_charged = account_creation_charged(
-            &frame_state.environment_parameters.callee_account_properties,
-            frame_state.external_call.modifier,
-            &frame_state.external_call.nominal_token_value,
-        );
+        // caller (the same as crediting the caller after the merge). The root frame's
+        // charge is the transaction flow's, repaid by the frame's restore: never here.
+        let creation_charged = frame_state.environment_parameters.callstack_depth > 0
+            && account_creation_charged(
+                &frame_state.environment_parameters.callee_account_properties,
+                frame_state.external_call.modifier,
+                &frame_state.external_call.nominal_token_value,
+            );
         if let Some(error) = check_depth_and_balance(
             system,
             &mut frame_state.external_call,

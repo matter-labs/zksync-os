@@ -283,7 +283,5 @@ pub fn run_glamsterdam_state_consistency<I: NonDeterminismCSRSourceImplementatio
         BootloaderAllocator::default(),
     )
     .expect("the state must be consistent");
-    ProgramOutput::of_pre_execution(&output, BootloaderAllocator::default())
-        .expect("the linkage output must be computable")
-        .hash_words()
+    ProgramOutput::of_pre_execution(&output).hash_words()
 }

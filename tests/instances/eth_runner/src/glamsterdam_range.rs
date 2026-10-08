@@ -32,7 +32,8 @@ use basic_system::system_implementation::ethereum_storage_model::reference_trie:
     build_trie_with_paths, index_key_nibbles, rlp_string,
 };
 use oracle_provider::{
-    respond_to_every_target, OracleQueryProcessor, RunMode, ZkEENonDeterminismSource,
+    respond_to_every_target, OracleQueryProcessor, ReadWitnessSource, RunMode,
+    ZkEENonDeterminismSource,
 };
 use rig::forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use rig::forward_system::run::test_impl::NoopTxCallback;
@@ -98,29 +99,57 @@ impl IndexTries {
     }
 }
 
+/// The initial value tables a range witnesses, as the pre-execution check
+/// produces them (`StateConsistencyOutput::initial_value_tables`): kept apart
+/// from the pre-execution output so that the ranges of a block run from one
+/// native pre-execution run, or from tables stored by it, without replaying it
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitialValueTables {
+    pub accounts: Vec<u8>,
+    pub fresh_accounts: Vec<u8>,
+    pub slots: Vec<u8>,
+}
+
+impl InitialValueTables {
+    pub fn of(state: &StateConsistencyOutput<Global>) -> Self {
+        let [accounts, fresh_accounts, slots] = state.initial_value_tables().map(<[u8]>::to_vec);
+        Self {
+            accounts,
+            fresh_accounts,
+            slots,
+        }
+    }
+
+    /// Stores the tables: three `length (u32 little-endian) || bytes` entries
+    pub fn write(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        let mut bytes = Vec::new();
+        for table in [&self.accounts, &self.fresh_accounts, &self.slots] {
+            bytes.extend_from_slice(&(table.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(table);
+        }
+        std::fs::write(path, bytes)?;
+        Ok(())
+    }
+}
+
 /// Serves the range, the transaction count and the initial value tables
 #[derive(Clone, Debug)]
 pub struct GlamsterdamRangeResponder {
     pub range: BlockAccessIndexRange,
     pub transaction_count: u32,
-    pub initial_accounts: Vec<u8>,
-    pub fresh_accounts: Vec<u8>,
-    pub initial_slots: Vec<u8>,
+    pub tables: InitialValueTables,
 }
 
 impl GlamsterdamRangeResponder {
-    /// The tables of a native pre-execution run
     pub fn new(
         range: BlockAccessIndexRange,
         transaction_count: u32,
-        state: &StateConsistencyOutput<Global>,
+        tables: &InitialValueTables,
     ) -> Self {
         Self {
             range,
             transaction_count,
-            initial_accounts: state.initial_accounts_bytes().to_vec(),
-            fresh_accounts: state.fresh_accounts_bytes().to_vec(),
-            initial_slots: state.initial_slots_bytes().to_vec(),
+            tables: tables.clone(),
         }
     }
 }
@@ -157,17 +186,19 @@ impl OracleQueryProcessor for GlamsterdamRangeResponder {
             GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID => {
                 self.transaction_count.write_output(&mut response)
             }
-            GLAMSTERDAM_INITIAL_ACCOUNTS_LEN_QUERY_ID => len(&self.initial_accounts, &mut response),
+            GLAMSTERDAM_INITIAL_ACCOUNTS_LEN_QUERY_ID => len(&self.tables.accounts, &mut response),
             GLAMSTERDAM_INITIAL_ACCOUNTS_DATA_QUERY_ID => {
-                write_dynamic_bytes(&self.initial_accounts, &mut response)
+                write_dynamic_bytes(&self.tables.accounts, &mut response)
             }
-            GLAMSTERDAM_FRESH_ACCOUNTS_LEN_QUERY_ID => len(&self.fresh_accounts, &mut response),
+            GLAMSTERDAM_FRESH_ACCOUNTS_LEN_QUERY_ID => {
+                len(&self.tables.fresh_accounts, &mut response)
+            }
             GLAMSTERDAM_FRESH_ACCOUNTS_DATA_QUERY_ID => {
-                write_dynamic_bytes(&self.fresh_accounts, &mut response)
+                write_dynamic_bytes(&self.tables.fresh_accounts, &mut response)
             }
-            GLAMSTERDAM_INITIAL_SLOTS_LEN_QUERY_ID => len(&self.initial_slots, &mut response),
+            GLAMSTERDAM_INITIAL_SLOTS_LEN_QUERY_ID => len(&self.tables.slots, &mut response),
             GLAMSTERDAM_INITIAL_SLOTS_DATA_QUERY_ID => {
-                write_dynamic_bytes(&self.initial_slots, &mut response)
+                write_dynamic_bytes(&self.tables.slots, &mut response)
             }
             _ => unreachable!("not a range query: 0x{query_id:08x}"),
         }
@@ -232,12 +263,12 @@ fn range_senders(fixture: &GlamsterdamBlock, range: BlockAccessIndexRange) -> Ve
 
 /// The oracle of a transaction range of a fixture: everything the
 /// pre-execution check needs, the transactions and receipts tries, the
-/// range responder built from the native pre-execution run `state`, and the
-/// transactions' senders. `start` is the block's gas before the range.
+/// range responder serving the initial value tables of the pre-execution check,
+/// and the transactions' senders. `start` is the block's gas before the range.
 pub fn make_range_oracle(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
-    state: &StateConsistencyOutput<Global>,
+    tables: &InitialValueTables,
     range: BlockAccessIndexRange,
     start: RangeStartGas,
     mode: RunMode,
@@ -270,7 +301,7 @@ pub fn make_range_oracle(
     oracle.add_external_processor(GlamsterdamRangeResponder::new(
         range,
         tries.transactions.len() as u32,
-        state,
+        tables,
     ));
     oracle.add_external_processor(GlamsterdamTxResponder {
         senders: range_senders(fixture, range),
@@ -297,18 +328,23 @@ pub fn make_range_oracle(
 /// The system types of a host run of a range
 pub type HostRangeSystem = GlamsterdamSystemTypes<ZkEENonDeterminismSource, false>;
 
+/// The system types of a host run of a range that records the words the
+/// RISC-V guest reads: with the advice-based system functions of the guest
+/// (`PROOF_ENV`), so that the hint queries and their answers are recorded too
+pub type RecordingRangeSystem = GlamsterdamSystemTypes<ReadWitnessSource, true>;
+
 /// Runs a range of a fixture on the host and returns what it established
 pub fn run_range(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
-    state: &StateConsistencyOutput<Global>,
+    tables: &InitialValueTables,
     range: BlockAccessIndexRange,
     start: RangeStartGas,
 ) -> anyhow::Result<GlamsterdamRangeOutput<Global>> {
     run_range_with_tracer(
         fixture,
         tries,
-        state,
+        tables,
         range,
         start,
         &mut NopTracer::default(),
@@ -319,12 +355,12 @@ pub fn run_range(
 pub fn run_range_with_tracer(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
-    state: &StateConsistencyOutput<Global>,
+    tables: &InitialValueTables,
     range: BlockAccessIndexRange,
     start: RangeStartGas,
     tracer: &mut impl zk_ee::system::tracer::Tracer<HostRangeSystem>,
 ) -> anyhow::Result<GlamsterdamRangeOutput<Global>> {
-    let oracle = make_range_oracle(fixture, tries, state, range, start, RunMode::NativeRunOnly)?;
+    let oracle = make_range_oracle(fixture, tries, tables, range, start, RunMode::NativeRunOnly)?;
     let mut result_keeper =
         ForwardRunningResultKeeper::<NoopTxCallback, GlamsterdamHeader>::new(NoopTxCallback);
     let (_oracle, output) = BasicBootloader::<
@@ -340,6 +376,43 @@ pub fn run_range_with_tracer(
     )
     .map_err(|e| anyhow::anyhow!("range run failed: {e:?}"))?;
     Ok(output)
+}
+
+/// Runs a range on the host while recording the oracle's responses as the
+/// RISC-V guest reads them: the words the `glamsterdam_tx_range` program runs
+/// from in the simulator (`QuasiUARTSource::new_with_reads`)
+pub fn run_range_recording(
+    fixture: &GlamsterdamBlock,
+    tries: &IndexTries,
+    tables: &InitialValueTables,
+    range: BlockAccessIndexRange,
+    start: RangeStartGas,
+) -> anyhow::Result<(GlamsterdamRangeOutput<Global>, Vec<u32>)> {
+    let oracle = make_range_oracle(
+        fixture,
+        tries,
+        tables,
+        range,
+        start,
+        RunMode::NativeRunSavingForRiscV,
+    )?;
+    let source = ReadWitnessSource::new(oracle);
+    let mut result_keeper =
+        ForwardRunningResultKeeper::<NoopTxCallback, GlamsterdamHeader>::new(NoopTxCallback);
+    let (source, output) = BasicBootloader::<
+        RecordingRangeSystem,
+        GlamsterdamTransactionFlow<RecordingRangeSystem>,
+    >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+        source,
+        &mut (),
+        &mut result_keeper,
+        &mut NopTracer::default(),
+        &mut NopTxValidator,
+        ChainConfig::default(),
+    )
+    .map_err(|e| anyhow::anyhow!("range run failed: {e:?}"))?;
+    let words = source.get_read_items().borrow().clone();
+    Ok((output, words))
 }
 
 /// One EVM step of a traced transaction
@@ -503,11 +576,11 @@ pub fn trace_diff(
     let node: Response = serde_json::from_reader(std::fs::File::open(node_trace)?)?;
     let node = node.result.struct_logs;
     let mut tracer = StepTracer::new(tx);
-    let state = run_state_consistency(fixture)?;
+    let tables = InitialValueTables::of(&run_state_consistency(fixture)?);
     let result = run_range_with_tracer(
         fixture,
         tries,
-        &state,
+        &tables,
         whole_block(tries),
         RangeStartGas::default(),
         &mut tracer,
@@ -607,7 +680,7 @@ pub fn split_by_gas(tries: &IndexTries, parts: u32) -> anyhow::Result<Vec<BlockA
 pub fn run_ranges(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
-    state: &StateConsistencyOutput<Global>,
+    tables: &InitialValueTables,
     ranges: &[BlockAccessIndexRange],
 ) -> anyhow::Result<Vec<GlamsterdamRangeOutput<Global>>> {
     let mut outputs: Vec<GlamsterdamRangeOutput<Global>> = Vec::with_capacity(ranges.len());
@@ -616,7 +689,7 @@ pub fn run_ranges(
             .last()
             .map(|previous| previous.end_gas())
             .unwrap_or_default();
-        let output = run_range(fixture, tries, state, *range, start)
+        let output = run_range(fixture, tries, tables, *range, start)
             .map_err(|e| anyhow::anyhow!("range {}..={}: {e}", range.first, range.last))?;
         outputs.push(output);
     }
@@ -658,8 +731,7 @@ pub fn aggregate(
     })?;
 
     // the linkage: what the programs publish and the aggregation program checks
-    let pre_execution = ProgramOutput::of_pre_execution(state, Global)
-        .map_err(|e| anyhow::anyhow!("pre-execution linkage output: {e:?}"))?;
+    let pre_execution = ProgramOutput::of_pre_execution(state);
     let mut linkage = LinkageAggregation::new(pre_execution.hash(), &pre_execution, Global)
         .map_err(|e| anyhow::anyhow!("linkage: {e:?}"))?;
     for output in outputs {
@@ -731,8 +803,9 @@ pub fn check_path(path: &std::path::Path, parts: u32) -> anyhow::Result<usize> {
         let fixture = GlamsterdamBlock::from_dir(dir)?;
         let tries = IndexTries::of(&fixture)?;
         let state = run_state_consistency(&fixture)?;
+        let tables = InitialValueTables::of(&state);
         let ranges = split_by_gas(&tries, parts)?;
-        let outputs = run_ranges(&fixture, &tries, &state, &ranges)
+        let outputs = run_ranges(&fixture, &tries, &tables, &ranges)
             .map_err(|e| anyhow::anyhow!("fixture {}: {e}", dir.display()))?;
         for output in &outputs {
             println!("{}", report(&fixture, output));
@@ -766,8 +839,9 @@ pub fn run_on_simulator(path: &std::path::Path, app: &str, parts: u32) -> anyhow
         let fixture = GlamsterdamBlock::from_dir(dir)?;
         let tries = IndexTries::of(&fixture)?;
         let state = run_state_consistency(&fixture)?;
+        let tables = InitialValueTables::of(&state);
         let ranges = split_by_gas(&tries, parts)?;
-        let outputs = run_ranges(&fixture, &tries, &state, &ranges)
+        let outputs = run_ranges(&fixture, &tries, &tables, &ranges)
             .with_context(|| format!("fixture {}", dir.display()))?;
         aggregate(&state, &outputs).with_context(|| format!("fixture {}", dir.display()))?;
         let mut block_cycles = 0u64;
@@ -782,7 +856,7 @@ pub fn run_on_simulator(path: &std::path::Path, app: &str, parts: u32) -> anyhow
             let oracle = make_range_oracle(
                 &fixture,
                 &tries,
-                &state,
+                &tables,
                 output.range,
                 output.start_gas,
                 RunMode::RiscVRun,
@@ -851,11 +925,12 @@ mod tests {
         let fixture = GlamsterdamBlock::from_dir(&dirs[0]).expect("fixture");
         let tries = IndexTries::of(&fixture).expect("tries");
         let state = run_state_consistency(&fixture).expect("pre-execution");
+        let tables = InitialValueTables::of(&state);
         let count = tries.transactions.len() as u32;
         let whole = run_range(
             &fixture,
             &tries,
-            &state,
+            &tables,
             whole_block(&tries),
             RangeStartGas::default(),
         )
@@ -871,7 +946,7 @@ mod tests {
                 last: count + 1,
             },
         ];
-        let outputs = run_ranges(&fixture, &tries, &state, &ranges).expect("ranges");
+        let outputs = run_ranges(&fixture, &tries, &tables, &ranges).expect("ranges");
         let [first, second] = outputs.as_slice() else {
             panic!("two outputs")
         };
@@ -905,6 +980,7 @@ mod tests {
             let fixture = GlamsterdamBlock::from_dir(dir).expect("fixture");
             let tries = IndexTries::of(&fixture).expect("tries");
             let state = run_state_consistency(&fixture).expect("pre-execution");
+            let tables = InitialValueTables::of(&state);
             let ranges = split_by_gas(&tries, 4).expect("split");
             assert_eq!(ranges[0].first, 0);
             assert_eq!(
@@ -914,7 +990,7 @@ mod tests {
             for pair in ranges.windows(2) {
                 assert_eq!(pair[1].first, pair[0].last + 1);
             }
-            let mut outputs = run_ranges(&fixture, &tries, &state, &ranges)
+            let mut outputs = run_ranges(&fixture, &tries, &tables, &ranges)
                 .unwrap_or_else(|e| panic!("fixture {}: {e}", dir.display()));
             for output in &outputs {
                 println!("{}", report(&fixture, output));
@@ -985,10 +1061,11 @@ mod tests {
                 last: count + 1,
             };
             let state = run_state_consistency(&fixture).expect("pre-execution");
+            let tables = InitialValueTables::of(&state);
             let oracle = make_range_oracle(
                 &fixture,
                 &tries,
-                &state,
+                &tables,
                 range,
                 RangeStartGas::default(),
                 RunMode::NativeRunSavingForRiscV,
@@ -1115,11 +1192,12 @@ mod tests {
         tries: &IndexTries,
         range: BlockAccessIndexRange,
     ) -> (Model, ReadWitnessSource) {
-        let state = run_state_consistency(fixture).expect("pre-execution");
+        let tables =
+            InitialValueTables::of(&run_state_consistency(fixture).expect("pre-execution"));
         let oracle = make_range_oracle(
             fixture,
             tries,
-            &state,
+            &tables,
             range,
             RangeStartGas::default(),
             RunMode::NativeRunSavingForRiscV,

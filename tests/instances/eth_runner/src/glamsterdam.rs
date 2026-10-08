@@ -431,7 +431,7 @@ fn call_raw(endpoint: &str, method: &str, params: serde_json::Value) -> anyhow::
     Ok(body)
 }
 
-fn finalized_block_number(endpoint: &str) -> anyhow::Result<u64> {
+pub fn finalized_block_number(endpoint: &str) -> anyhow::Result<u64> {
     let body = call_raw(
         endpoint,
         "eth_getBlockByNumber",
@@ -445,7 +445,7 @@ fn finalized_block_number(endpoint: &str) -> anyhow::Result<u64> {
 }
 
 /// Fetches the fixture of one block into `dir`; files already there are kept.
-fn fetch_one(endpoint: &str, block_number: u64, dir: &Path) -> anyhow::Result<()> {
+pub fn fetch_one(endpoint: &str, block_number: u64, dir: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
     let number = format!("0x{block_number:x}");
     let requests = [

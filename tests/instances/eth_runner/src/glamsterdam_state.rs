@@ -115,15 +115,26 @@ pub fn make_state_oracle_from_parts(
 pub fn run_state_consistency(
     fixture: &GlamsterdamBlock,
 ) -> anyhow::Result<StateConsistencyOutput<Global>> {
+    run_state_consistency_recording(fixture).map(|(output, _)| output)
+}
+
+/// Runs the check natively while recording the oracle's responses as the
+/// RISC-V guest reads them: the words the `glamsterdam_pre_execution` program
+/// runs from in the simulator (`QuasiUARTSource::new_with_reads`)
+pub fn run_state_consistency_recording(
+    fixture: &GlamsterdamBlock,
+) -> anyhow::Result<(StateConsistencyOutput<Global>, Vec<u32>)> {
     let oracle = make_state_oracle(fixture, RunMode::NativeRunSavingForRiscV);
     let mut source = ReadWitnessSource::new(oracle);
-    verify_state_consistency(
+    let output = verify_state_consistency(
         &mut source,
         &BlobSchedule::BPO2,
         MAX_BLOCK_GAS_LIMIT,
         Global,
     )
-    .map_err(|err| anyhow::anyhow!("state consistency check failed: {err:?}"))
+    .map_err(|err| anyhow::anyhow!("state consistency check failed: {err:?}"))?;
+    let words = source.get_read_items().borrow().clone();
+    Ok((output, words))
 }
 
 /// One line per fixture: what the check found and how big the initial value tables are
@@ -197,10 +208,8 @@ pub fn run_on_simulator(path: &Path, app: &str) -> anyhow::Result<()> {
             .context("transpiler execution failed")?;
         anyhow::ensure!(execution.reached_end, "the program did not reach the end");
         // the program publishes the hash of its linkage output, with a clear access mask
-        let expected = ProgramOutput::of_pre_execution(&output, Global)
-            .map_err(|e| anyhow::anyhow!("linkage output: {e:?}"))?;
         anyhow::ensure!(
-            execution.receipt.output == expected.hash_words(),
+            execution.receipt.output == ProgramOutput::of_pre_execution(&output).hash_words(),
             "the program's output is not the hash of the linkage output"
         );
         total += execution.cycles_executed as u64;

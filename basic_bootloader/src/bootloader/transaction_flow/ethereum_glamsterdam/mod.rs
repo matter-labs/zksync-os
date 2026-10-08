@@ -571,7 +571,10 @@ where
                 to.filter(|_| !value.is_zero()),
             )?;
         }
-        // the delegations stay if the code fails: their state gas is not refillable
+        // The delegations stay if the code fails: their state gas is not refillable. The
+        // creation charge of the target below is: EIP-8037 takes the baseline after the
+        // authorization charges and before it, so a revert or halt of the code refills it
+        // (and a halt burns the refill with the rest of the execution gas).
         context.committed_spill = context.resources.commit_state_gas();
 
         let dispatch_target = match to {
