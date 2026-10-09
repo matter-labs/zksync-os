@@ -1,8 +1,8 @@
 //! Host side of the Glamsterdam transaction-range validation: the
 //! transactions and receipts tries of a fixture, the responder serving the
-//! range, the transaction count and the initial value tables of the
-//! pre-execution check, the oracle assembling all of it, the split of a block
-//! into subranges by gas and the aggregation of their outputs.
+//! transaction range, the transaction count and the initial value tables of
+//! the pre-execution check, the oracle assembling all of it, the split of a
+//! block into subranges by gas and the aggregation of their outputs.
 
 use crate::glamsterdam::GlamsterdamBlock;
 use crate::glamsterdam_state::{
@@ -21,8 +21,9 @@ use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::ag
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamRangeOutput;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::oracle_queries::*;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::receipt::ReceiptReflection;
+use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::requests::Sha256Accumulator;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::witness::{
-    BlockAccessIndexRange, RangeStartGas,
+    RangeStartGas, TransactionRange,
 };
 use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
@@ -132,23 +133,18 @@ impl InitialValueTables {
     }
 }
 
-/// Serves the range, the transaction count and the initial value tables
+/// Serves the transaction range and the initial value tables (the transaction
+/// count comes from the shared `TransactionCountResponder`)
 #[derive(Clone, Debug)]
 pub struct GlamsterdamRangeResponder {
-    pub range: BlockAccessIndexRange,
-    pub transaction_count: u32,
+    pub range: TransactionRange,
     pub tables: InitialValueTables,
 }
 
 impl GlamsterdamRangeResponder {
-    pub fn new(
-        range: BlockAccessIndexRange,
-        transaction_count: u32,
-        tables: &InitialValueTables,
-    ) -> Self {
+    pub fn new(range: TransactionRange, tables: &InitialValueTables) -> Self {
         Self {
             range,
-            transaction_count,
             tables: tables.clone(),
         }
     }
@@ -157,8 +153,7 @@ impl GlamsterdamRangeResponder {
 impl OracleQueryProcessor for GlamsterdamRangeResponder {
     fn supported_memory_query_ids(&self) -> Vec<u32> {
         vec![
-            GLAMSTERDAM_ACCESS_INDEX_RANGE_QUERY_ID,
-            GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID,
+            GLAMSTERDAM_TRANSACTION_RANGE_QUERY_ID,
             GLAMSTERDAM_INITIAL_ACCOUNTS_LEN_QUERY_ID,
             GLAMSTERDAM_INITIAL_ACCOUNTS_DATA_QUERY_ID,
             GLAMSTERDAM_FRESH_ACCOUNTS_LEN_QUERY_ID,
@@ -182,10 +177,7 @@ impl OracleQueryProcessor for GlamsterdamRangeResponder {
             (buffer.len() as u32).write_output(response)
         };
         match query_id {
-            GLAMSTERDAM_ACCESS_INDEX_RANGE_QUERY_ID => self.range.write_output(&mut response),
-            GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID => {
-                self.transaction_count.write_output(&mut response)
-            }
+            GLAMSTERDAM_TRANSACTION_RANGE_QUERY_ID => self.range.write_output(&mut response),
             GLAMSTERDAM_INITIAL_ACCOUNTS_LEN_QUERY_ID => len(&self.tables.accounts, &mut response),
             GLAMSTERDAM_INITIAL_ACCOUNTS_DATA_QUERY_ID => {
                 write_dynamic_bytes(&self.tables.accounts, &mut response)
@@ -206,14 +198,46 @@ impl OracleQueryProcessor for GlamsterdamRangeResponder {
     }
 }
 
+/// What the ranges before a range established, which the range witnesses
+/// unverified and the aggregation links: the block's gas and the sha256
+/// state of the deposit request hashing (EIP-6110) after their transactions
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RangeStart {
+    pub gas: RangeStartGas,
+    pub hasher: Sha256Accumulator,
+}
+
+impl Default for RangeStart {
+    /// The start of the first range
+    fn default() -> Self {
+        Self {
+            gas: RangeStartGas::default(),
+            hasher: Sha256Accumulator::deposit_requests_head(),
+        }
+    }
+}
+
+impl RangeStart {
+    /// The start of the range after `outputs`, the outputs of the ranges so far
+    pub fn after(outputs: &[GlamsterdamRangeOutput<Global>]) -> Self {
+        match outputs.last() {
+            Some(previous) => Self {
+                gas: previous.end_gas(),
+                hasher: previous.requests.end,
+            },
+            None => Self::default(),
+        }
+    }
+}
+
 /// Serves what the transactions of a range need from the host besides their
 /// bytes (which come from the transactions trie): the encoding format and the
-/// sender of every transaction in order, and the block's gas at the start of
-/// the range
+/// sender of every transaction in order, and what the ranges before it
+/// established
 #[derive(Clone, Debug)]
 pub struct GlamsterdamTxResponder {
     pub senders: VecDeque<B160>,
-    pub start: RangeStartGas,
+    pub start: RangeStart,
 }
 
 impl OracleQueryProcessor for GlamsterdamTxResponder {
@@ -222,6 +246,7 @@ impl OracleQueryProcessor for GlamsterdamTxResponder {
             TX_ENCODING_FORMAT_QUERY_ID,
             TX_FROM_QUERY_ID,
             GLAMSTERDAM_RANGE_START_GAS_QUERY_ID,
+            GLAMSTERDAM_DEPOSIT_REQUESTS_HASHER_QUERY_ID,
         ]
     }
 
@@ -242,7 +267,10 @@ impl OracleQueryProcessor for GlamsterdamTxResponder {
                 .pop_front()
                 .expect("a sender for every transaction of the range")
                 .write_output(&mut response),
-            GLAMSTERDAM_RANGE_START_GAS_QUERY_ID => self.start.write_output(&mut response),
+            GLAMSTERDAM_RANGE_START_GAS_QUERY_ID => self.start.gas.write_output(&mut response),
+            GLAMSTERDAM_DEPOSIT_REQUESTS_HASHER_QUERY_ID => {
+                self.start.hasher.write_output(&mut response)
+            }
             _ => unreachable!("not a transaction query: 0x{query_id:08x}"),
         }
         respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
@@ -250,10 +278,10 @@ impl OracleQueryProcessor for GlamsterdamTxResponder {
 }
 
 /// The senders of the transactions of the range, in order
-fn range_senders(fixture: &GlamsterdamBlock, range: BlockAccessIndexRange) -> VecDeque<B160> {
+fn range_senders(fixture: &GlamsterdamBlock, range: TransactionRange) -> VecDeque<B160> {
     let transactions = fixture.block.transactions.clone().into_transactions_vec();
     range
-        .transactions(transactions.len() as u32)
+        .transactions()
         .map(|index| {
             let signer = transactions[index as usize].inner.signer();
             B160::try_from_be_slice(signer.as_slice()).expect("an address")
@@ -264,13 +292,14 @@ fn range_senders(fixture: &GlamsterdamBlock, range: BlockAccessIndexRange) -> Ve
 /// The oracle of a transaction range of a fixture: everything the
 /// pre-execution check needs, the transactions and receipts tries, the
 /// range responder serving the initial value tables of the pre-execution check,
-/// and the transactions' senders. `start` is the block's gas before the range.
+/// and the transactions' senders. `start` is what the ranges before it
+/// established.
 pub fn make_range_oracle(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
     tables: &InitialValueTables,
-    range: BlockAccessIndexRange,
-    start: RangeStartGas,
+    range: TransactionRange,
+    start: &RangeStart,
     mode: RunMode,
 ) -> anyhow::Result<ZkEENonDeterminismSource> {
     let target_header = Header::decode(&mut fixture.raw_header.as_ref())?;
@@ -290,22 +319,20 @@ pub fn make_range_oracle(
     // the body's withdrawals, as the node encodes them
     let body = crate::glamsterdam::RawBlockBody::decode(&fixture.raw_block)?;
     let withdrawals = body.trailing.get(1).map(|w| w.to_vec()).unwrap_or_default();
+    // the count responder of the shared oracle is the one the range reads too
     let mut oracle = make_state_oracle_from_parts(
         (target_header, fixture.raw_header.to_vec()),
         parents,
         preimages,
         access_list_encoding(fixture),
         withdrawals,
+        tries.transactions.len() as u32,
         mode,
     );
-    oracle.add_external_processor(GlamsterdamRangeResponder::new(
-        range,
-        tries.transactions.len() as u32,
-        tables,
-    ));
+    oracle.add_external_processor(GlamsterdamRangeResponder::new(range, tables));
     oracle.add_external_processor(GlamsterdamTxResponder {
         senders: range_senders(fixture, range),
-        start,
+        start: start.clone(),
     });
     // the advice oracles of the proving system functions (signature recovery, big-integer
     // arithmetic, blob commitments), as the rig's Ethereum block oracle registers them
@@ -338,8 +365,8 @@ pub fn run_range(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
     tables: &InitialValueTables,
-    range: BlockAccessIndexRange,
-    start: RangeStartGas,
+    range: TransactionRange,
+    start: &RangeStart,
 ) -> anyhow::Result<GlamsterdamRangeOutput<Global>> {
     run_range_with_tracer(
         fixture,
@@ -356,8 +383,8 @@ pub fn run_range_with_tracer(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
     tables: &InitialValueTables,
-    range: BlockAccessIndexRange,
-    start: RangeStartGas,
+    range: TransactionRange,
+    start: &RangeStart,
     tracer: &mut impl zk_ee::system::tracer::Tracer<HostRangeSystem>,
 ) -> anyhow::Result<GlamsterdamRangeOutput<Global>> {
     let oracle = make_range_oracle(fixture, tries, tables, range, start, RunMode::NativeRunOnly)?;
@@ -385,8 +412,8 @@ pub fn run_range_recording(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
     tables: &InitialValueTables,
-    range: BlockAccessIndexRange,
-    start: RangeStartGas,
+    range: TransactionRange,
+    start: &RangeStart,
 ) -> anyhow::Result<(GlamsterdamRangeOutput<Global>, Vec<u32>)> {
     let oracle = make_range_oracle(
         fixture,
@@ -582,7 +609,7 @@ pub fn trace_diff(
         tries,
         &tables,
         whole_block(tries),
-        RangeStartGas::default(),
+        &RangeStart::default(),
         &mut tracer,
     );
     println!(
@@ -596,6 +623,20 @@ pub fn trace_diff(
     );
     let name =
         |opcode: u8| rig::evm_interpreter::opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("?");
+    if result.is_err() {
+        // the steps that led to the failure, whatever the node did
+        let from = tracer.steps.len().saturating_sub(16);
+        println!("our last steps before the failure:");
+        for (j, step) in tracer.steps.iter().enumerate().skip(from) {
+            println!(
+                "  {j}: depth {} pc {} {} gas {}",
+                step.depth,
+                step.pc,
+                name(step.opcode),
+                step.gas
+            );
+        }
+    }
     for (i, (ours, theirs)) in tracer.steps.iter().zip(node.iter()).enumerate() {
         // the node's depth is 1-based
         if ours.depth != theirs.depth || ours.pc != theirs.pc || ours.gas != theirs.gas {
@@ -629,17 +670,17 @@ pub fn trace_diff(
 }
 
 /// The whole block as one range
-pub fn whole_block(tries: &IndexTries) -> BlockAccessIndexRange {
-    BlockAccessIndexRange {
-        first: 0,
-        last: tries.transactions.len() as u32 + 1,
+pub fn whole_block(tries: &IndexTries) -> TransactionRange {
+    TransactionRange {
+        start: 0,
+        end: tries.transactions.len() as u32,
     }
 }
 
-/// Splits the block into up to `parts` ranges of access indices of roughly
-/// equal cumulative gas (from the receipts): the pre-transaction phase goes
-/// with the first range, the post-transaction phase with the last
-pub fn split_by_gas(tries: &IndexTries, parts: u32) -> anyhow::Result<Vec<BlockAccessIndexRange>> {
+/// Splits the block into up to `parts` transaction ranges of roughly equal
+/// cumulative gas (from the receipts); the first runs the pre-transaction
+/// phase, the last the post-transaction phase
+pub fn split_by_gas(tries: &IndexTries, parts: u32) -> anyhow::Result<Vec<TransactionRange>> {
     let count = tries.transactions.len() as u32;
     let cumulative = tries
         .receipts
@@ -653,25 +694,23 @@ pub fn split_by_gas(tries: &IndexTries, parts: u32) -> anyhow::Result<Vec<BlockA
     let total = cumulative.last().copied().unwrap_or(0);
     let parts = parts.max(1) as u64;
     let mut ranges = Vec::new();
-    let mut first = 0u32;
+    let mut start = 0u32;
     for part in 1..parts {
         let target = total * part / parts;
-        // the range ends with the transaction that reaches the target
-        let end_tx = cumulative
+        // the range ends after the transaction that reaches the target
+        let end = cumulative
             .iter()
             .position(|gas| *gas >= target)
-            .unwrap_or(count.saturating_sub(1) as usize) as u32;
-        let last = end_tx + 1;
-        if last < first || last > count {
+            .map(|index| index as u32 + 1)
+            .unwrap_or(count);
+        // a range holds a transaction, and the last range holds the last one
+        if end <= start || end >= count {
             continue;
         }
-        ranges.push(BlockAccessIndexRange { first, last });
-        first = last + 1;
+        ranges.push(TransactionRange { start, end });
+        start = end;
     }
-    ranges.push(BlockAccessIndexRange {
-        first,
-        last: count + 1,
-    });
+    ranges.push(TransactionRange { start, end: count });
     Ok(ranges)
 }
 
@@ -681,16 +720,13 @@ pub fn run_ranges(
     fixture: &GlamsterdamBlock,
     tries: &IndexTries,
     tables: &InitialValueTables,
-    ranges: &[BlockAccessIndexRange],
+    ranges: &[TransactionRange],
 ) -> anyhow::Result<Vec<GlamsterdamRangeOutput<Global>>> {
     let mut outputs: Vec<GlamsterdamRangeOutput<Global>> = Vec::with_capacity(ranges.len());
     for range in ranges {
-        let start = outputs
-            .last()
-            .map(|previous| previous.end_gas())
-            .unwrap_or_default();
-        let output = run_range(fixture, tries, tables, *range, start)
-            .map_err(|e| anyhow::anyhow!("range {}..={}: {e}", range.first, range.last))?;
+        let start = RangeStart::after(&outputs);
+        let output = run_range(fixture, tries, tables, *range, &start)
+            .map_err(|e| anyhow::anyhow!("range {}..{}: {e}", range.start, range.end))?;
         outputs.push(output);
     }
     Ok(outputs)
@@ -708,9 +744,9 @@ pub fn aggregate(
     for output in outputs {
         aggregation.add(output).map_err(|e| {
             anyhow::anyhow!(
-                "range {}..={} does not aggregate: {e:?}",
-                output.range.first,
-                output.range.last
+                "range {}..{} does not aggregate: {e:?}",
+                output.transactions.start,
+                output.transactions.end
             )
         })?;
     }
@@ -738,7 +774,7 @@ pub fn aggregate(
         let range = ProgramOutput::of_range(output);
         linkage
             .add(range.hash(), &range, &output.accessed)
-            .map_err(|e| anyhow::anyhow!("linkage of range {:?}: {e:?}", output.range))?;
+            .map_err(|e| anyhow::anyhow!("linkage of range {:?}: {e:?}", output.transactions))?;
     }
     linkage
         .finish()
@@ -780,11 +816,13 @@ pub fn never_accessed(
 /// One line per range run
 pub fn report(fixture: &GlamsterdamBlock, output: &GlamsterdamRangeOutput<Global>) -> String {
     format!(
-        "block {}: range {}..={} of {} transactions OK; cumulative gas {}, execution gas {}, state gas {}, blob gas {}; header gas used {}; accessed {}/{} access list records",
+        "block {}: transactions {}..{} of {} (access indices {}..={}) OK; cumulative gas {}, execution gas {}, state gas {}, blob gas {}; header gas used {}; accessed {}/{} access list records; {} deposit request bytes{}",
         fixture.block.header.inner.number,
+        output.transactions.start,
+        output.transactions.end,
+        output.transaction_count,
         output.range.first,
         output.range.last,
-        output.transaction_count,
         output.cumulative_gas_used,
         output.block_execution_gas_used,
         output.block_state_gas_used,
@@ -792,6 +830,14 @@ pub fn report(fixture: &GlamsterdamBlock, output: &GlamsterdamRangeOutput<Global
         fixture.block.header.inner.gas_used,
         output.accessed.count_ones(),
         output.accessed.len(),
+        output.requests.deposit_requests(),
+        match &output.requests.system {
+            Some(system) => format!(
+                ", requests hash checked with {} system request type(s)",
+                system.types().len()
+            ),
+            None => String::new(),
+        },
     )
 }
 
@@ -845,7 +891,8 @@ pub fn run_on_simulator(path: &std::path::Path, app: &str, parts: u32) -> anyhow
             .with_context(|| format!("fixture {}", dir.display()))?;
         aggregate(&state, &outputs).with_context(|| format!("fixture {}", dir.display()))?;
         let mut block_cycles = 0u64;
-        for output in &outputs {
+        for (i, output) in outputs.iter().enumerate() {
+            let start = RangeStart::after(&outputs[..i]);
             let mut builder = program.transpiler_runner();
             if cfg!(target_arch = "x86_64") {
                 builder = builder.with_jit();
@@ -857,8 +904,8 @@ pub fn run_on_simulator(path: &std::path::Path, app: &str, parts: u32) -> anyhow
                 &fixture,
                 &tries,
                 &tables,
-                output.range,
-                output.start_gas,
+                output.transactions,
+                &start,
                 RunMode::RiscVRun,
             )?;
             let execution = runner
@@ -875,8 +922,8 @@ pub fn run_on_simulator(path: &std::path::Path, app: &str, parts: u32) -> anyhow
                     "{:>10} {:>10} {:>5} {:>9} {:>14} {:>10}",
                     "",
                     "",
-                    output.range.transactions(output.transaction_count).len(),
-                    format!("{}..={}", output.range.first, output.range.last),
+                    output.transactions.len(),
+                    format!("{}..{}", output.transactions.start, output.transactions.end),
                     execution.cycles_executed,
                     ""
                 );
@@ -932,18 +979,18 @@ mod tests {
             &tries,
             &tables,
             whole_block(&tries),
-            RangeStartGas::default(),
+            &RangeStart::default(),
         )
         .expect("whole block");
-        let split = count / 2 + 1;
+        let split = count / 2;
         let ranges = [
-            BlockAccessIndexRange {
-                first: 0,
-                last: split,
+            TransactionRange {
+                start: 0,
+                end: split,
             },
-            BlockAccessIndexRange {
-                first: split + 1,
-                last: count + 1,
+            TransactionRange {
+                start: split,
+                end: count,
             },
         ];
         let outputs = run_ranges(&fixture, &tries, &tables, &ranges).expect("ranges");
@@ -982,13 +1029,11 @@ mod tests {
             let state = run_state_consistency(&fixture).expect("pre-execution");
             let tables = InitialValueTables::of(&state);
             let ranges = split_by_gas(&tries, 4).expect("split");
-            assert_eq!(ranges[0].first, 0);
-            assert_eq!(
-                ranges.last().unwrap().last,
-                tries.transactions.len() as u32 + 1
-            );
+            assert_eq!(ranges[0].start, 0);
+            assert_eq!(ranges.last().unwrap().end, tries.transactions.len() as u32);
             for pair in ranges.windows(2) {
-                assert_eq!(pair[1].first, pair[0].last + 1);
+                assert_eq!(pair[1].start, pair[0].end);
+                assert!(!pair[0].is_empty());
             }
             let mut outputs = run_ranges(&fixture, &tries, &tables, &ranges)
                 .unwrap_or_else(|e| panic!("fixture {}: {e}", dir.display()));
@@ -1010,16 +1055,23 @@ mod tests {
                 wrong.start_gas.execution_gas_used += 1;
                 outputs.push(wrong);
                 assert!(aggregate(&state, &outputs).is_err(), "a wrong start gas");
+                let mut wrong = outputs.pop().unwrap();
+                wrong.start_gas.execution_gas_used -= 1;
+                // a deposit request hashing state that is not the previous range's end
+                wrong.requests.start = Sha256Accumulator::ZERO;
+                outputs.push(wrong);
+                assert!(
+                    aggregate(&state, &outputs).is_err(),
+                    "a hashing state nobody ended with"
+                );
                 outputs.pop();
             }
             if let Some(foreign) = &foreign {
-                let count = outputs[0].transaction_count;
                 let mut aggregation = RangeAggregation::new(PreExecutionSummary::of(&state));
                 assert!(
                     aggregation.add(foreign).is_err(),
                     "a range of another block"
                 );
-                let _ = count;
             } else {
                 foreign = outputs.into_iter().next();
             }
@@ -1028,22 +1080,26 @@ mod tests {
     use alloy::eips::eip7928::AccountChanges;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::index_trie;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::receipt::ReceiptReflection;
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::requests::Sha256Accumulator;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::storage_model::BalStorageModel;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::storage_policy::GlamsterdamStorageAccessCostModel;
     use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::witness::{
-        witness_range, witness_transaction_count, InitialValues,
+        witness_proven_transaction_count, witness_transaction_count, witness_transaction_range,
+        BlockAccessIndexRange, InitialValues,
     };
     use basic_system::system_implementation::ethereum_storage_model::{
         BoxInterner, MptPreimagesOracle,
     };
     use oracle_provider::ReadWitnessSource;
     use rig::crypto::MiniDigest;
+    use rig::evm_interpreter::v3::gas::COLD_ACCOUNT_ACCESS;
     use ruint::aliases::B160;
     use storage_models::common_structs::snapshottable_io::SnapshottableIo;
     use storage_models::common_structs::StorageModel;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
     use zk_ee::reference_implementations::GlamsterdamResources;
-    use zk_ee::system::{AccountDataRequest, Resource};
+    use zk_ee::system::resources::Ergs32;
+    use zk_ee::system::{AccountDataRequest, Resource, Resources};
     use zk_ee::utils::UsizeAlignedByteBox;
 
     /// Every transaction and receipt of every fixture is reachable through the
@@ -1056,18 +1112,19 @@ mod tests {
             let fixture = GlamsterdamBlock::from_dir(&dir).expect("fixture");
             let tries = IndexTries::of(&fixture).expect("tries must match the header");
             let count = tries.transactions.len() as u32;
-            let range = BlockAccessIndexRange {
-                first: 0,
-                last: count + 1,
+            let range = TransactionRange {
+                start: 0,
+                end: count,
             };
             let state = run_state_consistency(&fixture).expect("pre-execution");
+            assert_eq!(state.transaction_count, count);
             let tables = InitialValueTables::of(&state);
             let oracle = make_range_oracle(
                 &fixture,
                 &tries,
                 &tables,
                 range,
-                RangeStartGas::default(),
+                &RangeStart::default(),
                 RunMode::NativeRunSavingForRiscV,
             )
             .expect("oracle");
@@ -1077,10 +1134,30 @@ mod tests {
             let receipts_root = Bytes32::from_array(header.receipts_root.0);
 
             assert_eq!(
-                witness_transaction_count(&mut source, &transactions_root, Global).expect("count"),
+                witness_transaction_count(&mut source).expect("count"),
                 count
             );
-            assert_eq!(witness_range(&mut source, count).expect("range"), range);
+            assert_eq!(
+                witness_proven_transaction_count(
+                    &mut source,
+                    &transactions_root,
+                    &receipts_root,
+                    Global
+                )
+                .expect("proven count"),
+                count
+            );
+            assert_eq!(
+                witness_transaction_range(&mut source).expect("range"),
+                range
+            );
+            assert_eq!(
+                BlockAccessIndexRange::of(range, count).expect("access indices"),
+                BlockAccessIndexRange {
+                    first: 0,
+                    last: count + 1
+                }
+            );
 
             let initial = InitialValues::witness(&mut source, Global).expect("initial values");
             let expected_hash =
@@ -1122,6 +1199,7 @@ mod tests {
                 let leaf = index_trie::lookup(
                     &transactions_root,
                     index,
+                    count,
                     &mut preimages,
                     &mut interner,
                     &mut hasher,
@@ -1132,6 +1210,7 @@ mod tests {
                 let leaf = index_trie::lookup(
                     &receipts_root,
                     index,
+                    count,
                     &mut preimages,
                     &mut interner,
                     &mut hasher,
@@ -1159,15 +1238,36 @@ mod tests {
                 "cumulative gas of the last receipt {cumulative} below the header's {}",
                 header.gas_used
             );
-            assert!(index_trie::lookup(
-                &transactions_root,
-                count,
-                &mut preimages,
-                &mut interner,
-                &mut hasher
-            )
-            .expect("lookup")
-            .is_none());
+            // past the count: a miss, or a branch the rule rejects for that count
+            assert!(matches!(
+                index_trie::lookup(
+                    &transactions_root,
+                    count,
+                    count,
+                    &mut preimages,
+                    &mut interner,
+                    &mut hasher
+                ),
+                Ok(None) | Err(_)
+            ));
+            // a smaller count is rejected on the path of its last item or on
+            // the path of index 0 (which shares the root's child 8 with the
+            // indices from 128 on)
+            for smaller in [count / 2, count - 1] {
+                let mut rejected = false;
+                for index in [0, smaller - 1] {
+                    rejected |= index_trie::lookup(
+                        &transactions_root,
+                        index,
+                        smaller,
+                        &mut preimages,
+                        &mut interner,
+                        &mut hasher,
+                    )
+                    .is_err();
+                }
+                assert!(rejected, "count {smaller} of {count} passes the rule");
+            }
             println!(
                 "block {}: {} transactions and receipts opened through the tries",
                 header.number, count
@@ -1190,8 +1290,10 @@ mod tests {
     fn model_for(
         fixture: &GlamsterdamBlock,
         tries: &IndexTries,
-        range: BlockAccessIndexRange,
+        range: TransactionRange,
     ) -> (Model, ReadWitnessSource) {
+        let count = tries.transactions.len() as u32;
+        let indices = BlockAccessIndexRange::of(range, count).expect("a range of the block");
         let tables =
             InitialValueTables::of(&run_state_consistency(fixture).expect("pre-execution"));
         let oracle = make_range_oracle(
@@ -1199,7 +1301,7 @@ mod tests {
             tries,
             &tables,
             range,
-            RangeStartGas::default(),
+            &RangeStart::default(),
             RunMode::NativeRunSavingForRiscV,
         )
         .expect("oracle");
@@ -1209,7 +1311,7 @@ mod tests {
         let model = Model::new(
             encoding,
             initial,
-            range,
+            indices,
             GlamsterdamStorageAccessCostModel,
             Global,
         )
@@ -1316,13 +1418,11 @@ mod tests {
             let tries = IndexTries::of(&fixture).expect("tries");
             let count = tries.transactions.len() as u32;
             let bal = &fixture.block_access_list;
-            for first in [0, count / 2] {
-                let range = BlockAccessIndexRange {
-                    first,
-                    last: count + 1,
-                };
+            for start in [0, count / 2] {
+                let range = TransactionRange { start, end: count };
                 let (mut model, mut source) = model_for(&fixture, &tries, range);
-                for index in first..=count + 1 {
+                let indices = BlockAccessIndexRange::of(range, count).unwrap();
+                for index in indices.first..=indices.last {
                     model.begin_index(index).expect("index");
                     replay_index(&mut model, &mut source, bal, index);
                     model.finish_tx().unwrap_or_else(|e| {
@@ -1334,7 +1434,7 @@ mod tests {
                 }
             }
 
-            // a slot written to a value other than the declared one
+            // a slot written by a transaction to a value other than the declared one
             let (slot_index, slot_address, slot_key, slot_value) = bal
                 .iter()
                 .flat_map(|account| {
@@ -1349,11 +1449,11 @@ mod tests {
                         })
                     })
                 })
-                .next()
-                .expect("a storage change");
-            let range = BlockAccessIndexRange {
-                first: slot_index,
-                last: count + 1,
+                .find(|(index, ..)| (1..=count).contains(index))
+                .expect("a storage change of a transaction");
+            let range = TransactionRange {
+                start: slot_index - 1,
+                end: count,
             };
             let (mut model, mut source) = model_for(&fixture, &tries, range);
             model.begin_index(slot_index).expect("index");
@@ -1375,6 +1475,28 @@ mod tests {
                 model.finish_tx().is_err(),
                 "a wrong final value must be rejected"
             );
+
+            // a first write of the slot in a frame that is rolled back, then the
+            // declared changes: one change, as declared (the rollback takes the
+            // slot off the touched list, so it is not counted twice)
+            let (mut model, mut source) = model_for(&fixture, &tries, range);
+            model.begin_index(slot_index).expect("index");
+            let snapshot = model.start_frame();
+            model
+                .storage_write(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut resources,
+                    &slot_address,
+                    &slot_key,
+                    &wrong,
+                    &mut source,
+                )
+                .expect("write");
+            model.finish_frame(Some(&snapshot)).expect("rollback");
+            replay_index(&mut model, &mut source, bal, slot_index);
+            model
+                .finish_tx()
+                .expect("a rolled-back first write does not count");
 
             // an undeclared write to a slot the list only reads
             let (read_address, read_key) = bal
@@ -1429,6 +1551,53 @@ mod tests {
                     &mut source
                 )
                 .is_err());
+
+            // a warm-up (a transaction access list entry) of an address or a slot outside
+            // the list is accepted and warms nothing: the model holds no state for it, so an
+            // access of it from the EVM still pays the cold access before being rejected
+            let (mut model, mut source) = model_for(&fixture, &tries, range);
+            model.begin_index(slot_index).expect("index");
+            model
+                .touch_account(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut resources,
+                    &outside,
+                    &mut source,
+                )
+                .expect("a warm-up outside the list is no access");
+            model
+                .storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut resources,
+                    &outside,
+                    &slot_key,
+                    &mut source,
+                )
+                .expect("a slot warm-up outside the list is no access");
+            model
+                .storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut resources,
+                    &read_address,
+                    &Bytes32::from_array([0xee; 32]),
+                    &mut source,
+                )
+                .expect("a slot warm-up of a slot outside the list is no access");
+            let mut metered = GlamsterdamResources::<()>::from_ergs(Ergs32(100_000));
+            assert!(model
+                .read_account_properties(
+                    ExecutionEnvironmentType::EVM,
+                    &mut metered,
+                    &outside,
+                    AccountDataRequest::empty().with_nonce(),
+                    &mut source
+                )
+                .is_err());
+            assert_eq!(
+                metered.legacy_gas(),
+                100_000 - COLD_ACCOUNT_ACCESS as u64,
+                "the cold access of an address the warm-up did not warm"
+            );
             println!(
                 "block {}: access list replayed through the storage model",
                 fixture.block.header.inner.number

@@ -125,6 +125,10 @@ pub struct GlamsterdamTxContext<S: EthereumLikeSystem> {
     pub state_gas_reservoir: u32,
     /// The spill the delegations committed: never refilled
     pub committed_spill: u32,
+    /// The state gas after the delegations and before the creation charge of the
+    /// target: what a reverted or halted main body is restored to (EIP-8037), so that
+    /// the creation, which does not happen then, is refilled
+    pub state_gas_baseline: u32,
     pub blob_gas_used: u64,
     pub tx_level_metadata: EthereumTransactionMetadata<{ MAX_BLOBS_PER_TX }>,
     pub settlement: GasSettlement,
@@ -318,7 +322,7 @@ where
 
         // Take a snapshot in case we need to revert due to out of native.
         let main_body_rollback_handle = system.start_global_frame()?;
-        let baseline = context.resources.state_gas();
+        let baseline = context.state_gas_baseline;
         let execution_result = match Self::execute_or_deploy_inner(
             system,
             system_functions,
@@ -336,6 +340,10 @@ where
                     }
                     ExecutionResult::Revert { .. } => {
                         system.finish_global_frame(Some(&main_body_rollback_handle))?;
+                        // the state the body created is gone, its creation charge
+                        // included: the entry frame refilled its own charges, the
+                        // target's creation is the flow's (`prepare_dispatch`)
+                        context.resources.restore_state_gas(baseline);
                         system_log!(system, "Transaction main payload was reverted\n");
                     }
                 };
@@ -576,6 +584,7 @@ where
         // authorization charges and before it, so a revert or halt of the code refills it
         // (and a halt burns the refill with the rest of the execution gas).
         context.committed_spill = context.resources.commit_state_gas();
+        context.state_gas_baseline = context.resources.state_gas();
 
         let dispatch_target = match to {
             None => {

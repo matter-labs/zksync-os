@@ -4,7 +4,10 @@
 //!
 //! [`verify_state_consistency`]:
 //! 1. witnesses the target header and the parent header, checks that the
-//!    latter is the parent and that the fee fields follow from it;
+//!    latter is the parent and that the fee fields follow from it; witnesses
+//!    the number of transactions and proves it against the transactions and
+//!    receipts tries ([`StateConsistencyOutput::transaction_count`], see
+//!    `tx_range::index_trie` for what that proves);
 //! 2. witnesses the RLP encoding of the block access list, checks it against
 //!    the header's `block_access_list_hash`, validates it in full (the
 //!    encoding, the EIP-7928 ordering and uniqueness rules, the code size
@@ -26,7 +29,10 @@
 //!    ([`StateConsistencyOutput::initial_values_hashes`]).
 //!
 //! The tables are sized from the counts of the validating pass, so nothing
-//! grows afterwards (the proving-target allocator cannot reallocate).
+//! grows afterwards (the proving-target allocator cannot reallocate): the key
+//! interners' hash tables are allocated for exactly the accounts and slots of
+//! the list, which may not exceed what the header's gas limit lets a block
+//! touch (`max_accounts_in_block`, `max_slots_in_block`).
 
 pub mod access_list;
 mod apply;
@@ -36,7 +42,8 @@ use super::index_mask::IndexMask;
 use super::oracle_queries::{
     ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_DATA_QUERY_ID, ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_LEN_QUERY_ID,
 };
-use super::GlamsterdamError;
+use super::tx_range::witness::witness_proven_transaction_count;
+use super::{max_accounts_in_block, max_slots_in_block, GlamsterdamError};
 use crate::bootloader::block_flow::ethereum::oracle_queries::{
     ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
     ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID, ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
@@ -131,6 +138,9 @@ pub struct StateConsistencyOutput<A: Allocator> {
     pub header_hash: Bytes32,
     pub parent_header: GlamsterdamHeader,
     pub parent_state_root: Bytes32,
+    /// The number of transactions of the block: the last leaf of the
+    /// transactions and receipts tries is at `transaction_count - 1`
+    pub transaction_count: u32,
     /// The RLP encoding of the block access list, as witnessed
     pub access_list_encoding: UsizeAlignedByteBox<A>,
     pub counts: AccessListCounts,
@@ -305,6 +315,14 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
     header.check_against_parent(&parent_header, &parent_hash, blob_schedule)?;
     let parent_state_root = parent_header.base.state_root;
 
+    // the number of transactions, against both index tries
+    let transaction_count = witness_proven_transaction_count(
+        oracle,
+        &header.base.transactions_root,
+        &header.base.receipts_root,
+        allocator.clone(),
+    )?;
+
     // the block access list
     let access_list_encoding = get_bytes_with_length_query::<_, (), _>(
         oracle,
@@ -320,6 +338,23 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
         return Err(GlamsterdamError::AccessListHash);
     }
     let counts = access_list::validate(encoding, Validation::Full)?;
+    // the post-transaction phase is the last index a change can be at
+    if counts.max_access_index > transaction_count + 1 {
+        return Err(GlamsterdamError::AccessListValue);
+    }
+    // No more entries than the block's gas can touch: every table below (the key
+    // interners' hash tables included) is allocated once at the exact count, so this
+    // bounds the memory a block takes before anything is allocated.
+    if counts.accounts > max_accounts_in_block(header.base.gas_limit) {
+        return Err(GlamsterdamError::Capacity(
+            "more accounts than the gas limit allows",
+        ));
+    }
+    if counts.slots > max_slots_in_block(header.base.gas_limit) {
+        return Err(GlamsterdamError::Capacity(
+            "more slots than the gas limit allows",
+        ));
+    }
     let mut tables = Tables::with_counts(&counts, allocator.clone())?;
     collect_tables(encoding, &counts, &mut tables, &mut hasher)?;
 
@@ -377,6 +412,7 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
         header_hash,
         parent_header,
         parent_state_root,
+        transaction_count,
         access_list_encoding,
         counts,
         addresses,
@@ -394,6 +430,13 @@ pub fn verify_state_consistency<O: IOOracle, A: Allocator + Clone>(
     })
 }
 
+/// How many times the number of keys the key interners' hash tables are sized for:
+/// allocated once (the proving-target allocator cannot grow them), at a low load so
+/// that lookups rarely probe past the first group. With the hash table reserving for
+/// its own load factor on top, the largest block (about 66.6k accounts and 95.1k
+/// slots at 200M gas, see `max_accounts_in_block`) takes 2^18 buckets per table.
+pub const INTERNER_CAPACITY_FACTOR: usize = 2;
+
 /// The tables filled by the access list walk
 pub struct Tables<A: Allocator> {
     pub addresses: AccessListInterner<AddressKey, A>,
@@ -406,17 +449,20 @@ pub struct Tables<A: Allocator> {
 
 impl<A: Allocator + Clone> Tables<A> {
     pub fn with_counts(counts: &AccessListCounts, allocator: A) -> Result<Self, GlamsterdamError> {
-        if counts.accounts >= u32::MAX as usize {
+        if counts.accounts >= u32::MAX as usize / INTERNER_CAPACITY_FACTOR {
             return Err(GlamsterdamError::Capacity("accounts"));
         }
-        if counts.slots >= u32::MAX as usize {
+        if counts.slots >= u32::MAX as usize / INTERNER_CAPACITY_FACTOR {
             return Err(GlamsterdamError::Capacity("slots"));
         }
         Ok(Self {
-            addresses: Interner::new_in(counts.accounts, allocator.clone()),
+            addresses: Interner::new_in(
+                counts.accounts * INTERNER_CAPACITY_FACTOR,
+                allocator.clone(),
+            ),
             address_hashes: Vec::with_capacity_in(counts.accounts, allocator.clone()),
             // every slot entry may carry a distinct key
-            slot_keys: Interner::new_in(counts.slots, allocator.clone()),
+            slot_keys: Interner::new_in(counts.slots * INTERNER_CAPACITY_FACTOR, allocator.clone()),
             slot_key_hashes: Vec::with_capacity_in(counts.slots, allocator.clone()),
             accounts: Vec::with_capacity_in(counts.accounts, allocator.clone()),
             slots: Vec::with_capacity_in(counts.slots, allocator),

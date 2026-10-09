@@ -387,6 +387,7 @@ where
         intrinsic,
         state_gas_reservoir,
         committed_spill: 0,
+        state_gas_baseline: 0,
         blob_gas_used,
         tx_level_metadata: tx_level_metadata.clone(),
         settlement: GasSettlement::default(),

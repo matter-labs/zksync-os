@@ -62,3 +62,38 @@ regularly (two of the ten Sepolia fixtures have 130 transactions).
 - For `n <= 127` the structure is: root branch, one branch per non-empty high nibble
   group, and the index-0 leaf with path `0`; this covers the small-block case with no
   extension handling at all.
+
+## Proving the item count
+
+The Glamsterdam programs (`basic_bootloader::...::ethereum_glamsterdam`) need the number
+of transactions `n` of a block and must reject a header whose tries are not the tries
+of exactly `n` items: a leaf at an index past `n`, a gap, or a leaf at a key that is not
+`rlp(i)` of any `i` (`0x00`, a non-canonical `0x8105`, a path of the wrong length) all
+make a header no body can match. No program reads the whole trie: a leaf is a whole
+transaction or receipt, and the ranges of a block read only their own.
+
+The proof is split (see the module documentation of `tx_range::index_trie` for the
+diagram and the argument):
+
+- Every lookup of `rlp(i)` applies the *density rule* at every branch it passes, for the
+  count it runs with: at a branch whose path is `p`, only the slots `c` such that some
+  `rlp(j)`, `j < n`, starts with `p ++ c` may hold a child (`index_trie::expected_children`
+  computes them from `p` and `n` alone), and the value slot must be empty. A branch that
+  breaks the rule fails the lookup instead of being walked past.
+- The pre-execution check witnesses `n`, looks up the leaf `n - 1` in both tries under
+  the rule and publishes `n` (`tx_count` of the linkage output). That pins the leaf at
+  `n - 1` and the absence of keys at or past `n` on its path only: keys that share no
+  branch with that path (for `n = 128`, everything under `0x81..`, which hangs off the
+  root's child `8` while `rlp(127) = 0x7f` sits under child `7`) are not seen.
+- The ranges tile `0..n` and look up every transaction and receipt leaf, each under the
+  rule and with the count the aggregation binds to the pre-execution check's. A leaf
+  outside `{rlp(i) : i < n}` would hang off a slot, or sit in a value slot, of a branch
+  that one of these lookups passes (take the deepest node on its path that a lookup also
+  passed: it cannot be a leaf or an extension, so it is a branch, and the leaf is below
+  a slot no item's key goes through), where the rule rejects it. So the tries hold exactly
+  the items `0..n`.
+
+The earlier check (present at `n - 1`, absent at `n`) did not exclude keys past `n` that
+branch off elsewhere, nor non-canonical keys, and a range running with its own unverified
+count could have admitted them: that is why the count is part of every program's public
+output and the aggregation requires them to agree.

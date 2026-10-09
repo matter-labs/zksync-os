@@ -11,7 +11,10 @@
 //! address, as it goes through this IO.
 
 use super::storage_model::{BalModelSnapshot, BalStorageModel};
-use super::witness::{AccessIndexRangeQuery, BlockAccessIndexRange, InitialValues};
+use super::witness::{
+    witness_transaction_count, witness_transaction_range, BlockAccessIndexRange, InitialValues,
+    TransactionRange,
+};
 use crate::bootloader::block_flow::ethereum_glamsterdam::oracle_queries::{
     ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_DATA_QUERY_ID, ETHEREUM_BLOCK_ACCESS_LIST_BUFFER_LEN_QUERY_ID,
 };
@@ -30,7 +33,7 @@ use zk_ee::common_structs::logs_storage::GenericLogContentWithTxRef;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::StackFactory;
-use zk_ee::oracle::memory_io::{get_bytes_with_length_query, OracleQuery};
+use zk_ee::oracle::memory_io::get_bytes_with_length_query;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::system::SystemError;
@@ -82,6 +85,11 @@ pub struct GlamsterdamIO<
     pub allocator: A,
     pub oracle: O,
     pub tx_number: u32,
+    /// The transaction range being executed, as witnessed
+    pub transactions: TransactionRange,
+    /// The number of transactions of the block, as witnessed (unverified: the
+    /// aggregation binds it to the pre-execution check's)
+    pub transaction_count: u32,
 }
 
 pub struct GlamsterdamIOSnapshot<R> {
@@ -100,9 +108,19 @@ impl<
         const PROOF_ENV: bool,
     > GlamsterdamIO<A, R, P, SF, N, O, PROOF_ENV>
 {
-    /// The range being executed
+    /// The block access indices the range covers
     pub fn range(&self) -> BlockAccessIndexRange {
         self.storage.range
+    }
+
+    /// The transaction range being executed
+    pub fn transactions(&self) -> TransactionRange {
+        self.transactions
+    }
+
+    /// The number of transactions of the block, as witnessed
+    pub fn transaction_count(&self) -> u32 {
+        self.transaction_count
     }
 
     /// Starts an access index (the pre-transaction phase, a transaction, or
@@ -516,10 +534,12 @@ impl<
         .ok_or(internal_error!("the block access list is empty"))?;
         let initial = InitialValues::witness(&mut oracle, allocator.clone())
             .map_err(|_| internal_error!("malformed initial value tables"))?;
-        let range = AccessIndexRangeQuery::get(&mut oracle, ())?;
-        if range.first > range.last {
-            return Err(internal_error!("empty access index range"));
-        }
+        let transactions = witness_transaction_range(&mut oracle)
+            .map_err(|_| internal_error!("no transaction range"))?;
+        let transaction_count = witness_transaction_count(&mut oracle)
+            .map_err(|_| internal_error!("no transaction count"))?;
+        let range = BlockAccessIndexRange::of(transactions, transaction_count)
+            .map_err(|_| internal_error!("the transaction range is not in the block"))?;
         let storage =
             BalStorageModel::new(encoding, initial, range, P::default(), allocator.clone())
                 .map_err(|_| internal_error!("malformed block access list"))?;
@@ -530,6 +550,8 @@ impl<
             allocator,
             oracle,
             tx_number: 0,
+            transactions,
+            transaction_count,
         })
     }
 

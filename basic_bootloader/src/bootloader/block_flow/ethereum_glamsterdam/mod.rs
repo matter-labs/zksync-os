@@ -25,6 +25,41 @@ pub mod oracle_queries;
 pub mod state_consistency;
 pub mod tx_range;
 
+/// The accounts the phases around the transactions can touch besides what the
+/// transactions pay for: the EIP-4788 and EIP-2935 contracts, the EIP-7002 and
+/// EIP-7251 contracts, the two EIP-8282 predeploys, the coinbase and up to 16
+/// withdrawal recipients, rounded up
+pub const SYSTEM_PHASE_ACCOUNTS: usize = 32;
+/// The slots those phases can touch: the ring buffer slots of EIP-4788 (2) and
+/// EIP-2935 (1), the queue heads, tails, counts and excesses of the four request
+/// contracts and their dequeued records (16 x 3 for EIP-7002, 2 x 4 for EIP-7251,
+/// 64 x 6 and 16 x 3 for EIP-8282), rounded up
+pub const SYSTEM_PHASE_SLOTS: usize = 1024;
+
+/// The most distinct accounts a block of `gas_limit` gas can touch, so the most
+/// accounts a valid block access list carries: the cheapest access of a new
+/// account is a cold `BALANCE` (or `EXTCODESIZE`, ...) of a pushed address,
+/// `COLD_ACCOUNT_ACCESS + VERYLOW` = 3003 gas under EIP-8038, so about 66,600
+/// accounts at 200M gas, plus [`SYSTEM_PHASE_ACCOUNTS`]. The execution gas of a
+/// block is its whole gas limit at most (EIP-7778: the state gas is counted
+/// alongside, not on top).
+pub const fn max_accounts_in_block(gas_limit: u64) -> usize {
+    let cheapest_access = (evm_interpreter::v3::gas::COLD_ACCOUNT_ACCESS
+        + evm_interpreter::gas_constants::VERYLOW) as u64;
+    (gas_limit / cheapest_access) as usize + SYSTEM_PHASE_ACCOUNTS
+}
+
+/// The most distinct storage slots a block of `gas_limit` gas can touch, so the
+/// most slots a valid block access list carries: the cheapest access of a new
+/// slot is a cold `SLOAD` of a pushed key, `COLD_STORAGE_ACCESS + VERYLOW` =
+/// 2103 gas under EIP-8038, so about 95,100 slots at 200M gas, plus
+/// [`SYSTEM_PHASE_SLOTS`]
+pub const fn max_slots_in_block(gas_limit: u64) -> usize {
+    let cheapest_access = (evm_interpreter::v3::gas::COLD_STORAGE_ACCESS
+        + evm_interpreter::gas_constants::VERYLOW) as u64;
+    (gas_limit / cheapest_access) as usize + SYSTEM_PHASE_SLOTS
+}
+
 /// EIP-7954: the largest code an account can hold, in bytes (was EIP-170's 24 KiB)
 pub const EIP_7954_MAX_CODE_SIZE: usize = 0x10000;
 /// EIP-7954: the largest initcode a creation can run, in bytes (was EIP-3860's 48 KiB)
@@ -53,7 +88,8 @@ pub enum GlamsterdamError {
     AccessListEncoding,
     /// The access list violates an EIP-7928 ordering or uniqueness rule
     AccessListOrdering(&'static str),
-    /// An access list value is out of range (a block access index above `u32`)
+    /// An access list value is out of range (a block access index above `u32`,
+    /// or beyond the block's post-transaction phase)
     AccessListValue,
     /// A code change sets code above the EIP-7954 size limit
     CodeSizeExceeded,
@@ -61,6 +97,9 @@ pub enum GlamsterdamError {
     Capacity(&'static str),
     /// A trie operation failed (a missing or malformed witness node)
     Mpt(&'static str),
+    /// Seeking a slot of the account at this address index failed (a missing or
+    /// malformed witness node of its storage trie)
+    MptSlotSeek(u32),
     /// A leaf of the accounts trie is not an account encoding
     AccountEncoding,
     /// A leaf of a storage trie is not a slot value encoding
@@ -71,10 +110,37 @@ pub enum GlamsterdamError {
     IndexTrie(&'static str),
     /// A receipt does not decode
     ReceiptEncoding,
-    /// The witnessed block access index range is empty or malformed
-    AccessIndexRange,
+    /// A deposit event of the deposit contract is malformed
+    DepositEvent,
+    /// The witnessed transaction range is outside the block, or empty inside it
+    TransactionRange,
+    /// A transactions or receipts trie holds an item past the transaction count,
+    /// or an item that is not at an item index
+    IndexTrieNotDense,
     /// A witnessed initial value table is malformed
     InitialValuesEncoding,
     /// The outputs of the ranges of a block do not aggregate to the block
     Aggregation(&'static str),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_bounds_follow_the_gas_limit() {
+        // a 200M gas block: ~66.6k accounts and ~95.1k slots
+        assert_eq!(
+            max_accounts_in_block(200_000_000),
+            66_600 + SYSTEM_PHASE_ACCOUNTS
+        );
+        assert_eq!(max_slots_in_block(200_000_000), 95_102 + SYSTEM_PHASE_SLOTS);
+        // the Sepolia limit of the fixtures, and a 60M mainnet-style one
+        assert_eq!(
+            max_accounts_in_block(199_413_688),
+            66_404 + SYSTEM_PHASE_ACCOUNTS
+        );
+        assert_eq!(max_slots_in_block(60_000_000), 28_530 + SYSTEM_PHASE_SLOTS);
+        assert_eq!(max_accounts_in_block(0), SYSTEM_PHASE_ACCOUNTS);
+    }
 }

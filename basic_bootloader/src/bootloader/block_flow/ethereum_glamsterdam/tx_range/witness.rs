@@ -1,7 +1,10 @@
-//! What a transaction range witnesses before its transactions run: the block
-//! access index range, the number of transactions of the block (proven
-//! against the transactions trie), and the initial value tables of the
-//! pre-execution check (`state_consistency`), whose hashes link the two.
+//! What a transaction range witnesses before its transactions run: the
+//! transaction range (transaction numbers, half-open), the number of
+//! transactions of the block (unverified here: the aggregation requires it to
+//! be the one the pre-execution check proved), and the initial value tables of
+//! the pre-execution check (`state_consistency`), whose hashes link the two.
+//! The block access index range the range covers follows from the first two
+//! ([`BlockAccessIndexRange::of`]).
 
 use super::super::index_mask::IndexMask;
 use super::super::GlamsterdamError;
@@ -22,26 +25,31 @@ use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 
 type Result<T> = core::result::Result<T, GlamsterdamError>;
 
-/// An inclusive range of block access indices: `0` is the pre-transaction
-/// system phase, `1..=n` the transactions, `n + 1` the post-transaction phase.
+/// A half-open range of transaction numbers `start..end`: what a range program
+/// validates. A range starting at `0` also runs the pre-transaction system
+/// phase, a range ending at the number of transactions of the block also runs
+/// the post-transaction phase (the withdrawals and the request system calls):
+/// the phases go with the first and the last transaction, so that no range can
+/// cover the last transaction without the post-transaction phase.
 /// `#[repr(C)]`: the oracle writes it memcpy-like.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BlockAccessIndexRange {
-    pub first: u32,
-    pub last: u32,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TransactionRange {
+    pub start: u32,
+    pub end: u32,
 }
 
 const _: () = {
-    assert!(core::mem::size_of::<BlockAccessIndexRange>() == 8);
-    assert!(core::mem::align_of::<BlockAccessIndexRange>() == 4);
+    assert!(core::mem::size_of::<TransactionRange>() == 8);
+    assert!(core::mem::align_of::<TransactionRange>() == 4);
 };
 
 // SAFETY: two `u32`, no padding
-unsafe impl ContinuousSerializable for BlockAccessIndexRange {}
+unsafe impl ContinuousSerializable for TransactionRange {}
 
-// SAFETY: any bytes form a valid value; the range itself is checked by `witness_range`
-unsafe impl ContinuousDeserializable for BlockAccessIndexRange {
+// SAFETY: any bytes form a valid value; the range is checked against the
+// transaction count by `BlockAccessIndexRange::of`
+unsafe impl ContinuousDeserializable for TransactionRange {
     #[inline(always)]
     unsafe fn validate<'a>(this: *mut Self) -> core::result::Result<&'a mut Self, InternalError> {
         // SAFETY: guaranteed by the caller
@@ -49,23 +57,79 @@ unsafe impl ContinuousDeserializable for BlockAccessIndexRange {
     }
 }
 
-impl BlockAccessIndexRange {
+impl TransactionRange {
     /// Whether the pre-transaction system phase is part of the range
     pub fn includes_pre_transactions(&self) -> bool {
-        self.first == 0
+        self.start == 0
     }
 
     /// Whether the post-transaction phase is part of the range, given the
     /// number of transactions
     pub fn includes_post_transactions(&self, transaction_count: u32) -> bool {
-        self.last == transaction_count + 1
+        self.end == transaction_count
     }
 
-    /// The transaction indices (zero-based) of the range
-    pub fn transactions(&self, transaction_count: u32) -> core::ops::Range<u32> {
-        let first = self.first.max(1) - 1;
-        let end = self.last.min(transaction_count);
-        first..end.max(first)
+    /// The transaction numbers of the range
+    pub fn transactions(&self) -> core::ops::Range<u32> {
+        self.start..self.end.max(self.start)
+    }
+
+    /// The number of transactions of the range
+    pub fn len(&self) -> u32 {
+        self.end.saturating_sub(self.start)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Checks the witnessed range against the transaction count: it must be
+    /// ordered, within the block, and hold a transaction, except that a
+    /// block without transactions is covered by the one range `0..0`, which
+    /// runs both system phases. An empty range inside a block is rejected:
+    /// it would either make a phase run twice (`0..0` or `n..n` next to the
+    /// range that runs it) or validate nothing.
+    pub fn check(&self, transaction_count: u32) -> Result<()> {
+        if self.start > self.end || self.end > transaction_count {
+            return Err(GlamsterdamError::TransactionRange);
+        }
+        if self.is_empty() && !(self.start == 0 && transaction_count == 0) {
+            return Err(GlamsterdamError::TransactionRange);
+        }
+        Ok(())
+    }
+}
+
+/// An inclusive range of block access indices: `0` is the pre-transaction
+/// system phase, `1..=n` the transactions, `n + 1` the post-transaction phase.
+/// Derived from a [`TransactionRange`] and the transaction count, never
+/// witnessed on its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlockAccessIndexRange {
+    pub first: u32,
+    pub last: u32,
+}
+
+impl BlockAccessIndexRange {
+    /// The access indices a transaction range covers: its transactions, the
+    /// pre-transaction phase when it starts at the first transaction, the
+    /// post-transaction phase when it ends at the last. The range must be
+    /// within the block and hold a transaction, except that a block without
+    /// transactions is covered by the one range `0..0`, which runs both
+    /// phases: an empty range inside a block would make a phase run twice.
+    pub fn of(range: TransactionRange, transaction_count: u32) -> Result<Self> {
+        range.check(transaction_count)?;
+        let first = if range.includes_pre_transactions() {
+            0
+        } else {
+            range.start + 1
+        };
+        let last = if range.includes_post_transactions(transaction_count) {
+            transaction_count + 1
+        } else {
+            range.end
+        };
+        Ok(Self { first, last })
     }
 }
 
@@ -112,12 +176,12 @@ impl OracleQuery for RangeStartGasQuery {
     type Output = RangeStartGas;
 }
 
-pub struct AccessIndexRangeQuery;
+pub struct TransactionRangeQuery;
 
-impl OracleQuery for AccessIndexRangeQuery {
-    const QUERY_ID: u32 = GLAMSTERDAM_ACCESS_INDEX_RANGE_QUERY_ID;
+impl OracleQuery for TransactionRangeQuery {
+    const QUERY_ID: u32 = GLAMSTERDAM_TRANSACTION_RANGE_QUERY_ID;
     type Input = ();
-    type Output = BlockAccessIndexRange;
+    type Output = TransactionRange;
 }
 
 pub struct TransactionCountQuery;
@@ -128,16 +192,30 @@ impl OracleQuery for TransactionCountQuery {
     type Output = u32;
 }
 
-/// Witnesses the number of transactions of the block and proves it against the
-/// transactions trie: the last index has a leaf, the next one has none
-pub fn witness_transaction_count<O: IOOracle, A: Allocator + Clone>(
+/// Witnesses the number of transactions of the block, unverified: what a
+/// range runs with, bound to the pre-execution check's by the aggregation
+pub fn witness_transaction_count<O: IOOracle>(oracle: &mut O) -> Result<u32> {
+    TransactionCountQuery::get(oracle, ()).map_err(|_| GlamsterdamError::Oracle)
+}
+
+/// Capacity of the interner of the count proof (see `witness_proven_transaction_count`)
+const COUNT_PROOF_INTERNER_CAPACITY: usize = 1 << 22;
+
+/// Witnesses the number of transactions of the block and proves it against
+/// the transactions and the receipts tries, as the pre-execution check does
+/// (see `index_trie::verify_count` for what that proves and what it leaves
+/// to the ranges)
+pub fn witness_proven_transaction_count<O: IOOracle, A: Allocator + Clone>(
     oracle: &mut O,
     transactions_root: &Bytes32,
+    receipts_root: &Bytes32,
     allocator: A,
 ) -> Result<u32> {
-    let count = TransactionCountQuery::get(oracle, ()).map_err(|_| GlamsterdamError::Oracle)?;
-    // the two paths are at most 14 nodes of at most 17 * 33 bytes
-    let mut interner = BoxInterner::with_capacity_in(1 << 14, allocator);
+    let count = witness_transaction_count(oracle)?;
+    // one path per trie (at most 14 nodes of at most 17 * 33 bytes each) and the leaf at
+    // its end, which is interned too: a whole transaction (at most 128 KiB) or receipt
+    // (its logs can reach 2 MiB under the transaction gas cap)
+    let mut interner = BoxInterner::with_capacity_in(COUNT_PROOF_INTERNER_CAPACITY, allocator);
     let mut preimages = MptPreimagesOracle(oracle);
     let mut hasher = Keccak256::new();
     index_trie::verify_count(
@@ -147,19 +225,19 @@ pub fn witness_transaction_count<O: IOOracle, A: Allocator + Clone>(
         &mut interner,
         &mut hasher,
     )?;
+    index_trie::verify_count(
+        receipts_root,
+        count,
+        &mut preimages,
+        &mut interner,
+        &mut hasher,
+    )?;
     Ok(count)
 }
 
-/// Witnesses the block access index range, checked against the transaction count
-pub fn witness_range<O: IOOracle>(
-    oracle: &mut O,
-    transaction_count: u32,
-) -> Result<BlockAccessIndexRange> {
-    let range = AccessIndexRangeQuery::get(oracle, ()).map_err(|_| GlamsterdamError::Oracle)?;
-    if range.first > range.last || range.last > transaction_count + 1 {
-        return Err(GlamsterdamError::AccessIndexRange);
-    }
-    Ok(range)
+/// Witnesses the transaction range of the program
+pub fn witness_transaction_range<O: IOOracle>(oracle: &mut O) -> Result<TransactionRange> {
+    TransactionRangeQuery::get(oracle, ()).map_err(|_| GlamsterdamError::Oracle)
 }
 
 /// The initial value tables of the pre-execution check, as witnessed: the
@@ -290,5 +368,53 @@ impl<A: Allocator + Clone> InitialValues<A> {
     /// Whether the account had no leaf before the block
     pub fn is_fresh(&self, address_index: u32) -> bool {
         self.fresh_accounts.get(address_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transaction_ranges_are_checked_against_the_count() {
+        let range = |start, end| TransactionRange { start, end };
+        let indices = |first, last| BlockAccessIndexRange { first, last };
+        // the whole block, a first, a middle and a last range
+        assert_eq!(
+            BlockAccessIndexRange::of(range(0, 10), 10),
+            Ok(indices(0, 11))
+        );
+        assert_eq!(
+            BlockAccessIndexRange::of(range(0, 4), 10),
+            Ok(indices(0, 4))
+        );
+        assert_eq!(
+            BlockAccessIndexRange::of(range(4, 7), 10),
+            Ok(indices(5, 7))
+        );
+        assert_eq!(
+            BlockAccessIndexRange::of(range(7, 10), 10),
+            Ok(indices(8, 11))
+        );
+        assert_eq!(range(0, 1).transactions(), 0..1);
+        assert_eq!(range(7, 10).transactions(), 7..10);
+        // the empty block is the one range 0..0, running both phases
+        assert_eq!(BlockAccessIndexRange::of(range(0, 0), 0), Ok(indices(0, 1)));
+        // empty ranges inside a block: a phase alone, or nothing at all
+        for empty in [range(0, 0), range(4, 4), range(10, 10)] {
+            assert_eq!(
+                empty.check(10),
+                Err(GlamsterdamError::TransactionRange),
+                "{empty:?}"
+            );
+            assert!(BlockAccessIndexRange::of(empty, 10).is_err());
+        }
+        assert!(range(1, 1).check(0).is_err());
+        // outside the block, or reversed
+        assert!(range(0, 11).check(10).is_err());
+        assert!(range(10, 11).check(10).is_err());
+        assert!(range(5, 4).check(10).is_err());
+        assert!(range(1, 0).check(0).is_err());
+        assert_eq!(range(5, 4).len(), 0);
     }
 }

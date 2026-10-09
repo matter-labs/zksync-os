@@ -11,6 +11,9 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
+# the sha256 compression function: the deposit request hashing is carried across the
+# transaction ranges of a block as a hasher state (`ethereum_glamsterdam::tx_range::requests`)
+sha2 = { version = "0.10", default-features = false, features = ["compress"] }
 cycle_marker = { path = "../cycle_marker" }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }

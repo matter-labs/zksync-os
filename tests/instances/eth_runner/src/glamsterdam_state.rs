@@ -11,16 +11,49 @@ use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::linkage::Pro
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::state_consistency::{
     verify_state_consistency, StateConsistencyOutput,
 };
+use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::oracle_queries::GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID;
 use forward_system::run::query_processors::{
     EthereumBlockAccessListResponder, EthereumCLResponder, EthereumTargetBlockHeaderResponder,
     GenericPreimageResponder, UARTPrintResponder,
 };
 use forward_system::run::test_impl::InMemoryPreimageSource;
-use oracle_provider::{ReadWitnessSource, RunMode, ZkEENonDeterminismSource};
+use oracle_provider::{
+    respond_to_every_target, OracleQueryProcessor, ReadWitnessSource, RunMode,
+    ZkEENonDeterminismSource,
+};
 use rig::crypto::MiniDigest;
 use std::alloc::Global;
 use std::path::Path;
+use zk_ee::oracle::memory_io::host::{QuerierMemory, WriteQueryOutput};
 use zk_ee::utils::Bytes32;
+
+/// Serves the number of transactions of the block, which the check proves
+/// against the index tries (their nodes come from the preimage responder)
+#[derive(Clone, Debug)]
+pub struct TransactionCountResponder {
+    pub transaction_count: u32,
+}
+
+impl OracleQueryProcessor for TransactionCountResponder {
+    fn supported_memory_query_ids(&self) -> Vec<u32> {
+        vec![GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID]
+    }
+
+    fn process_memory_query(
+        &mut self,
+        query_id: u32,
+        _input_word: usize,
+        _memory: &dyn QuerierMemory,
+        mode: RunMode,
+        native_run_responses: &mut Vec<u32>,
+        guest_run_responses: &mut Vec<u32>,
+    ) {
+        assert_eq!(query_id, GLAMSTERDAM_TRANSACTION_COUNT_QUERY_ID);
+        let mut response = Vec::new();
+        self.transaction_count.write_output(&mut response);
+        respond_to_every_target(mode, response, native_run_responses, guest_run_responses);
+    }
+}
 
 /// The check does not account resources, so only a sanity bound on the gas limit applies
 const MAX_BLOCK_GAS_LIMIT: u64 = 1 << 32;
@@ -33,45 +66,50 @@ pub fn access_list_encoding(fixture: &GlamsterdamBlock) -> Vec<u8> {
 }
 
 /// The oracle of the state consistency check for a fixture: the target header,
-/// the parent headers of the witness, the witness preimages and the block
-/// access list.
-pub fn make_state_oracle(fixture: &GlamsterdamBlock, mode: RunMode) -> ZkEENonDeterminismSource {
-    let target_header =
-        Header::decode(&mut fixture.raw_header.as_ref()).expect("raw header must decode");
+/// the parent headers of the witness, the witness preimages, the nodes of the
+/// transactions and receipts tries (the check proves the transaction count
+/// against them) and the block access list.
+pub fn make_state_oracle(
+    fixture: &GlamsterdamBlock,
+    mode: RunMode,
+) -> anyhow::Result<ZkEENonDeterminismSource> {
+    let target_header = Header::decode(&mut fixture.raw_header.as_ref())?;
     let parents: Vec<(Header, Vec<u8>)> = fixture
         .witness
         .headers
         .iter()
-        .map(|raw| {
-            let header = Header::decode(&mut raw.as_ref()).expect("witness header must decode");
-            (header, raw.to_vec())
-        })
-        .collect();
+        .map(|raw| Ok((Header::decode(&mut raw.as_ref())?, raw.to_vec())))
+        .collect::<Result<_, alloy_rlp::Error>>()?;
+    let tries = crate::glamsterdam_range::IndexTries::of(fixture)?;
     let preimages = fixture
         .witness
         .state
         .iter()
         .chain(fixture.witness.codes.iter())
-        .map(|node| node.to_vec());
-    make_state_oracle_from_parts(
+        .map(|node| node.to_vec())
+        .chain(tries.nodes.values().cloned());
+    Ok(make_state_oracle_from_parts(
         (target_header, fixture.raw_header.to_vec()),
         parents,
         preimages,
         access_list_encoding(fixture),
         Vec::new(),
+        tries.transactions.len() as u32,
         mode,
-    )
+    ))
 }
 
 /// The oracle of the state consistency check from its parts: the target
 /// header with its encoding, the headers of the parent chain (any order), the
-/// witness preimages and the RLP of the block access list
+/// witness preimages (the index trie nodes among them), the RLP of the block
+/// access list, the withdrawals and the transaction count
 pub fn make_state_oracle_from_parts(
     (target_header, target_header_encoding): (Header, Vec<u8>),
     mut parents: Vec<(Header, Vec<u8>)>,
     preimages: impl IntoIterator<Item = Vec<u8>>,
     access_list_encoding: Vec<u8>,
     withdrawals_encoding: Vec<u8>,
+    transaction_count: u32,
     mode: RunMode,
 ) -> ZkEENonDeterminismSource {
     // depth 0 is the parent
@@ -107,6 +145,7 @@ pub fn make_state_oracle_from_parts(
     oracle.add_external_processor(EthereumBlockAccessListResponder {
         access_list_encoding,
     });
+    oracle.add_external_processor(TransactionCountResponder { transaction_count });
     oracle.add_external_processor(UARTPrintResponder);
     oracle
 }
@@ -124,7 +163,7 @@ pub fn run_state_consistency(
 pub fn run_state_consistency_recording(
     fixture: &GlamsterdamBlock,
 ) -> anyhow::Result<(StateConsistencyOutput<Global>, Vec<u32>)> {
-    let oracle = make_state_oracle(fixture, RunMode::NativeRunSavingForRiscV);
+    let oracle = make_state_oracle(fixture, RunMode::NativeRunSavingForRiscV)?;
     let mut source = ReadWitnessSource::new(oracle);
     let output = verify_state_consistency(
         &mut source,
@@ -204,7 +243,7 @@ pub fn run_on_simulator(path: &Path, app: &str) -> anyhow::Result<()> {
             .build()
             .context("failed to build the transpiler runner")?;
         let execution = runner
-            .run_with_source(make_state_oracle(&fixture, RunMode::RiscVRun))
+            .run_with_source(make_state_oracle(&fixture, RunMode::RiscVRun)?)
             .context("transpiler execution failed")?;
         anyhow::ensure!(execution.reached_end, "the program did not reach the end");
         // the program publishes the hash of its linkage output, with a clear access mask
@@ -257,7 +296,7 @@ pub fn flamegraph(
         .context("failed to build the transpiler runner")?;
     let start = std::time::Instant::now();
     let execution = runner
-        .run_with_source(make_state_oracle(&fixture, RunMode::RiscVRun))
+        .run_with_source(make_state_oracle(&fixture, RunMode::RiscVRun)?)
         .context("transpiler execution with profiling failed")?;
     anyhow::ensure!(execution.reached_end, "the program did not reach the end");
     let root: Vec<u8> = execution
@@ -334,12 +373,12 @@ mod tests {
     }
 
     /// A parent and child header pair whose fee fields are consistent
-    fn headers(
+    fn headers_with_gas_limit(
         parent_state_root: [u8; 32],
         state_root: [u8; 32],
         bal_hash: [u8; 32],
+        gas_limit: u64,
     ) -> (Header, Header) {
-        let gas_limit = 60_000_000;
         let parent = Header {
             parent_hash: B256::repeat_byte(0x11),
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
@@ -388,11 +427,20 @@ mod tests {
         post: &[Account],
         changes: Vec<AccountChanges>,
     ) -> Result<StateConsistencyOutput<Global>, GlamsterdamError> {
+        run_with_gas_limit(pre, post, changes, 60_000_000)
+    }
+
+    fn run_with_gas_limit(
+        pre: &[Account],
+        post: &[Account],
+        changes: Vec<AccountChanges>,
+        gas_limit: u64,
+    ) -> Result<StateConsistencyOutput<Global>, GlamsterdamError> {
         let (pre_root, store) = state_trie(pre);
         let (post_root, _) = state_trie(post);
         let mut bal = Vec::new();
         alloy_rlp::encode_list(&changes, &mut bal);
-        let (parent, header) = headers(pre_root, post_root, keccak(&bal));
+        let (parent, header) = headers_with_gas_limit(pre_root, post_root, keccak(&bal), gas_limit);
         let mut parent_encoding = Vec::new();
         parent.encode(&mut parent_encoding);
         let mut header_encoding = Vec::new();
@@ -403,6 +451,7 @@ mod tests {
             store.into_values(),
             bal,
             Vec::new(),
+            0,
             RunMode::NativeRunSavingForRiscV,
         );
         let mut source = ReadWitnessSource::new(oracle);
@@ -412,6 +461,40 @@ mod tests {
             MAX_BLOCK_GAS_LIMIT,
             Global,
         )
+    }
+
+    /// An access list with more accounts than the header's gas limit lets a block
+    /// touch is rejected before any table is allocated
+    #[test]
+    fn access_list_bounded_by_the_gas_limit() {
+        use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::{
+            max_accounts_in_block, SYSTEM_PHASE_ACCOUNTS,
+        };
+        // the minimum gas limit admits the system accounts and one more
+        let gas_limit = 5000;
+        assert_eq!(max_accounts_in_block(gas_limit), SYSTEM_PHASE_ACCOUNTS + 1);
+        let accounts: Vec<Account> = (1..=SYSTEM_PHASE_ACCOUNTS as u8 + 2)
+            .map(|i| Account {
+                address: Address::repeat_byte(i),
+                nonce: 1,
+                balance: U256::from(10u64),
+            })
+            .collect();
+        // every account reads its balance, nothing changes
+        let changes: Vec<AccountChanges> = accounts
+            .iter()
+            .map(|account| account_changes(account.address, vec![]))
+            .collect();
+        let result = run_with_gas_limit(&accounts, &accounts, changes.clone(), gas_limit);
+        assert!(
+            matches!(result, Err(GlamsterdamError::Capacity(_))),
+            "{:?}",
+            result.as_ref().err()
+        );
+        // one account fewer fits
+        let fewer: Vec<Account> = accounts[..accounts.len() - 1].to_vec();
+        let changes: Vec<AccountChanges> = changes[..changes.len() - 1].to_vec();
+        run_with_gas_limit(&fewer, &fewer, changes, gas_limit).expect("within the bound");
     }
 
     fn balance_change(index: u64, balance: U256) -> BalanceChange {

@@ -159,13 +159,19 @@ structured witness twice the size, so the RLP witness is the one used.
 
 #### Transaction ranges
 
-The second part of the Glamsterdam STF runs a range of block access indices (the
-pre-transaction system calls at index 0, the transactions, the post-transaction
-operations at index n+1) with the state the access list declares, checking every
+The second part of the Glamsterdam STF runs a range of transactions `start..end`
+(transaction numbers, half-open) with the state the access list declares, checking every
 transaction against its receipt and its state changes against the list (see
-`basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range`). The
-transactions run on the third-generation EVM interpreter (`evm_interpreter::v3`) with
-the two-dimensional gas of EIP-8037.
+`basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range`). A range
+starting at 0 also runs the pre-transaction system calls (access index 0), a range ending
+at the transaction count also runs the post-transaction operations (the withdrawals and
+the request system calls, access index n+1): the phases go with the first and the last
+transaction, so no range can cover the last transaction without them. The transaction
+count is a witness of the range program; the pre-execution check proves it against the
+transactions and receipts tries and the aggregation binds every range to it (every
+lookup in the tries also applies a density rule with that count, see
+`docs/ethereum_index_tries.md`). The transactions run on the third-generation EVM
+interpreter (`evm_interpreter::v3`) with the two-dimensional gas of EIP-8037.
 
 ```raw
 cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-range
@@ -173,10 +179,26 @@ cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-range
 
 runs every fixture as one whole-block range on the host; `--parts N` splits every block
 into N ranges of roughly equal cumulative gas (the receipts' running total) and
-aggregates their outputs (`tx_range::aggregation`): the ranges must tile the block, run
-on the pre-execution check's header and initial value tables (by hash), link their gas
-sums, and the union of the accounts and slots they accessed must be the whole access
-list, so that a list with entries nothing accessed is rejected (also the
+aggregates their outputs (`tx_range::aggregation`): the ranges must tile the block's
+transactions in order with the proven count, run on the pre-execution check's header and
+initial value tables (by hash), link their gas sums, the union of the accounts and slots
+they accessed must be the whole access list, so that a list with entries nothing
+accessed is rejected. The header's requests hash is checked by the last range itself.
+Of the request types only the EIP-6110 deposit requests come out of the logs (the
+withdrawal, consolidation and builder requests are dequeued from their system contracts'
+storage by the post-transaction system calls, which that range runs), so their hashing is
+carried across the ranges as a sha256 state (`tx_range::requests::Sha256Accumulator`,
+the hasher's words and buffer as 104 bytes): a range witnesses the state after the
+transactions before it (unverified, like its start gas; the first range starts from the
+state after the type byte), absorbs the deposit events of its own transactions once they
+ran, and publishes both states. The last range finishes the hash, adds the system
+request hashes and compares with the header. The programs' public outputs
+(`linkage::ProgramOutput`) carry the transaction count, the transaction marks
+`tx_start_mark..tx_end_mark` (`0..count` for the pre-execution check) and the two hasher
+states (all zero for the pre-execution check), so the aggregation program sees that the
+states chain from the head through every range and that the range ending the block, the
+one that checked the requests hash, is the last one. The deposit contract is a chain
+parameter (`deposit_contract_address(chain_id)`: mainnet, Sepolia, Holesky) (also the
 `whole_block_ranges_run_the_fixtures`, `split_ranges_agree_with_the_whole_block` and
 `subranges_aggregate_to_the_block` tests).
 
@@ -190,12 +212,17 @@ tables of the one native pre-execution run and all outputs are aggregated.
 is its long-running form over live Sepolia: it fetches every finalized block as it comes
 into `glamsterdam_follow/<block>/`, checks it, and keeps going. A failing or panicking
 block does not stop it: its fixture is kept with `failure.txt`, `initial_values.bin` and
-`ranges.txt` next to it for a replay, and its number goes to `diverging_blocks.txt`; the
+`ranges.txt` (one `start..end` transaction range per line) next to it for a replay, and
+its number goes to `diverging_blocks.txt`; the
 cycles and gas of every block and range are appended to `blocks.csv` and `ranges.csv`
-in the work directory. Both commands print one line per stage of every block (fetch,
-native run and simulator run of the pre-execution check and of each range, with the
-cycles, the recorded words and the timings, then the aggregation) and a summary line per
-block, so a run is followed from its log:
+in the work directory, with what the block exercised (blob and set-code transactions,
+creations, withdrawals, deposit requests, the non-empty system request types) as the
+last columns of `blocks.csv`. Both commands print one line per stage of every block
+(fetch, native run and simulator run of the pre-execution check and of each range, with
+the cycles, the recorded words and the timings, then the aggregation), a `features:` line
+and a summary line per block, and the follower's `progress:` line carries the running
+coverage (how many blocks had blobs, deposit requests, each request type, ...), so a run
+is followed from its log:
 
 ```bash
 cargo run -p eth_runner --release --features rig/no_print -- glamsterdam-follow --endpoint "$GLAMSTERDAM_ENDPOINT" --parts 3 2>&1 | tee glamsterdam_follow.log

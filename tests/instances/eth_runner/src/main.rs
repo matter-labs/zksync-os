@@ -624,6 +624,7 @@ fn main() -> anyhow::Result<()> {
                 summary.failed,
                 work_dir.display()
             );
+            println!("{}", summary.coverage.line());
             if summary.failed.is_empty() {
                 Ok(())
             } else {

@@ -1,30 +1,35 @@
-//! The block flow of a transaction range: the pre-transaction op witnesses the
-//! transaction count and the block's gas at the start of the range and runs
-//! the system calls of index 0 when the range covers it; the loop op runs the
-//! transactions of the range, each from its transactions trie leaf, checking
-//! its receipt and its state changes against the block access list; the
-//! post-transaction op runs the withdrawals and the request system calls of
-//! index `n + 1` (EIP-7002, EIP-7251 and the EIP-8282 builder requests) when
-//! the range covers it, and reports what the range established
-//! ([`GlamsterdamRangeOutput`]).
+//! The block flow of a transaction range `start..end` (see
+//! `witness::TransactionRange`): the pre-transaction op witnesses the block's
+//! gas at the start of the range and runs the system calls of the
+//! pre-transaction phase when the range starts at transaction 0; the loop op
+//! runs the transactions of the range, each from its transactions trie leaf,
+//! checking its receipt and its state changes against the block access list;
+//! the post-transaction op runs the withdrawals and the request system calls
+//! (EIP-7002, EIP-7251 and the EIP-8282 builder requests) when the range ends
+//! at the transaction count, carries the hashing of the deposit requests
+//! across the ranges (a sha256 state witnessed at the start, the range's
+//! deposit events absorbed after its transactions; see `requests`), checks
+//! the header's requests hash in the range that ends the block, and reports
+//! what the range established ([`GlamsterdamRangeOutput`]).
 //!
 //! A range that is the whole block checks the header's gas used, bloom and
-//! requests hash itself; partial ranges leave those to the aggregation of
-//! their outputs (see `aggregation`).
+//! blob gas itself; partial ranges leave those to the aggregation of their
+//! outputs (see `aggregation`).
 
 use super::index_trie;
 use super::io::GlamsterdamIO;
 use super::metadata_op::GlamsterdamBlockMetadata;
 use super::receipt::ReceiptReflection;
+use super::requests::{
+    witness_deposit_requests_hasher, RangeRequests, Sha256Accumulator, SystemRequests,
+};
 use super::storage_policy::GlamsterdamStorageAccessCostModel;
 use super::witness::{
-    witness_transaction_count, BlockAccessIndexRange, InitialValues, RangeStartGas,
-    RangeStartGasQuery,
+    BlockAccessIndexRange, InitialValues, RangeStartGas, RangeStartGasQuery, TransactionRange,
 };
 use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
 use crate::bootloader::block_flow::ethereum::block_header::PectraForkHeader;
 use crate::bootloader::block_flow::ethereum::eip_4788_historical_beacon_root::eip4788_system_part;
-use crate::bootloader::block_flow::ethereum::eip_6110_deposit_events_parser::eip6110_events_parser;
 use crate::bootloader::block_flow::ethereum::eip_7002_withdrawal_contract::eip7002_system_part;
 use crate::bootloader::block_flow::ethereum::eip_7251_consolidation_contract::eip7251_system_part;
 use crate::bootloader::block_flow::ethereum::oracle_queries::{
@@ -86,6 +91,7 @@ const TRIE_NODES_CAPACITY: usize = 1 << 24;
 /// What the loop carries between the ops
 pub struct GlamsterdamRangeData<A: Allocator + 'static> {
     pub keeper: GlamsterdamTransactionDataKeeper,
+    /// The number of transactions of the block, as witnessed
     pub transaction_count: u32,
     /// The block's gas at the start of the range, as witnessed
     pub start_gas: RangeStartGas,
@@ -100,7 +106,13 @@ pub struct GlamsterdamRangeData<A: Allocator + 'static> {
 /// (see `aggregation`)
 pub struct GlamsterdamRangeOutput<A: Allocator> {
     pub header_hash: Bytes32,
+    /// The transaction range, as witnessed
+    pub transactions: TransactionRange,
+    /// The block access indices the range covered (from `transactions` and
+    /// `transaction_count`)
     pub range: BlockAccessIndexRange,
+    /// The number of transactions of the block, as witnessed, unverified: the
+    /// aggregation requires the pre-execution check's
     pub transaction_count: u32,
     /// The block's gas at the start of the range as witnessed, unverified (zero
     /// for a range starting at the first transaction or before it): the
@@ -114,6 +126,10 @@ pub struct GlamsterdamRangeOutput<A: Allocator> {
     pub block_blob_gas_used: u64,
     /// The bloom of the logs of the range
     pub bloom: LogsBloom,
+    /// The deposit request hashing states the range started from and ended
+    /// with and, for the range that ran the post-transaction phase, the
+    /// system requests
+    pub requests: RangeRequests,
     /// The initial value tables the range ran on, with their hashes as
     /// witnessed: the aggregation requires the pre-execution check's
     pub initial_values: InitialValues<A>,
@@ -139,6 +155,7 @@ impl<A: Allocator> core::fmt::Debug for GlamsterdamRangeOutput<A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("GlamsterdamRangeOutput")
             .field("header_hash", &self.header_hash)
+            .field("transactions", &self.transactions)
             .field("range", &self.range)
             .field("transaction_count", &self.transaction_count)
             .field("start_gas", &self.start_gas)
@@ -146,6 +163,8 @@ impl<A: Allocator> core::fmt::Debug for GlamsterdamRangeOutput<A> {
             .field("block_execution_gas_used", &self.block_execution_gas_used)
             .field("block_state_gas_used", &self.block_state_gas_used)
             .field("block_blob_gas_used", &self.block_blob_gas_used)
+            .field("deposit_requests", &self.requests.deposit_requests())
+            .field("system_requests", &self.requests.system)
             .field("initial_values_hashes", &self.initial_values.hashes)
             .field("accessed", &self.accessed)
             .finish_non_exhaustive()
@@ -162,19 +181,21 @@ fn glamsterdam_error(e: GlamsterdamError) -> BootloaderSubsystemError {
     internal_error!("glamsterdam range check failed").into()
 }
 
-/// The leaf of an index trie, which must be present
+/// The leaf of an index trie, which must be present; the path is checked
+/// against the trie of `count` items (see `index_trie`)
 fn leaf<'a, A: Allocator + 'static>(
     oracle: &mut impl IOOracle,
     nodes: &mut BoxInterner<A>,
     root: &Bytes32,
     index: u32,
+    count: u32,
 ) -> Result<&'a [u8], BootloaderSubsystemError>
 where
     BoxInterner<A>: 'a,
 {
     let mut preimages = MptPreimagesOracle(oracle);
     let mut hasher = Keccak256::new();
-    index_trie::lookup(root, index, &mut preimages, nodes, &mut hasher)
+    index_trie::lookup(root, index, count, &mut preimages, nodes, &mut hasher)
         .map_err(glamsterdam_error)?
         .ok_or_else(|| internal_error!("an index trie leaf of the range is missing").into())
 }
@@ -215,14 +236,24 @@ where
         if system.io.storage.access_list_hash != header.block_access_list_hash {
             return Err(internal_error!("the block access list is not the header's").into());
         }
-        let transaction_count =
-            witness_transaction_count(system.io.oracle(), &transactions_root, allocator.clone())
-                .map_err(glamsterdam_error)?;
+        // the count is the witnessed one; the IO derived the access index range from it
+        let transaction_count = system.io.transaction_count();
+        let transactions = system.io.transactions();
         let range = system.io.range();
-        if range.last > transaction_count + 1 {
-            return Err(internal_error!("the range ends after the block").into());
+        // checked when the IO witnessed it; checked again here, where the range runs
+        transactions
+            .check(transaction_count)
+            .map_err(glamsterdam_error)?;
+        if transactions.is_empty() && transaction_count != 0 {
+            return Err(internal_error!("an empty transaction range inside the block").into());
         }
-        // a change beyond the last index would escape every range
+        if BlockAccessIndexRange::of(transactions, transaction_count).map_err(glamsterdam_error)?
+            != range
+        {
+            return Err(internal_error!("the access index range is not the transactions'").into());
+        }
+        // a change beyond the last index would escape every range (the
+        // pre-execution check rejects it too, against the proven count)
         if system.io.storage.max_access_index() > transaction_count + 1 {
             return Err(internal_error!("the access list changes state after the block").into());
         }
@@ -233,11 +264,17 @@ where
         ));
 
         // the block's gas at the start of the range
-        let (cumulative_gas_used, start) = if range.first <= 1 {
+        let (cumulative_gas_used, start) = if transactions.start == 0 {
             (0, Default::default())
         } else {
             // the receipt of the transaction before the range carries the cumulative gas
-            let receipt = leaf(system.io.oracle(), nodes, &receipts_root, range.first - 2)?;
+            let receipt = leaf(
+                system.io.oracle(),
+                nodes,
+                &receipts_root,
+                transactions.start - 1,
+                transaction_count,
+            )?;
             let receipt = ReceiptReflection::parse(receipt).map_err(glamsterdam_error)?;
             let start = RangeStartGasQuery::get(system.io.oracle(), ())?;
             (receipt.cumulative_gas_used, start)
@@ -251,7 +288,8 @@ where
             LogsBloom::default(),
         );
 
-        if range.includes_pre_transactions() {
+        if transactions.includes_pre_transactions() {
+            debug_assert_eq!(range.first, 0);
             system.io.begin_access_index(0)?;
             eip4788_system_part(system, &parent_beacon_block_root)?;
             eip2935_system_part(system)?;
@@ -300,15 +338,16 @@ where
         validator: &mut impl TxValidator<S>,
     ) -> Result<(), BootloaderSubsystemError> {
         cycle_marker::start!("run_tx_loop");
-        let range = system.io.range();
+        let transactions = system.io.transactions();
         let transactions_root = data.transactions_root;
-        for index in range.transactions(data.transaction_count) {
+        let count = data.transaction_count;
+        for index in transactions.transactions() {
             system.io.begin_access_index(index + 1)?;
 
             let nodes = &mut *data.nodes;
             let next = system.try_begin_next_static_tx(
                 |io| -> Result<Option<(u32, &'static [u8])>, BootloaderSubsystemError> {
-                    let bytes = leaf(io.oracle(), nodes, &transactions_root, index)?;
+                    let bytes = leaf(io.oracle(), nodes, &transactions_root, index, count)?;
                     Ok(Some((index, bytes)))
                 },
             );
@@ -406,7 +445,13 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     let receipts_root = data.receipts_root;
-    let encoded = leaf(system.io.oracle(), data.nodes, &receipts_root, index)?;
+    let encoded = leaf(
+        system.io.oracle(),
+        data.nodes,
+        &receipts_root,
+        index,
+        data.transaction_count,
+    )?;
     let receipt = ReceiptReflection::parse(encoded).map_err(glamsterdam_error)?;
     let Some((status, cumulative_gas_used, num_events, bloom)) = data.keeper.last_receipt.take()
     else {
@@ -484,12 +529,22 @@ where
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         let range = system.io.range();
+        let transactions = system.io.transactions();
         let count = data.transaction_count;
-        let whole_block =
-            range.includes_pre_transactions() && range.includes_post_transactions(count);
+        let whole_block = transactions.includes_pre_transactions()
+            && transactions.includes_post_transactions(count);
 
-        let mut requests_hash = None;
-        if range.includes_post_transactions(count) {
+        // the deposit request hashing: from the head for the first range, from the
+        // witnessed state after the previous ranges otherwise
+        let hasher_start = if transactions.includes_pre_transactions() {
+            Sha256Accumulator::deposit_requests_head()
+        } else {
+            witness_deposit_requests_hasher(system.io.oracle()).map_err(glamsterdam_error)?
+        };
+
+        let mut system_requests = None;
+        if transactions.includes_post_transactions(count) {
+            debug_assert_eq!(range.last, count + 1);
             system.io.begin_access_index(count + 1)?;
             let handle = system.start_global_frame()?;
 
@@ -516,31 +571,51 @@ where
                 return Err(internal_error!("withdrawals root diverged").into());
             }
 
+            // the system request types in order (the deposit requests, type 0,
+            // are hashed from the logs below): the hash of every non-empty one
             use crypto::sha256::Digest;
-            let mut requests_hasher = crypto::sha256::Sha256::new();
-            let mut intermediate_hasher = crypto::sha256::Sha256::new();
-            // the deposit requests are the whole block's logs: only a whole-block range sees them
-            if whole_block && eip6110_events_parser(&system, &mut intermediate_hasher)? {
-                requests_hasher.update(intermediate_hasher.finalize_reset());
+            let mut requests = SystemRequests::default();
+            let mut hasher = crypto::sha256::Sha256::new();
+            let push = |requests: &mut SystemRequests,
+                        request_type: u8,
+                        hasher: &mut crypto::sha256::Sha256|
+             -> Result<(), BootloaderSubsystemError> {
+                requests
+                    .push(
+                        request_type,
+                        Bytes32::from_array(hasher.finalize_reset().into()),
+                    )
+                    .map_err(glamsterdam_error)
+            };
+            // EIP-7002 withdrawal and EIP-7251 consolidation requests, types 1 and 2
+            if eip7002_system_part(&mut system, &mut hasher)? {
+                push(&mut requests, 1, &mut hasher)?;
             }
-            if eip7002_system_part(&mut system, &mut intermediate_hasher)? {
-                requests_hasher.update(intermediate_hasher.finalize_reset());
-            }
-            if eip7251_system_part(&mut system, &mut intermediate_hasher)? {
-                requests_hasher.update(intermediate_hasher.finalize_reset());
+            if eip7251_system_part(&mut system, &mut hasher)? {
+                push(&mut requests, 2, &mut hasher)?;
             }
             // EIP-8282: the builder deposit and exit requests, types 3 and 4
-            if eip8282_builder_deposits_system_part(&mut system, &mut intermediate_hasher)? {
-                requests_hasher.update(intermediate_hasher.finalize_reset());
+            if eip8282_builder_deposits_system_part(&mut system, &mut hasher)? {
+                push(&mut requests, 3, &mut hasher)?;
             }
-            if eip8282_builder_exits_system_part(&mut system, &mut intermediate_hasher)? {
-                requests_hasher.update(intermediate_hasher.finalize_reset());
+            if eip8282_builder_exits_system_part(&mut system, &mut hasher)? {
+                push(&mut requests, 4, &mut hasher)?;
             }
-            requests_hash = Some(Bytes32::from_array(requests_hasher.finalize().into()));
+            system_requests = Some(requests);
 
             system.finish_global_frame(None)?;
             drop(handle);
             system.io.finish_access_index()?;
+        }
+
+        // the deposit requests of the range's transactions, absorbed after they ran;
+        // the range that ends the block finishes the requests hash
+        let requests = RangeRequests::collect(&system, hasher_start, system_requests)
+            .map_err(glamsterdam_error)?;
+        if let Some(requests_hash) = requests.block_requests_hash() {
+            if requests_hash != system.metadata.block_level.header.base.requests_hash {
+                return Err(internal_error!("requests hash diverged").into());
+            }
         }
 
         let header: &PectraForkHeader = &system.metadata.block_level.header.base;
@@ -558,9 +633,6 @@ where
             }
             if data.keeper.block_bloom != header.logs_bloom {
                 return Err(internal_error!("block bloom diverged").into());
-            }
-            if requests_hash != Some(header.requests_hash) {
-                return Err(internal_error!("requests hash diverged").into());
             }
             if data.keeper.block_blob_gas_used != header.blob_gas_used {
                 return Err(internal_error!("blob gas used diverged").into());
@@ -587,6 +659,7 @@ where
 
         let output = GlamsterdamRangeOutput {
             header_hash,
+            transactions,
             range,
             transaction_count: count,
             start_gas: data.start_gas,
@@ -595,6 +668,7 @@ where
             block_state_gas_used: data.keeper.block_state_gas_used,
             block_blob_gas_used: data.keeper.block_blob_gas_used,
             bloom: data.keeper.block_bloom,
+            requests,
             initial_values: storage.initial,
             accessed,
         };

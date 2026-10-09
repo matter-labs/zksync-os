@@ -9,7 +9,7 @@
 
 use crate::glamsterdam::{fetch_one, finalized_block_number, GlamsterdamBlock};
 use crate::glamsterdam_range::{
-    aggregate, run_range_recording, split_by_gas, IndexTries, InitialValueTables,
+    aggregate, run_range_recording, split_by_gas, IndexTries, InitialValueTables, RangeStart,
 };
 use crate::glamsterdam_state::run_state_consistency_recording;
 use airbender_host::raw::QuasiUARTSource;
@@ -17,7 +17,7 @@ use airbender_host::Program;
 use anyhow::Context;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::linkage::ProgramOutput;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::block_flow::GlamsterdamRangeOutput;
-use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::witness::BlockAccessIndexRange;
+use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::witness::TransactionRange;
 use std::alloc::Global;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -61,16 +61,166 @@ fn simulate(program: &Program, words: Vec<u32>) -> anyhow::Result<([u32; 8], u64
     Ok((execution.receipt.output, execution.cycles_executed as u64))
 }
 
+/// What a block exercises: logged per block and counted over a run, so that
+/// a run says which parts of the protocol it covered
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlockFeatures {
+    /// EIP-4844 blob transactions and the header's blob gas
+    pub blob_txs: usize,
+    pub blob_gas_used: u64,
+    /// EIP-7702 set-code transactions
+    pub set_code_txs: usize,
+    /// Contract creation transactions
+    pub creates: usize,
+    /// Consensus layer withdrawals of the body
+    pub withdrawals: usize,
+    /// EIP-6110 deposit requests over the ranges
+    pub deposit_requests: usize,
+    /// The non-empty system request types (1 withdrawal, 2 consolidation,
+    /// 3 builder deposit, 4 builder exit), as the last range hashed them
+    pub request_types: Vec<u8>,
+}
+
+impl BlockFeatures {
+    pub fn of(fixture: &GlamsterdamBlock, outputs: &[GlamsterdamRangeOutput<Global>]) -> Self {
+        use alloy::consensus::Transaction as _;
+        use alloy::consensus::Typed2718 as _;
+        let transactions = fixture.block.transactions.clone().into_transactions_vec();
+        let count = |ty: u8| transactions.iter().filter(|tx| tx.inner.ty() == ty).count();
+        Self {
+            blob_txs: count(3),
+            blob_gas_used: fixture.block.header.inner.blob_gas_used.unwrap_or(0),
+            set_code_txs: count(4),
+            creates: transactions
+                .iter()
+                .filter(|tx| tx.inner.kind().is_create())
+                .count(),
+            withdrawals: fixture
+                .block
+                .withdrawals
+                .as_ref()
+                .map_or(0, |withdrawals| withdrawals.len()),
+            deposit_requests: outputs
+                .iter()
+                .map(|output| output.requests.deposit_requests() as usize)
+                .sum(),
+            request_types: outputs
+                .last()
+                .and_then(|output| output.requests.system.as_ref())
+                .map_or(Vec::new(), |system| system.types().to_vec()),
+        }
+    }
+
+    fn request_type_name(request_type: u8) -> &'static str {
+        match request_type {
+            1 => "withdrawal",
+            2 => "consolidation",
+            3 => "builder-deposit",
+            4 => "builder-exit",
+            _ => "unknown",
+        }
+    }
+
+    /// One line, human-readable
+    pub fn line(&self) -> String {
+        let requests = if self.request_types.is_empty() {
+            "none".to_string()
+        } else {
+            self.request_types
+                .iter()
+                .map(|t| Self::request_type_name(*t))
+                .collect::<Vec<_>>()
+                .join("+")
+        };
+        format!(
+            "blob txs {} ({} blob gas), set-code txs {}, creates {}, withdrawals {}, deposit requests {}, system requests {requests}",
+            self.blob_txs,
+            self.blob_gas_used,
+            self.set_code_txs,
+            self.creates,
+            self.withdrawals,
+            self.deposit_requests
+        )
+    }
+
+    pub const CSV_HEADER: &'static str =
+        "blob_txs,blob_gas_used,set_code_txs,creates,withdrawals,deposit_requests,request_types";
+
+    /// The CSV columns of `CSV_HEADER`
+    pub fn csv(&self) -> String {
+        format!(
+            "{},{},{},{},{},{},{}",
+            self.blob_txs,
+            self.blob_gas_used,
+            self.set_code_txs,
+            self.creates,
+            self.withdrawals,
+            self.deposit_requests,
+            self.request_types
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join("+")
+        )
+    }
+}
+
+/// How many blocks of a run exercised each feature
+#[derive(Debug, Default)]
+pub struct FeatureCounts {
+    pub blocks: usize,
+    pub with_blobs: usize,
+    pub with_set_code: usize,
+    pub with_creates: usize,
+    pub with_withdrawals: usize,
+    pub with_deposit_requests: usize,
+    /// By request type 1..=4
+    pub with_request_type: [usize; 5],
+}
+
+impl FeatureCounts {
+    pub fn add(&mut self, features: &BlockFeatures) {
+        self.blocks += 1;
+        self.with_blobs += (features.blob_txs > 0) as usize;
+        self.with_set_code += (features.set_code_txs > 0) as usize;
+        self.with_creates += (features.creates > 0) as usize;
+        self.with_withdrawals += (features.withdrawals > 0) as usize;
+        self.with_deposit_requests += (features.deposit_requests > 0) as usize;
+        for request_type in &features.request_types {
+            if let Some(slot) = self.with_request_type.get_mut(*request_type as usize) {
+                *slot += 1;
+            }
+        }
+    }
+
+    pub fn line(&self) -> String {
+        format!(
+            "coverage over {} block(s): blobs {}, set-code {}, creates {}, withdrawals {}, deposit requests {}, withdrawal requests {}, consolidation requests {}, builder deposit requests {}, builder exit requests {}",
+            self.blocks,
+            self.with_blobs,
+            self.with_set_code,
+            self.with_creates,
+            self.with_withdrawals,
+            self.with_deposit_requests,
+            self.with_request_type[1],
+            self.with_request_type[2],
+            self.with_request_type[3],
+            self.with_request_type[4],
+        )
+    }
+}
+
 /// What the check of a block established
 #[derive(Debug)]
 pub struct BlockReport {
     pub number: u64,
     pub gas_used: u64,
     pub transactions: usize,
+    pub features: BlockFeatures,
     pub pre_execution_cycles: u64,
     pub pre_execution_words: usize,
-    /// Per range: the range, the simulator cycles, the recorded words
-    pub ranges: Vec<(BlockAccessIndexRange, u64, usize)>,
+    /// Per range: the transaction range, the simulator cycles, the recorded words
+    pub ranges: Vec<(TransactionRange, u64, usize)>,
     pub elapsed: Duration,
 }
 
@@ -158,7 +308,7 @@ pub fn check_block(
         tables.write(&dir.join(INITIAL_VALUES_FILE))?;
         let listed: Vec<String> = ranges
             .iter()
-            .map(|range| format!("{}..={}", range.first, range.last))
+            .map(|range| format!("{}..{}", range.start, range.end))
             .collect();
         std::fs::write(dir.join(RANGES_FILE), listed.join("\n") + "\n")?;
     }
@@ -166,18 +316,15 @@ pub fn check_block(
     let mut range_reports = Vec::with_capacity(ranges.len());
     let count = ranges.len();
     for (i, range) in ranges.into_iter().enumerate() {
-        let label = format!("range {}/{count} ({}..={})", i + 1, range.first, range.last);
-        let start = outputs
-            .last()
-            .map(|previous| previous.end_gas())
-            .unwrap_or_default();
+        let label = format!("range {}/{count} ({}..{})", i + 1, range.start, range.end);
+        let start = RangeStart::after(&outputs);
         let step = Instant::now();
-        let (output, words) = run_range_recording(fixture, &tries, &tables, range, start)
+        let (output, words) = run_range_recording(fixture, &tries, &tables, range, &start)
             .with_context(|| format!("block {number}: native range {range:?}"))?;
         println!(
             "[block {number}] {label}: native run OK in {:.1}s, {} transactions, {} words recorded, accessed {}/{} records",
             step.elapsed().as_secs_f64(),
-            range.transactions(output.transaction_count).len(),
+            range.len(),
             words.len(),
             output.accessed.count_ones(),
             output.accessed.len()
@@ -200,11 +347,14 @@ pub fn check_block(
     }
     aggregate(&state, &outputs).with_context(|| format!("block {number}: aggregation"))?;
     println!("[block {number}] aggregation OK: the ranges cover the access list and link to the pre-execution check");
+    let features = BlockFeatures::of(fixture, &outputs);
+    println!("[block {number}] features: {}", features.line());
 
     Ok(BlockReport {
         number,
         gas_used: fixture.block.header.inner.gas_used,
         transactions: tries.transactions.len(),
+        features,
         pre_execution_cycles,
         pre_execution_words,
         ranges: range_reports,
@@ -250,6 +400,7 @@ pub struct FollowSummary {
     pub reports: Vec<BlockReport>,
     /// The blocks whose check failed or panicked (their fixtures are kept)
     pub failed: Vec<u64>,
+    pub coverage: FeatureCounts,
 }
 
 /// Appends a line to a file in the work directory, writing the header first
@@ -275,9 +426,12 @@ fn record_report(work_dir: &Path, report: &BlockReport) -> anyhow::Result<()> {
     append_line(
         work_dir,
         BLOCKS_CSV,
-        "block,gas_used,transactions,parts,pre_execution_cycles,pre_execution_words,range_cycles,total_cycles,cycles_per_gas,seconds",
         &format!(
-            "{},{},{},{},{},{},{},{},{:.3},{:.1}",
+            "block,gas_used,transactions,parts,pre_execution_cycles,pre_execution_words,range_cycles,total_cycles,cycles_per_gas,seconds,{}",
+            BlockFeatures::CSV_HEADER
+        ),
+        &format!(
+            "{},{},{},{},{},{},{},{},{:.3},{:.1},{}",
             report.number,
             report.gas_used,
             report.transactions,
@@ -288,16 +442,17 @@ fn record_report(work_dir: &Path, report: &BlockReport) -> anyhow::Result<()> {
             report.total_cycles(),
             report.total_cycles() as f64 / report.gas_used.max(1) as f64,
             report.elapsed.as_secs_f64(),
+            report.features.csv(),
         ),
     )?;
     for (range, cycles, words) in &report.ranges {
         append_line(
             work_dir,
             RANGES_CSV,
-            "block,first_index,last_index,cycles,words",
+            "block,start_tx,end_tx,cycles,words",
             &format!(
                 "{},{},{},{},{}",
-                report.number, range.first, range.last, cycles, words
+                report.number, range.start, range.end, cycles, words
             ),
         )?;
     }
@@ -431,10 +586,12 @@ pub fn follow(
         match outcome {
             Ok(Ok(report)) => {
                 println!("{}", report.line());
+                summary.coverage.add(&report.features);
                 println!(
-                    "progress: {} block(s) OK, {} diverging",
+                    "progress: {} block(s) OK, {} diverging; {}",
                     summary.reports.len() + 1,
-                    summary.failed.len()
+                    summary.failed.len(),
+                    summary.coverage.line()
                 );
                 record_report(work_dir, &report)?;
                 if !keep {

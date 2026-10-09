@@ -9,11 +9,16 @@
 //! by their trie keys anyway.
 //!
 //! Capacities are fixed: the proving-mode allocator forbids reallocation, so
-//! every table is allocated once at full size. They are sized from the block
-//! gas limit: at 60M gas a block can touch at most ~32k distinct slots (an
-//! access-list slot costs 1900 gas) and ~25k distinct accounts, so 2^16
-//! entries leave a 2x margin. Running out of room is an internal error, which
-//! fails the block instead of corrupting the caches.
+//! every table is allocated once at full size (`Interner::new_in` reserves the
+//! hash table for its maximum number of keys, so it never rehashes). The
+//! Pectra flow sizes them from the block gas limit: at 60M gas a block can
+//! touch at most ~32k distinct slots (an access-list slot costs 1900 gas) and
+//! ~25k distinct accounts, so 2^16 entries leave a 2x margin. The Glamsterdam
+//! flow sizes them to the exact counts of the block access list, which it
+//! bounds by the header's gas limit first (about 66.6k accounts and 95.1k
+//! slots at 200M gas under EIP-8038, see
+//! `ethereum_glamsterdam::max_accounts_in_block`). Running out of room is an
+//! internal error, which fails the block instead of corrupting the caches.
 
 use alloc::vec::Vec;
 use core::alloc::Allocator;

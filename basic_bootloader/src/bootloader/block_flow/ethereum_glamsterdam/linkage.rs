@@ -1,18 +1,28 @@
 //! The linkage between the programs of a Glamsterdam block: the pre-execution
 //! check and the transaction ranges each publish the hash of one
 //! [`ProgramOutput`], a plain dense structure, as their public output. The
-//! fields that identify the block and the initial value tables must agree
-//! across the programs; `bal_mask` commits to the accounts and slots of the
-//! block access list a program accessed (all clear for the pre-execution
-//! check, which executes nothing), and `num_unique_bal_records` is the length
-//! of that mask. An aggregation program ([`LinkageAggregation`]) takes the
-//! outputs' preimages and the masks' preimages, checks them against the public
-//! outputs, requires the shared fields to agree and the union of the masks to
-//! be full: every record of the access list is accessed somewhere in the block.
+//! fields that identify the block, the initial value tables and the
+//! transaction count must agree across the programs; `bal_mask` commits to
+//! the accounts and slots of the block access list a program accessed (all
+//! clear for the pre-execution check, which executes nothing), and
+//! `num_unique_bal_records` is the length of that mask; `tx_start_mark` and
+//! `tx_end_mark` are the transaction range a program covered (the whole
+//! block for the pre-execution check); `deposit_requests_hasher_start` and
+//! `deposit_requests_hasher_end` are the sha256 states of the deposit request
+//! hashing a range started from and ended with (`tx_range::requests`), all
+//! zero for the pre-execution check. An aggregation program
+//! ([`LinkageAggregation`]) takes the outputs' preimages and the masks'
+//! preimages, checks them against the public outputs, requires the shared
+//! fields to agree, the ranges to tile the block's transactions in order (so
+//! that the range ending at the transaction count, which checked the
+//! header's requests hash, is the last one), the hasher states to chain from
+//! the head through every range, and the union of the masks to be full:
+//! every record of the access list is accessed somewhere in the block.
 
 use super::index_mask::IndexMask;
 use super::state_consistency::StateConsistencyOutput;
 use super::tx_range::block_flow::GlamsterdamRangeOutput;
+use super::tx_range::requests::{Sha256Accumulator, SHA256_ACCUMULATOR_LEN};
 use super::GlamsterdamError;
 use core::alloc::Allocator;
 use crypto::sha3::Keccak256;
@@ -25,7 +35,7 @@ type Result<T> = core::result::Result<T, GlamsterdamError>;
 /// (asserted below): the hash is taken over the structure's own bytes, the
 /// count little-endian, as [`ProgramOutput::as_bytes`] exposes them.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProgramOutput {
     /// The header hash
     pub block_hash: [u8; 32],
@@ -39,16 +49,31 @@ pub struct ProgramOutput {
     /// (the accounts by address index, then the slots by position). A pure
     /// marker for the pre-execution check, which accesses nothing: all zero.
     pub bal_mask: [u8; 32],
+    /// The sha256 state of the deposit request hashing (EIP-6110 over the
+    /// block's logs, EIP-7685 type 0) a range started from and ended with:
+    /// the hasher's words and buffer as bytes (`Sha256Accumulator`). All
+    /// zero for the pre-execution check, which hashes nothing.
+    pub deposit_requests_hasher_start: [u8; SHA256_ACCUMULATOR_LEN],
+    pub deposit_requests_hasher_end: [u8; SHA256_ACCUMULATOR_LEN],
     /// The number of records of the access list (accounts and slots): the
-    /// length of a range's mask, the one field the consistency of the programs
-    /// is checked on besides the hashes
+    /// length of a range's mask
     pub num_unique_bal_records: u32,
+    /// The number of transactions of the block: proven by the pre-execution
+    /// check, witnessed by a range, which runs with it (the post-transaction
+    /// phase and the index trie checks depend on it)
+    pub tx_count: u32,
+    /// The transactions the program covered, `tx_start_mark..tx_end_mark`:
+    /// `0..tx_count` for the pre-execution check; for a range, its
+    /// transaction range, which runs the pre-transaction phase when it starts
+    /// at 0 and the post-transaction phase when it ends at `tx_count`
+    pub tx_start_mark: u32,
+    pub tx_end_mark: u32,
 }
 
 /// The length of the structure, which is its own encoding
-pub const ENCODING_LEN: usize = 5 * 32 + 4;
+pub const ENCODING_LEN: usize = 5 * 32 + 2 * SHA256_ACCUMULATOR_LEN + 4 * 4;
 
-// Dense: the five byte arrays are 1-aligned and the count sits right after
+// Dense: the seven byte arrays are 1-aligned and the counts sit right after
 // them, so there is no padding anywhere and every byte is initialized.
 const _: () = {
     assert!(core::mem::size_of::<ProgramOutput>() == ENCODING_LEN);
@@ -58,10 +83,33 @@ const _: () = {
     assert!(core::mem::offset_of!(ProgramOutput, initial_slots) == 64);
     assert!(core::mem::offset_of!(ProgramOutput, fresh_accounts_mask) == 96);
     assert!(core::mem::offset_of!(ProgramOutput, bal_mask) == 128);
-    assert!(core::mem::offset_of!(ProgramOutput, num_unique_bal_records) == 160);
-    // the count's bytes are its little-endian encoding on every target
+    assert!(core::mem::offset_of!(ProgramOutput, deposit_requests_hasher_start) == 160);
+    assert!(core::mem::offset_of!(ProgramOutput, deposit_requests_hasher_end) == 264);
+    assert!(core::mem::offset_of!(ProgramOutput, num_unique_bal_records) == 368);
+    assert!(core::mem::offset_of!(ProgramOutput, tx_count) == 372);
+    assert!(core::mem::offset_of!(ProgramOutput, tx_start_mark) == 376);
+    assert!(core::mem::offset_of!(ProgramOutput, tx_end_mark) == 380);
+    // the counts' bytes are their little-endian encoding on every target
     assert!(cfg!(target_endian = "little"));
 };
+
+impl Default for ProgramOutput {
+    fn default() -> Self {
+        Self {
+            block_hash: [0; 32],
+            initial_accounts: [0; 32],
+            initial_slots: [0; 32],
+            fresh_accounts_mask: [0; 32],
+            bal_mask: [0; 32],
+            deposit_requests_hasher_start: [0; SHA256_ACCUMULATOR_LEN],
+            deposit_requests_hasher_end: [0; SHA256_ACCUMULATOR_LEN],
+            num_unique_bal_records: 0,
+            tx_count: 0,
+            tx_start_mark: 0,
+            tx_end_mark: 0,
+        }
+    }
+}
 
 impl ProgramOutput {
     pub const ENCODING_LEN: usize = ENCODING_LEN;
@@ -92,7 +140,8 @@ impl ProgramOutput {
     }
 
     /// The output of the pre-execution check: the tables it produced, the
-    /// marker mask and the number of records of the access list
+    /// marker mask, the number of records of the access list and the proven
+    /// transaction count as the range `0..count`
     pub fn of_pre_execution<A: Allocator>(state: &StateConsistencyOutput<A>) -> Self {
         let [initial_accounts, fresh_accounts_mask, initial_slots] =
             state.initial_values_hashes().map(|hash| hash.as_u8_array());
@@ -102,12 +151,17 @@ impl ProgramOutput {
             initial_slots,
             fresh_accounts_mask,
             bal_mask: [0; 32],
+            deposit_requests_hasher_start: [0; SHA256_ACCUMULATOR_LEN],
+            deposit_requests_hasher_end: [0; SHA256_ACCUMULATOR_LEN],
             num_unique_bal_records: (state.counts.accounts + state.counts.slots) as u32,
+            tx_count: state.transaction_count,
+            tx_start_mark: 0,
+            tx_end_mark: state.transaction_count,
         }
     }
 
-    /// The output of a transaction range: the tables it witnessed and the
-    /// records it accessed
+    /// The output of a transaction range: the tables it witnessed, the
+    /// records it accessed and the transactions it covered
     pub fn of_range<A: Allocator>(output: &GlamsterdamRangeOutput<A>) -> Self {
         let [initial_accounts, fresh_accounts_mask, initial_slots] =
             output.initial_values.hashes.map(|hash| hash.as_u8_array());
@@ -117,17 +171,23 @@ impl ProgramOutput {
             initial_slots,
             fresh_accounts_mask,
             bal_mask: mask_hash(&output.accessed).as_u8_array(),
+            deposit_requests_hasher_start: *output.requests.start.as_bytes(),
+            deposit_requests_hasher_end: *output.requests.end.as_bytes(),
             num_unique_bal_records: output.accessed.len(),
+            tx_count: output.transaction_count,
+            tx_start_mark: output.transactions.start,
+            tx_end_mark: output.transactions.end,
         }
     }
 
-    /// Whether `other` describes the same block and tables
+    /// Whether `other` describes the same block, tables and transaction count
     fn same_block(&self, other: &Self) -> bool {
         self.block_hash == other.block_hash
             && self.initial_accounts == other.initial_accounts
             && self.initial_slots == other.initial_slots
             && self.fresh_accounts_mask == other.fresh_accounts_mask
             && self.num_unique_bal_records == other.num_unique_bal_records
+            && self.tx_count == other.tx_count
     }
 }
 
@@ -144,16 +204,28 @@ fn keccak(bytes: &[u8]) -> Bytes32 {
 
 /// The aggregation program over the linkage: given the public outputs of the
 /// pre-execution check and of the ranges (as proven), their preimages and the
-/// masks' preimages, checks that the programs describe one block and that
-/// together they accessed every record of the access list
+/// masks' preimages, checks that the programs describe one block, that the
+/// ranges tile its transactions in order (so the pre-transaction phase ran
+/// once, in the first, and the post-transaction phase, which checks the
+/// header's requests hash, once, in the last), that the deposit request
+/// hashing chains through the ranges from its head, and that together they
+/// accessed every record of the access list. The ranges are added in block
+/// order.
 pub struct LinkageAggregation<A: Allocator> {
     pre_execution: ProgramOutput,
     union: IndexMask<A>,
+    /// The transaction the next range must start at
+    next_start: u32,
+    /// The deposit request hashing state the next range must start from
+    next_hasher: [u8; SHA256_ACCUMULATOR_LEN],
+    /// Whether the range ending the block is in
+    reached_end: bool,
 }
 
 impl<A: Allocator> LinkageAggregation<A> {
     /// Starts from the pre-execution check: `public_output` is its proven
-    /// output, `pre_execution` the preimage, whose mask must be clear
+    /// output, `pre_execution` the preimage, whose mask must be clear and
+    /// whose transaction range is the whole block
     pub fn new(
         public_output: Bytes32,
         pre_execution: &ProgramOutput,
@@ -166,14 +238,25 @@ impl<A: Allocator> LinkageAggregation<A> {
         if pre_execution.bal_mask != [0; 32] {
             return Err(fail("the pre-execution check publishes no mask"));
         }
+        if pre_execution.tx_start_mark != 0 || pre_execution.tx_end_mark != pre_execution.tx_count {
+            return Err(fail("the pre-execution check covers the whole block"));
+        }
+        if pre_execution.deposit_requests_hasher_start != [0; SHA256_ACCUMULATOR_LEN]
+            || pre_execution.deposit_requests_hasher_end != [0; SHA256_ACCUMULATOR_LEN]
+        {
+            return Err(fail("the pre-execution check hashes no requests"));
+        }
         let union = IndexMask::zeroed(pre_execution.num_unique_bal_records as usize, allocator)?;
         Ok(Self {
             pre_execution: *pre_execution,
             union,
+            next_start: 0,
+            next_hasher: *Sha256Accumulator::deposit_requests_head().as_bytes(),
+            reached_end: false,
         })
     }
 
-    /// Adds a range: `public_output` is its proven output, `range` the
+    /// Adds the next range: `public_output` is its proven output, `range` the
     /// preimage and `bal_mask` the preimage of its mask
     pub fn add(
         &mut self,
@@ -186,20 +269,48 @@ impl<A: Allocator> LinkageAggregation<A> {
             return Err(fail("the range output is not the proven one"));
         }
         if !self.pre_execution.same_block(range) {
-            return Err(fail("the range describes another block or other tables"));
+            return Err(fail(
+                "the range describes another block, other tables or another transaction count",
+            ));
         }
         if mask_hash(bal_mask).as_u8_array() != range.bal_mask {
             return Err(fail("the mask is not the range's"));
         }
-        self.union.or_assign(bal_mask)
+        // the tiling: the ranges follow each other, the last one ends the block
+        let count = self.pre_execution.tx_count;
+        if self.reached_end {
+            return Err(fail("a range after the last one"));
+        }
+        if range.tx_start_mark != self.next_start {
+            return Err(fail("the ranges do not tile the block"));
+        }
+        if range.tx_end_mark > count
+            || range.tx_end_mark < range.tx_start_mark
+            || (range.tx_end_mark == range.tx_start_mark && count != 0)
+        {
+            return Err(fail("the range is outside the block or empty"));
+        }
+        if range.deposit_requests_hasher_start != self.next_hasher {
+            return Err(fail(
+                "the deposit request hashing does not continue the previous range's",
+            ));
+        }
+        self.union.or_assign(bal_mask)?;
+        self.reached_end = range.tx_end_mark == count;
+        self.next_start = range.tx_end_mark;
+        self.next_hasher = range.deposit_requests_hasher_end;
+        Ok(())
     }
 
-    /// Every record of the access list was accessed by some range
+    /// The ranges reached the end of the block and every record of the access
+    /// list was accessed by some range
     pub fn finish(self) -> Result<()> {
+        let fail = GlamsterdamError::Aggregation;
+        if !self.reached_end {
+            return Err(fail("the ranges do not reach the end of the block"));
+        }
         if !self.union.is_full() {
-            return Err(GlamsterdamError::Aggregation(
-                "a record of the access list is never accessed",
-            ));
+            return Err(fail("a record of the access list is never accessed"));
         }
         Ok(())
     }
@@ -210,65 +321,161 @@ mod tests {
     use super::*;
     use std::alloc::Global;
 
-    fn output(num: u32, mask: Option<&IndexMask<Global>>) -> ProgramOutput {
+    const TX_COUNT: u32 = 10;
+
+    fn pre_execution(num: u32) -> ProgramOutput {
         ProgramOutput {
             block_hash: [1; 32],
             initial_accounts: [2; 32],
             initial_slots: [3; 32],
             fresh_accounts_mask: [4; 32],
-            bal_mask: mask.map_or([0; 32], |mask| mask_hash(mask).as_u8_array()),
+            bal_mask: [0; 32],
+            deposit_requests_hasher_start: [0; SHA256_ACCUMULATOR_LEN],
+            deposit_requests_hasher_end: [0; SHA256_ACCUMULATOR_LEN],
             num_unique_bal_records: num,
+            tx_count: TX_COUNT,
+            tx_start_mark: 0,
+            tx_end_mark: TX_COUNT,
+        }
+    }
+
+    /// The deposit request hashing states of a range: from the head, 192 bytes
+    /// per transaction of the range absorbed
+    fn hashers(transactions: &core::ops::Range<u32>) -> [Sha256Accumulator; 2] {
+        let mut start = Sha256Accumulator::deposit_requests_head();
+        for _ in 0..transactions.start {
+            start.absorb(&[7; 192]);
+        }
+        let mut end = start;
+        for _ in transactions.clone() {
+            end.absorb(&[7; 192]);
+        }
+        [start, end]
+    }
+
+    fn range_output(
+        num: u32,
+        mask: &IndexMask<Global>,
+        transactions: core::ops::Range<u32>,
+    ) -> ProgramOutput {
+        let [start, end] = hashers(&transactions);
+        ProgramOutput {
+            bal_mask: mask_hash(mask).as_u8_array(),
+            deposit_requests_hasher_start: *start.as_bytes(),
+            deposit_requests_hasher_end: *end.as_bytes(),
+            tx_start_mark: transactions.start,
+            tx_end_mark: transactions.end,
+            ..pre_execution(num)
         }
     }
 
     #[test]
     fn the_bytes_are_the_encoding_and_the_hash_covers_them() {
-        let out = output(40, None);
+        let out = pre_execution(40);
         let bytes = out.as_bytes();
-        assert_eq!(bytes.len(), 164);
+        assert_eq!(bytes.len(), 384);
         assert_eq!(&bytes[..32], &[1; 32]);
         assert_eq!(&bytes[128..160], &[0; 32]);
-        assert_eq!(&bytes[160..], &40u32.to_le_bytes());
+        assert_eq!(&bytes[160..368], &[0; 2 * SHA256_ACCUMULATOR_LEN]);
+        assert_eq!(&bytes[368..372], &40u32.to_le_bytes());
+        assert_eq!(&bytes[372..376], &TX_COUNT.to_le_bytes());
+        assert_eq!(&bytes[376..380], &0u32.to_le_bytes());
+        assert_eq!(&bytes[380..], &TX_COUNT.to_le_bytes());
+        let range = range_output(40, &IndexMask::zeroed(40, Global).unwrap(), 2..5);
+        let [start, end] = hashers(&(2..5));
+        assert_eq!(&range.as_bytes()[160..264], start.as_bytes());
+        assert_eq!(&range.as_bytes()[264..368], end.as_bytes());
         let mut other = out;
         other.num_unique_bal_records = 41;
+        assert_ne!(out.hash(), other.hash());
+        let mut other = out;
+        other.tx_end_mark = 9;
         assert_ne!(out.hash(), other.hash());
         let words = out.hash_words();
         assert_eq!(words[0].to_le_bytes(), out.hash().as_u8_array()[..4]);
     }
 
     #[test]
-    fn aggregation_requires_full_union() {
-        let pre = output(40, None);
+    fn aggregation_requires_full_union_and_tiling() {
+        let pre = pre_execution(40);
         let first = IndexMask::from_flags((0..40).map(|i| i < 25), Global).unwrap();
         let second = IndexMask::from_flags((0..40).map(|i| i >= 20), Global).unwrap();
-        let first_out = output(40, Some(&first));
-        let second_out = output(40, Some(&second));
+        let first_out = range_output(40, &first, 0..4);
+        let second_out = range_output(40, &second, 4..TX_COUNT);
 
-        let mut aggregation = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
-        aggregation
-            .add(first_out.hash(), &first_out, &first)
-            .unwrap();
-        aggregation
-            .add(second_out.hash(), &second_out, &second)
-            .unwrap();
-        aggregation.finish().unwrap();
+        let aggregate = |outputs: &[(&ProgramOutput, &IndexMask<Global>)]| -> Result<()> {
+            let mut aggregation = LinkageAggregation::new(pre.hash(), &pre, Global)?;
+            for (out, mask) in outputs {
+                aggregation.add(out.hash(), out, mask)?;
+            }
+            aggregation.finish()
+        };
+        aggregate(&[(&first_out, &first), (&second_out, &second)]).unwrap();
 
-        let mut partial = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
-        partial.add(first_out.hash(), &first_out, &first).unwrap();
-        assert!(partial.finish().is_err());
-
-        // a wrong public output, a mask that is not the range's, another block, a
-        // pre-execution output that carries a mask, a wrong record count
+        // a missing range (the block is not reached), a missing first range
+        assert!(aggregate(&[(&first_out, &first)]).is_err());
+        assert!(aggregate(&[(&second_out, &second)]).is_err());
+        // a gap, an overlap, a wrong order, a range after the last
+        let gapped = range_output(40, &second, 5..TX_COUNT);
+        assert!(aggregate(&[(&first_out, &first), (&gapped, &second)]).is_err());
+        let overlapping = range_output(40, &second, 3..TX_COUNT);
+        assert!(aggregate(&[(&first_out, &first), (&overlapping, &second)]).is_err());
+        assert!(aggregate(&[(&second_out, &second), (&first_out, &first)]).is_err());
+        let whole = range_output(40, &second, 0..TX_COUNT);
+        assert!(aggregate(&[(&whole, &second), (&whole, &second)]).is_err());
+        // a partial union
+        let few = IndexMask::from_flags((0..40).map(|i| i < 10), Global).unwrap();
+        let few_out = range_output(40, &few, 0..4);
+        assert!(aggregate(&[(&few_out, &few), (&second_out, &second)]).is_err());
+        // a broken hashing chain: a first range not starting from the head, a
+        // second one not continuing the first, the pre-execution check hashing
+        let mut unchained = first_out;
+        unchained.deposit_requests_hasher_start = *Sha256Accumulator::new().as_bytes();
+        assert!(aggregate(&[(&unchained, &first), (&second_out, &second)]).is_err());
+        let mut skipped = second_out;
+        skipped.deposit_requests_hasher_start = first_out.deposit_requests_hasher_start;
+        assert!(aggregate(&[(&first_out, &first), (&skipped, &second)]).is_err());
+        let mut hashing = pre;
+        hashing.deposit_requests_hasher_end = first_out.deposit_requests_hasher_end;
+        assert!(LinkageAggregation::new(hashing.hash(), &hashing, Global).is_err());
+        // a wrong public output, a mask that is not the range's, another block
+        // or count, a pre-execution output that carries a mask or a partial
+        // range, a wrong record count
         let mut wrong = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
         assert!(wrong.add(second_out.hash(), &first_out, &first).is_err());
         assert!(wrong.add(first_out.hash(), &first_out, &second).is_err());
         let mut foreign = first_out;
         foreign.block_hash = [0; 32];
         assert!(wrong.add(foreign.hash(), &foreign, &first).is_err());
+        let mut miscounted = first_out;
+        miscounted.tx_count = TX_COUNT + 1;
+        assert!(wrong.add(miscounted.hash(), &miscounted, &first).is_err());
         assert!(LinkageAggregation::new(first_out.hash(), &first_out, Global).is_err());
-        let mut short = output(39, None);
-        short.num_unique_bal_records = 39;
+        let mut partial = pre;
+        partial.tx_end_mark = 5;
+        assert!(LinkageAggregation::new(partial.hash(), &partial, Global).is_err());
+        let short = pre_execution(39);
         let mut counted = LinkageAggregation::new(short.hash(), &short, Global).unwrap();
         assert!(counted.add(first_out.hash(), &first_out, &first).is_err());
+    }
+
+    /// A block without transactions is one range `0..0`, which runs both phases
+    #[test]
+    fn an_empty_block_is_one_range() {
+        let mut pre = pre_execution(4);
+        pre.tx_count = 0;
+        pre.tx_end_mark = 0;
+        let mask = IndexMask::from_flags((0..4).map(|_| true), Global).unwrap();
+        let head = *Sha256Accumulator::deposit_requests_head().as_bytes();
+        let out = ProgramOutput {
+            bal_mask: mask_hash(&mask).as_u8_array(),
+            deposit_requests_hasher_start: head,
+            deposit_requests_hasher_end: head,
+            tx_end_mark: 0,
+            ..pre
+        };
+        let mut aggregation = LinkageAggregation::new(pre.hash(), &pre, Global).unwrap();
+        aggregation.add(out.hash(), &out, &mask).unwrap();
+        aggregation.finish().unwrap();
     }
 }

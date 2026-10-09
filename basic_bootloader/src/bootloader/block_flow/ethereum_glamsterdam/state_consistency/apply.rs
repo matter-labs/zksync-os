@@ -34,8 +34,16 @@ use zk_ee::utils::Bytes32;
 
 /// Capacity of the node interner of the accounts trie
 const ACCOUNTS_INTERNER_CAPACITY: usize = 1 << 24;
-/// Capacity of the node interner of the storage tries (one account at a time)
+/// The least capacity of the node interner of the storage tries (one account at a
+/// time); it grows with the slots of the account with the most of them
 const STORAGE_INTERNER_CAPACITY: usize = 1 << 22;
+/// Bytes of trie nodes per slot of an account: the nodes of a slot's path below the
+/// prefix it shares with its neighbours (at most 9 branches of up to 532 bytes plus the
+/// leaf, most of them shared when the account has many slots)
+const STORAGE_INTERNER_BYTES_PER_SLOT: usize = 4096;
+/// The most the storage interner takes: an account with more slots in one block than
+/// this covers (about 16k, which a block's gas barely allows) cannot be applied
+const STORAGE_INTERNER_MAX_CAPACITY: usize = 1 << 26;
 
 /// The longest RLP item of an account leaf: the list header and four strings
 /// (a nonce of up to 8 bytes, a balance of up to 32 bytes, two hashes)
@@ -202,8 +210,11 @@ pub(super) fn apply_access_list<'e, O: IOOracle, A: Allocator + Clone>(
         allocator.clone(),
     )
     .reinit_with_root(parent_state_root.as_u8_array());
+    let storage_capacity = max_slots_of_account
+        .saturating_mul(STORAGE_INTERNER_BYTES_PER_SLOT)
+        .clamp(STORAGE_INTERNER_CAPACITY, STORAGE_INTERNER_MAX_CAPACITY);
     let mut storage_mpt = SortedMPTWithInterner::<A, BoxInternerCtor>::new_with_capacity_in(
-        STORAGE_INTERNER_CAPACITY,
+        storage_capacity,
         allocator.clone(),
     );
     // the slots of one account, as positions in `tables.slots`, sorted by trie key
@@ -253,7 +264,7 @@ pub(super) fn apply_access_list<'e, O: IOOracle, A: Allocator + Clone>(
                 // the integer item of the existing value, absent for zero
                 let existing = storage_mpt
                     .seek(key, &mut preimages, hasher)
-                    .map_err(|_| Mpt("seek slot"))?;
+                    .map_err(|_| GlamsterdamError::MptSlotSeek(address_index as u32))?;
                 if let Some(item) = existing {
                     if item.len() > MAX_SLOT_LEAF_ITEM_LEN {
                         return Err(GlamsterdamError::SlotEncoding);

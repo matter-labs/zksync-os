@@ -605,9 +605,9 @@ impl<
             });
             self.accounts[account as usize].warm = self.stamp;
         }
-        if self.accounts[account as usize].deconstruct {
-            return Err(internal_error!("access to an account being deconstructed").into());
-        }
+        // An account marked for deconstruction (self-destructed in the transaction that
+        // created it) stays accessible until the end of the index like any other: its code
+        // still runs, its balance reads as it is; `finish_index` finalizes it.
         Ok(())
     }
 
@@ -862,6 +862,10 @@ impl<
         let Some(snapshot) = rollback_handle else {
             return Ok(());
         };
+        // An entry first changed in the frame goes back to unchanged in this index
+        // (its stamp is restored), so it leaves the touched list too: a later change
+        // in the index records it again, and the list would count it twice. The
+        // first changes of the frame are the tail of the list, in journal order.
         while self.journal.len() > snapshot.journal_len {
             let entry = self.journal.pop().expect("journal entry");
             match entry {
@@ -869,12 +873,20 @@ impl<
                     self.accounts[account as usize].warm = old;
                 }
                 JournalEntry::Account { account, old } => {
+                    if old.changed != self.stamp {
+                        let last = self.touched_accounts.pop();
+                        debug_assert_eq!(last, Some(account));
+                    }
                     self.accounts[account as usize] = old;
                 }
                 JournalEntry::SlotWarm { position, old } => {
                     self.slots[position as usize].warm = old;
                 }
                 JournalEntry::Slot { position, old } => {
+                    if old.written != self.stamp {
+                        let last = self.touched_slots.pop();
+                        debug_assert_eq!(last, Some(position));
+                    }
                     self.slots[position as usize] = old;
                 }
             }
@@ -920,6 +932,10 @@ impl<
         Ok(self.slots[position as usize].current)
     }
 
+    /// Warms a slot (a transaction access list entry). A warm-up is not an access: a
+    /// slot outside the block access list was never reached by the execution (the
+    /// list does not carry access list entries nothing accessed), so there is nothing
+    /// to warm
     fn storage_touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -929,8 +945,12 @@ impl<
         _oracle: &mut impl IOOracle,
     ) -> Result<()> {
         self.policy.charge_warm_storage_read(ee_type, resources)?;
-        let account = self.account_index_charging(ee_type, resources, address)?;
-        let position = self.slot_position_charging(ee_type, resources, account, key)?;
+        let Some(account) = self.tables.addresses.get(&AddressKey(*address)) else {
+            return Ok(());
+        };
+        let Ok(position) = self.slot_position(account, key) else {
+            return Ok(());
+        };
         self.slots[position as usize].ever_accessed = true;
         let state = self.slots[position as usize];
         if state.warm != self.stamp {
@@ -1093,6 +1113,11 @@ impl<
         })
     }
 
+    /// Warms an account (a transaction access list entry, the coinbase). A warm-up is
+    /// not an access: an address outside the block access list was never reached by
+    /// the execution, so there is nothing to warm (see `storage_touch`). A precompile is
+    /// an account like any other here (it can be called and receive value); it is only
+    /// never cold, see `access_account`.
     fn touch_account(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -1100,9 +1125,9 @@ impl<
         address: &B160,
         _oracle: &mut impl IOOracle,
     ) -> Result<()> {
-        // a precompile is an account like any other here (it can be called and receive
-        // value); it is only never cold, see `access_account`
-        let account = self.account_index_charging(ee_type, resources, address)?;
+        let Some(account) = self.tables.addresses.get(&AddressKey(*address)) else {
+            return Ok(());
+        };
         self.access_account(ee_type, resources, address, account, false)
     }
 

@@ -56,7 +56,9 @@ pub use self::metadata_op::EthereumBlockMetadata;
 
 pub use super::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
 pub use eip_4788_historical_beacon_root::BEACON_ROOTS_ADDRESS;
-pub use eip_6110_deposit_events_parser::DEPOSIT_CONTRACT_ADDRESS;
+pub use eip_6110_deposit_events_parser::{
+    deposit_contract_address, MAINNET_DEPOSIT_CONTRACT_ADDRESS,
+};
 pub use eip_7002_withdrawal_contract::WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS;
 
 pub(crate) fn rlp_ordering_and_key_for_index(index: u32) -> (u32, ([u8; 4], usize)) {

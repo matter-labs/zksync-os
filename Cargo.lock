@@ -2142,6 +2142,7 @@ dependencies = [
  "ruint",
  "serde",
  "serde-big-array",
+ "sha2 0.10.9",
  "storage_models",
  "strum_macros",
  "system_hooks",
@@ -5008,7 +5009,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak_chi5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_column_parity"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
 name = "keccak_special5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_theta_rho"
 version = "0.1.0"
 dependencies = [
  "circuit_common",
@@ -7848,7 +7879,10 @@ dependencies = [
  "hex",
  "inits_and_teardowns",
  "jump_branch_slt",
+ "keccak_chi5",
+ "keccak_column_parity",
  "keccak_special5",
+ "keccak_theta_rho",
  "load_store_subword_only",
  "load_store_word_only",
  "mul_div_unsigned",
