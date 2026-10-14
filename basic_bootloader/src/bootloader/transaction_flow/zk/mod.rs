@@ -452,7 +452,7 @@ where
         let refund_info = compute_gas_refund(
             system,
             to_charge_for_pubdata,
-            transaction.gas_limit(),
+            context.tx_gas_limit,
             min_gas_used,
             context.native_per_gas,
             &mut context.resources.main_resources,

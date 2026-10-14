@@ -61,7 +61,14 @@ where
 
     // safe to panic, validated by the structure
     let from = *transaction.from();
-    let tx_gas_limit = transaction.gas_limit();
+    let tx_gas_limit = if Config::SIMULATION {
+        core::cmp::min(
+            transaction.gas_limit(),
+            system.get_individual_tx_gas_limit(),
+        )
+    } else {
+        transaction.gas_limit()
+    };
 
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
@@ -75,8 +82,8 @@ where
 
     // Validate that the tx gas limit doesn't exceed the effective per-tx
     // limit, for non-service transactions. Call simulation intentionally skips
-    // normal tx-admission checks so RPC callers can estimate with a high gas
-    // ceiling. The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
+    // normal tx-admission checks, but its execution budget is capped above.
+    // The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
     // enforced once per block in `MetadataOp::metadata_op`, so it is not
     // re-checked here per transaction.
     if !Config::SIMULATION && !transaction.is_service() {

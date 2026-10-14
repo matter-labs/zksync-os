@@ -98,7 +98,14 @@ where
 
     // The work done by the bootloader (outside of EE or EOA specific
     // computation) is charged as part of the intrinsic gas cost.
-    let gas_limit = transaction.gas_limit.read();
+    let gas_limit = if Config::SIMULATION {
+        core::cmp::min(
+            transaction.gas_limit.read(),
+            system.get_individual_tx_gas_limit(),
+        )
+    } else {
+        transaction.gas_limit.read()
+    };
 
     // The invariant that the user deposited more than the value needed
     // for the transaction must be enforced on L1, but we double-check it here
