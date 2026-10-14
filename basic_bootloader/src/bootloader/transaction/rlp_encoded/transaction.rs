@@ -276,19 +276,19 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
     }
 
     pub fn required_balance(&self) -> Option<U256> {
-        self.required_balance_with_gas_limit(self.gas_limit())
-    }
-
-    pub(crate) fn required_balance_with_gas_limit(&self, gas_limit: u64) -> Option<U256> {
         match &self.inner {
             RlpEncodedTxInner::EIP4844(tx, _) => {
-                let gas_fee = self.max_fee_per_gas().checked_mul(U256::from(gas_limit))?;
+                let gas_fee = self
+                    .max_fee_per_gas()
+                    .checked_mul(U256::from(self.gas_limit()))?;
                 let blob_gas = GAS_PER_BLOB.checked_mul(tx.blob_versioned_hashes.count as u64)?;
                 let blob_fee = tx.max_fee_per_blob_gas.checked_mul(U256::from(blob_gas))?;
                 self.value().checked_add(blob_fee)?.checked_add(gas_fee)
             }
             _ => {
-                let fee_amount = self.max_fee_per_gas().checked_mul(U256::from(gas_limit))?;
+                let fee_amount = self
+                    .max_fee_per_gas()
+                    .checked_mul(U256::from(self.gas_limit()))?;
                 self.value().checked_add(U256::from(fee_amount))
             }
         }

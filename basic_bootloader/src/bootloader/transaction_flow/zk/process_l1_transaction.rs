@@ -9,7 +9,7 @@ use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l1_tx_intrinsic_computational_native_resources, calculate_tx_intrinsic_gas,
-    check_enough_resources_for_pubdata, create_resources_for_tx, gas_limit_for_execution,
+    check_enough_resources_for_pubdata, create_resources_for_tx,
     get_resources_to_charge_for_pubdata, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
@@ -98,7 +98,10 @@ where
 
     // The work done by the bootloader (outside of EE or EOA specific
     // computation) is charged as part of the intrinsic gas cost.
-    let gas_limit = gas_limit_for_execution::<S, Config>(system, transaction.gas_limit.read());
+    let mut gas_limit = transaction.gas_limit.read();
+    if Config::SIMULATION {
+        gas_limit = gas_limit.min(system.get_individual_tx_gas_limit());
+    }
 
     // The invariant that the user deposited more than the value needed
     // for the transaction must be enforced on L1, but we double-check it here

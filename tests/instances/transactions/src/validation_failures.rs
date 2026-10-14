@@ -191,6 +191,64 @@ fn simulation_skips_max_tx_gas_limit_admission_check() {
 }
 
 #[test]
+fn simulation_caps_execution_gas() {
+    use rig::utils::L1TxBuilder;
+    use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
+
+    let signer = PrivateKeySigner::random();
+    let target = address!("0000000000000000000000000000000000010002");
+    // Return the remaining gas: GAS; PUSH1 0; MSTORE; PUSH1 32; PUSH1 0; RETURN.
+    let bytecode = [0x5a, 0x60, 0, 0x52, 0x60, 32, 0x60, 0, 0xf3];
+
+    for block_limit in [100_000, DEFAULT_MAX_TX_GAS_LIMIT + 1] {
+        let cap = block_limit.min(DEFAULT_MAX_TX_GAS_LIMIT);
+        let mut tester = new_tester()
+            .with_evm_contract(target, &bytecode)
+            .with_block_context(BlockContext {
+                gas_limit: block_limit,
+                native_price: U256::ZERO,
+                ..Default::default()
+            });
+
+        for gas_limit in [60_000, cap, cap + 1, 0xffffffffffff, u64::MAX] {
+            let l2 = call_tx(
+                signer.clone(),
+                target,
+                0,
+                gas_limit,
+                AlloyU256::ZERO,
+                0,
+                0,
+                TEST_CHAIN_ID,
+            );
+            let l1 = L1TxBuilder::new()
+                .from(signer.address())
+                .to(target)
+                .gas_limit(u128::from(gas_limit))
+                .build();
+
+            for tx in [l2, l1] {
+                let output = tester.simulate_block(vec![tx]);
+                assert_tx_success!(output, 0);
+                let result = output.tx_results[0].as_ref().unwrap();
+                let ExecutionResult::Success(ExecutionOutput::Call(data)) =
+                    &result.execution_result
+                else {
+                    panic!("expected call output");
+                };
+                // The first GAS costs 2 after 21,000 intrinsic gas; the whole
+                // call costs 17. Both execution and refund accounting use the cap.
+                assert_eq!(
+                    U256::from_be_slice(data),
+                    U256::from(gas_limit.min(cap) - 21_002)
+                );
+                assert_eq!(result.gas_used, 21_017);
+            }
+        }
+    }
+}
+
+#[test]
 fn out_of_gas_deployment_is_rejected_during_validation() {
     let signer = PrivateKeySigner::random();
     let sender = signer.address();

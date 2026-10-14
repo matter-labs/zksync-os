@@ -41,7 +41,6 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod asset_tracker;
 mod l1_tx_resilience;
 mod native_charging;
-mod simulation_gas_limit;
 // Per-transaction memory budget of the block-scoped raw preimage cache.
 mod preimage_cache_budget;
 // Guest heap headroom of the proving post-op at the block gas limit.
