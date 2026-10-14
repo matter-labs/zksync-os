@@ -211,9 +211,15 @@ impl<A: Allocator> Transaction<A> {
 
     /// Returns the minimum balance required to accept the transaction.
     pub fn required_balance(&self) -> Option<U256> {
+        self.required_balance_with_gas_limit(self.gas_limit())
+    }
+
+    /// Returns the required balance for an effective execution gas limit.
+    /// Call simulation can use a lower limit than the declared one.
+    pub(crate) fn required_balance_with_gas_limit(&self, gas_limit: u64) -> Option<U256> {
         match self {
-            Self::Rlp(tx) => tx.required_balance(),
-            Self::Abi(tx) => tx.required_balance(),
+            Self::Rlp(tx) => tx.required_balance_with_gas_limit(gas_limit),
+            Self::Abi(tx) => tx.required_balance_with_gas_limit(gas_limit),
         }
     }
 

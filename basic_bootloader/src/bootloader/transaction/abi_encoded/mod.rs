@@ -363,10 +363,14 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
     /// Returns the balance required to process the transaction.
     /// If the calculation overflows, returns `None`.
     pub fn required_balance(&self) -> Option<U256> {
+        self.required_balance_with_gas_limit(self.gas_limit.read())
+    }
+
+    pub(crate) fn required_balance_with_gas_limit(&self, gas_limit: u64) -> Option<U256> {
         let fee_amount = self
             .max_fee_per_gas
             .read()
-            .checked_mul(U256::from(self.gas_limit.read()))?;
+            .checked_mul(U256::from(gas_limit))?;
         self.value.read().checked_add(U256::from(fee_amount))
     }
 

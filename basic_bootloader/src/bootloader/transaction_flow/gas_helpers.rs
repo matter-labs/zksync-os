@@ -24,6 +24,23 @@ use zk_ee::system::Resource;
 use zk_ee::system::{Computational, Ergs, Resources};
 use zk_ee::system_log;
 
+/// Bound call simulation by the effective per-transaction gas limit, even when
+/// the caller supplies a higher ceiling. Normal execution keeps the declared
+/// limit and applies its transaction-type-specific admission rules.
+pub(crate) fn gas_limit_for_execution<
+    S: EthereumLikeTypes,
+    Config: BasicBootloaderExecutionConfig,
+>(
+    system: &System<S>,
+    gas_limit: u64,
+) -> u64 {
+    if Config::SIMULATION {
+        gas_limit.min(system.get_individual_tx_gas_limit())
+    } else {
+        gas_limit
+    }
+}
+
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
     // Resources to run the transaction.
     // These will be capped to MAX_TX_NATIVE_COMPUTATIONAL, to prevent

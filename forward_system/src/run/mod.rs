@@ -906,6 +906,10 @@ pub fn run_block_from_oracle_dump<
 /// Some validation steps are skipped (signature check,
 /// nonce check and EIP-3607 check)
 ///
+/// Execution gas is capped at the smaller of the block gas limit and the
+/// chain-configured maximum transaction gas limit. Higher caller-supplied
+/// limits are clamped, including for L1 transaction simulation.
+///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     chain_config: ChainConfig,

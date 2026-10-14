@@ -7,7 +7,8 @@ use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{
     calculate_l2_tx_intrinsic_computational_native_resources, calculate_l2_tx_intrinsic_pubdata,
-    calculate_tx_intrinsic_gas, create_resources_for_tx, get_gas_price, L2TxIntrinsicNativeInput,
+    calculate_tx_intrinsic_gas, create_resources_for_tx, gas_limit_for_execution, get_gas_price,
+    L2TxIntrinsicNativeInput,
 };
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
@@ -61,7 +62,7 @@ where
 
     // safe to panic, validated by the structure
     let from = *transaction.from();
-    let tx_gas_limit = transaction.gas_limit();
+    let tx_gas_limit = gas_limit_for_execution::<S, Config>(system, transaction.gas_limit());
 
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
@@ -75,8 +76,8 @@ where
 
     // Validate that the tx gas limit doesn't exceed the effective per-tx
     // limit, for non-service transactions. Call simulation intentionally skips
-    // normal tx-admission checks so RPC callers can estimate with a high gas
-    // ceiling. The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
+    // normal tx-admission checks, but its execution budget is capped above.
+    // The `block_gas_limit <= MAX_BLOCK_GAS_LIMIT` invariant is
     // enforced once per block in `MetadataOp::metadata_op`, so it is not
     // re-checked here per transaction.
     if !Config::SIMULATION && !transaction.is_service() {
@@ -454,7 +455,8 @@ where
     }
 
     // Balance check - originator must cover fee prepayment plus whatever "value" it would like to send along
-    let Some(total_required_balance) = transaction.required_balance() else {
+    let Some(total_required_balance) = transaction.required_balance_with_gas_limit(tx_gas_limit)
+    else {
         return Err(TxError::Validation(
             InvalidTransaction::OverflowPaymentInTransaction,
         ));
