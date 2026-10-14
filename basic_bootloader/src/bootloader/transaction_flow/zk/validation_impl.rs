@@ -61,10 +61,14 @@ where
 
     // safe to panic, validated by the structure
     let from = *transaction.from();
-    let mut tx_gas_limit = transaction.gas_limit();
-    if Config::SIMULATION {
-        tx_gas_limit = tx_gas_limit.min(system.get_individual_tx_gas_limit());
-    }
+    let tx_gas_limit = if Config::SIMULATION {
+        core::cmp::min(
+            transaction.gas_limit(),
+            system.get_individual_tx_gas_limit(),
+        )
+    } else {
+        transaction.gas_limit()
+    };
 
     // we perform single check to make sure that we can use saturating operations to accumulate some costs,
     // and even if those would saturate, we can still catch this case
