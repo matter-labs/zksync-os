@@ -7,8 +7,9 @@ use revm::{
     context::{ContextTr, TxEnv},
     context_interface::block::BlobExcessGasAndPrice,
     context_interface::result::HaltReason,
-    database::{CacheDB, EmptyDB},
+    database::{AccountState, CacheDB, EmptyDB},
     inspector::InspectCommitEvm,
+    state::AccountInfo,
     DatabaseRef,
 };
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
@@ -265,6 +266,10 @@ where
                     }
                 },
             };
+            // EIP-161: the accounts a transaction touched and left empty are removed at its
+            // end. `CacheDB::commit` keeps them as `Touched` instead, so without this a later
+            // transaction of the block would see them as existing, unlike ZKsync OS.
+            remove_touched_empty_accounts(evm.0.db_mut());
             let trace = evm
                 .0
                 .inspector
@@ -513,4 +518,24 @@ fn logs_match(revm_log: &Log, zk_log: &Log) -> bool {
     revm_log.address == zk_log.address
         && revm_log.topics() == zk_log.topics()
         && revm_log.data.data == zk_log.data.data
+}
+
+/// Applies the EIP-161 state clearing that `CacheDB::commit` does not: an account that the
+/// committed transaction touched and left empty (no code, zero nonce, zero balance) no longer
+/// exists. Without it the replay keeps such an account as `Touched`, and a later transaction of
+/// the block sees it as existing: for example, an EIP-7702 authorization by that account then
+/// earns the `PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST` refund, which is only due for an
+/// authority that exists in the trie.
+fn remove_touched_empty_accounts<DB>(db: &mut CacheDB<DB>) {
+    for account in db.cache.accounts.values_mut() {
+        let touched = matches!(
+            account.account_state,
+            AccountState::Touched | AccountState::StorageCleared
+        );
+        if touched && account.info.is_empty() {
+            account.storage.clear();
+            account.account_state = AccountState::NotExisting;
+            account.info = AccountInfo::default();
+        }
+    }
 }

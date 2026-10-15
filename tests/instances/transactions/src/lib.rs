@@ -482,6 +482,84 @@ fn test_tx_with_authorization_list() {
     tester.assert_all_txs_succeeded(&output);
 }
 
+/// EIP-161 removes an empty account at the end of the transaction that touched it, so an
+/// EIP-7702 authority that only received a zero-value call earlier in the block does not exist
+/// in the trie when it signs an authorization, and earns no
+/// `PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST` refund. The REVM replay with independent gas
+/// has to agree with ZKsync OS on the gas of both transactions.
+#[test]
+fn test_authorization_by_touched_empty_account_gets_no_refund() {
+    use rig::alloy::eips::eip7702::*;
+    use rig::alloy::signers::SignerSync;
+
+    let sender = testing_signer(0);
+    let authority = testing_signer(1);
+    let target = address!("0000000000000000000000000000000000010002");
+    // SSTORE(0, 1) STOP, so that the 1/5 refund cap is not what limits the refund
+    let bytecode = hex::decode("600160005500").unwrap();
+
+    // A zero-value call touches the empty authority.
+    let touch = ZKsyncTxEnvelope::from_eth_tx(
+        TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 100_000,
+            to: TxKind::Call(authority.address()),
+            value: Default::default(),
+            access_list: Default::default(),
+            input: Default::default(),
+        },
+        sender.clone(),
+    );
+    // The authority then delegates to the target in the next transaction.
+    let authorization = Authorization {
+        chain_id: U256::from(37u64),
+        address: target,
+        nonce: 0,
+    };
+    let sig = authority
+        .sign_hash_sync(&authorization.signature_hash())
+        .expect("must sign");
+    let delegate = ZKsyncTxEnvelope::from_eth_tx(
+        TxEip7702 {
+            chain_id: 37u64,
+            nonce: 1,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 200_000,
+            to: target,
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+            authorization_list: vec![authorization.into_signed(sig)],
+        },
+        sender.clone(),
+    );
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(target, &bytecode)
+        .with_balance(sender.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(BlockContext {
+            // unpriced native: the gas used is the EVM gas on both sides
+            native_price: U256::ZERO,
+            ..Default::default()
+        })
+        .with_run_config(RunConfig {
+            check_revm_consistency: true,
+            revm_independent_gas: true,
+            do_prover_input_run: false,
+            ..RunConfig::without_riscv_run()
+        });
+
+    let output = tester
+        .execute_block_no_panic(vec![touch, delegate])
+        .expect("the REVM replay must match ZKsync OS");
+    assert_tx_success!(output, 0);
+    assert_tx_success!(output, 1);
+}
+
 // Test that slots made warm in a tx are cold in the next tx
 #[test]
 fn test_cold_in_new_tx() {
