@@ -8,6 +8,11 @@ ignore = [
     # untrusted XML and is not part of the proving runtime.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
+    # ruzstd < 0.9.1 decompression bomb. Pulled in only by `object` 0.37 (zstd-compressed ELF
+    # sections) via `addr2line` 0.25 of the git-pinned `riscv_transpiler`; `object` takes
+    # `ruzstd` 0.9 only from 0.40, which that `addr2line` cannot use. It reads the ELF files this
+    # repository builds, not untrusted input, and is not part of the proving runtime.
+    "RUSTSEC-2026-0344",
 ]
 
 [bans]
