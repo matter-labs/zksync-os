@@ -107,6 +107,7 @@ impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
             computational_native_used: output.computational_native_used,
             native_used: output.native_used,
             pubdata_used: output.pubdata_used,
+        l1_tx_operator_decision: None,
         });
         self.tx_result_callback.tx_executed(owned_result.clone());
         self.tx_results.push(owned_result);
