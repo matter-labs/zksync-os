@@ -96,6 +96,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
                             computational_native_used: output.computational_native_used,
                             pubdata_used: output.pubdata_used,
                             contract_address: output.contract_address,
+                            l1_tx_operator_decision: None,
                             logs: events
                                 .iter()
                                 .filter_map(|e| {
