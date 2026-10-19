@@ -425,6 +425,7 @@ mod tests {
             native_used: computational_native_used,
             pubdata_used: 0,
             contract_address: None,
+            l1_tx_operator_decision: None,
             logs: vec![],
             l2_to_l1_logs: vec![],
             storage_writes: vec![],

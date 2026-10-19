@@ -20,6 +20,8 @@ where
 {
     fn begin_tx(&mut self, ctx: &BeginTxContext<'_>) -> TxValidationResult {
         let iface_ctx = zksync_os_interface::tracing::BeginTxContext {
+            // This release consults the validator for L2 transactions only.
+            kind: zksync_os_interface::tracing::ValidatedTxKind::L2,
             from: ctx.from.into_alloy(),
             to: ctx.to.map(IntoAlloy::into_alloy),
             value: ctx.value,
