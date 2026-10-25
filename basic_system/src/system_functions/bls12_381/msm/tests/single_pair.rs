@@ -1,20 +1,6 @@
 use super::*;
 
 #[test]
-fn single_pair_msm_matches_reference() {
-    let mut rng = TestRng(1);
-    let scalars = test_scalars(&mut rng);
-    for p in test_points(&mut rng, 6) {
-        for s in &scalars {
-            let generic = msm::<G1Projective, _>(&[p], vec![*s], Global).into_affine();
-            let reference = sw_double_and_add_affine(&p, s).into_affine();
-            assert_eq!(generic, reference, "msm at {p:?} * {s}");
-            assert_eq!(encode_point(generic), encode_point(reference));
-        }
-    }
-}
-
-#[test]
 fn single_pair_precompile_output_matches() {
     let mut rng = TestRng(2);
     let scalars = test_scalars(&mut rng);

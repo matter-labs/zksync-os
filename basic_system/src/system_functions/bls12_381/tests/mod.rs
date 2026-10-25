@@ -70,7 +70,7 @@ fn malformed_g2_mapping_input_is_free() {
 fn malformed_g1_msm_input_is_free() {
     assert_invalid_input_size_and_preserves_resources::<Bls12381G1MSMPrecompile<true>>(vec![
         0u8;
-        msm::G1_MSM_PAIR_LEN
+        G1_MSM_PAIR_LEN
             + 1
     ]);
 }
@@ -79,7 +79,7 @@ fn malformed_g1_msm_input_is_free() {
 fn malformed_g2_msm_input_is_free() {
     assert_invalid_input_size_and_preserves_resources::<Bls12381G2MSMPrecompile<true>>(vec![
         0u8;
-        msm::G2_MSM_PAIR_LEN
+        G2_MSM_PAIR_LEN
             + 1
     ]);
 }
@@ -87,7 +87,7 @@ fn malformed_g2_msm_input_is_free() {
 #[test]
 fn malformed_pairing_input_is_free() {
     assert_invalid_input_size_and_preserves_resources::<Bls12381PairingCheckPrecompile<true>>(
-        vec![0u8; pairing::BLS12_381_PAIR_LEN + 1],
+        vec![0u8; BLS12_381_PAIR_LEN + 1],
     );
 }
 

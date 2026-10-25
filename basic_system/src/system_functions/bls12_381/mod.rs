@@ -1,12 +1,15 @@
-use crypto::ark_ec::AffineRepr;
 use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{
     Bls12PrecompileErrors, Bls12PrecompileInterfaceError, Bls12PrecompileSubsystemError,
 };
 
-use crypto::ark_ff::PrimeField;
 use crypto::bls12_381::*;
+use crypto::precompiles::{
+    Bls12Error, BLS12_381_PAIR_LEN, FIELD_ELEMENT_SERIALIZATION_LEN,
+    FIELD_EXT_ELEMENT_SERIALIZATION_LEN, G1_MSM_PAIR_LEN, G1_SERIALIZATION_LEN, G2_MSM_PAIR_LEN,
+    G2_SERIALIZATION_LEN,
+};
 
 mod addition;
 mod mappings;
@@ -18,102 +21,22 @@ pub use self::mappings::{Bls12381G1MappingPrecompile, Bls12381G2MappingPrecompil
 pub use self::msm::{Bls12381G1MSMPrecompile, Bls12381G2MSMPrecompile};
 pub use self::pairing::Bls12381PairingCheckPrecompile;
 
-const SCALAR_SERIALIZATION_LEN: usize = 32;
-const FIELD_ELEMENT_SERIALIZATION_LEN: usize = 64;
-const FIELD_EXT_ELEMENT_SERIALIZATION_LEN: usize = FIELD_ELEMENT_SERIALIZATION_LEN * 2;
-const G1_SERIALIZATION_LEN: usize = FIELD_ELEMENT_SERIALIZATION_LEN * 2;
-const G2_SERIALIZATION_LEN: usize = FIELD_EXT_ELEMENT_SERIALIZATION_LEN * 2;
-
-// infallible, as scalars are no required to be canonical
-fn parse_integer(input: &[u8; SCALAR_SERIALIZATION_LEN]) -> <Fr as PrimeField>::BigInt {
-    let mut repr = [0u64; 4];
-    for (dst, src) in repr.iter_mut().zip(input.as_rchunks::<8>().1.iter().rev()) {
-        *dst = u64::from_be_bytes(*src);
-    }
-    crypto::BigInt::new(repr)
-}
-
-// Parse functions without Fq/G1/G2 types in signatures
-fn parse_g1(input: &[u8; G1_SERIALIZATION_LEN]) -> Result<G1Affine, Bls12PrecompileSubsystemError> {
-    crypto::bls12_381::eip2537::parse_g1_bytes(input)
-        .map(|(point, _)| point)
-        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidG1Point))
-}
-
-fn parse_g2(input: &[u8; G2_SERIALIZATION_LEN]) -> Result<G2Affine, Bls12PrecompileSubsystemError> {
-    crypto::bls12_381::eip2537::parse_g2_bytes(input)
-        .map(|(point, _)| point)
-        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidG2Point))
-}
-
-fn parse_g1_with_subgroup_check(
-    input: &[u8; G1_SERIALIZATION_LEN],
-) -> Result<G1Affine, Bls12PrecompileSubsystemError> {
-    let point = parse_g1(input)?;
-    if point.is_zero() || point.is_in_correct_subgroup_assuming_on_curve() {
-        Ok(point)
-    } else {
-        Err(interface_error!(
-            Bls12PrecompileInterfaceError::PointNotInSubgroup
-        ))
-    }
-}
-
-fn parse_g2_with_subgroup_check(
-    input: &[u8; G2_SERIALIZATION_LEN],
-) -> Result<G2Affine, Bls12PrecompileSubsystemError> {
-    let point = parse_g2(input)?;
-    if point.is_zero() || point.is_in_correct_subgroup_assuming_on_curve() {
-        Ok(point)
-    } else {
-        Err(interface_error!(
-            Bls12PrecompileInterfaceError::PointNotInSubgroup
-        ))
-    }
-}
-
-/// The existing encoding and on-curve validation, followed by a checked affine subgroup chain.
-fn parse_g1_with_subgroup_check_with_oracle<O: zk_ee::oracle::IOOracle>(
-    input: &[u8; G1_SERIALIZATION_LEN],
-    oracle: Option<&mut O>,
-) -> Result<G1Affine, Bls12PrecompileSubsystemError> {
-    let Some(oracle) = oracle else {
-        return parse_g1_with_subgroup_check(input);
-    };
-    let point = parse_g1(input)?;
-    if point.is_zero()
-        || g1::is_in_subgroup_with_divider(
-            &point,
-            &mut crate::system_functions::curve_hints::Bls12381FqDivider::new(oracle),
-        )
-    {
-        Ok(point)
-    } else {
-        Err(interface_error!(
-            Bls12PrecompileInterfaceError::PointNotInSubgroup
-        ))
-    }
-}
-
-fn parse_g2_with_subgroup_check_with_oracle<O: zk_ee::oracle::IOOracle>(
-    input: &[u8; G2_SERIALIZATION_LEN],
-    oracle: Option<&mut O>,
-) -> Result<G2Affine, Bls12PrecompileSubsystemError> {
-    let Some(oracle) = oracle else {
-        return parse_g2_with_subgroup_check(input);
-    };
-    let point = parse_g2(input)?;
-    if point.is_zero()
-        || g2::is_in_subgroup_with_divider(
-            &point,
-            &mut crate::system_functions::curve_hints::Bls12381Fq2Divider::new(oracle),
-        )
-    {
-        Ok(point)
-    } else {
-        Err(interface_error!(
-            Bls12PrecompileInterfaceError::PointNotInSubgroup
-        ))
+/// The interface error of the precompiles for an error of the crypto half
+/// (`crypto::precompiles`)
+fn interface_error_of(error: Bls12Error) -> Bls12PrecompileSubsystemError {
+    match error {
+        Bls12Error::InvalidG1Point => {
+            interface_error!(Bls12PrecompileInterfaceError::InvalidG1Point)
+        }
+        Bls12Error::InvalidG2Point => {
+            interface_error!(Bls12PrecompileInterfaceError::InvalidG2Point)
+        }
+        Bls12Error::NotInSubgroup => {
+            interface_error!(Bls12PrecompileInterfaceError::PointNotInSubgroup)
+        }
+        Bls12Error::InvalidFieldElement => {
+            interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement)
+        }
     }
 }
 
@@ -139,6 +62,20 @@ fn write_g2<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(
         .try_extend(buffer)
         .map_err(|_| out_of_return_memory!())?;
     Ok(())
+}
+
+// the decoding of the outputs, for the tests
+#[cfg(test)]
+const SCALAR_SERIALIZATION_LEN: usize = 32;
+
+#[cfg(test)]
+fn parse_g1(input: &[u8; G1_SERIALIZATION_LEN]) -> Option<G1Affine> {
+    crypto::bls12_381::eip2537::parse_g1_bytes(input).map(|(point, _)| point)
+}
+
+#[cfg(test)]
+fn parse_g2(input: &[u8; G2_SERIALIZATION_LEN]) -> Option<G2Affine> {
+    crypto::bls12_381::eip2537::parse_g2_bytes(input).map(|(point, _)| point)
 }
 
 #[cfg(test)]

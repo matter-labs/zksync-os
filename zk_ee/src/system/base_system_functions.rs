@@ -358,7 +358,7 @@ pub trait SystemFunctionsExt<R: Resources> {
     type Secp256k1ECRecover: SystemFunctionExt<R, Secp256k1ECRecoverErrors>;
     type ModExp: SystemFunctionExt<R, ModExpErrors>;
     /// The bn254, BLS12-381 and KZG point evaluation precompiles take field arithmetic
-    /// from oracle hints (see `curve_hints` in `basic_system`), hence the oracle access.
+    /// from oracle hints (see `crypto::hints` in `airbender-crypto`), hence the oracle access.
     type Bn254Add: SystemFunctionExt<R, Bn254AddErrors>;
     type Bn254Mul: SystemFunctionExt<R, Bn254MulErrors>;
     type Bn254PairingCheck: SystemFunctionExt<R, Bn254PairingCheckErrors>;

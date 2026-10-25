@@ -1,8 +1,7 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST};
-use crate::system_functions::curve_hints;
-use crypto::ark_ec::pairing::Pairing;
-use crypto::ark_ec::{AffineRepr, CurveGroup};
-use crypto::ark_ff::{Field, PrimeField};
+use crate::system_functions::field_ops::ZkOsHintOracle;
+use crypto::hints::{HintOracle, NoHints};
+use crypto::precompiles::{kzg_verify_proof, verify_kzg_proof_with_oracle, KzgError};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::interface_error;
 use zk_ee::oracle::IOOracle;
@@ -11,7 +10,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::*;
 
-pub type KzgScalar = <crypto::bls12_381::Fr as PrimeField>::BigInt;
+pub use crypto::precompiles::{parse_g1_compressed, KzgScalar};
 
 ///
 /// Point evaluation system function implementation.
@@ -45,7 +44,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, PointEvaluationE
         _allocator: A,
     ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
         cycle_marker::wrap_with_resources!("point_evaluation", resources, {
-            let oracle = if USE_ADVICE { Some(oracle) } else { None };
+            let oracle = if USE_ADVICE {
+                Some(ZkOsHintOracle::from_mut(oracle))
+            } else {
+                None
+            };
             point_evaluation_as_system_function_inner(input, output, resources, oracle)
         })
     }
@@ -70,50 +73,6 @@ pub fn versioned_hash_for_kzg(data: &[u8]) -> [u8; 32] {
     hash
 }
 
-// We do not need internal representation, just canonical scalar
-fn parse_scalar(input: &[u8; 32]) -> Result<KzgScalar, ()> {
-    // Arkworks has strange format for integer serialization, so we do manually
-    let result = crypto::parse_u256_be(input);
-    if result >= crypto::bls12_381::Fr::MODULUS {
-        Err(())
-    } else {
-        Ok(result)
-    }
-}
-
-pub fn parse_g1_compressed(input: &[u8]) -> Result<crypto::bls12_381::G1Affine, ()> {
-    // format coincides with one defined in ZCash/Arkworks
-    use crypto::ark_serialize::CanonicalDeserialize;
-    crypto::bls12_381::G1Affine::deserialize_compressed(input).map_err(|_| ())
-}
-
-/// `parse_g1_compressed` with the square root of the decompression from a checked oracle
-/// hint, and the subgroup membership test in affine coordinates with hinted divisions, when an
-/// oracle is given
-fn parse_g1_compressed_with_oracle<O: IOOracle>(
-    input: &[u8],
-    oracle: Option<&mut O>,
-) -> Result<crypto::bls12_381::G1Affine, ()> {
-    match oracle {
-        Some(oracle) => {
-            // the two steps query the oracle one after the other
-            let oracle = core::cell::RefCell::new(oracle);
-            crypto::bls12_381::g1_from_compressed_with_hints(
-                input,
-                |y_squared| curve_hints::bls12_381_fq_sqrt(*oracle.borrow_mut(), y_squared),
-                |point| {
-                    crypto::bls12_381::g1::is_in_subgroup_with_divider(
-                        point,
-                        &mut curve_hints::Bls12381FqDivider::new(*oracle.borrow_mut()),
-                    )
-                },
-            )
-            .map_err(|_| ())
-        }
-        None => parse_g1_compressed(input),
-    }
-}
-
 #[inline(always)]
 pub fn verify_kzg_proof(
     commitment: crypto::bls12_381::G1Affine,
@@ -121,130 +80,18 @@ pub fn verify_kzg_proof(
     z: KzgScalar,
     y: KzgScalar,
 ) -> bool {
-    verify_kzg_proof_with_oracle::<oracle_provider_stub::NoOracle>(commitment, proof, z, y, None)
-}
-
-/// With an oracle, the curve arithmetic works in affine coordinates with its field divisions
-/// from checked hints, and the inversion of the final exponentiation comes from one too.
-pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
-    commitment: crypto::bls12_381::G1Affine,
-    proof: crypto::bls12_381::G1Affine,
-    z: KzgScalar,
-    y: KzgScalar,
-    mut oracle: Option<&mut O>,
-) -> bool {
-    use crypto::bls12_381::curves::{g1, Bls12_381};
-    // Original check:
-    // e(yG1 - commitment, G2) * e(proof, tauG2 - zG2) == 1.
-    //
-    // Move the z multiplication from G2 to G1:
-    // e(yG1 - commitment - z*proof, G2) * e(proof, tauG2) == 1.
-    // y G - z proof as one joint double-and-add (the doublings are shared), then minus the
-    // commitment; the scalars were parsed below the group order
-    let scalar = |repr: &KzgScalar| {
-        crypto::bls12_381::Fr::from_bigint(*repr).expect("the scalar is below the group order")
-    };
-    let generator = crypto::bls12_381::G1Affine::generator();
-    let left_g1 = match oracle.as_deref_mut() {
-        Some(oracle) => {
-            let mut divider = curve_hints::Bls12381FqDivider::new(oracle);
-            let sum = g1::mul_two_affine_with_divider(
-                &generator,
-                scalar(&y),
-                &proof,
-                -scalar(&z),
-                &mut divider,
-            );
-            g1::add_affine_with_divider(&sum, &-commitment, &mut divider)
-        }
-        None => {
-            let mut left_g1 = g1::mul_two(
-                &generator.into_group(),
-                scalar(&y),
-                &proof.into_group(),
-                -scalar(&z),
-            );
-            left_g1 -= &commitment;
-            left_g1.into_affine()
-        }
-    };
-    // both G2 points are fixed, so their Miller-loop line coefficients are constants
-    // (normalized to a first coefficient of one), read in place
-    let g2 = [
-        &crypto::bls12_381::consts::PREPARED_G2_GENERATOR,
-        &crypto::bls12_381::consts::PREPARED_G2_BY_TAU,
-    ];
-    // the G1 points of the product, which the oracle reads where they are
-    let g1 = [left_g1, proof];
-    // the Miller loop over both pairs at once, as the prover computes it for its witness
-    let pairs = || g1.iter().zip(g2);
-    // the exact final exponentiation of the loop output, conjugated for the negative seed as
-    // `multi_miller_loop` conjugates it (the prover's inverse is of the conjugate)
-    let exact = |inverse: &dyn Fn(&crypto::bls12_381::Fq12) -> Option<crypto::bls12_381::Fq12>| {
-        let mut miller_loop = Bls12_381::multi_miller_loop_shared(None, pairs());
-        miller_loop.conjugate_in_place();
-        // the Miller loop of curve points never evaluates to zero
-        let gt_el = Bls12_381::final_exponentiation_with_inverse(&miller_loop, inverse)
-            .expect("the Miller loop output is invertible");
-        gt_el == <Bls12_381 as Pairing>::TargetField::ONE
-    };
-    let Some(oracle) = oracle else {
-        return exact(&Field::inverse);
-    };
-    // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
-    // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
-    // `crypto::residue_witness`): the Miller loop started at `d` gives `d^|u| f`, the rest is
-    // one Frobenius map. The prover claims the outcome; it cannot choose it: a claimed
-    // identity must come with a witness that passes the check (a failed check is a broken
-    // prover and panics), and a claimed non-identity is settled by the exact final
-    // exponentiation, which finds an identity all the same.
-    match curve_hints::bls12_381_kzg_residue_witness(oracle, &g1) {
-        curve_hints::PairingClaim::Identity { c: _, d, s } => {
-            let l = Bls12_381::multi_miller_loop_shared(Some(&d), pairs());
-            assert!(
-                crypto::residue_witness::bls12_381::check(&l, &d, &s),
-                "the residue witness of the KZG proof claimed to be valid is wrong"
-            );
-            true
-        }
-        curve_hints::PairingClaim::NotIdentity { f_inverse } => {
-            exact(&|f| curve_hints::checked_inverse(f, f_inverse))
-        }
-    }
-}
-
-/// An oracle type for the calls that use none
-mod oracle_provider_stub {
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
-    use zk_ee::oracle::IOOracle;
-    use zk_ee::system::errors::internal::InternalError;
-
-    pub enum NoOracle {}
-
-    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {}
-
-    impl IOOracle for NoOracle {
-        type RawIterator<'a> = core::iter::Empty<usize>;
-
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
-            &'a mut self,
-            _query_type: u32,
-            _input: &I,
-        ) -> Result<Self::RawIterator<'a>, InternalError> {
-            match *self {}
-        }
-    }
+    verify_kzg_proof_with_oracle::<NoHints>(commitment, proof, z, y, None)
 }
 
 fn point_evaluation_as_system_function_inner<
     D: ?Sized + TryExtend<u8>,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
 >(
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
-    mut oracle: Option<&mut O>,
+    oracle: Option<&mut O>,
 ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
     resources
         .charge_legacy_gas_and_native(POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST)?;
@@ -266,40 +113,25 @@ fn point_evaluation_as_system_function_inner<
         ));
     }
 
-    // Parse the commitment and proof
-    let Ok(commitment_point) = parse_g1_compressed_with_oracle(commitment, oracle.as_deref_mut())
-    else {
-        return Err(interface_error!(
-            PointEvaluationInterfaceError::InvalidPoint
-        ));
-    };
+    // Parse the commitment and proof, then the scalars, and check the proof
     let proof = &input[144..192];
-    let Ok(proof) = parse_g1_compressed_with_oracle(proof, oracle.as_deref_mut()) else {
-        return Err(interface_error!(
-            PointEvaluationInterfaceError::InvalidPoint
-        ));
-    };
-
-    let Ok(z) = parse_scalar(input[32..64].try_into().unwrap()) else {
-        return Err(interface_error!(
-            PointEvaluationInterfaceError::InvalidScalar
-        ));
-    };
-
-    let Ok(y) = parse_scalar(input[64..96].try_into().unwrap()) else {
-        return Err(interface_error!(
-            PointEvaluationInterfaceError::InvalidScalar
-        ));
-    };
-
-    if verify_kzg_proof_with_oracle(commitment_point, proof, z, y, oracle) {
-        dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
-            .map_err(|_| out_of_return_memory!())?;
-        Ok(())
-    } else {
-        Err(interface_error!(
+    let z = input[32..64].try_into().unwrap();
+    let y = input[64..96].try_into().unwrap();
+    match kzg_verify_proof(commitment, proof, z, y, oracle) {
+        Ok(true) => {
+            dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
+                .map_err(|_| out_of_return_memory!())?;
+            Ok(())
+        }
+        Ok(false) => Err(interface_error!(
             PointEvaluationInterfaceError::PairingMismatch
-        ))
+        )),
+        Err(KzgError::InvalidPoint) => Err(interface_error!(
+            PointEvaluationInterfaceError::InvalidPoint
+        )),
+        Err(KzgError::InvalidScalar) => Err(interface_error!(
+            PointEvaluationInterfaceError::InvalidScalar
+        )),
     }
 }
 
@@ -344,7 +176,8 @@ mod tests {
         assert_eq!(*output, hinted_output);
         assert_eq!(resources.legacy_gas(), hinted_resources.legacy_gas());
         // a prover claiming an invalid proof (with a correct inverse) does not change the answer
-        let mut claiming = curve_hints::tests::non_identity_claiming_oracle();
+        let mut claiming =
+            crate::system_functions::field_ops::test_oracles::non_identity_claiming_oracle();
         let mut claiming_output = Vec::new();
         let claimed = PointEvaluationImpl::<true>::execute(
             input,
@@ -410,6 +243,9 @@ mod tests {
         let z = hex!("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000");
         let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9");
 
+        // the scalars of the test are canonical
+        let parse_scalar =
+            |bytes: &[u8; 32]| -> Result<KzgScalar, ()> { Ok(crypto::parse_u256_be(bytes)) };
         let commitment = parse_g1_compressed(&commitment).unwrap();
         let proof = parse_g1_compressed(&proof).unwrap();
         let z = parse_scalar(&z).unwrap();
@@ -444,8 +280,8 @@ mod tests {
         let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9").to_vec();
         let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
         let input = [versioned_hash, z, y, commitment, proof].concat();
-        let mut lying = curve_hints::tests::lying_oracle(&[
-            crate::system_functions::field_ops::FieldHintOp::Bls12381KzgResidueWitness,
+        let mut lying = crate::system_functions::field_ops::test_oracles::lying_oracle(&[
+            crypto::hints::FieldHintOp::Bls12381KzgResidueWitness,
         ]);
         let _ = PointEvaluationImpl::<true>::execute(
             &input,
@@ -615,188 +451,5 @@ mod tests {
             199, 14, 46, 41, 223, 40, 139, 101, 179, 7, 16, 220, 188, 209,
         ];
         assert_eq!(hash, expected_hash);
-    }
-
-    /// Test scalar parsing edge cases
-    #[test]
-    fn test_parse_scalar_edge_cases() {
-        // Test maximum valid scalar (modulus - 1)
-        let max_valid = [
-            0x73, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48, 0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1,
-            0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
-            0x00, 0x00, 0x00, 0x00,
-        ];
-        assert!(parse_scalar(&max_valid).is_ok());
-
-        // Test minimum invalid scalar (modulus)
-        let min_invalid = [
-            0x73, 0xed, 0xa7, 0x53, 0x29, 0x9d, 0x7d, 0x48, 0x33, 0x39, 0xd8, 0x08, 0x09, 0xa1,
-            0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
-            0x00, 0x00, 0x00, 0x01,
-        ];
-        assert!(parse_scalar(&min_invalid).is_err());
-
-        // Test zero (always valid)
-        let zero = [0u8; 32];
-        assert!(parse_scalar(&zero).is_ok());
-    }
-
-    /// Test parse_g1_compressed edge cases
-    #[test]
-    fn test_parse_g1_compressed_edge_cases() {
-        // Test valid identity element (point at infinity)
-        let identity = [
-            0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-        assert!(
-            parse_g1_compressed(&identity).is_ok(),
-            "Identity point should be valid"
-        );
-
-        // Test wrong input size - too short
-        let too_short = [0u8; 47]; // One byte short
-        assert!(
-            parse_g1_compressed(&too_short).is_err(),
-            "Input too short should fail"
-        );
-
-        // Test wrong input size - too long
-        let too_long = [0u8; 49]; // One byte too long
-        assert!(
-            parse_g1_compressed(&too_long).is_err(),
-            "Input too long should fail"
-        );
-
-        // Test all zeros (not a valid compressed point)
-        let all_zeros = [0u8; 48];
-        assert!(
-            parse_g1_compressed(&all_zeros).is_err(),
-            "All zeros should be invalid"
-        );
-
-        // Test all ones (invalid field element)
-        let all_ones = [0xffu8; 48];
-        assert!(
-            parse_g1_compressed(&all_ones).is_err(),
-            "All ones should be invalid"
-        );
-
-        // Test invalid compression flag (neither compressed nor uncompressed)
-        let invalid_flag = [
-            0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-        assert!(
-            parse_g1_compressed(&invalid_flag).is_err(),
-            "Invalid compression flag should fail"
-        );
-
-        // Test x-coordinate >= field modulus (invalid field element)
-        let invalid_x = [
-            0x9a, 0x0d, 0x51, 0xcc, 0x7f, 0xa0, 0x52, 0xe0, 0xc9, 0x9d, 0x3e, 0xa2, 0x42, 0x78,
-            0x10, 0x5b, 0xf0, 0x1c, 0x29, 0x94, 0x3d, 0xa1, 0x8e, 0xf2, 0x50, 0x51, 0x73, 0x37,
-            0x8a, 0x64, 0xa2, 0x61, 0x05, 0x43, 0x48, 0x44, 0x31, 0x15, 0x66, 0x5b, 0x5e, 0x96,
-            0x4e, 0x9b, 0x4a, 0x3c, 0x7c, 0x59,
-        ];
-        assert!(
-            parse_g1_compressed(&invalid_x).is_err(),
-            "X-coordinate >= field modulus should fail"
-        );
-
-        // Test point not on curve (valid x-coordinate but no corresponding y)
-        let not_on_curve = [
-            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
-        ];
-        assert!(
-            parse_g1_compressed(&not_on_curve).is_err(),
-            "Point not on curve should fail"
-        );
-
-        // Test identity with wrong infinity flag
-        let wrong_infinity = [
-            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-        assert!(
-            parse_g1_compressed(&wrong_infinity).is_err(),
-            "Wrong infinity flag should fail"
-        );
-    }
-
-    /// Test parse_g1_compressed with known valid points
-    #[test]
-    fn test_parse_g1_compressed_known_valid_points() {
-        // Test with the actual BLS12-381 generator point (compressed)
-        let generator_compressed = hex!("97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb");
-        let result = parse_g1_compressed(&generator_compressed);
-        assert!(
-            result.is_ok(),
-            "BLS12-381 generator should parse successfully"
-        );
-
-        // Test a known valid point from test vectors
-        let valid_point = hex!("8f59a8d2a1a625a17f3fea0fe5eb8c896db3764f3185481bc22f91b4aaffcca25f26936857bc3a7c2539ea8ec3a952b7");
-        let result = parse_g1_compressed(&valid_point);
-        assert!(
-            result.is_ok(),
-            "Known valid point should parse successfully"
-        );
-
-        // Test another known valid point with y-bit set
-        let valid_point_y_bit = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c");
-        let result = parse_g1_compressed(&valid_point_y_bit);
-        assert!(
-            result.is_ok(),
-            "Known valid point with y-bit should parse successfully"
-        );
-    }
-
-    /// Test parse_g1_compressed error conditions comprehensively
-    #[test]
-    fn test_parse_g1_compressed_comprehensive_errors() {
-        // Test various invalid compression flag combinations
-        let invalid_flags = [
-            0x00, // No compression bit set
-            0x20, // Reserved bit set
-            0x60, // Multiple reserved bits
-            0xe0, // All flag bits except infinity
-        ];
-
-        for &flag in &invalid_flags {
-            let mut invalid_point = [0u8; 48];
-            invalid_point[0] = flag;
-            assert!(
-                parse_g1_compressed(&invalid_point).is_err(),
-                "Invalid flag 0x{:02x} should fail",
-                flag
-            );
-        }
-
-        // Test infinity point with non-zero coordinates (should fail)
-        let mut invalid_infinity = [0u8; 48];
-        invalid_infinity[0] = 0xc0; // Infinity flag
-        invalid_infinity[47] = 0x01; // Non-zero coordinate
-        assert!(
-            parse_g1_compressed(&invalid_infinity).is_err(),
-            "Infinity point with non-zero coordinates should fail"
-        );
-
-        // Test compressed point with both infinity and y-bit flags
-        let mut invalid_mixed = [0u8; 48];
-        invalid_mixed[0] = 0xf0; // Both infinity and y-bit flags
-        assert!(
-            parse_g1_compressed(&invalid_mixed).is_err(),
-            "Point with both infinity and y-bit flags should fail"
-        );
     }
 }

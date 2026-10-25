@@ -52,7 +52,8 @@ fn both_mapping_outputs_and_charges_match_without_hints() {
 #[test]
 #[should_panic]
 fn forged_mapping_square_root_cannot_change_output() {
-    use crate::system_functions::{curve_hints::tests::lying_oracle, field_ops::FieldHintOp};
+    use crate::system_functions::field_ops::test_oracles::lying_oracle;
+    use crypto::hints::FieldHintOp;
     let mut oracle = lying_oracle(&[FieldHintOp::Bls12381BaseFieldSqrt]);
     let mut encoded = [0u8; 64];
     crypto::bls12_381::eip2537::serialize_fq_bytes(Fq::from(7u64), &mut encoded);

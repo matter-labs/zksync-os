@@ -2,6 +2,8 @@ use super::super::tests as bls_tests;
 use super::*;
 use crate::cost_constants::BLS12_381_G1MSM_PER_POINT_NATIVE_COST;
 use crypto::ark_ec::scalar_mul::sw_double_and_add_affine;
+use crypto::ark_ec::{AffineRepr, CurveGroup};
+use crypto::ark_ff::PrimeField;
 use crypto::ark_ff::{AdditiveGroup, Zero};
 use num_bigint::BigUint;
 use std::alloc::Global;

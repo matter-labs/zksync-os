@@ -1,17 +1,13 @@
 use super::*;
-use crate::system_functions::curve_hints;
-use alloc::vec::Vec;
-use crypto::ark_ec::CurveGroup;
-use crypto::ark_ff::AdditiveGroup;
+use crate::system_functions::field_ops::ZkOsHintOracle;
+use crypto::hints::HintOracle;
+use crypto::precompiles::{bls12_381_g1_msm, bls12_381_g2_msm};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::{Resources, SystemFunctionExt};
 
 pub const BLS12_381_G1_MSM_PER_POINT_GAS: u64 = 12000;
 pub const BLS12_381_G2_MSM_PER_POINT_GAS: u64 = 22500;
-
-pub const G1_MSM_PAIR_LEN: usize = SCALAR_SERIALIZATION_LEN + G1_SERIALIZATION_LEN;
-pub const G2_MSM_PAIR_LEN: usize = SCALAR_SERIALIZATION_LEN + G2_SERIALIZATION_LEN;
 
 pub const DISCOUNT_DENOMINATOR: u16 = 1000;
 
@@ -55,122 +51,6 @@ fn compute_cost(
     (per_pair_cost * num_pairs as u64) * (discount as u64) / (DISCOUNT_DENOMINATOR as u64)
 }
 
-fn log2(x: usize) -> u32 {
-    if x == 0 {
-        0
-    } else if x.is_power_of_two() {
-        1usize.leading_zeros() - x.leading_zeros()
-    } else {
-        0usize.leading_zeros() - x.leading_zeros()
-    }
-}
-
-fn ln_without_floats(a: usize) -> usize {
-    // log2(a) * ln(2)
-    (log2(a) * 69 / 100) as usize
-}
-
-/// Pippenger multi-scalar multiplication.
-///
-/// Invariant: `bases.len() == bigints.len()` (asserted at entry).
-/// All indexing below is bounded by `size` which equals both lengths.
-fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
-    bases: &[G::Affine],
-    mut bigints: Vec<<Fr as PrimeField>::BigInt, A>,
-    allocator: A,
-) -> G {
-    assert_eq!(bases.len(), bigints.len());
-    let size = bases.len();
-
-    const NUM_BITS: usize = 256;
-
-    // Special-case for small inputs: double-and-add over all bits.
-    if size < 4 {
-        let mut acc = G::ZERO;
-        for bit in (0..NUM_BITS).rev() {
-            let word_idx = bit / 64;
-            let bit_idx = bit % 64;
-
-            for (base, bigint) in bases.iter().zip(bigints.iter()) {
-                if bigint.0[word_idx] & 1 << bit_idx > 0 {
-                    acc += base;
-                }
-            }
-            if bit > 0 {
-                acc.double_in_place();
-            }
-        }
-
-        return acc;
-    }
-
-    let c = if size < 32 {
-        3
-    } else {
-        ln_without_floats(size) + 2
-    };
-    assert!(c < 64);
-
-    let zero = G::zero();
-    let mut window_start = 0;
-    let num_windows = NUM_BITS.div_ceil(c);
-
-    let mut reusable_buckets = Vec::with_capacity_in((1 << c) - 1, allocator.clone());
-    reusable_buckets.resize((1 << c) - 1, zero);
-
-    let mut window_sums = Vec::with_capacity_in(num_windows, allocator);
-    window_sums.resize(num_windows, zero);
-
-    let lowest_bits_mask = (1u64 << c) - 1;
-
-    #[allow(clippy::needless_range_loop)]
-    for window_idx in 0..num_windows {
-        let last_window = window_idx == num_windows - 1;
-
-        for (base, bigint) in bases.iter().zip(bigints.iter_mut()) {
-            // Extract lowest c bits as the bucket index.
-            let scalar: u64 = bigint.as_ref()[0] & lowest_bits_mask;
-
-            use core::ops::ShrAssign;
-            bigint.shr_assign(c as u32);
-
-            if scalar != 0 {
-                reusable_buckets[(scalar - 1) as usize] += base;
-            }
-        }
-
-        // now sum over buckets
-        let mut tmp = zero;
-        let mut window_result = zero;
-        for el in reusable_buckets.iter_mut().rev() {
-            tmp += &*el;
-            window_result += &tmp;
-            if last_window == false {
-                *el = zero;
-            }
-        }
-        window_sums[window_idx] = window_result;
-
-        window_start += c;
-    }
-
-    assert!(window_start >= 256);
-
-    let lowest = *window_sums.first().unwrap();
-
-    lowest
-        + window_sums[1..]
-            .iter()
-            .rev()
-            .fold(zero, |mut total, sum_i| {
-                total += sum_i;
-                for _ in 0..c {
-                    total.double_in_place();
-                }
-                total
-            })
-}
-
 pub struct Bls12381G1MSMPrecompile<const USE_ADVICE: bool>;
 
 impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileErrors>
@@ -195,7 +75,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 output,
                 resources,
                 allocator,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -204,14 +88,14 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g1_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],
     output: &mut D,
     resources: &mut R,
     allocator: A,
-    mut oracle: Option<&mut O>,
+    oracle: Option<&mut O>,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     if input.is_empty() || !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
         return Err(interface_error!(
@@ -234,55 +118,8 @@ fn bls12_381_g1_msm_as_system_function_inner<
     );
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let num_pairs = input.len() / G1_MSM_PAIR_LEN;
-    let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
-    let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
-
-    // arkworks MSM allocates inside, so we will do it our way, just parse here
-    // G1Projective::msm_bigint(bases, bigints)
-
-    // parse to use Peppinger algorithm
-    for pair_encoding in input.as_chunks::<G1_MSM_PAIR_LEN>().0.iter() {
-        let point = parse_g1_with_subgroup_check_with_oracle(
-            pair_encoding[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
-            oracle.as_deref_mut(),
-        )?;
-        let scalar = parse_integer(
-            pair_encoding[G1_SERIALIZATION_LEN..(G1_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
-                .try_into()
-                .unwrap(),
-        );
-        points.push(point);
-        scalars.push(scalar);
-    }
-
-    // Reduction modulo r is valid only after every point passed its subgroup check.
-    // For one or two pairs affine GLV shares the doublings and checks each slope hint.
-    let result = if let Some(oracle) = oracle.as_deref_mut().filter(|_| num_pairs <= 2) {
-        let scalar = |s: <Fr as PrimeField>::BigInt| g1::scalar_from_limbs(s.as_ref());
-        let k = scalar(scalars[0]);
-        let (q, l) = if num_pairs == 2 {
-            (points[1], scalar(scalars[1]))
-        } else {
-            (G1Affine::identity(), Fr::ZERO)
-        };
-        drop(scalars);
-        g1::mul_two_affine_with_divider(
-            &points[0],
-            k,
-            &q,
-            l,
-            &mut curve_hints::Bls12381FqDivider::new(oracle),
-        )
-    } else {
-        let result: G1Projective = msm(&points, scalars, allocator);
-        match oracle {
-            Some(oracle) => g1::into_affine_with_inverse(&result, |z| {
-                curve_hints::bls12_381_fq_inverse(oracle, z)
-            }),
-            None => result.into_affine(),
-        }
-    };
+    let result = bls12_381_g1_msm(input.as_chunks::<G1_MSM_PAIR_LEN>().0, allocator, oracle)
+        .map_err(interface_error_of)?;
 
     write_g1(result, output)?;
 
@@ -313,7 +150,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 output,
                 resources,
                 allocator,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -322,14 +163,14 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g2_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],
     output: &mut D,
     resources: &mut R,
     allocator: A,
-    mut oracle: Option<&mut O>,
+    oracle: Option<&mut O>,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     if input.is_empty() || !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
         return Err(interface_error!(
@@ -352,37 +193,8 @@ fn bls12_381_g2_msm_as_system_function_inner<
     );
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let num_pairs = input.len() / G2_MSM_PAIR_LEN;
-
-    let mut scalars = Vec::with_capacity_in(num_pairs, allocator.clone());
-    let mut points = Vec::with_capacity_in(num_pairs, allocator.clone());
-
-    // arkworks MSM allocates inside, so we will do it our way, just parse here
-    // G1Projective::msm_bigint(bases, bigints)
-
-    // parse to use Peppinger algorithm
-    for pair_encoding in input.as_chunks::<G2_MSM_PAIR_LEN>().0.iter() {
-        let point = parse_g2_with_subgroup_check_with_oracle(
-            pair_encoding[0..G2_SERIALIZATION_LEN].try_into().unwrap(),
-            oracle.as_deref_mut(),
-        )?;
-        let scalar = parse_integer(
-            pair_encoding[G2_SERIALIZATION_LEN..(G2_SERIALIZATION_LEN + SCALAR_SERIALIZATION_LEN)]
-                .try_into()
-                .unwrap(),
-        );
-        points.push(point);
-        scalars.push(scalar);
-    }
-
-    let result: G2Projective = msm(&points, scalars, allocator);
-
-    let result = match oracle {
-        Some(oracle) => {
-            g2::into_affine_with_inverse(&result, |z| curve_hints::bls12_381_fq2_inverse(oracle, z))
-        }
-        None => result.into_affine(),
-    };
+    let result = bls12_381_g2_msm(input.as_chunks::<G2_MSM_PAIR_LEN>().0, allocator, oracle)
+        .map_err(interface_error_of)?;
 
     write_g2(result, output)?;
 

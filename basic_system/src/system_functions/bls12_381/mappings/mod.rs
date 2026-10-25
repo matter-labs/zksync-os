@@ -1,6 +1,6 @@
-use crate::system_functions::curve_hints;
-use core::cell::RefCell;
-use crypto::ark_ff::Zero;
+use crate::system_functions::field_ops::ZkOsHintOracle;
+use crypto::hints::HintOracle;
+use crypto::precompiles::{bls12_381_map_fp2_to_g2, bls12_381_map_fp_to_g1};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::{Resources, SystemFunctionExt};
@@ -33,7 +33,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 input,
                 output,
                 resources,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -42,7 +46,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_map_fp_to_g1_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
 >(
     input: &[u8],
     output: &mut D,
@@ -59,38 +63,8 @@ fn bls12_381_map_fp_to_g1_as_system_function_inner<
     let cost_native = crate::cost_constants::BLS12_381_MAP_FP_TO_G1_NATIVE_COST;
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let field_element = crypto::bls12_381::eip2537::parse_fq_bytes(input.try_into().unwrap())
-        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement))?;
-    let invalid_field = || interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement);
-    let result = match oracle {
-        Some(oracle) => {
-            // The callbacks run sequentially; both need access to the same oracle.
-            let oracle = RefCell::new(oracle);
-            let point = crypto::bls12_381::eip2537::map_fp_to_g1_with_hints(
-                field_element,
-                |value| curve_hints::bls12_381_fq_inverse(*oracle.borrow_mut(), value),
-                |value, z| {
-                    let mut oracle = oracle.borrow_mut();
-                    // Match SWU's Legendre convention: zero takes the non-residue branch.
-                    if !value.is_zero() {
-                        if let Some(root) = curve_hints::bls12_381_fq_sqrt(*oracle, value) {
-                            return (root, true);
-                        }
-                    }
-                    let root = curve_hints::bls12_381_fq_sqrt(*oracle, &(*z * value))
-                        .expect("the SWU non-residue times a non-square is square");
-                    (root, false)
-                },
-            );
-            crypto::bls12_381::curves::g1::clear_cofactor_with_divider(
-                &point,
-                &mut curve_hints::Bls12381FqDivider::new(oracle.into_inner()),
-            )
-        }
-        None => crypto::bls12_381::eip2537::map_fp_to_g1(field_element)
-            .map_err(|_| invalid_field())?
-            .clear_cofactor(),
-    };
+    let result =
+        bls12_381_map_fp_to_g1(input.try_into().unwrap(), oracle).map_err(interface_error_of)?;
 
     write_g1(result, output)?;
 
@@ -120,7 +94,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 input,
                 output,
                 resources,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -129,7 +107,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_map_fp2_to_g2_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
 >(
     input: &[u8],
     output: &mut D,
@@ -146,39 +124,8 @@ fn bls12_381_map_fp2_to_g2_as_system_function_inner<
     let cost_native = crate::cost_constants::BLS12_381_MAP_FP2_TO_G2_NATIVE_COST;
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let field_element = crypto::bls12_381::eip2537::parse_fq2_bytes(input.try_into().unwrap())
-        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement))?;
-
-    let invalid_field = || interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement);
-    let result = match oracle {
-        Some(oracle) => {
-            // The callbacks run sequentially; both need access to the same oracle.
-            let oracle = RefCell::new(oracle);
-            let point = crypto::bls12_381::eip2537::map_fp2_to_g2_with_hints(
-                field_element,
-                |value| curve_hints::bls12_381_fq2_inverse(*oracle.borrow_mut(), value),
-                |value, z| {
-                    let mut oracle = oracle.borrow_mut();
-                    // Match SWU's Legendre convention: zero takes the non-residue branch.
-                    if !value.is_zero() {
-                        if let Some(root) = curve_hints::bls12_381_fq2_sqrt(*oracle, value) {
-                            return (root, true);
-                        }
-                    }
-                    let root = curve_hints::bls12_381_fq2_sqrt(*oracle, &(*z * value))
-                        .expect("the SWU non-residue times a non-square is square");
-                    (root, false)
-                },
-            );
-            crypto::bls12_381::curves::g2::clear_cofactor_with_divider(
-                &point,
-                &mut curve_hints::Bls12381Fq2Divider::new(oracle.into_inner()),
-            )
-        }
-        None => crypto::bls12_381::eip2537::map_fp2_to_g2(field_element)
-            .map_err(|_| invalid_field())?
-            .clear_cofactor(),
-    };
+    let result =
+        bls12_381_map_fp2_to_g2(input.try_into().unwrap(), oracle).map_err(interface_error_of)?;
 
     write_g2(result, output)?;
 

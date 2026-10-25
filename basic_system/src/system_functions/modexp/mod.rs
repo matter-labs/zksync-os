@@ -1,12 +1,11 @@
 use super::*;
 
+use crate::system_functions::field_ops::ZkOsHintOracle;
 use alloc::vec::Vec;
+use crypto::modexp::strip_leading_zeroes;
 use ruint::aliases::U256;
 use zk_ee::common_traits::TryExtend;
-use zk_ee::oracle::memory_io::host::{read_querier_word, QuerierMemory};
-use zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::SystemFunctionExt;
 use zk_ee::{
@@ -85,7 +84,7 @@ fn modexp_native_from_ops(total_ops: u64, digits: u64) -> u64 {
 
 /// The delegated modexp implementation may do one `quotient * modulus + remainder`
 /// FMA before the exponent loop to reduce an oversized base into the modulus
-/// range (`advice/bigint.rs`: `reduce_initially`).
+/// range (`crypto::modexp::advice`, `bigint.rs`: `reduce_initially`).
 ///
 /// That FMA is a schoolbook multiply whose delegation count scales with the
 /// product of the operand word counts — `quotient_digits * modulus_digits` (the
@@ -103,17 +102,10 @@ fn modexp_initial_reduction_native_cost(quotient_digits: u64, modulus_digits: u6
         .div_ceil(2)
 }
 
-pub(super) fn strip_leading_zeroes(bytes: &[u8]) -> &[u8] {
-    let first_nonzero = bytes
-        .iter()
-        .position(|&byte| byte != 0)
-        .unwrap_or(bytes.len());
-    &bytes[first_nonzero..]
-}
-
 /// Number of 32-byte words needed to represent the value, ignoring leading
 /// zero bytes. This mirrors `BigUint::digits` in the delegated bigint
-/// implementation (`advice/bigint.rs`), which counts significant 32-byte words.
+/// implementation (`crypto::modexp::advice`, `bigint.rs`), which counts
+/// significant 32-byte words.
 fn significant_word_count(bytes: &[u8]) -> u64 {
     (strip_leading_zeroes(bytes).len() as u64).div_ceil(32)
 }
@@ -122,8 +114,8 @@ fn significant_word_count(bytes: &[u8]) -> u64 {
 /// reduction FMA before the exponent loop.
 ///
 /// That implementation gates the reduction purely on the significant 32-byte
-/// word counts of the operands (`advice/bigint.rs`: `if current.digits >=
-/// modulus.digits`) and, once the gate passes, always performs the FMA
+/// word counts of the operands (`crypto::modexp::advice`, `bigint.rs`:
+/// `if current.digits >= modulus.digits`) and, once the gate passes, always performs the FMA
 /// regardless of the operand values. We therefore compare word counts here too
 /// (rather than the numeric values): a base that is smaller in value than the
 /// modulus but occupies the same number of words is still reduced, and must be
@@ -145,57 +137,14 @@ fn requires_initial_reduction(base: &[u8], modulus: &[u8]) -> bool {
     significant_word_count(base) >= modulus_words
 }
 
-// Query ID for modular exponentiation advice from oracle
-pub const MODEXP_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x10;
+/// The query of the modexp advice (see `crypto::modexp`)
+pub use crypto::hints::MODEXP_ADVICE_QUERY_ID;
 
-/// Parameters for modular exponentiation oracle query
-/// Used to request division advice for big integer operations during modexp. The querier sends the
-/// address of a `ModExpAdviceParamsGeneric<usize>`, and the oracle answers with the lengths of the
-/// quotient and of the remainder in `u32` words, then their words (little-endian).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ModExpAdviceParamsGeneric<W> {
-    pub op: W,          // Operation type (0 = division)
-    pub a_ptr: W,       // Pointer to dividend
-    pub a_len: W,       // Length of dividend in 256-bit digits
-    pub b_ptr: W,       // Pointer to divisor
-    pub b_len: W,       // Length of divisor in 256-bit digits
-    pub modulus_ptr: W, // Pointer to modulus
-    pub modulus_len: W, // Length of modulus in 256-bit digits
+/// The advice path of the modexp with a naive advisor, for the fuzzers
+pub mod advice {
+    #[cfg(feature = "testing")]
+    pub use crypto::modexp::advice::delegated_modexp_with_naive_advisor;
 }
-
-/// Used for proving (RISC-V 32-bit)
-pub type ModExpAdviceParams = ModExpAdviceParamsGeneric<u32>;
-
-/// Used for native execution (64-bit)
-pub type ModExpAdviceParams64 = ModExpAdviceParamsGeneric<u64>;
-
-/// The request of a modexp advice query, as the oracle reads it through the input word: the address
-/// of a `ModExpAdviceParamsGeneric<usize>` of the querier, whose fields are querier words.
-pub fn read_modexp_advice_params<M: QuerierMemory + ?Sized>(
-    memory: &M,
-    address: usize,
-) -> Result<ModExpAdviceParamsGeneric<usize>, InternalError> {
-    let word_size = memory.word_size();
-    let field = |index: usize| {
-        let field_address = index
-            .checked_mul(word_size)
-            .and_then(|offset| address.checked_add(offset))
-            .ok_or_else(|| internal_error!("querier address overflows"))?;
-        read_querier_word(memory, field_address)
-    };
-    Ok(ModExpAdviceParamsGeneric {
-        op: field(0)?,
-        a_ptr: field(1)?,
-        a_len: field(2)?,
-        b_ptr: field(3)?,
-        b_len: field(4)?,
-        modulus_ptr: field(5)?,
-        modulus_len: field(6)?,
-    })
-}
-
-pub mod advice;
 
 ///
 /// modexp system function implementation.
@@ -421,47 +370,50 @@ fn modexp_as_system_function_inner<
     debug_assert_eq!(exponent.len(), exp_len);
     debug_assert_eq!(modulus.len(), mod_len);
 
-    // Call the modexp.
+    // Call the modexp: with the advice of the oracle when proving (and in the tests), and in
+    // the forward run with `USE_ADVICE`, to capture the oracle queries.
 
     #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
-    let output = self::advice::modexp(
+    let output = crypto::modexp::advice::modexp(
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
-        oracle,
-        logger,
+        ZkOsHintOracle::from_mut(oracle),
         allocator,
     );
 
     #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
-    let output = if USE_ADVICE {
-        self::advice::modexp(
-            base.as_slice(),
-            exponent.as_slice(),
-            modulus.as_slice(),
-            oracle,
-            logger,
-            allocator,
-        )
-    } else {
-        ::modexp::modexp(
-            base.as_slice(),
-            exponent.as_slice(),
-            modulus.as_slice(),
-            allocator,
-        )
-    };
+    let output = crypto::modexp::modexp(
+        base.as_slice(),
+        exponent.as_slice(),
+        modulus.as_slice(),
+        allocator,
+        if USE_ADVICE {
+            Some(ZkOsHintOracle::from_mut(oracle))
+        } else {
+            None
+        },
+    );
 
-    if output.len() >= mod_len {
-        // truncate
-        dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
-            .map_err(|_| out_of_return_memory!())?;
-    } else {
-        dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
-            .map_err(|_| out_of_return_memory!())?;
-    }
+    crypto::modexp::write_modexp_output(output, mod_len, &mut ModExpOutput(dst))
+        .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
+}
+
+/// The destination of the precompile as the destination of `crypto::modexp::write_modexp_output`
+struct ModExpOutput<'a, D: ?Sized + TryExtend<u8>>(&'a mut D);
+
+impl<D: ?Sized + TryExtend<u8>> crypto::modexp::TryExtend<u8> for ModExpOutput<'_, D> {
+    type Error = D::Error;
+
+    #[inline(always)]
+    fn try_extend<I>(&mut self, iter: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = u8>,
+    {
+        self.0.try_extend(iter)
+    }
 }
 
 /// Computes the gas cost for modexp (Fusaka repricing, EIP-7883).
@@ -513,7 +465,7 @@ pub fn native_cost_from_exp_data<R: Resources>(
 ) -> Result<R::Native, SystemError> {
     // Per-op cost tracks the operands actually multiplied in the exponent loop.
     // After the initial reduction every square/multiply operand is reduced mod
-    // `modulus` (operands are asserted `<= modulus.digits` in `advice/bigint.rs`),
+    // `modulus` (operands are asserted `<= modulus.digits` in `crypto::modexp::advice`),
     // so the per-op work is `modulus_digits^2`, not `max(base, modulus)_digits^2`.
     // The base size only affects the separate initial-reduction term below.
     let digits = core::cmp::max(1, significant_word_count(modulus));

@@ -1,6 +1,7 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST};
-use field_ops::Secp256k1HooksWithOracle;
+use crypto::precompiles::{secp256k1_ecrecover, WordAligned};
+use field_ops::ZkOsHintOracle;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
@@ -79,9 +80,13 @@ fn ecrecover_as_system_function_inner<
         return Ok(());
     }
 
-    let oracle = if USE_ADVICE { oracle } else { None };
+    let oracle = if USE_ADVICE {
+        oracle.map(ZkOsHintOracle::from_mut)
+    } else {
+        None
+    };
 
-    let Ok(public_key) = ecrecover_inner(digest, r, s, rec_id == 1, oracle) else {
+    let Ok(public_key) = secp256k1_ecrecover(digest, r, s, rec_id == 1, oracle) else {
         return Ok(());
     };
 
@@ -91,46 +96,6 @@ fn ecrecover_as_system_function_inner<
         .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
-}
-
-/// Bytes at an address aligned for words: the conversions between big-endian bytes and integers
-/// work by words then (see `crypto::bigint_delegation::u256::from_be_bytes`)
-#[repr(C, align(4))]
-pub struct WordAligned<const N: usize>(pub [u8; N]);
-
-/// The public key (its coordinates `x` and `y`, big-endian) of the signature `(r, s)` of
-/// `digest`, for the point of the signature with the coordinate `x = r` and the `y` of the
-/// given parity. Fails if `r` or `s` is not in `[1, order - 1]`, or there is no such point or
-/// key.
-pub fn ecrecover_inner<O: IOOracle>(
-    digest: &[u8; 32],
-    r: &[u8; 32],
-    s: &[u8; 32],
-    y_is_odd: bool,
-    oracle: Option<&mut O>,
-) -> Result<WordAligned<64>, ()> {
-    use crypto::secp256k1::{hooks::DefaultSecp256k1Hooks, recover_from_bytes_with_hooks};
-
-    let public_key = match oracle {
-        Some(oracle) => recover_from_bytes_with_hooks(
-            digest,
-            r,
-            s,
-            y_is_odd,
-            &mut Secp256k1HooksWithOracle::new(oracle),
-        ),
-        None => recover_from_bytes_with_hooks(digest, r, s, y_is_odd, &mut DefaultSecp256k1Hooks),
-    }
-    .map_err(|_| ())?;
-
-    // represent as bytes, and we do not need compression
-    let mut encoded = WordAligned([0u8; 64]);
-    let ([x, y], []) = encoded.0.as_chunks_mut::<32>() else {
-        unreachable!("64 bytes are 2 chunks of 32")
-    };
-    public_key.write_coordinates(x, y);
-
-    Ok(encoded)
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
-use crate::system_functions::curve_hints;
-use crypto::ark_ec::CurveGroup;
+use crate::system_functions::field_ops::ZkOsHintOracle;
+use crypto::hints::HintOracle;
+use crypto::precompiles::{bls12_381_g1_add, bls12_381_g2_add};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::{Resources, SystemFunctionExt};
@@ -32,7 +33,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 input,
                 output,
                 resources,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -41,7 +46,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g1_add_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
 >(
     input: &[u8],
     output: &mut D,
@@ -58,19 +63,14 @@ fn bls12_381_g1_add_as_system_function_inner<
     let cost_native = crate::cost_constants::BLS12_381_G1ADD_NATIVE_COST;
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let p0 = parse_g1(input[0..G1_SERIALIZATION_LEN].try_into().unwrap())?;
-    let p1 = parse_g1(
+    let result = bls12_381_g1_add(
+        input[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
         input[G1_SERIALIZATION_LEN..(2 * G1_SERIALIZATION_LEN)]
             .try_into()
             .unwrap(),
-    )?;
-
-    let result = match oracle {
-        Some(oracle) => {
-            g1::add_affine_with_divider(&p0, &p1, &mut curve_hints::Bls12381FqDivider::new(oracle))
-        }
-        None => (p0 + p1).into_affine(),
-    };
+        oracle,
+    )
+    .map_err(interface_error_of)?;
 
     write_g1(result, output)?;
 
@@ -100,7 +100,11 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 input,
                 output,
                 resources,
-                if USE_ADVICE { Some(oracle) } else { None },
+                if USE_ADVICE {
+                    Some(ZkOsHintOracle::from_mut(oracle))
+                } else {
+                    None
+                },
             )
         })
     }
@@ -109,7 +113,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g2_add_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: IOOracle,
+    O: HintOracle,
 >(
     input: &[u8],
     output: &mut D,
@@ -126,19 +130,14 @@ fn bls12_381_g2_add_as_system_function_inner<
     let cost_native = crate::cost_constants::BLS12_381_G2ADD_NATIVE_COST;
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let p0 = parse_g2(input[0..G2_SERIALIZATION_LEN].try_into().unwrap())?;
-    let p1 = parse_g2(
+    let result = bls12_381_g2_add(
+        input[0..G2_SERIALIZATION_LEN].try_into().unwrap(),
         input[G2_SERIALIZATION_LEN..(2 * G2_SERIALIZATION_LEN)]
             .try_into()
             .unwrap(),
-    )?;
-
-    let result = match oracle {
-        Some(oracle) => {
-            g2::add_affine_with_divider(&p0, &p1, &mut curve_hints::Bls12381Fq2Divider::new(oracle))
-        }
-        None => (p0 + p1).into_affine(),
-    };
+        oracle,
+    )
+    .map_err(interface_error_of)?;
 
     write_g2(result, output)?;
 

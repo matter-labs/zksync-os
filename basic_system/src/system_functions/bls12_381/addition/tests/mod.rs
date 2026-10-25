@@ -1,7 +1,7 @@
 use super::super::tests::compare;
 use super::*;
 use alloc::vec::Vec;
-use crypto::ark_ec::AffineRepr;
+use crypto::ark_ec::{AffineRepr, CurveGroup};
 use crypto::ark_ff::AdditiveGroup;
 use zk_ee::system::Resource;
 
@@ -57,8 +57,8 @@ fn wrong_g1_slope_cannot_change_addition() {
     let mut input = Vec::new();
     write_g1(g, &mut input).unwrap();
     write_g1(g, &mut input).unwrap();
-    let mut oracle = curve_hints::tests::lying_oracle(&[
-        crate::system_functions::field_ops::FieldHintOp::Bls12381BaseFieldDivision,
+    let mut oracle = crate::system_functions::field_ops::test_oracles::lying_oracle(&[
+        crypto::hints::FieldHintOp::Bls12381BaseFieldDivision,
     ]);
     let mut resources = zk_ee::reference_implementations::BaseResources::<
         zk_ee::reference_implementations::DecreasingNative,

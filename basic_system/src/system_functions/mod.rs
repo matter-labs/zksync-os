@@ -7,7 +7,6 @@ pub mod bls12_381;
 pub mod bn254_ecadd;
 pub mod bn254_ecmul;
 pub mod bn254_pairing_check;
-pub mod curve_hints;
 pub mod ecrecover;
 pub mod field_ops;
 pub mod keccak256;
