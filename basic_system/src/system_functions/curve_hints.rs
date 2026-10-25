@@ -991,9 +991,17 @@ pub(crate) mod tests {
             match read_op(memory, input_word) {
                 FieldHintOp::Bn254PairingResidueWitness
                 | FieldHintOp::Bls12381KzgResidueWitness
-                | FieldHintOp::Bls12381PairingResidueWitness => native_run_responses.extend(
-                    callable_oracles::field_hints::not_identity_claim(memory, input_word),
-                ),
+                | FieldHintOp::Bls12381PairingResidueWitness => {
+                    // SAFETY: the tests query from this process (a native run), whose memory
+                    // `memory` is, while they send the request of a hinted operation, which
+                    // points to live values of the operand types of its op
+                    native_run_responses.extend(unsafe {
+                        crypto::hints::not_identity_claim(
+                            &crate::system_functions::field_ops::ZkOsQuerierMemory(memory),
+                            input_word,
+                        )
+                    })
+                }
                 _ => self.0.process_memory_query(
                     query_id,
                     input_word,

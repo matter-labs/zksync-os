@@ -1,13 +1,13 @@
 #![feature(allocator_api)]
 use basic_system::system_functions::{
-    bls12_381::Bls12381PairingCheckPrecompile,
-    field_ops::{read_field_hint_request, FieldHintOp, HintAnswer, HintTarget},
+    bls12_381::Bls12381PairingCheckPrecompile, field_ops::ZkOsQuerierMemory,
 };
-use callable_oracles::field_hints::{not_identity_claim, NativeFieldOpsQuery};
+use callable_oracles::field_hints::NativeFieldOpsQuery;
 use crypto::{
     ark_ec::AffineRepr,
     ark_ff::{BigInteger, One, PrimeField},
     bls12_381::{Fq, Fq12, Fq6, Fr, G1Affine, G2Affine},
+    hints::{not_identity_claim, read_field_hint_request, FieldHintOp, HintAnswer, HintTarget},
 };
 use oracle_provider::{OracleQueryProcessor, RunMode, ZkEENonDeterminismSource};
 use zk_ee::{
@@ -34,14 +34,17 @@ impl OracleQueryProcessor for PairingOracle {
         native: &mut Vec<u32>,
         guest: &mut Vec<u32>,
     ) {
-        let (op, _, _) = read_field_hint_request(memory, word).unwrap();
+        let (op, _, _) = read_field_hint_request(&ZkOsQuerierMemory(memory), word).unwrap();
         if op == FieldHintOp::Bls12381PairingResidueWitness as u32 {
             let mut answer = if self.false_identity {
                 let mut words = Vec::new();
                 (true, (Fq12::one(), Fq6::one())).write(HintTarget::Native, &mut words);
                 words
             } else if self.force_exact {
-                not_identity_claim(memory, word)
+                // SAFETY: the precompile runs in this process (a native run), and the memory is
+                // this process's while it sends the request of a hinted operation, whose operand
+                // references live values of the operand types of its op
+                unsafe { not_identity_claim(&ZkOsQuerierMemory(memory), word) }
             } else {
                 let mut result = Vec::new();
                 NativeFieldOpsQuery.process_memory_query(

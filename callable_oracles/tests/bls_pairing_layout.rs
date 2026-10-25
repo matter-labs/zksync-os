@@ -1,12 +1,11 @@
-use basic_system::system_functions::{
-    curve_hints::{guest_layout::*, Bls12381Pair},
-    field_ops::{FieldHintOp, FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID},
-};
 use callable_oracles::field_hints::NativeFieldOpsQuery;
 use crypto::{
     ark_ec::AffineRepr,
     ark_ff::{Field, PrimeField},
     bls12_381::{Fq, Fr, G1Affine, G2Affine},
+    hints::{
+        guest_layout::*, Bls12381Pair, FieldHintOp, FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID,
+    },
 };
 use oracle_provider::{OracleQueryProcessor, RunMode};
 use zk_ee::{
