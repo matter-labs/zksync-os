@@ -584,4 +584,237 @@ mod tests {
         let mut b: U256 = HostU256::from(6u64).into();
         DivNonZeroDivisorImpl::<true>::execute(&mut a, &mut b, &mut wrong_oracle);
     }
+
+    type Reducer = fn(&mut U256, &mut U256, &U256, U256, U256);
+
+    /// A small deterministic generator (xorshift64*)
+    struct Rng(u64);
+
+    impl Rng {
+        fn next_u64(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+
+        fn u256(&mut self) -> HostU256 {
+            HostU256::from_limbs([(); 4].map(|()| self.next_u64()))
+        }
+    }
+
+    fn halves(value: U512) -> (HostU256, HostU256) {
+        let limbs = value.as_limbs();
+        (
+            HostU256::from_limbs(limbs[..4].try_into().unwrap()),
+            HostU256::from_limbs(limbs[4..].try_into().unwrap()),
+        )
+    }
+
+    /// Runs `reduce` on a fresh copy of `product` with the quotient `(q_lo, q_hi)`: the remainder,
+    /// or the panic message
+    fn reduce_with(
+        reduce: Reducer,
+        product: U512,
+        modulus: HostU256,
+        (q_lo, q_hi): (HostU256, HostU256),
+    ) -> Result<HostU256, String> {
+        let (lo, hi) = halves(product);
+        let (mut lo, mut hi): (U256, U256) = (lo.into(), hi.into());
+        let modulus: U256 = modulus.into();
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            reduce(&mut lo, &mut hi, &modulus, q_lo.into(), q_hi.into())
+        }))
+        .map(|()| host(&lo))
+        .map_err(|payload| match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_owned(),
+            Err(payload) => *payload.downcast::<String>().expect("a panic message"),
+        })
+    }
+
+    /// Checks the reducer of the EVM MULMOD, ADDMOD and `WideDivRem` advice against every answer
+    /// in `candidates` for `product / modulus`: it accepts exactly the right quotient and leaves
+    /// the right remainder. (The reducer for residues, which ModExp uses, moved to airbender-crypto
+    /// with these checks, `hints::wide_div::tests`.)
+    fn check_reducers(product: U512, modulus: HostU256, candidates: &[(HostU256, HostU256)]) {
+        let right = halves(product / U512::from(modulus));
+        let remainder = halves(product % U512::from(modulus)).0;
+        for &candidate in candidates {
+            let accepts = candidate == right;
+            match reduce_with(
+                reduce_product_with_quotient as Reducer,
+                product,
+                modulus,
+                candidate,
+            ) {
+                Ok(result) => {
+                    assert!(accepts, "{product} / {modulus}: accepted {candidate:?}");
+                    assert_eq!(result, remainder, "{product} mod {modulus}");
+                }
+                Err(message) => {
+                    assert!(!accepts, "{product} / {modulus}: rejected {candidate:?}");
+                    assert!(message.starts_with("mulmod hint: "), "{message}");
+                }
+            }
+        }
+    }
+
+    /// Answers an oracle could give for `product / modulus`: the right one, its neighbours, high
+    /// halves that are not zero, the extremes, quotients that are right modulo `2^256` or (for a
+    /// power of two modulus) whose product with the modulus is right modulo `2^512`, and random ones
+    fn quotient_candidates(
+        product: U512,
+        modulus: HostU256,
+        rng: &mut Rng,
+    ) -> Vec<(HostU256, HostU256)> {
+        let q = product / U512::from(modulus);
+        let (q_lo, _) = halves(q);
+        let one = U512::from(1u64);
+        let mut candidates: Vec<_> = [q, q.wrapping_add(one), q.wrapping_sub(one)]
+            .into_iter()
+            .chain([0, 1, 64, 128, 255].map(|k| q.wrapping_add(one << 256).wrapping_sub(one << k)))
+            .map(halves)
+            .collect();
+        candidates.extend(
+            [
+                HostU256::from(1u64),
+                HostU256::from(1u64) << 255,
+                HostU256::MAX,
+            ]
+            .map(|hi| (q_lo, hi)),
+        );
+        candidates.extend([
+            (HostU256::ZERO, HostU256::ZERO),
+            (HostU256::MAX, HostU256::ZERO),
+            (HostU256::MAX, HostU256::MAX),
+            (rng.u256(), HostU256::ZERO),
+            (rng.u256(), HostU256::ZERO),
+            (rng.u256(), rng.u256()),
+            (rng.u256(), rng.u256()),
+        ]);
+        if modulus.is_power_of_two() {
+            // (q + 2^(512 - k)) * 2^k = q * 2^k mod 2^512
+            let k = modulus.trailing_zeros();
+            candidates.push(halves(q.wrapping_add(one << (512 - k))));
+        }
+        candidates
+    }
+
+    /// Moduli with 1 to 4 significant limbs: small ones, around powers of two, the common primes,
+    /// and random ones (even and odd)
+    fn test_moduli(rng: &mut Rng) -> Vec<HostU256> {
+        let hex = |digits: &str| HostU256::from_str_radix(digits, 16).unwrap();
+        let pow2 = |k: usize| HostU256::from(1u64) << k;
+        let mut moduli: Vec<_> = [2u64, 3, 4, 5, 7, 8, 16, 17, 255, 256]
+            .map(HostU256::from)
+            .into();
+        moduli.extend([
+            pow2(64) - HostU256::from(59u64),
+            pow2(64),
+            pow2(64) + HostU256::from(13u64),
+            pow2(128),
+            pow2(128) + HostU256::from(51u64),
+            pow2(192) + HostU256::from(133u64),
+            pow2(255),
+            pow2(255) + HostU256::from(1u64),
+            // BN254 r and q
+            hex("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001"),
+            hex("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47"),
+            // secp256k1 p and n
+            hex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"),
+            hex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"),
+            HostU256::MAX - HostU256::from(188u64),
+            HostU256::MAX - HostU256::from(1u64),
+            HostU256::MAX,
+        ]);
+        for i in 0..32 {
+            let mut limbs = [0u64; 4];
+            let significant = 1 + i % 4;
+            for limb in &mut limbs[..significant] {
+                *limb = rng.next_u64();
+            }
+            limbs[significant - 1] |= 1 << 63;
+            limbs[0] = if i % 2 == 0 {
+                limbs[0] & !1
+            } else {
+                limbs[0] | 1
+            };
+            moduli.push(HostU256::from_limbs(limbs));
+        }
+        moduli
+    }
+
+    /// Residues `x, y < modulus` (the case the exponent walk of modexp reduces): the reducer
+    /// accepts exactly the right quotient, whose high half is always zero
+    #[test]
+    fn residue_product_reducer_accepts_what_the_general_one_accepts() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        for modulus in test_moduli(&mut rng) {
+            let one = HostU256::from(1u64);
+            let two = HostU256::from(2u64);
+            let mut operands = vec![
+                HostU256::ZERO,
+                one,
+                two,
+                modulus >> 1,
+                modulus - two,
+                modulus - one,
+            ];
+            operands.extend((0..4).map(|_| rng.u256() % modulus));
+            operands.retain(|x| *x < modulus);
+            operands.sort_unstable();
+            operands.dedup();
+            for (i, x) in operands.iter().enumerate() {
+                for y in &operands[i..] {
+                    let product: U512 = x.widening_mul(*y);
+                    let (_, q_hi) = halves(product / U512::from(modulus));
+                    assert!(q_hi.is_zero(), "{x} * {y} / {modulus}");
+                    let candidates = quotient_candidates(product, modulus, &mut rng);
+                    check_reducers(product, modulus, &candidates);
+                }
+            }
+        }
+    }
+
+    /// Products of operands out of range: the reducer never accepts a wrong quotient
+    #[test]
+    fn residue_product_reducer_never_misreduces_other_products() {
+        let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+        for modulus in test_moduli(&mut rng) {
+            let operands = [
+                modulus,
+                modulus.wrapping_add(HostU256::from(1u64)),
+                HostU256::MAX,
+                rng.u256(),
+            ];
+            for x in operands {
+                for y in [modulus - HostU256::from(1u64), HostU256::MAX, rng.u256()] {
+                    let product: U512 = x.widening_mul(y);
+                    let candidates = quotient_candidates(product, modulus, &mut rng);
+                    check_reducers(product, modulus, &candidates);
+                }
+            }
+        }
+    }
+
+    /// Every product of residues and every quotient in a range around the right one, for the
+    /// moduli 2 to 17
+    #[test]
+    fn residue_product_reducer_small_moduli_exhaustive() {
+        for m in 2u64..=17 {
+            let modulus = HostU256::from(m);
+            for x in 0..m {
+                for y in x..m {
+                    let product = U512::from(x * y);
+                    let candidates: Vec<_> = (0..=m + 1)
+                        .flat_map(|a| {
+                            [HostU256::ZERO, HostU256::from(1u64), HostU256::MAX]
+                                .map(|b| (HostU256::from(a), b))
+                        })
+                        .collect();
+                    check_reducers(product, modulus, &candidates);
+                }
+            }
+        }
+    }
 }
