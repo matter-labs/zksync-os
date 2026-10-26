@@ -1,7 +1,9 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST};
 use crate::system_functions::field_ops::ZkOsHintOracle;
 use crypto::hints::{HintOracle, NoHints};
-use crypto::precompiles::{kzg_verify_proof, verify_kzg_proof_with_oracle, KzgError};
+use crypto::precompiles::{
+    parse_g1_compressed_with_oracle, parse_scalar, verify_kzg_proof_with_oracle,
+};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::interface_error;
 use zk_ee::oracle::IOOracle;
@@ -91,7 +93,7 @@ fn point_evaluation_as_system_function_inner<
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
-    oracle: Option<&mut O>,
+    mut oracle: Option<&mut O>,
 ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
     resources
         .charge_legacy_gas_and_native(POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST)?;
@@ -113,25 +115,40 @@ fn point_evaluation_as_system_function_inner<
         ));
     }
 
-    // Parse the commitment and proof, then the scalars, and check the proof
-    let proof = &input[144..192];
-    let z = input[32..64].try_into().unwrap();
-    let y = input[64..96].try_into().unwrap();
-    match kzg_verify_proof(commitment, proof, z, y, oracle) {
-        Ok(true) => {
-            dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
-                .map_err(|_| out_of_return_memory!())?;
-            Ok(())
-        }
-        Ok(false) => Err(interface_error!(
-            PointEvaluationInterfaceError::PairingMismatch
-        )),
-        Err(KzgError::InvalidPoint) => Err(interface_error!(
+    // Parse the commitment and proof
+    let Ok(commitment_point) = parse_g1_compressed_with_oracle(commitment, oracle.as_deref_mut())
+    else {
+        return Err(interface_error!(
             PointEvaluationInterfaceError::InvalidPoint
-        )),
-        Err(KzgError::InvalidScalar) => Err(interface_error!(
+        ));
+    };
+    let proof = &input[144..192];
+    let Ok(proof) = parse_g1_compressed_with_oracle(proof, oracle.as_deref_mut()) else {
+        return Err(interface_error!(
+            PointEvaluationInterfaceError::InvalidPoint
+        ));
+    };
+
+    let Ok(z) = parse_scalar(input[32..64].try_into().unwrap()) else {
+        return Err(interface_error!(
             PointEvaluationInterfaceError::InvalidScalar
-        )),
+        ));
+    };
+
+    let Ok(y) = parse_scalar(input[64..96].try_into().unwrap()) else {
+        return Err(interface_error!(
+            PointEvaluationInterfaceError::InvalidScalar
+        ));
+    };
+
+    if verify_kzg_proof_with_oracle(commitment_point, proof, z, y, oracle) {
+        dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE)
+            .map_err(|_| out_of_return_memory!())?;
+        Ok(())
+    } else {
+        Err(interface_error!(
+            PointEvaluationInterfaceError::PairingMismatch
+        ))
     }
 }
 
