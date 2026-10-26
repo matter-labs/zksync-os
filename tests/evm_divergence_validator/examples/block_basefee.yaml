@@ -1,0 +1,24 @@
+# Example with a block base fee above the validator's default 1000 wei fee cap.
+#
+# Transactions are signed with a fee cap of at least the block's base fee, so
+# this step still runs on both engines.
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+
+accounts:
+  alice:
+    balance: "1000000000000000000"
+
+block:
+  basefee: 1000000000
+  gas_limit: 30000000
+  timestamp: 1700000000
+
+steps:
+  - type: send_raw
+    to: Store
+    from: alice
+    data: "0x000000000000000000000000000000000000000000000000000000000000002a"
+    gas: 1000000

@@ -1,0 +1,12 @@
+# A step ZKsync OS rejects: 1000 gas is below the intrinsic cost of a call.
+contracts:
+  Store:
+    bytecode: "0x60003560005500"
+    address: "0x0000000000000000000000000000000000000101"
+
+steps:
+  - type: send_raw
+    to: Store
+    from: alice
+    data: "0x2a"
+    gas: 1000

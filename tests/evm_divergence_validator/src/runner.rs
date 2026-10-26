@@ -52,6 +52,26 @@ pub fn run_scenario(
         .with_system_contracts(true, true)
         .with_run_config(run_config);
 
+    // A step asking for more gas than the per-transaction cap would be rejected and never
+    // compared, so raise the cap for it. REVM gets the same cap below.
+    let max_step_gas = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            Step::Deploy { gas, .. } | Step::Call { gas, .. } | Step::SendRaw { gas, .. } => *gas,
+        })
+        .max();
+    if let Some(gas) = max_step_gas.filter(|gas| *gas > tester.chain_config().max_tx_gas_limit()) {
+        tester = tester.with_max_tx_gas_limit(gas);
+    }
+
+    // Transactions are rejected when their fee cap is below the block's base fee.
+    let max_fee_per_gas = scenario
+        .block
+        .as_ref()
+        .and_then(|block| block.basefee)
+        .map_or(DEFAULT_MAX_FEE, |basefee| basefee.max(DEFAULT_MAX_FEE));
+
     // Fund accounts.
     for (name, def) in &scenario.accounts {
         let signer = &signers[name];
@@ -134,7 +154,7 @@ pub fn run_scenario(
                 let tx = TxEip1559 {
                     chain_id: CHAIN_ID,
                     nonce: *nonce,
-                    max_fee_per_gas: DEFAULT_MAX_FEE,
+                    max_fee_per_gas,
                     max_priority_fee_per_gas: DEFAULT_PRIORITY_FEE,
                     gas_limit: gas.unwrap_or(DEFAULT_GAS_LIMIT),
                     to: TxKind::Create,
@@ -173,7 +193,7 @@ pub fn run_scenario(
                 let tx = TxEip1559 {
                     chain_id: CHAIN_ID,
                     nonce: *nonce,
-                    max_fee_per_gas: DEFAULT_MAX_FEE,
+                    max_fee_per_gas,
                     max_priority_fee_per_gas: DEFAULT_PRIORITY_FEE,
                     gas_limit: gas.unwrap_or(DEFAULT_GAS_LIMIT),
                     to: TxKind::Call(target),
@@ -228,7 +248,7 @@ pub fn run_scenario(
                 let tx = TxEip1559 {
                     chain_id: CHAIN_ID,
                     nonce: *nonce,
-                    max_fee_per_gas: DEFAULT_MAX_FEE,
+                    max_fee_per_gas,
                     max_priority_fee_per_gas: DEFAULT_PRIORITY_FEE,
                     gas_limit: gas.unwrap_or(DEFAULT_GAS_LIMIT),
                     to: to_kind,
@@ -272,15 +292,16 @@ pub fn run_scenario(
     let mut steps = Vec::new();
     for (i, desc) in step_descriptions.iter().enumerate() {
         let tx_result = block_output.tx_results.get(i);
-        let (success, gas_used) = match tx_result {
-            Some(Ok(output)) => (output.is_success(), Some(output.gas_used)),
-            Some(Err(_)) => (false, None),
-            None => (false, None),
+        let (success, gas_used, error) = match tx_result {
+            Some(Ok(output)) => (output.is_success(), Some(output.gas_used), None),
+            Some(Err(err)) => (false, None, Some(format!("{err:?}"))),
+            None => (false, None, None),
         };
         steps.push(StepResult {
             description: desc.clone(),
             success,
             gas_used,
+            error,
         });
     }
 
@@ -290,7 +311,8 @@ pub fn run_scenario(
     let mut revm_runner = RevmRunner::new(ChainStateView {
         chain: pre_block_chain,
     })
-    .with_independent_gas(true);
+    .with_independent_gas(true)
+    .with_tx_gas_limit_cap(Some(tester.chain_config().max_tx_gas_limit()));
 
     let revm_result = revm_runner.run(transactions, block_context_interface, Some(block_output));
 
@@ -303,6 +325,13 @@ pub fn run_scenario(
     if let Err(err) = revm_result {
         report.status = STATUS_DIVERGENCE.to_string();
         report.error = Some(format!("{err:#}"));
+    } else if let Some(rejected) = report.steps.iter().position(|step| step.error.is_some()) {
+        // REVM only replays the transactions ZKsync OS accepted, so nothing was compared here.
+        report.status = STATUS_ERROR.to_string();
+        report.error = Some(format!(
+            "ZKsync OS rejected step {rejected} ({}), so it was not compared on REVM",
+            report.steps[rejected].description
+        ));
     }
 
     Ok(report)
