@@ -395,25 +395,16 @@ fn modexp_as_system_function_inner<
         },
     );
 
-    crypto::modexp::write_modexp_output(output, mod_len, &mut ModExpOutput(dst))
-        .map_err(|_| out_of_return_memory!())?;
+    if output.len() >= mod_len {
+        // truncate
+        dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
+            .map_err(|_| out_of_return_memory!())?;
+    } else {
+        dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
+            .map_err(|_| out_of_return_memory!())?;
+    }
 
     Ok(())
-}
-
-/// The destination of the precompile as the destination of `crypto::modexp::write_modexp_output`
-struct ModExpOutput<'a, D: ?Sized + TryExtend<u8>>(&'a mut D);
-
-impl<D: ?Sized + TryExtend<u8>> crypto::modexp::TryExtend<u8> for ModExpOutput<'_, D> {
-    type Error = D::Error;
-
-    #[inline(always)]
-    fn try_extend<I>(&mut self, iter: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = u8>,
-    {
-        self.0.try_extend(iter)
-    }
 }
 
 /// Computes the gas cost for modexp (Fusaka repricing, EIP-7883).
