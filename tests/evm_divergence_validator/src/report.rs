@@ -21,4 +21,7 @@ pub struct StepResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas_used: Option<u64>,
+    /// Why ZKsync OS rejected the transaction, if it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }

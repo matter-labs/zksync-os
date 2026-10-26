@@ -34,7 +34,7 @@ Accepts `.yaml`/`.yml` (recommended) and `.json` files.
 |------|---------|
 | 0 | Match — ZKsync OS and REVM produce identical state |
 | 1 | Divergence found |
-| 2 | Error (bad input, compilation failure, etc.) |
+| 2 | Error (bad input, compilation failure, a step rejected by ZKsync OS, etc.) |
 
 ## Scenario format
 
@@ -102,7 +102,7 @@ The `contracts` section can be omitted entirely when using only `send_raw` steps
 
 ### Accounts
 
-Named accounts with a pre-funded `balance` (in wei, decimal or `0x`-prefixed hex). Any `from` name referenced in steps that isn't listed here gets a default balance sufficient for gas.
+Named accounts with a pre-funded `balance` (in wei, decimal or `0x`-prefixed hex). Any `from` name referenced in steps that isn't listed here gets 10^15 wei, which covers the default 5,000,000 gas at a base fee up to 2*10^8 wei. List the sender under `accounts` for a higher base fee or more gas.
 
 ### Block (optional)
 
@@ -111,6 +111,8 @@ Named accounts with a pre-funded `balance` (in wei, decimal or `0x`-prefixed hex
 | `basefee` | 1000 |
 | `gas_limit` | 30000000 |
 | `timestamp` | 1700000000 |
+
+Transactions are signed with a fee cap of 1000 wei or `basefee`, whichever is higher.
 
 ### Steps
 
@@ -175,6 +177,8 @@ Structured JSON to stdout. Status is one of `"match"`, `"divergence"`, or `"erro
 ```
 
 On divergence, the `error` field contains details about which storage slots, account fields, return data, or event logs differ.
+
+If ZKsync OS rejects a step's transaction, that step gets an `error` field with the reason. Unless a compared step diverged, the status is `"error"`: REVM only replays the transactions ZKsync OS accepted, so the step was not compared. A step whose `gas` is above the per-transaction cap (2^24 by default) raises the cap on both engines; the block's `gas_limit` still applies.
 
 ## What it checks
 
