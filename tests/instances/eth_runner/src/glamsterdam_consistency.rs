@@ -8,6 +8,7 @@
 //! Sepolia block as it comes, the long-running form.
 
 use crate::glamsterdam::{fetch_one, finalized_block_number, GlamsterdamBlock};
+use crate::glamsterdam_aggregation::run_aggregation_recording;
 use crate::glamsterdam_range::{
     aggregate, run_range_recording, split_by_gas, IndexTries, InitialValueTables, RangeStart,
 };
@@ -25,23 +26,31 @@ use std::time::{Duration, Instant};
 /// The default dists of the two programs (`binaries/build.sh`)
 pub const PRE_EXECUTION_APP: &str = "binaries/glamsterdam_pre_execution/dist";
 pub const TX_RANGE_APP: &str = "binaries/glamsterdam_tx_range/dist";
+pub const AGGREGATION_APP: &str = "binaries/glamsterdam_aggregation/dist";
 
 /// The two programs of a block
 pub struct Programs {
     pub pre_execution: Program,
     pub tx_range: Program,
+    pub aggregation: Program,
 }
 
 impl Programs {
-    pub fn load(pre_execution_app: &str, tx_range_app: &str) -> anyhow::Result<Self> {
+    pub fn load(
+        pre_execution_app: &str,
+        tx_range_app: &str,
+        aggregation_app: &str,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             pre_execution: crate::ethproofs::load_program_for(pre_execution_app)?,
             tx_range: crate::ethproofs::load_program_for(tx_range_app)?,
+            aggregation: crate::ethproofs::load_program_for(aggregation_app)?,
         })
     }
 
+    #[cfg(test)]
     pub fn load_default() -> anyhow::Result<Self> {
-        Self::load(PRE_EXECUTION_APP, TX_RANGE_APP)
+        Self::load(PRE_EXECUTION_APP, TX_RANGE_APP, AGGREGATION_APP)
     }
 }
 
@@ -221,6 +230,9 @@ pub struct BlockReport {
     pub pre_execution_words: usize,
     /// Per range: the transaction range, the simulator cycles, the recorded words
     pub ranges: Vec<(TransactionRange, u64, usize)>,
+    /// The aggregation program: its simulator cycles and recorded words
+    pub aggregation_cycles: u64,
+    pub aggregation_words: usize,
     pub elapsed: Duration,
 }
 
@@ -230,12 +242,12 @@ impl BlockReport {
     }
 
     pub fn total_cycles(&self) -> u64 {
-        self.pre_execution_cycles + self.range_cycles()
+        self.pre_execution_cycles + self.range_cycles() + self.aggregation_cycles
     }
 
     pub fn line(&self) -> String {
         format!(
-            "block {}: {} gas, {} txs, {} range(s): pre-execution {} cycles ({} words), ranges {} cycles, total {} cycles ({:.2}/gas), {:.1}s",
+            "block {}: {} gas, {} txs, {} range(s): pre-execution {} cycles ({} words), ranges {} cycles, aggregation {} cycles ({} words), total {} cycles ({:.2}/gas), {:.1}s",
             self.number,
             self.gas_used,
             self.transactions,
@@ -243,6 +255,8 @@ impl BlockReport {
             self.pre_execution_cycles,
             self.pre_execution_words,
             self.range_cycles(),
+            self.aggregation_cycles,
+            self.aggregation_words,
             self.total_cycles(),
             self.total_cycles() as f64 / self.gas_used.max(1) as f64,
             self.elapsed.as_secs_f64(),
@@ -347,6 +361,23 @@ pub fn check_block(
     }
     aggregate(&state, &outputs).with_context(|| format!("block {number}: aggregation"))?;
     println!("[block {number}] aggregation OK: the ranges cover the access list and link to the pre-execution check");
+
+    // the aggregation program: natively with the words recorded, then from the words
+    let step = Instant::now();
+    let (aggregation, words) = run_aggregation_recording(&state, &outputs)
+        .with_context(|| format!("block {number}: native aggregation"))?;
+    let aggregation_words = words.len();
+    let expected = aggregation.hash_words();
+    let (output, aggregation_cycles) = simulate(&programs.aggregation, words)
+        .with_context(|| format!("block {number}: aggregation on the simulator"))?;
+    anyhow::ensure!(
+        output == expected,
+        "block {number}: the aggregation program's output is not the hash of the aggregation output"
+    );
+    println!(
+        "[block {number}] aggregation program: simulator OK in {:.1}s, {aggregation_cycles} cycles ({aggregation_words} words), output matches",
+        step.elapsed().as_secs_f64()
+    );
     let features = BlockFeatures::of(fixture, &outputs);
     println!("[block {number}] features: {}", features.line());
 
@@ -358,6 +389,8 @@ pub fn check_block(
         pre_execution_cycles,
         pre_execution_words,
         ranges: range_reports,
+        aggregation_cycles,
+        aggregation_words,
         elapsed: started.elapsed(),
     })
 }
@@ -427,11 +460,11 @@ fn record_report(work_dir: &Path, report: &BlockReport) -> anyhow::Result<()> {
         work_dir,
         BLOCKS_CSV,
         &format!(
-            "block,gas_used,transactions,parts,pre_execution_cycles,pre_execution_words,range_cycles,total_cycles,cycles_per_gas,seconds,{}",
+            "block,gas_used,transactions,parts,pre_execution_cycles,pre_execution_words,range_cycles,aggregation_cycles,aggregation_words,total_cycles,cycles_per_gas,seconds,{}",
             BlockFeatures::CSV_HEADER
         ),
         &format!(
-            "{},{},{},{},{},{},{},{},{:.3},{:.1},{}",
+            "{},{},{},{},{},{},{},{},{},{},{:.3},{:.1},{}",
             report.number,
             report.gas_used,
             report.transactions,
@@ -439,6 +472,8 @@ fn record_report(work_dir: &Path, report: &BlockReport) -> anyhow::Result<()> {
             report.pre_execution_cycles,
             report.pre_execution_words,
             report.range_cycles(),
+            report.aggregation_cycles,
+            report.aggregation_words,
             report.total_cycles(),
             report.total_cycles() as f64 / report.gas_used.max(1) as f64,
             report.elapsed.as_secs_f64(),

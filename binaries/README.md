@@ -8,6 +8,9 @@ its `Cargo.toml`.
   its block access list (`run_glamsterdam_state_consistency`).
 - `glamsterdam_tx_range`: a range of block access indices executed and checked
   against the access list and the receipts (`run_glamsterdam_range`).
+- `glamsterdam_aggregation`: the aggregation of the programs of a block: given
+  their public outputs, checks that together they prove the block
+  (`run_glamsterdam_aggregation`).
 
 Both return the hash of their linkage output
 (`basic_bootloader::...::ethereum_glamsterdam::linkage::ProgramOutput`), which

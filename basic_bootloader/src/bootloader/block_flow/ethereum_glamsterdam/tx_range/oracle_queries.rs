@@ -26,10 +26,11 @@ pub const GLAMSTERDAM_FRESH_ACCOUNTS_DATA_QUERY_ID: u32 = id(21);
 pub const GLAMSTERDAM_INITIAL_SLOTS_LEN_QUERY_ID: u32 = id(22);
 pub const GLAMSTERDAM_INITIAL_SLOTS_DATA_QUERY_ID: u32 = id(23);
 
-/// The block's running gas sums at the start of the range (`RangeStartGas`), for a
-/// range that does not start at the first transaction: unverified here, linked across
-/// ranges by the aggregation
-pub const GLAMSTERDAM_RANGE_START_GAS_QUERY_ID: u32 = id(24);
+/// The block's running accounting at the start of the range (`witness::BlockProgress`:
+/// the receipts' cumulative gas, the gas sums, the logs bloom), for a range that does
+/// not start at the first transaction: unverified here, linked across ranges by the
+/// aggregation
+pub const GLAMSTERDAM_BLOCK_PROGRESS_QUERY_ID: u32 = id(24);
 
 /// The sha256 state of the EIP-6110 deposit request hashing after the transactions before
 /// the range (`requests::Sha256Accumulator`), for a range that does not start at the first

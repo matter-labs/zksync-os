@@ -69,6 +69,8 @@ eth_stf = []
 glamsterdam_state_consistency = []
 # A Glamsterdam transaction range as a program (`run_glamsterdam_range`)
 glamsterdam_range = []
+# The aggregation of the Glamsterdam programs of a block as a program (`run_glamsterdam_aggregation`)
+glamsterdam_aggregation = []
 
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]

@@ -1,7 +1,10 @@
 //! The block flow of a transaction range `start..end` (see
 //! `witness::TransactionRange`): the pre-transaction op witnesses the block's
-//! gas at the start of the range and runs the system calls of the
-//! pre-transaction phase when the range starts at transaction 0; the loop op
+//! accounting at the start of the range (`witness::BlockProgress`: the
+//! receipts' cumulative gas, the gas sums and the logs bloom after the
+//! transactions before it; nothing is read from their receipts) and runs the
+//! system calls of the pre-transaction phase when the range starts at
+//! transaction 0; the loop op
 //! runs the transactions of the range, each from its transactions trie leaf,
 //! checking its receipt and its state changes against the block access list;
 //! the post-transaction op runs the withdrawals and the request system calls
@@ -12,9 +15,10 @@
 //! the header's requests hash in the range that ends the block, and reports
 //! what the range established ([`GlamsterdamRangeOutput`]).
 //!
-//! A range that is the whole block checks the header's gas used, bloom and
-//! blob gas itself; partial ranges leave those to the aggregation of their
-//! outputs (see `aggregation`).
+//! The range that ends the block checks the header's gas used, bloom and
+//! blob gas against its totals, which continue the witnessed start; the
+//! aggregation of the outputs (see `aggregation`) links every start to the
+//! previous range's end and repeats the checks over the chain.
 
 use super::index_trie;
 use super::io::GlamsterdamIO;
@@ -25,7 +29,7 @@ use super::requests::{
 };
 use super::storage_policy::GlamsterdamStorageAccessCostModel;
 use super::witness::{
-    BlockAccessIndexRange, InitialValues, RangeStartGas, RangeStartGasQuery, TransactionRange,
+    BlockAccessIndexRange, BlockProgress, BlockProgressQuery, InitialValues, TransactionRange,
 };
 use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
 use crate::bootloader::block_flow::ethereum::block_header::PectraForkHeader;
@@ -38,7 +42,9 @@ use crate::bootloader::block_flow::ethereum::oracle_queries::{
 use crate::bootloader::block_flow::ethereum::withdrawals::{
     process_withdrawals_list, WithdrawalsList,
 };
-use crate::bootloader::block_flow::ethereum_glamsterdam::block_header::GlamsterdamHeader;
+use crate::bootloader::block_flow::ethereum_glamsterdam::block_header::{
+    verify_history, GlamsterdamHeader,
+};
 use crate::bootloader::block_flow::ethereum_glamsterdam::eip_8282_builder_requests::{
     eip8282_builder_deposits_system_part, eip8282_builder_exits_system_part,
 };
@@ -93,8 +99,8 @@ pub struct GlamsterdamRangeData<A: Allocator + 'static> {
     pub keeper: GlamsterdamTransactionDataKeeper,
     /// The number of transactions of the block, as witnessed
     pub transaction_count: u32,
-    /// The block's gas at the start of the range, as witnessed
-    pub start_gas: RangeStartGas,
+    /// The block's accounting at the start of the range, as witnessed
+    pub start: BlockProgress,
     pub transactions_root: Bytes32,
     pub receipts_root: Bytes32,
     /// The nodes of the transactions and receipts tries the range opens; a transaction
@@ -114,18 +120,21 @@ pub struct GlamsterdamRangeOutput<A: Allocator> {
     /// The number of transactions of the block, as witnessed, unverified: the
     /// aggregation requires the pre-execution check's
     pub transaction_count: u32,
-    /// The block's gas at the start of the range as witnessed, unverified (zero
-    /// for a range starting at the first transaction or before it): the
-    /// aggregation links it to the sums of the previous range
-    pub start_gas: RangeStartGas,
+    /// The block's accounting at the start of the range as witnessed, unverified
+    /// (nothing for a range starting at the first transaction or before it): the
+    /// aggregation links it to the previous range's end
+    pub start: BlockProgress,
     /// The receipts' cumulative gas after the last transaction of the range
     pub cumulative_gas_used: u64,
     /// The block's execution and state gas (EIP-8037) and blob gas after the range
     pub block_execution_gas_used: u64,
     pub block_state_gas_used: u64,
     pub block_blob_gas_used: u64,
-    /// The bloom of the logs of the range
+    /// The block's logs bloom after the range: the start's with the logs of
+    /// the range's transactions marked
     pub bloom: LogsBloom,
+    /// The header's gas used, for the linkage
+    pub header_gas_used: u64,
     /// The deposit request hashing states the range started from and ended
     /// with and, for the range that ran the post-transaction phase, the
     /// system requests
@@ -141,12 +150,14 @@ pub struct GlamsterdamRangeOutput<A: Allocator> {
 }
 
 impl<A: Allocator> GlamsterdamRangeOutput<A> {
-    /// The block's gas after the range: what the next range starts from
-    pub fn end_gas(&self) -> RangeStartGas {
-        RangeStartGas {
+    /// The block's accounting after the range: what the next range starts from
+    pub fn end(&self) -> BlockProgress {
+        BlockProgress {
+            cumulative_gas_used: self.cumulative_gas_used,
             execution_gas_used: self.block_execution_gas_used,
             state_gas_used: self.block_state_gas_used,
             blob_gas_used: self.block_blob_gas_used,
+            logs_bloom: self.bloom,
         }
     }
 }
@@ -158,7 +169,7 @@ impl<A: Allocator> core::fmt::Debug for GlamsterdamRangeOutput<A> {
             .field("transactions", &self.transactions)
             .field("range", &self.range)
             .field("transaction_count", &self.transaction_count)
-            .field("start_gas", &self.start_gas)
+            .field("start", &self.start)
             .field("cumulative_gas_used", &self.cumulative_gas_used)
             .field("block_execution_gas_used", &self.block_execution_gas_used)
             .field("block_state_gas_used", &self.block_state_gas_used)
@@ -263,29 +274,22 @@ where
             allocator,
         ));
 
-        // the block's gas at the start of the range
-        let (cumulative_gas_used, start) = if transactions.start == 0 {
-            (0, Default::default())
+        // the block's accounting at the start of the range: nothing before the first
+        // transaction, witnessed otherwise (unverified: the aggregation links it to the
+        // previous range's end, and the receipts of the range's transactions, which
+        // carry the cumulative gas, are checked against the receipts trie)
+        let start = if transactions.start == 0 {
+            BlockProgress::default()
         } else {
-            // the receipt of the transaction before the range carries the cumulative gas
-            let receipt = leaf(
-                system.io.oracle(),
-                nodes,
-                &receipts_root,
-                transactions.start - 1,
-                transaction_count,
-            )?;
-            let receipt = ReceiptReflection::parse(receipt).map_err(glamsterdam_error)?;
-            let start = RangeStartGasQuery::get(system.io.oracle(), ())?;
-            (receipt.cumulative_gas_used, start)
+            BlockProgressQuery::get(system.io.oracle(), ())?
         };
         let keeper = GlamsterdamTransactionDataKeeper::new(
             block_gas_limit,
-            cumulative_gas_used,
+            start.cumulative_gas_used,
             start.execution_gas_used,
             start.state_gas_used,
             start.blob_gas_used,
-            LogsBloom::default(),
+            start.logs_bloom,
         );
 
         if transactions.includes_pre_transactions() {
@@ -299,7 +303,7 @@ where
         Ok(GlamsterdamRangeData {
             keeper,
             transaction_count,
-            start_gas: start,
+            start,
             transactions_root,
             receipts_root,
             nodes,
@@ -531,8 +535,10 @@ where
         let range = system.io.range();
         let transactions = system.io.transactions();
         let count = data.transaction_count;
-        let whole_block = transactions.includes_pre_transactions()
-            && transactions.includes_post_transactions(count);
+        // the range ending the block checks the block's totals against the header; it
+        // started from the witnessed accounting after the previous ranges, which the
+        // aggregation links to their ends
+        let ends_block = transactions.includes_post_transactions(count);
 
         // the deposit request hashing: from the head for the first range, from the
         // witnessed state after the previous ranges otherwise
@@ -619,7 +625,7 @@ where
         }
 
         let header: &PectraForkHeader = &system.metadata.block_level.header.base;
-        if whole_block {
+        if ends_block {
             if data.keeper.block_gas_used() != header.gas_used {
                 let mut logger = system.get_logger();
                 let _ = logger.write_fmt(format_args!(
@@ -639,12 +645,23 @@ where
             }
         }
 
+        // the block hashes the range read through BLOCKHASH follow from the header chain
+        {
+            let allocator = system.get_allocator();
+            let block_level = &system.metadata.block_level;
+            // SAFETY: the cache is read here only, after the transactions ran
+            let cache = unsafe { block_level.history_cache.as_ref_unchecked() };
+            verify_history(&block_level.header, cache, &mut system.io.oracle, allocator)
+                .map_err(glamsterdam_error)?;
+        }
+
         let accessed = system
             .io
             .storage
             .accessed_mask()
             .map_err(glamsterdam_error)?;
         let header_hash = system.metadata.block_level.computed_header_hash;
+        let header_gas_used = header.gas_used;
 
         let System {
             mut io, metadata, ..
@@ -662,12 +679,13 @@ where
             transactions,
             range,
             transaction_count: count,
-            start_gas: data.start_gas,
+            start: data.start,
             cumulative_gas_used: data.keeper.cumulative_gas_used,
             block_execution_gas_used: data.keeper.block_execution_gas_used,
             block_state_gas_used: data.keeper.block_state_gas_used,
             block_blob_gas_used: data.keeper.block_blob_gas_used,
             bloom: data.keeper.block_bloom,
+            header_gas_used,
             requests,
             initial_values: storage.initial,
             accessed,

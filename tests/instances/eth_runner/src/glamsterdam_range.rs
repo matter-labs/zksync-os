@@ -23,7 +23,7 @@ use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::or
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::receipt::ReceiptReflection;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::requests::Sha256Accumulator;
 use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::tx_range::witness::{
-    RangeStartGas, TransactionRange,
+    BlockProgress, TransactionRange,
 };
 use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
@@ -199,11 +199,12 @@ impl OracleQueryProcessor for GlamsterdamRangeResponder {
 }
 
 /// What the ranges before a range established, which the range witnesses
-/// unverified and the aggregation links: the block's gas and the sha256
+/// unverified and the aggregation links: the block's accounting (the
+/// receipts' cumulative gas, the gas sums, the logs bloom) and the sha256
 /// state of the deposit request hashing (EIP-6110) after their transactions
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RangeStart {
-    pub gas: RangeStartGas,
+    pub progress: BlockProgress,
     pub hasher: Sha256Accumulator,
 }
 
@@ -211,7 +212,7 @@ impl Default for RangeStart {
     /// The start of the first range
     fn default() -> Self {
         Self {
-            gas: RangeStartGas::default(),
+            progress: BlockProgress::default(),
             hasher: Sha256Accumulator::deposit_requests_head(),
         }
     }
@@ -222,7 +223,7 @@ impl RangeStart {
     pub fn after(outputs: &[GlamsterdamRangeOutput<Global>]) -> Self {
         match outputs.last() {
             Some(previous) => Self {
-                gas: previous.end_gas(),
+                progress: previous.end(),
                 hasher: previous.requests.end,
             },
             None => Self::default(),
@@ -245,7 +246,7 @@ impl OracleQueryProcessor for GlamsterdamTxResponder {
         vec![
             TX_ENCODING_FORMAT_QUERY_ID,
             TX_FROM_QUERY_ID,
-            GLAMSTERDAM_RANGE_START_GAS_QUERY_ID,
+            GLAMSTERDAM_BLOCK_PROGRESS_QUERY_ID,
             GLAMSTERDAM_DEPOSIT_REQUESTS_HASHER_QUERY_ID,
         ]
     }
@@ -267,7 +268,7 @@ impl OracleQueryProcessor for GlamsterdamTxResponder {
                 .pop_front()
                 .expect("a sender for every transaction of the range")
                 .write_output(&mut response),
-            GLAMSTERDAM_RANGE_START_GAS_QUERY_ID => self.start.gas.write_output(&mut response),
+            GLAMSTERDAM_BLOCK_PROGRESS_QUERY_ID => self.start.progress.write_output(&mut response),
             GLAMSTERDAM_DEPOSIT_REQUESTS_HASHER_QUERY_ID => {
                 self.start.hasher.write_output(&mut response)
             }
@@ -1004,9 +1005,10 @@ mod tests {
         );
         assert_eq!(second.block_state_gas_used, whole.block_state_gas_used);
         assert_eq!(second.block_blob_gas_used, whole.block_blob_gas_used);
-        let mut bloom = first.bloom;
-        bloom.merge(&second.bloom);
-        assert_eq!(bloom, whole.bloom);
+        // the second range continued the first's bloom, so it ended with the block's
+        assert_eq!(second.start.logs_bloom, first.bloom);
+        assert_eq!(second.bloom, whole.bloom);
+        assert_eq!(second.start.cumulative_gas_used, first.cumulative_gas_used);
         assert!(whole.accessed.is_full());
         let mut accessed = first.accessed.clone();
         accessed.or_assign(&second.accessed).unwrap();
@@ -1052,11 +1054,11 @@ mod tests {
                 let last = outputs.pop().unwrap();
                 assert!(aggregate(&state, &outputs).is_err(), "a missing range");
                 let mut wrong = last;
-                wrong.start_gas.execution_gas_used += 1;
+                wrong.start.execution_gas_used += 1;
                 outputs.push(wrong);
                 assert!(aggregate(&state, &outputs).is_err(), "a wrong start gas");
                 let mut wrong = outputs.pop().unwrap();
-                wrong.start_gas.execution_gas_used -= 1;
+                wrong.start.execution_gas_used -= 1;
                 // a deposit request hashing state that is not the previous range's end
                 wrong.requests.start = Sha256Accumulator::ZERO;
                 outputs.push(wrong);

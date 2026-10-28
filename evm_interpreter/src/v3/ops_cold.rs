@@ -463,6 +463,15 @@ impl<'h, S: GlamsterdamTypes> Hot<'h, S> {
             cast_offset_and_len(memory_offset, len, EvmError::InvalidOperandOOG.into())?;
         let source_offset = source_offset.try_to_usize();
         resize_heap(cold, &mut self.resources, memory_offset.saturating_add(len))?;
+        // The copy plus a warm read of the code (EIP-8038), before the account is read: the
+        // account access itself is charged by the system, so the code is read only once
+        // the whole cost of the instruction is paid, as the real execution charges it.
+        let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
+        charge_step(
+            &mut self.resources,
+            gas_utils::gas_u32(gas_cost + WARM_ACCESS as u64)?,
+            native_cost + EXTCODECOPY_NATIVE_COST,
+        )?;
         let bytecode = env
             .system
             .io
@@ -471,14 +480,6 @@ impl<'h, S: GlamsterdamTypes> Hot<'h, S> {
         let source = source_offset
             .and_then(|offset| bytecode.get(offset..))
             .unwrap_or(&[]);
-        let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
-        // the copy plus a warm read of the code (EIP-8038); the account access is charged by
-        // the system
-        charge_step(
-            &mut self.resources,
-            gas_utils::gas_u32(gas_cost + WARM_ACCESS as u64)?,
-            native_cost + EXTCODECOPY_NATIVE_COST,
-        )?;
         copy_and_zeropad_nonoverlapping(source, &mut cold.heap[memory_offset..memory_offset + len]);
         Ok(())
     }

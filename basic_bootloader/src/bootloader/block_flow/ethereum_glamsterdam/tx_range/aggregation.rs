@@ -9,13 +9,15 @@
 //! with the transaction count the pre-execution check proved: the first then
 //! ran the pre-transaction phase and the last the post-transaction phase,
 //! each once. Every range must have run on the pre-execution check's header
-//! and initial value tables (by hash). The gas sums a range witnesses as its
-//! start, unverified, must be the sums after the previous range. The union of
-//! the accounts and slots the ranges accessed must be the whole access list,
-//! so that a list with entries nothing accessed is rejected. The checks a
-//! whole-block range performs itself against the header (gas used, logs
-//! bloom, blob gas) are performed here over the last range's sums and the
-//! merged blooms. The requests hash is checked by the last range itself,
+//! and initial value tables (by hash). The block's accounting a range
+//! witnesses as its start, unverified (the receipts' cumulative gas, the gas
+//! sums, the logs bloom; `witness::BlockProgress`), must be the accounting
+//! after the previous range. The union of the accounts and slots the ranges
+//! accessed must be the whole access list, so that a list with entries
+//! nothing accessed is rejected. The checks the range ending the block
+//! performs itself against the header (gas used, logs bloom, blob gas) are
+//! repeated here over the last range's end. The requests hash is checked by
+//! the last range itself,
 //! over the deposit request hashing carried across the ranges as a sha256
 //! state: the state a range witnessed as its start must be the previous
 //! range's end, the first range's the head.
@@ -25,7 +27,7 @@ use super::super::state_consistency::StateConsistencyOutput;
 use super::super::GlamsterdamError;
 use super::block_flow::GlamsterdamRangeOutput;
 use super::requests::Sha256Accumulator;
-use super::witness::{BlockAccessIndexRange, RangeStartGas};
+use super::witness::{BlockAccessIndexRange, BlockProgress};
 use crate::bootloader::transaction_flow::logs_bloom::LogsBloom;
 use core::alloc::Allocator;
 use zk_ee::utils::Bytes32;
@@ -64,9 +66,8 @@ pub struct RangeAggregation<A: Allocator> {
     summary: PreExecutionSummary,
     /// The transaction the next range must start at
     next_start: u32,
-    /// The block's gas after the last range
-    gas: RangeStartGas,
-    bloom: LogsBloom,
+    /// The block's accounting after the last range
+    progress: BlockProgress,
     accessed: Option<IndexMask<A>>,
     /// The deposit request hashing state the next range must start from
     hasher: Sha256Accumulator,
@@ -79,8 +80,7 @@ impl<A: Allocator + Clone> RangeAggregation<A> {
         Self {
             summary,
             next_start: 0,
-            gas: RangeStartGas::default(),
-            bloom: LogsBloom::default(),
+            progress: BlockProgress::default(),
             accessed: None,
             hasher: Sha256Accumulator::deposit_requests_head(),
             reached_end: false,
@@ -125,19 +125,13 @@ impl<A: Allocator + Clone> RangeAggregation<A> {
                 "the post-transaction phase belongs to the last range only",
             ));
         }
-        if output.requests.system.is_some() != last {
+        if output.start != self.progress {
             return Err(fail(
-                "the post-transaction phase belongs to the last range only",
-            ));
-        }
-        if output.start_gas != self.gas {
-            return Err(fail(
-                "the gas at the start of the range is not the previous range's",
+                "the block's accounting at the start of the range is not the previous range's",
             ));
         }
         or_assign(&mut self.accessed, &output.accessed)?;
-        self.gas = output.end_gas();
-        self.bloom.merge(&output.bloom);
+        self.progress = output.end();
         self.hasher = output.requests.end;
         self.reached_end = last;
         self.next_start = output.transactions.end;
@@ -150,13 +144,13 @@ impl<A: Allocator + Clone> RangeAggregation<A> {
         if !self.reached_end {
             return Err(fail("the ranges do not reach the end of the block"));
         }
-        if self.gas.block_gas_used() != self.summary.gas_used {
+        if self.progress.block_gas_used() != self.summary.gas_used {
             return Err(fail("gas used"));
         }
-        if self.gas.blob_gas_used != self.summary.blob_gas_used {
+        if self.progress.blob_gas_used != self.summary.blob_gas_used {
             return Err(fail("blob gas used"));
         }
-        if self.bloom != self.summary.logs_bloom {
+        if self.progress.logs_bloom != self.summary.logs_bloom {
             return Err(fail("logs bloom"));
         }
         if !self.accessed.is_some_and(|mask| mask.is_full()) {

@@ -189,25 +189,38 @@ withdrawal, consolidation and builder requests are dequeued from their system co
 storage by the post-transaction system calls, which that range runs), so their hashing is
 carried across the ranges as a sha256 state (`tx_range::requests::Sha256Accumulator`,
 the hasher's words and buffer as 104 bytes): a range witnesses the state after the
-transactions before it (unverified, like its start gas; the first range starts from the
-state after the type byte), absorbs the deposit events of its own transactions once they
-ran, and publishes both states. The last range finishes the hash, adds the system
-request hashes and compares with the header. The programs' public outputs
-(`linkage::ProgramOutput`) carry the transaction count, the transaction marks
-`tx_start_mark..tx_end_mark` (`0..count` for the pre-execution check) and the two hasher
-states (all zero for the pre-execution check), so the aggregation program sees that the
-states chain from the head through every range and that the range ending the block, the
-one that checked the requests hash, is the last one. The deposit contract is a chain
-parameter (`deposit_contract_address(chain_id)`: mainnet, Sepolia, Holesky) (also the
+transactions before it (unverified, like its start accounting; the first range starts
+from the state after the type byte), absorbs the deposit events of its own transactions
+once they ran, and publishes both states. The last range finishes the hash, adds the
+system request hashes and compares with the header. A range likewise witnesses the
+block's accounting after the transactions before it (`tx_range::witness::BlockProgress`:
+the receipts' cumulative gas, the execution, state and blob gas sums and the logs bloom
+so far) instead of opening the receipt of the transaction before it, which is as long as
+that transaction's logs. The programs' public outputs (`linkage::ProgramOutput`) carry
+the transaction count, the transaction marks `tx_start_mark..tx_end_mark` (`0..count`
+for the pre-execution check), the two hasher states (all zero for the pre-execution
+check), the gas sums (execution, state and blob gas) and the receipts' cumulative gas a
+range started from and ended with, the header's gas used, and the hashes of the block's
+logs bloom a range started from and ended with (the empty bloom's and the header's for
+the pre-execution check). The `glamsterdam_aggregation` program (`binaries/`,
+`ethereum_glamsterdam::block_aggregation`) takes the public outputs of the pre-execution
+check and of the ranges as its inputs, witnesses their preimages and the masks, and runs
+those checks (`linkage::LinkageAggregation`): one block and one set of tables, the ranges
+tile the transactions in order with the range that checked the requests hash last, the
+hasher states, the gas sums, the cumulative gas and the bloom hashes chain, the final
+gas, blob gas and bloom are the header's, and the masks cover the whole access list; it
+returns the hash of the block hash and the aggregated outputs. The deposit contract is a chain parameter
+(`deposit_contract_address(chain_id)`: mainnet, Sepolia, Holesky) (also the
 `whole_block_ranges_run_the_fixtures`, `split_ranges_agree_with_the_whole_block` and
 `subranges_aggregate_to_the_block` tests).
 
-`glamsterdam-self-consistency [--parts N]` is the self-consistency check of the two
-programs over the stored fixtures: the pre-execution check and every range run natively
-first with the oracle's responses recorded as the RISC-V guest reads them, then on the
-simulator from the recorded words alone, and each program's public output must be the
-hash of the linkage output of its native run; the ranges run from the initial value
-tables of the one native pre-execution run and all outputs are aggregated.
+`glamsterdam-self-consistency [--parts N]` is the self-consistency check of the three
+programs over the stored fixtures: the pre-execution check, every range and the
+aggregation run natively first with the oracle's responses recorded as the RISC-V guest
+reads them, then on the simulator from the recorded words alone, and each program's
+public output must be the hash of the output of its native run; the ranges run from the
+initial value tables of the one native pre-execution run, all outputs are aggregated on
+the host, and the aggregation program checks the programs' public outputs.
 `glamsterdam-follow --endpoint URL [--first-block N] [--count N] [--parts N] [--keep]`
 is its long-running form over live Sepolia: it fetches every finalized block as it comes
 into `glamsterdam_follow/<block>/`, checks it, and keeps going. A failing or panicking

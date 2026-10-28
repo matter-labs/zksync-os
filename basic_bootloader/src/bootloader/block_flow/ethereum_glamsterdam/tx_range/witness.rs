@@ -10,6 +10,7 @@ use super::super::index_mask::IndexMask;
 use super::super::GlamsterdamError;
 use super::index_trie;
 use super::oracle_queries::*;
+use crate::bootloader::transaction_flow::logs_bloom::LogsBloom;
 use basic_system::system_implementation::ethereum_storage_model::{
     BoxInterner, MptPreimagesOracle,
 };
@@ -133,22 +134,32 @@ impl BlockAccessIndexRange {
     }
 }
 
-/// The block's gas accounting at the start of a range: what the ranges before it used
-/// (EIP-8037 `block_execution_gas_used`, `block_state_gas_used`, the blob gas).
+/// The block's running accounting after some of its transactions, as the receipts and
+/// the header count it: the receipts' cumulative gas (after refunds and the floor), the
+/// block's execution and state gas (EIP-8037 `block_execution_gas_used`,
+/// `block_state_gas_used`), the blob gas and the logs bloom of the transactions so
+/// far. A range starts from the accounting after the transactions before it, witnessed
+/// and unverified (nothing before the first transaction), ends with its own and
+/// publishes both (the bloom hashed): the aggregation links a range's start to the
+/// previous range's end. No range opens the receipt of the transaction before it, which
+/// is as long as that transaction's logs, to learn where it starts.
 /// `#[repr(C)]`: the oracle writes it memcpy-like.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RangeStartGas {
+pub struct BlockProgress {
+    pub cumulative_gas_used: u64,
     pub execution_gas_used: u64,
     pub state_gas_used: u64,
     pub blob_gas_used: u64,
+    pub logs_bloom: LogsBloom,
 }
 
 const _: () = {
-    assert!(core::mem::size_of::<RangeStartGas>() == 24);
+    assert!(core::mem::size_of::<BlockProgress>() == 4 * 8 + 256);
+    assert!(core::mem::offset_of!(BlockProgress, logs_bloom) == 32);
 };
 
-impl RangeStartGas {
+impl BlockProgress {
     /// The block's gas used as the header counts it (EIP-8037): the larger of
     /// the execution and the state gas
     pub fn block_gas_used(&self) -> u64 {
@@ -156,11 +167,11 @@ impl RangeStartGas {
     }
 }
 
-// SAFETY: three `u64`, no padding
-unsafe impl ContinuousSerializable for RangeStartGas {}
+// SAFETY: four `u64` then 256 bytes, no padding
+unsafe impl ContinuousSerializable for BlockProgress {}
 
-// SAFETY: any bytes form a valid value
-unsafe impl ContinuousDeserializable for RangeStartGas {
+// SAFETY: any bytes form a valid value (the bloom is a plain byte array)
+unsafe impl ContinuousDeserializable for BlockProgress {
     #[inline(always)]
     unsafe fn validate<'a>(this: *mut Self) -> core::result::Result<&'a mut Self, InternalError> {
         // SAFETY: guaranteed by the caller
@@ -168,12 +179,12 @@ unsafe impl ContinuousDeserializable for RangeStartGas {
     }
 }
 
-pub struct RangeStartGasQuery;
+pub struct BlockProgressQuery;
 
-impl OracleQuery for RangeStartGasQuery {
-    const QUERY_ID: u32 = GLAMSTERDAM_RANGE_START_GAS_QUERY_ID;
+impl OracleQuery for BlockProgressQuery {
+    const QUERY_ID: u32 = GLAMSTERDAM_BLOCK_PROGRESS_QUERY_ID;
     type Input = ();
-    type Output = RangeStartGas;
+    type Output = BlockProgress;
 }
 
 pub struct TransactionRangeQuery;

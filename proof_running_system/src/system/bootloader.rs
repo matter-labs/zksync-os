@@ -285,3 +285,18 @@ pub fn run_glamsterdam_state_consistency<I: NonDeterminismCSRSourceImplementatio
     .expect("the state must be consistent");
     ProgramOutput::of_pre_execution(&output).hash_words()
 }
+
+/// The aggregation of the Glamsterdam programs of a block as a program: takes
+/// the public outputs of the pre-execution check and of the ranges, witnesses
+/// their preimages, checks that together they prove the block (see
+/// `basic_bootloader::...::ethereum_glamsterdam::block_aggregation`) and
+/// returns the hash of its output (the block hash and the aggregated outputs).
+#[cfg(feature = "glamsterdam_aggregation")]
+pub fn run_glamsterdam_aggregation<I: NonDeterminismCSRSourceImplementation>() -> [u32; 8] {
+    use basic_bootloader::bootloader::block_flow::ethereum_glamsterdam::block_aggregation::verify_block_aggregation;
+
+    let mut oracle = CsrBasedIOOracle::<I>::init();
+    let output = verify_block_aggregation(&mut oracle, BootloaderAllocator::default())
+        .expect("the programs must aggregate to the block");
+    output.hash_words()
+}

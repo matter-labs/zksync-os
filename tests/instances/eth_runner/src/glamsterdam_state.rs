@@ -411,7 +411,8 @@ mod tests {
             parent_hash: B256::from(keccak(&parent_encoding)),
             state_root: B256::from(state_root),
             number: parent.number + 1,
-            gas_used: 21_000,
+            // within the limit, which a test may set to the minimum
+            gas_used: 21_000.min(gas_limit),
             timestamp: parent.timestamp + 12,
             block_access_list_hash: Some(B256::from(bal_hash)),
             slot_number: Some(5001),

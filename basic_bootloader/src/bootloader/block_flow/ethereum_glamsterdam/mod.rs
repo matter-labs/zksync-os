@@ -17,6 +17,7 @@
 //! [EIP-7928]: https://eips.ethereum.org/EIPS/eip-7928
 //! [EIP-7843]: https://eips.ethereum.org/EIPS/eip-7843
 
+pub mod block_aggregation;
 pub mod block_header;
 pub mod eip_8282_builder_requests;
 pub mod index_mask;
@@ -121,6 +122,8 @@ pub enum GlamsterdamError {
     InitialValuesEncoding,
     /// The outputs of the ranges of a block do not aggregate to the block
     Aggregation(&'static str),
+    /// The block hashes a range read do not follow from the header chain
+    History(&'static str),
 }
 
 #[cfg(test)]

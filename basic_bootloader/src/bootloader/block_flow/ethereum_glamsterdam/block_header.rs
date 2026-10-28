@@ -3,13 +3,20 @@
 //! invariants between a header and its parent.
 
 use super::GlamsterdamError;
+use crate::bootloader::block_flow::ethereum::block_hashes_cache::BlockHashesCache;
 use crate::bootloader::block_flow::ethereum::block_header::{
     PectraForkHeader, PectraForkHeaderReflection,
+};
+use crate::bootloader::block_flow::ethereum::oracle_queries::{
+    ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID, ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
 };
 use crate::bootloader::block_flow::ethereum::utils::fake_exponential;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
+use core::alloc::Allocator;
 use ruint::aliases::U256;
+use zk_ee::oracle::memory_io::get_bytes_with_length_query;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::GAS_PER_BLOB;
 use zk_ee::utils::Bytes32;
 
@@ -182,6 +189,11 @@ impl GlamsterdamHeader {
             if header.gas_limit < EIP_1559_MIN_GAS_LIMIT {
                 return Err(ParentConsistency("gas limit below the minimum"));
             }
+            // the ranges admit transactions within the limit in both gas dimensions
+            // (EIP-8037); the header's total must be within it too
+            if header.gas_used > header.gas_limit {
+                return Err(ParentConsistency("gas used above the gas limit"));
+            }
             let parent_gas_target = parent_gas_limit / EIP_1559_ELASTICITY_MULTIPLIER;
             let parent_base_fee = parent_header.base_fee_per_gas;
             let parent_gas_used = parent_header.gas_used;
@@ -228,4 +240,61 @@ impl GlamsterdamHeader {
 
         Ok(())
     }
+}
+
+/// Verifies the block hashes a range read through `BLOCKHASH` against the
+/// header chain: the historical header at every depth up to the deepest one
+/// accessed is witnessed, must hash to the parent hash of the one before it
+/// (the target header's for depth 0), carry the block number of that depth,
+/// and be the hash the cache served. A range that read no history verifies
+/// nothing. The headers are Glamsterdam headers: a block whose accessed
+/// history crosses the fork is rejected.
+pub fn verify_history<O: IOOracle, A: Allocator + Clone>(
+    header: &GlamsterdamHeader,
+    cache: &BlockHashesCache,
+    oracle: &mut O,
+    allocator: A,
+) -> Result<(), GlamsterdamError> {
+    let depth = cache.num_elements_to_verify();
+    if depth == 0 {
+        return Ok(());
+    }
+    let number = header.base.number;
+    if number < depth as u64 {
+        return Err(GlamsterdamError::History("history deeper than the chain"));
+    }
+    let mut hasher = <crypto::sha3::Keccak256 as crypto::MiniDigest>::new();
+    let mut parent_to_expect = header.base.parent_hash;
+    for depth in 0..depth {
+        let encoding = get_bytes_with_length_query::<_, u32, _>(
+            oracle,
+            ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
+            ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
+            depth as u32,
+            allocator.clone(),
+        )
+        .map_err(|_| GlamsterdamError::Oracle)?
+        .ok_or(GlamsterdamError::History("a historical header is missing"))?;
+        crypto::MiniDigest::update(&mut hasher, encoding.as_slice());
+        let hash: Bytes32 = crypto::MiniDigest::finalize_reset(&mut hasher).into();
+        if hash != parent_to_expect {
+            return Err(GlamsterdamError::History(
+                "a historical header is not the parent of the one after it",
+            ));
+        }
+        if cache.cache_entry(depth) != &hash {
+            return Err(GlamsterdamError::History(
+                "a block hash read is not the historical header's",
+            ));
+        }
+        let historical = GlamsterdamHeader::parse(encoding.as_slice())
+            .map_err(|_| GlamsterdamError::History("a historical header does not decode"))?;
+        if historical.base.number != number - 1 - depth as u64 {
+            return Err(GlamsterdamError::History(
+                "a historical header has the wrong number",
+            ));
+        }
+        parent_to_expect = historical.base.parent_hash;
+    }
+    Ok(())
 }

@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 TARGET=riscv32i-unknown-none-elf
 PROGRAMS=("$@")
 if [ ${#PROGRAMS[@]} -eq 0 ]; then
-  PROGRAMS=(glamsterdam_pre_execution glamsterdam_tx_range)
+  PROGRAMS=(glamsterdam_pre_execution glamsterdam_tx_range glamsterdam_aggregation)
 fi
 
 sha256() {

@@ -7,6 +7,7 @@ mod block_hashes;
 mod calltrace;
 mod ethproofs;
 mod glamsterdam;
+mod glamsterdam_aggregation;
 mod glamsterdam_consistency;
 mod glamsterdam_range;
 mod glamsterdam_state;
@@ -180,6 +181,9 @@ enum Command {
         /// The transaction range program's dist directory.
         #[arg(long, default_value = glamsterdam_consistency::TX_RANGE_APP)]
         tx_range_app: String,
+        /// The `glamsterdam_aggregation` program (a dist directory)
+        #[arg(long, default_value = glamsterdam_consistency::AGGREGATION_APP)]
+        aggregation_app: String,
     },
     /// Follow Sepolia: fetch every finalized block from a Geth node as it comes and run
     /// the self-consistency check over it (the long-running form of
@@ -207,6 +211,9 @@ enum Command {
         pre_execution_app: String,
         #[arg(long, default_value = glamsterdam_consistency::TX_RANGE_APP)]
         tx_range_app: String,
+        /// The `glamsterdam_aggregation` program (a dist directory)
+        #[arg(long, default_value = glamsterdam_consistency::AGGREGATION_APP)]
+        aggregation_app: String,
     },
     /// Run the transactions of the Glamsterdam fixtures as ranges against their
     /// block access lists and receipts (host run) and aggregate the ranges.
@@ -577,12 +584,16 @@ fn main() -> anyhow::Result<()> {
             parts,
             pre_execution_app,
             tx_range_app,
+            aggregation_app,
         } => {
             let block_dir = block_dir
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(glamsterdam::default_fixture_dir);
-            let programs =
-                glamsterdam_consistency::Programs::load(&pre_execution_app, &tx_range_app)?;
+            let programs = glamsterdam_consistency::Programs::load(
+                &pre_execution_app,
+                &tx_range_app,
+                &aggregation_app,
+            )?;
             let reports = glamsterdam_consistency::check_path(&block_dir, &programs, parts)?;
             let total: u64 = reports.iter().map(|r| r.total_cycles()).sum();
             let gas: u64 = reports.iter().map(|r| r.gas_used).sum();
@@ -602,12 +613,16 @@ fn main() -> anyhow::Result<()> {
             parts,
             pre_execution_app,
             tx_range_app,
+            aggregation_app,
         } => {
             let work_dir = work_dir.map(std::path::PathBuf::from).unwrap_or_else(|| {
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("glamsterdam_follow")
             });
-            let programs =
-                glamsterdam_consistency::Programs::load(&pre_execution_app, &tx_range_app)?;
+            let programs = glamsterdam_consistency::Programs::load(
+                &pre_execution_app,
+                &tx_range_app,
+                &aggregation_app,
+            )?;
             let summary = glamsterdam_consistency::follow(
                 &endpoint,
                 first_block,

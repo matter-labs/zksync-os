@@ -1,11 +1,13 @@
 //! The storage model of a transaction range: every account and slot the block
 //! touches is known up front from the block access list, with its pre-block
 //! leaf from the pre-execution tables, so there is no cache to fill from the
-//! oracle. The model keeps one current value per account field and per slot,
-//! journals the writes of the running access index for frame rollbacks, and
-//! at the end of every index checks that the writes are exactly the changes
-//! the access list declares for it (a symmetric difference of zero), after
-//! which the journal is dropped: nothing past the current values is kept.
+//! oracle. The model keeps, per account and per slot, the state at the start
+//! of the running access index and a chain of versions pushed by the index's
+//! accesses and writes into append-only arenas; a frame rollback walks the
+//! versions the frame pushed and cuts the arenas back, and the end of every
+//! index checks that the head versions are exactly the changes the access
+//! list declares for it (a symmetric difference of zero), after which they
+//! become the next index's starting state and the arenas are dropped.
 //!
 //! Gas: the account accesses and writes are priced by EIP-8038 and the state
 //! creation by EIP-8037 (state gas, see `StateGasResources`); every account
@@ -42,7 +44,6 @@ use evm_interpreter::v3::gas::{
 use ruint::aliases::{B160, U256};
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{PreimageCacheModel, StorageModel};
-use zk_ee::common_structs::skip_list_quasi_vec::ListVec;
 use zk_ee::common_structs::{PreimageType, WarmStorageKey};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::Stack;
@@ -60,44 +61,155 @@ use zk_ee::{interface_error, internal_error, wrap_error};
 
 type Result<T, E = SystemError> = core::result::Result<T, E>;
 
-/// Current state of an account, by address index
+/// An account at the start of the current access index, by address index: what
+/// every index starts from. The state of the running index lives in versions
+/// ([`AccountVersion`]) chained from `head`; nothing here is ever rolled back.
 #[derive(Clone, Copy, Debug)]
-struct AccountState {
+struct AccountBase {
     nonce: u64,
     balance: U256,
     /// Never zero: the hash of the empty string for an account without code
     code_hash: Bytes32,
-    /// Stamp of the access index the account is warm in (0: cold)
-    warm: u32,
-    /// Stamp of the access index the account was first changed in (0: never)
-    changed: u32,
-    /// Values at the start of the index of `changed`
-    start_nonce: u64,
-    start_balance: U256,
-    start_code_hash: Bytes32,
-    /// Stamp of the access index code was deployed in (0: never)
-    deployed: u32,
-    /// Self-destructed in the current index
-    deconstruct: bool,
-    /// Accessed at some point of the range, in a reverted frame or not (never
-    /// journaled): the aggregation checks that the access list is exact
+    /// One past the index of the latest version of the running index, zero when the
+    /// account is untouched in it (so cold)
+    head: u32,
+    /// Accessed at some point of the range, in a reverted frame or not: the
+    /// aggregation checks that the access list is exact
     ever_accessed: bool,
 }
 
-/// Current state of a slot, by slot position
+/// A value an account took in the running index: pushed by every change (and by
+/// the first access, which copies the base), chained to the one before through
+/// `previous`, so that a frame rollback is a walk over the versions it pushed
 #[derive(Clone, Copy, Debug)]
-struct SlotState {
-    current: Bytes32,
-    /// Value at the start of the index of `written`
+struct AccountVersion {
+    nonce: u64,
+    balance: U256,
+    code_hash: Bytes32,
+    /// The account this is a version of
+    account: u32,
+    /// The head before this version (one past its index, zero for none)
+    previous: u32,
+    /// Code was deployed in this index (EIP-6780)
+    deployed: bool,
+    /// Self-destructed in this index
+    deconstruct: bool,
+}
+
+/// A slot at the start of the current access index, by slot position; see
+/// [`AccountBase`]
+#[derive(Clone, Copy, Debug)]
+struct SlotBase {
     start: Bytes32,
+    /// One past the index of the latest version of the running index, zero when
+    /// the slot is untouched in it (so cold)
+    head: u32,
     /// Had no leaf before the block (reads of it are "new slot" reads)
     is_new: bool,
-    warm: u32,
-    written: u32,
-    /// Stamp of the index a cold write extra was charged in (0: never)
-    write_charged: u32,
-    /// Accessed at some point of the range (never journaled)
+    /// A cold write extra was charged, and not rolled back, in an earlier index of
+    /// the range: taken from the head version when an index ends, so a charge a frame
+    /// rolled back never reaches it (within the index the flag lives in the versions)
+    write_charged_before: bool,
+    /// Accessed at some point of the range
     ever_accessed: bool,
+}
+
+/// A value a slot took in the running index; see [`AccountVersion`]
+#[derive(Clone, Copy, Debug)]
+struct SlotVersion {
+    value: Bytes32,
+    position: u32,
+    previous: u32,
+    /// A cold write extra was charged in this index at or before this version
+    write_charged: bool,
+}
+
+/// The current values of an account, from its head version or its base
+#[derive(Clone, Copy, Debug)]
+struct AccountView {
+    nonce: u64,
+    balance: U256,
+    code_hash: Bytes32,
+    deployed: bool,
+    deconstruct: bool,
+}
+
+/// Elements per page of a [`Versions`] arena
+const VERSIONS_PAGE: usize = 128;
+/// Pages a [`Versions`] arena can hold: with the transaction gas cap, an index
+/// pushes at most about 160k slot versions (a warm `SSTORE` costs 106 gas) and
+/// far fewer account versions
+const VERSIONS_MAX_PAGES: usize = 2048;
+
+/// An append-only arena of versions with random access: pages of a fixed size,
+/// allocated as the arena grows and kept for the next index, never moved (the
+/// proving-target allocator cannot reallocate). A frame rollback truncates it.
+struct Versions<T: Copy, A: Allocator + Clone> {
+    pages: Vec<Vec<T, A>, A>,
+    len: usize,
+    allocator: A,
+}
+
+impl<T: Copy, A: Allocator + Clone> Versions<T, A> {
+    fn new_in(allocator: A) -> Self {
+        Self {
+            pages: Vec::with_capacity_in(VERSIONS_MAX_PAGES, allocator.clone()),
+            len: 0,
+            allocator,
+        }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> u32 {
+        self.len as u32
+    }
+
+    /// Appends a version and returns one past its index: the new head
+    #[inline(always)]
+    fn push(&mut self, version: T) -> Result<u32, InternalError> {
+        let page = self.len / VERSIONS_PAGE;
+        if page == self.pages.len() {
+            if page == VERSIONS_MAX_PAGES {
+                return Err(internal_error!(
+                    "too many state versions in one access index"
+                ));
+            }
+            self.pages
+                .push(Vec::with_capacity_in(VERSIONS_PAGE, self.allocator.clone()));
+        }
+        let page = &mut self.pages[page];
+        // a truncated page is reused from its truncated length
+        debug_assert_eq!(page.len(), self.len % VERSIONS_PAGE);
+        page.push(version);
+        self.len += 1;
+        Ok(self.len as u32)
+    }
+
+    /// The version at `index` (which must be below the length)
+    #[inline(always)]
+    fn get(&self, index: u32) -> &T {
+        let index = index as usize;
+        &self.pages[index / VERSIONS_PAGE][index % VERSIONS_PAGE]
+    }
+
+    /// Drops the versions from `len` on
+    fn truncate(&mut self, len: u32) {
+        let len = len as usize;
+        if len >= self.len {
+            return;
+        }
+        let first_page = len / VERSIONS_PAGE;
+        let last_page = (self.len - 1) / VERSIONS_PAGE;
+        self.pages[first_page].truncate(len % VERSIONS_PAGE);
+        for page in &mut self.pages[first_page + 1..=last_page] {
+            page.clear();
+        }
+        self.len = len;
+    }
+
+    fn clear(&mut self) {
+        self.truncate(0);
+    }
 }
 
 /// One change the access list declares
@@ -116,18 +228,10 @@ struct IndexedChange {
     change: Change,
 }
 
-/// What a frame rollback undoes
-#[derive(Clone, Copy, Debug)]
-enum JournalEntry {
-    AccountWarm { account: u32, old: u32 },
-    Account { account: u32, old: AccountState },
-    SlotWarm { position: u32, old: u32 },
-    Slot { position: u32, old: SlotState },
-}
-
-/// A frame snapshot: the journal length and the refund counter
+/// A frame snapshot: the lengths of the version arenas and the refund counter
 pub struct BalModelSnapshot<R> {
-    journal_len: usize,
+    account_versions: u32,
+    slot_versions: u32,
     refund: R,
 }
 
@@ -144,8 +248,12 @@ pub struct BalStorageModel<
     /// Per account: the end of the written run inside its slot range
     written_ends: Vec<u32, A>,
     pub initial: InitialValues<A>,
-    accounts: Vec<AccountState, A>,
-    slots: Vec<SlotState, A>,
+    accounts: Vec<AccountBase, A>,
+    slots: Vec<SlotBase, A>,
+    /// The versions of the running index, for frame rollbacks and the end-of-index
+    /// check; dropped at the end of the index
+    account_versions: Versions<AccountVersion, A>,
+    slot_versions: Versions<SlotVersion, A>,
     /// The declared changes, sorted by access index
     counts: AccessListCounts,
     changes: Vec<IndexedChange, A>,
@@ -154,15 +262,7 @@ pub struct BalStorageModel<
     pub range: BlockAccessIndexRange,
     /// The access index being executed
     current_index: u32,
-    /// Stamp of the current index (never 0)
-    stamp: u32,
-    /// The writes of the running index, for frame rollbacks: a chunked list, as the
-    /// proving-target allocator cannot grow a buffer
-    journal: ListVec<JournalEntry, 32, A>,
     allocator: A,
-    /// Accounts and slots changed in the current index
-    touched_accounts: ListVec<u32, 32, A>,
-    touched_slots: ListVec<u32, 32, A>,
     refund_counter: R,
     preimages: BytecodeKeccakPreimagesStorage<R, A>,
     policy: P,
@@ -195,14 +295,8 @@ fn integer_item_value(item: &[u8]) -> Result<Bytes32, GlamsterdamError> {
     Ok(value)
 }
 
-fn not_in_access_list(address: &B160) -> SystemError {
-    not_in_access_list_slot(address, None)
-}
-
-fn not_in_access_list_slot(address: &B160, key: Option<&Bytes32>) -> SystemError {
-    not_in_access_list_at(address, key, u32::MAX)
-}
-
+/// The error of an access outside the list: the address, the slot key (for a slot),
+/// and the access index the model is at (`u32::MAX` when the address itself is unknown)
 fn not_in_access_list_at(address: &B160, key: Option<&Bytes32>, index: u32) -> SystemError {
     use zk_ee::error_ctx;
     use zk_ee::system::errors::context::contextualized::Contextualized as _;
@@ -263,7 +357,7 @@ impl<
                 Some(item) => parse_account_leaf(item)?,
                 None => (0, U256::ZERO, EMPTY_STRING_KECCAK_HASH),
             };
-            accounts.push(AccountState {
+            accounts.push(AccountBase {
                 nonce,
                 balance,
                 code_hash: if code_hash.is_zero() {
@@ -271,13 +365,7 @@ impl<
                 } else {
                     code_hash
                 },
-                warm: 0,
-                changed: 0,
-                start_nonce: nonce,
-                start_balance: balance,
-                start_code_hash: code_hash,
-                deployed: 0,
-                deconstruct: false,
+                head: 0,
                 ever_accessed: false,
             });
         }
@@ -287,13 +375,11 @@ impl<
                 Some(item) => integer_item_value(item)?,
                 None => Bytes32::ZERO,
             };
-            slots.push(SlotState {
-                current: value,
+            slots.push(SlotBase {
                 start: value,
+                head: 0,
                 is_new: item.is_none(),
-                warm: 0,
-                written: 0,
-                write_charged: 0,
+                write_charged_before: false,
                 ever_accessed: false,
             });
         }
@@ -385,15 +471,13 @@ impl<
             initial,
             accounts,
             slots,
+            account_versions: Versions::new_in(allocator.clone()),
+            slot_versions: Versions::new_in(allocator.clone()),
             counts,
             changes,
             change_starts,
             range,
             current_index: range.first,
-            stamp: 1,
-            journal: ListVec::new_in(allocator.clone()),
-            touched_accounts: ListVec::new_in(allocator.clone()),
-            touched_slots: ListVec::new_in(allocator.clone()),
             allocator: allocator.clone(),
             refund_counter: R::empty(),
             preimages: BytecodeKeccakPreimagesStorage::new_from_parts(allocator),
@@ -412,7 +496,7 @@ impl<
                     new.accounts[account as usize].code_hash = hash;
                 }
                 Change::Slot { position, value } => {
-                    new.slots[position as usize].current = value;
+                    new.slots[position as usize].start = value;
                 }
             }
         }
@@ -464,10 +548,8 @@ impl<
             return Err(internal_error!("access index outside of the range"));
         }
         self.current_index = index;
-        self.stamp += 1;
-        self.journal.clear();
-        self.touched_accounts.clear();
-        self.touched_slots.clear();
+        self.account_versions.clear();
+        self.slot_versions.clear();
         self.refund_counter = R::empty();
         Ok(())
     }
@@ -478,7 +560,7 @@ impl<
         self.tables
             .addresses
             .get(&AddressKey(*address))
-            .ok_or_else(|| not_in_access_list(address))
+            .ok_or_else(|| not_in_access_list_at(address, None, self.current_index))
     }
 
     /// The index of an account the execution accesses. An address outside the access list
@@ -499,7 +581,7 @@ impl<
                 {
                     resources.charge_legacy_gas(COLD_ACCOUNT_ACCESS)?;
                 }
-                Err(not_in_access_list(address))
+                Err(not_in_access_list_at(address, None, self.current_index))
             }
         }
     }
@@ -527,7 +609,11 @@ impl<
     /// The position of a slot of an account in the slot table
     fn slot_position(&self, account: u32, key: &Bytes32) -> Result<u32> {
         let key_index = self.tables.slot_keys.get(&SlotKey(*key)).ok_or_else(|| {
-            not_in_access_list_slot(&self.tables.addresses.key(account).0, Some(key))
+            not_in_access_list_at(
+                &self.tables.addresses.key(account).0,
+                Some(key),
+                self.current_index,
+            )
         })?;
         let access = &self.tables.accounts[account as usize];
         let written_end = self.written_ends[account as usize];
@@ -582,9 +668,9 @@ impl<
             }
         };
         resources.charge_legacy_gas_and_native(gas, WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST)?;
-        self.accounts[account as usize].ever_accessed = true;
-        let state = &self.accounts[account as usize];
-        if state.warm != self.stamp {
+        let base = &mut self.accounts[account as usize];
+        base.ever_accessed = true;
+        if base.head == 0 {
             match ee_type {
                 ExecutionEnvironmentType::NoEE => {}
                 ExecutionEnvironmentType::EVM => {
@@ -599,11 +685,15 @@ impl<
                     }
                 }
             }
-            self.journal.push(JournalEntry::AccountWarm {
-                account,
-                old: state.warm,
-            });
-            self.accounts[account as usize].warm = self.stamp;
+            // warm from here on: the first version of the index, the base's values
+            let view = AccountView {
+                nonce: base.nonce,
+                balance: base.balance,
+                code_hash: base.code_hash,
+                deployed: false,
+                deconstruct: false,
+            };
+            self.push_account_version(account, view)?;
         }
         // An account marked for deconstruction (self-destructed in the transaction that
         // created it) stays accessible until the end of the index like any other: its code
@@ -611,19 +701,98 @@ impl<
         Ok(())
     }
 
-    /// Journals the account before a change and records it as changed
-    fn mutate_account(&mut self, account: u32, change: impl FnOnce(&mut AccountState)) {
-        let old = self.accounts[account as usize];
-        self.journal.push(JournalEntry::Account { account, old });
-        let state = &mut self.accounts[account as usize];
-        if state.changed != self.stamp {
-            state.changed = self.stamp;
-            state.start_nonce = old.nonce;
-            state.start_balance = old.balance;
-            state.start_code_hash = old.code_hash;
-            self.touched_accounts.push(account);
+    /// The current values of an account: its head version, or its base when it is
+    /// untouched in the index
+    #[inline(always)]
+    fn account_view(&self, account: u32) -> AccountView {
+        let base = &self.accounts[account as usize];
+        if base.head == 0 {
+            AccountView {
+                nonce: base.nonce,
+                balance: base.balance,
+                code_hash: base.code_hash,
+                deployed: false,
+                deconstruct: false,
+            }
+        } else {
+            let v = self.account_versions.get(base.head - 1);
+            AccountView {
+                nonce: v.nonce,
+                balance: v.balance,
+                code_hash: v.code_hash,
+                deployed: v.deployed,
+                deconstruct: v.deconstruct,
+            }
         }
-        change(state);
+    }
+
+    /// Pushes a version of the account with these values and makes it the head
+    #[inline(always)]
+    fn push_account_version(
+        &mut self,
+        account: u32,
+        view: AccountView,
+    ) -> Result<(), InternalError> {
+        let previous = self.accounts[account as usize].head;
+        let head = self.account_versions.push(AccountVersion {
+            nonce: view.nonce,
+            balance: view.balance,
+            code_hash: view.code_hash,
+            account,
+            previous,
+            deployed: view.deployed,
+            deconstruct: view.deconstruct,
+        })?;
+        self.accounts[account as usize].head = head;
+        Ok(())
+    }
+
+    /// Records a change of the account as a new version
+    fn mutate_account(
+        &mut self,
+        account: u32,
+        change: impl FnOnce(&mut AccountView),
+    ) -> Result<(), InternalError> {
+        let mut view = self.account_view(account);
+        change(&mut view);
+        self.push_account_version(account, view)
+    }
+
+    /// The current value of a slot: its head version, or its base
+    #[inline(always)]
+    fn slot_current(&self, position: u32) -> Bytes32 {
+        let base = &self.slots[position as usize];
+        if base.head == 0 {
+            base.start
+        } else {
+            self.slot_versions.get(base.head - 1).value
+        }
+    }
+
+    /// Whether a cold write extra was charged for the slot in this index
+    #[inline(always)]
+    fn slot_write_charged(&self, position: u32) -> bool {
+        let base = &self.slots[position as usize];
+        base.head != 0 && self.slot_versions.get(base.head - 1).write_charged
+    }
+
+    /// Pushes a version of the slot with this value and makes it the head
+    #[inline(always)]
+    fn push_slot_version(
+        &mut self,
+        position: u32,
+        value: Bytes32,
+        write_charged: bool,
+    ) -> Result<(), InternalError> {
+        let previous = self.slots[position as usize].head;
+        let head = self.slot_versions.push(SlotVersion {
+            value,
+            position,
+            previous,
+            write_charged,
+        })?;
+        self.slots[position as usize].head = head;
+        Ok(())
     }
 
     /// Charges a slot read and warms the slot; returns whether it was warm
@@ -634,76 +803,67 @@ impl<
         position: u32,
     ) -> Result<bool> {
         self.policy.charge_warm_storage_read(ee_type, resources)?;
-        self.slots[position as usize].ever_accessed = true;
-        let state = self.slots[position as usize];
-        let is_warm = state.warm == self.stamp;
+        let base = &mut self.slots[position as usize];
+        base.ever_accessed = true;
+        let is_warm = base.head != 0;
         if !is_warm {
-            self.policy.charge_cold_storage_read_extra(
-                ee_type,
-                resources,
-                state.is_new && state.write_charged == 0,
-                false,
-            )?;
-            self.journal.push(JournalEntry::SlotWarm {
-                position,
-                old: state.warm,
-            });
-            self.slots[position as usize].warm = self.stamp;
+            let is_new = base.is_new && !base.write_charged_before;
+            let start = base.start;
+            self.policy
+                .charge_cold_storage_read_extra(ee_type, resources, is_new, false)?;
+            // warm from here on: the first version of the index, the base's value
+            self.push_slot_version(position, start, false)?;
         }
         Ok(is_warm)
-    }
-
-    /// Value of a slot at the start of the current index
-    fn slot_value_at_index_start(&self, position: u32) -> Bytes32 {
-        let state = &self.slots[position as usize];
-        if state.written == self.stamp {
-            state.start
-        } else {
-            state.current
-        }
     }
 
     /// Applies the EIP-8246 finalization to self-destructed accounts, then
     /// checks the writes of the index against the declared changes
     fn finish_index(&mut self) -> Result<(), InternalError> {
-        // EIP-8246: nonce 0, no code, no storage, balance kept
-        for account in 0..self.accounts.len() as u32 {
-            if !self.accounts[account as usize].deconstruct {
+        // EIP-8246: nonce 0, no code, no storage, balance kept. The accounts marked are
+        // found through their head versions (the loop pushes versions past `len`).
+        let len = self.account_versions.len();
+        for i in 0..len {
+            let v = *self.account_versions.get(i);
+            if !v.deconstruct || self.accounts[v.account as usize].head != i + 1 {
                 continue;
             }
-            self.mutate_account(account, |state| {
+            self.mutate_account(v.account, |state| {
                 state.nonce = 0;
                 state.code_hash = EMPTY_STRING_KECCAK_HASH;
                 state.deconstruct = false;
-            });
-            let access = self.tables.accounts[account as usize];
+            })?;
+            let access = self.tables.accounts[v.account as usize];
             for position in access.slots_start..access.slots_end {
-                self.write_slot_value(position, Bytes32::ZERO);
+                self.write_slot_value(position, Bytes32::ZERO)?;
             }
         }
 
         let index = self.current_index as usize;
         let declared = &self.changes
             [self.change_starts[index] as usize..self.change_starts[index + 1] as usize];
-        let stamp = self.stamp;
         // every declared change happened, with the declared final value
         for change in declared {
             let ok = match change.change {
                 Change::Balance { account, value } => {
                     let a = &self.accounts[account as usize];
-                    a.changed == stamp && a.balance == value && a.balance != a.start_balance
+                    let current = self.account_view(account);
+                    a.head != 0 && current.balance == value && current.balance != a.balance
                 }
                 Change::Nonce { account, value } => {
                     let a = &self.accounts[account as usize];
-                    a.changed == stamp && a.nonce == value && a.nonce != a.start_nonce
+                    let current = self.account_view(account);
+                    a.head != 0 && current.nonce == value && current.nonce != a.nonce
                 }
                 Change::Code { account, hash } => {
                     let a = &self.accounts[account as usize];
-                    a.changed == stamp && a.code_hash == hash && a.code_hash != a.start_code_hash
+                    let current = self.account_view(account);
+                    a.head != 0 && current.code_hash == hash && current.code_hash != a.code_hash
                 }
                 Change::Slot { position, value } => {
                     let s = &self.slots[position as usize];
-                    s.written == stamp && s.current == value && s.current != s.start
+                    let current = self.slot_current(position);
+                    s.head != 0 && current == value && current != s.start
                 }
             };
             if !ok {
@@ -712,31 +872,51 @@ impl<
                 ));
             }
         }
-        // and nothing else did: the actual changes are as many as the declared ones. A
-        // rollback restores an entry's stamp and start value from the index it was last
-        // changed in, so only the entries still stamped with this index count.
+        // and nothing else did: the actual changes are as many as the declared ones. The
+        // entries touched in the index are those with a head version; a rolled-back
+        // version is gone from the arena, so every one left belongs to the index.
         let mut actual = 0usize;
-        for account in self.touched_accounts.iter() {
-            let a = &self.accounts[*account as usize];
-            if a.changed != stamp {
+        for i in 0..self.account_versions.len() {
+            let v = self.account_versions.get(i);
+            let a = &self.accounts[v.account as usize];
+            if a.head != i + 1 {
                 continue;
             }
-            actual += (a.balance != a.start_balance) as usize
-                + (a.nonce != a.start_nonce) as usize
-                + (a.code_hash != a.start_code_hash) as usize;
+            actual += (v.balance != a.balance) as usize
+                + (v.nonce != a.nonce) as usize
+                + (v.code_hash != a.code_hash) as usize;
         }
-        for position in self.touched_slots.iter() {
-            let s = &self.slots[*position as usize];
-            actual += (s.written == stamp && s.current != s.start) as usize;
+        for i in 0..self.slot_versions.len() {
+            let v = self.slot_versions.get(i);
+            let s = &self.slots[v.position as usize];
+            actual += (s.head == i + 1 && v.value != s.start) as usize;
         }
         if actual != declared.len() {
             return Err(self.undeclared_change_error(index as u32, declared.len(), actual));
         }
-        // nothing of the index outlives it: the journal and the touched lists are
-        // released here, so they hold nothing between transactions
-        self.journal.clear();
-        self.touched_accounts.clear();
-        self.touched_slots.clear();
+        // the index ends: the head versions become the bases of the next one, and
+        // nothing of the index outlives it
+        for i in 0..self.account_versions.len() {
+            let v = *self.account_versions.get(i);
+            let a = &mut self.accounts[v.account as usize];
+            if a.head == i + 1 {
+                a.nonce = v.nonce;
+                a.balance = v.balance;
+                a.code_hash = v.code_hash;
+                a.head = 0;
+            }
+        }
+        for i in 0..self.slot_versions.len() {
+            let v = *self.slot_versions.get(i);
+            let s = &mut self.slots[v.position as usize];
+            if s.head == i + 1 {
+                s.start = v.value;
+                s.write_charged_before |= v.write_charged;
+                s.head = 0;
+            }
+        }
+        self.account_versions.clear();
+        self.slot_versions.clear();
         Ok(())
     }
 
@@ -753,39 +933,39 @@ impl<
             |probe: &dyn Fn(&Change) -> bool| changes.iter().any(|c| probe(&c.change));
         let mut offending: Vec<(B160, &'static str, Bytes32, Bytes32, Bytes32), A> =
             Vec::new_in(self.allocator.clone());
-        for account in self.touched_accounts.iter() {
-            let a = &self.accounts[*account as usize];
-            if a.changed != self.stamp {
+        for i in 0..self.account_versions.len() {
+            let v = self.account_versions.get(i);
+            let account = v.account;
+            let a = &self.accounts[account as usize];
+            if a.head != i + 1 {
                 continue;
             }
-            let address = self.tables.addresses.key(*account).0;
+            let address = self.tables.addresses.key(account).0;
             let fields: [(&'static str, bool, bool, Bytes32, Bytes32); 3] = [
                 (
                     "balance",
-                    a.balance != a.start_balance,
+                    v.balance != a.balance,
                     is_declared(
-                        &|c| matches!(c, Change::Balance { account: x, .. } if *x == *account),
+                        &|c| matches!(c, Change::Balance { account: x, .. } if *x == account),
                     ),
-                    Bytes32::from_array(a.start_balance.to_be_bytes()),
                     Bytes32::from_array(a.balance.to_be_bytes()),
+                    Bytes32::from_array(v.balance.to_be_bytes()),
                 ),
                 (
                     "nonce",
-                    a.nonce != a.start_nonce,
+                    v.nonce != a.nonce,
                     is_declared(
-                        &|c| matches!(c, Change::Nonce { account: x, .. } if *x == *account),
+                        &|c| matches!(c, Change::Nonce { account: x, .. } if *x == account),
                     ),
-                    Bytes32::from_array(U256::from(a.start_nonce).to_be_bytes()),
                     Bytes32::from_array(U256::from(a.nonce).to_be_bytes()),
+                    Bytes32::from_array(U256::from(v.nonce).to_be_bytes()),
                 ),
                 (
                     "code",
-                    a.code_hash != a.start_code_hash,
-                    is_declared(
-                        &|c| matches!(c, Change::Code { account: x, .. } if *x == *account),
-                    ),
-                    a.start_code_hash,
+                    v.code_hash != a.code_hash,
+                    is_declared(&|c| matches!(c, Change::Code { account: x, .. } if *x == account)),
                     a.code_hash,
+                    v.code_hash,
                 ),
             ];
             for (name, changed, declared, start, current) in fields {
@@ -794,15 +974,20 @@ impl<
                 }
             }
         }
-        for position in self.touched_slots.iter() {
-            let s = &self.slots[*position as usize];
-            let access = self.tables.slots[*position as usize];
+        for i in 0..self.slot_versions.len() {
+            let v = self.slot_versions.get(i);
+            let position = v.position;
+            let s = &self.slots[position as usize];
+            if s.head != i + 1 {
+                continue;
+            }
+            let access = self.tables.slots[position as usize];
             let address = self.tables.addresses.key(access.address_index).0;
             let key = self.tables.slot_keys.key(access.key_index).0;
             let declared =
-                is_declared(&|c| matches!(c, Change::Slot { position: p, .. } if *p == *position));
-            if (s.written == self.stamp && s.current != s.start) != declared {
-                offending.push((address, "slot", s.start, s.current, key));
+                is_declared(&|c| matches!(c, Change::Slot { position: p, .. } if *p == position));
+            if (v.value != s.start) != declared {
+                offending.push((address, "slot", s.start, v.value, key));
             }
         }
         let error: InternalError =
@@ -817,17 +1002,11 @@ impl<
         })
     }
 
-    /// Writes a slot value in the current index (journaled)
-    fn write_slot_value(&mut self, position: u32, value: Bytes32) {
-        let old = self.slots[position as usize];
-        self.journal.push(JournalEntry::Slot { position, old });
-        let state = &mut self.slots[position as usize];
-        if state.written != self.stamp {
-            state.written = self.stamp;
-            state.start = old.current;
-            self.touched_slots.push(position);
-        }
-        state.current = value;
+    /// Writes a slot value in the current index: a new version, which keeps the write
+    /// charge flag of the one before
+    fn write_slot_value(&mut self, position: u32, value: Bytes32) -> Result<(), InternalError> {
+        let write_charged = self.slot_write_charged(position);
+        self.push_slot_version(position, value, write_charged)
     }
 }
 
@@ -850,7 +1029,8 @@ impl<
 
     fn start_frame(&mut self) -> BalModelSnapshot<R> {
         BalModelSnapshot {
-            journal_len: self.journal.len(),
+            account_versions: self.account_versions.len(),
+            slot_versions: self.slot_versions.len(),
             refund: self.refund_counter.clone(),
         }
     }
@@ -862,35 +1042,26 @@ impl<
         let Some(snapshot) = rollback_handle else {
             return Ok(());
         };
-        // An entry first changed in the frame goes back to unchanged in this index
-        // (its stamp is restored), so it leaves the touched list too: a later change
-        // in the index records it again, and the list would count it twice. The
-        // first changes of the frame are the tail of the list, in journal order.
-        while self.journal.len() > snapshot.journal_len {
-            let entry = self.journal.pop().expect("journal entry");
-            match entry {
-                JournalEntry::AccountWarm { account, old } => {
-                    self.accounts[account as usize].warm = old;
-                }
-                JournalEntry::Account { account, old } => {
-                    if old.changed != self.stamp {
-                        let last = self.touched_accounts.pop();
-                        debug_assert_eq!(last, Some(account));
-                    }
-                    self.accounts[account as usize] = old;
-                }
-                JournalEntry::SlotWarm { position, old } => {
-                    self.slots[position as usize].warm = old;
-                }
-                JournalEntry::Slot { position, old } => {
-                    if old.written != self.stamp {
-                        let last = self.touched_slots.pop();
-                        debug_assert_eq!(last, Some(position));
-                    }
-                    self.slots[position as usize] = old;
-                }
+        // The versions the frame pushed are walked forward: the first one of an entry
+        // in the frame points at the head before the frame, which the entry goes back
+        // to; the later ones of the same entry are skipped, as its head already points
+        // before them. Then the arena is cut back to the frame's start.
+        for i in snapshot.account_versions..self.account_versions.len() {
+            let v = self.account_versions.get(i);
+            let base = &mut self.accounts[v.account as usize];
+            if base.head > i {
+                base.head = v.previous;
             }
         }
+        self.account_versions.truncate(snapshot.account_versions);
+        for i in snapshot.slot_versions..self.slot_versions.len() {
+            let v = self.slot_versions.get(i);
+            let base = &mut self.slots[v.position as usize];
+            if base.head > i {
+                base.head = v.previous;
+            }
+        }
+        self.slot_versions.truncate(snapshot.slot_versions);
         self.refund_counter = snapshot.refund.clone();
         Ok(())
     }
@@ -929,7 +1100,7 @@ impl<
         let account = self.account_index_charging(ee_type, resources, address)?;
         let position = self.slot_position_charging(ee_type, resources, account, key)?;
         self.access_slot(ee_type, resources, position)?;
-        Ok(self.slots[position as usize].current)
+        Ok(self.slot_current(position))
     }
 
     /// Warms a slot (a transaction access list entry). A warm-up is not an access: a
@@ -951,14 +1122,11 @@ impl<
         let Ok(position) = self.slot_position(account, key) else {
             return Ok(());
         };
-        self.slots[position as usize].ever_accessed = true;
-        let state = self.slots[position as usize];
-        if state.warm != self.stamp {
-            self.journal.push(JournalEntry::SlotWarm {
-                position,
-                old: state.warm,
-            });
-            self.slots[position as usize].warm = self.stamp;
+        let base = &mut self.slots[position as usize];
+        base.ever_accessed = true;
+        if base.head == 0 {
+            let start = base.start;
+            self.push_slot_version(position, start, false)?;
         }
         Ok(())
     }
@@ -975,11 +1143,11 @@ impl<
         let account = self.account_index_charging(ee_type, resources, address)?;
         let position = self.slot_position_charging(ee_type, resources, account, key)?;
         let is_warm_access = self.access_slot(ee_type, resources, position)?;
-        let state = self.slots[position as usize];
-        let at_tx_start = self.slot_value_at_index_start(position);
-        let current = state.current;
-        let is_cold_write_charged = state.write_charged == self.stamp;
-        let is_new_slot = state.is_new && state.write_charged == 0;
+        let base = self.slots[position as usize];
+        let at_tx_start = base.start;
+        let current = self.slot_current(position);
+        let is_cold_write_charged = self.slot_write_charged(position);
+        let is_new_slot = base.is_new && !base.write_charged_before && !is_cold_write_charged;
         self.policy.charge_storage_write_extra(
             ee_type,
             &at_tx_start,
@@ -1000,10 +1168,9 @@ impl<
             &mut refund,
         )?;
         self.refund_counter = refund;
-        self.write_slot_value(position, *new_value);
-        if !is_cold_write_charged && *new_value != current {
-            self.slots[position as usize].write_charged = self.stamp;
-        }
+        // the version of the write carries the write charge flag
+        let write_charged = is_cold_write_charged || *new_value != current;
+        self.push_slot_version(position, *new_value, write_charged)?;
         Ok(current)
     }
 
@@ -1057,7 +1224,7 @@ impl<
     > {
         let account = self.account_index_charging(ee_type, resources, address)?;
         self.access_account(ee_type, resources, address, account, false)?;
-        let state = self.accounts[account as usize];
+        let state = self.account_view(account);
 
         let needs_preimage = ObservableBytecodeLen::IS_MATERIAL
             || BytecodeLen::IS_MATERIAL
@@ -1113,11 +1280,13 @@ impl<
         })
     }
 
-    /// Warms an account (a transaction access list entry, the coinbase). A warm-up is
-    /// not an access: an address outside the block access list was never reached by
-    /// the execution, so there is nothing to warm (see `storage_touch`). A precompile is
-    /// an account like any other here (it can be called and receive value); it is only
-    /// never cold, see `access_account`.
+    /// Warms an account (a transaction access list entry, the coinbase, the delegate of
+    /// an EIP-7702 recipient). A warm-up records no access: an address outside the
+    /// block access list was never reached by the real execution past this point, so
+    /// there is nothing to warm, but the access is still paid for, as it is what may
+    /// have run the transaction out of gas before it reached the address (a recipient's
+    /// delegate the gas does not cover). A precompile is an account like any other here
+    /// (it can be called and receive value); it is only never cold, see `access_account`.
     fn touch_account(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -1125,10 +1294,17 @@ impl<
         address: &B160,
         _oracle: &mut impl IOOracle,
     ) -> Result<()> {
-        let Some(account) = self.tables.addresses.get(&AddressKey(*address)) else {
-            return Ok(());
-        };
-        self.access_account(ee_type, resources, address, account, false)
+        match self.tables.addresses.get(&AddressKey(*address)) {
+            Some(account) => self.access_account(ee_type, resources, address, account, false),
+            None => {
+                if ee_type == ExecutionEnvironmentType::EVM
+                    && !evm_interpreter::utils::is_precompile(address)
+                {
+                    resources.charge_legacy_gas(COLD_ACCOUNT_ACCESS)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     fn increment_nonce(
@@ -1144,11 +1320,11 @@ impl<
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
-        let nonce = self.accounts[account as usize].nonce;
+        let nonce = self.account_view(account).nonce;
         let Some(new_nonce) = nonce.checked_add(increment_by) else {
             return Err(interface_error!(NonceError::NonceOverflow));
         };
-        self.mutate_account(account, |state| state.nonce = new_nonce);
+        self.mutate_account(account, |state| state.nonce = new_nonce)?;
         Ok(nonce)
     }
 
@@ -1166,9 +1342,9 @@ impl<
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
-        let current = self.accounts[account as usize].balance;
+        let current = self.account_view(account).balance;
         let new = update_fn(&current)?;
-        self.mutate_account(account, |state| state.balance = new);
+        self.mutate_account(account, |state| state.balance = new)?;
         Ok(current)
     }
 
@@ -1182,7 +1358,7 @@ impl<
             resources.charge_legacy_gas(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_GAS)?;
         }
         let account = self.account_index(address)?;
-        Ok(self.accounts[account as usize].balance)
+        Ok(self.account_view(account).balance)
     }
 
     fn transfer_nominal_token_value(
@@ -1254,11 +1430,10 @@ impl<
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
-        let stamp = self.stamp;
         self.mutate_account(account, |state| {
             state.code_hash = hash;
-            state.deployed = stamp;
-        });
+            state.deployed = true;
+        })?;
         Ok((stored, hash, stored.len() as u32))
     }
 
@@ -1318,7 +1493,7 @@ impl<
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
-        self.mutate_account(account, |state| state.code_hash = hash);
+        self.mutate_account(account, |state| state.code_hash = hash)?;
         Ok(())
     }
 
@@ -1343,7 +1518,7 @@ impl<
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
-        let state = self.accounts[account as usize];
+        let state = self.account_view(account);
         let same_address = at_address == nominal_token_beneficiary;
         let transfer_amount = state.balance;
 
@@ -1357,7 +1532,7 @@ impl<
             true,
         )?;
         if from_ee == ExecutionEnvironmentType::EVM {
-            let b = &self.accounts[beneficiary as usize];
+            let b = self.account_view(beneficiary);
             let beneficiary_alive =
                 b.nonce != 0 || b.code_hash != EMPTY_STRING_KECCAK_HASH || !b.balance.is_zero();
             if !beneficiary_alive && !transfer_amount.is_zero() {
@@ -1368,10 +1543,9 @@ impl<
 
         // EIP-6780: only a contract created in this transaction is destroyed (a self-destruct
         // with no code yet is in its constructor)
-        let should_be_deconstructed =
-            state.deployed == self.stamp || state.code_hash == EMPTY_STRING_KECCAK_HASH;
+        let should_be_deconstructed = state.deployed || state.code_hash == EMPTY_STRING_KECCAK_HASH;
         if should_be_deconstructed {
-            self.mutate_account(account, |state| state.deconstruct = true);
+            self.mutate_account(account, |state| state.deconstruct = true)?;
         }
         if !same_address {
             resources
@@ -1436,7 +1610,7 @@ impl<
         let state = &self.slots[position as usize];
         Some(StorageDiff {
             initial_value: state.start,
-            current_value: state.current,
+            current_value: self.slot_current(position),
             is_new_storage_slot: state.is_new,
             initial_value_used: true,
         })
@@ -1458,7 +1632,7 @@ impl<
                 },
                 StorageDiff {
                     initial_value: state.start,
-                    current_value: state.current,
+                    current_value: self.slot_current(position as u32),
                     is_new_storage_slot: state.is_new,
                     initial_value_used: true,
                 },

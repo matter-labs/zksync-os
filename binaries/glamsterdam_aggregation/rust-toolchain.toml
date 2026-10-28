@@ -1,0 +1,3 @@
+# If changed, also change reproduce/reproduce.sh
+[toolchain]
+channel = "nightly-2026-08-09"
