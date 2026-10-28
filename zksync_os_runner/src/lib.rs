@@ -3,8 +3,8 @@
 //! Wrapper around airbender-host's `TranspilerRunner` that plugs
 //! in our MOP-aware decoder.
 
+use airbender_host::raw::{DecodingOptions, FullUnsignedMachineDecoderConfig};
 use airbender_host::{ExecutionResult, FlamegraphConfig, Program, Runner as _};
-use riscv_transpiler::ir::{DecodingOptions, FullUnsignedMachineDecoderConfig};
 use std::path::PathBuf;
 
 /// Decoder config used by the FRI-aware RISC-V runner.
