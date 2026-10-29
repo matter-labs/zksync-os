@@ -1,0 +1,23 @@
+[package]
+name = "ecrecover_bench_host"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+license = "MIT OR Apache-2.0"
+description = "Runs the ecrecover_bench guest on the RISC-V transpiler, serves its hints over the CSR channel and reports the cycles and delegation calls per recovery"
+
+# A standalone host (not a workspace member): it drives the `riscv_transpiler`
+# VM directly, the way `airbender-host`'s transpiler runner does, and answers
+# the guest's hint requests with the host build of `airbender-crypto`.
+
+[workspace]
+
+[dependencies]
+riscv_transpiler = { path = "../../../zksync-airbender/riscv_transpiler", default-features = false, features = ["flamegraph"] }
+field = { path = "../../../zksync-airbender/field" }
+crypto = { package = "airbender-crypto", path = "../../../airbender-platform/crates/airbender-crypto", default-features = false, features = ["forward", "secp256k1-static-context"] }
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+debug = false

@@ -93,6 +93,9 @@ fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
         FieldHintOp::Bls12381KzgResidueWitness => {
             impls::bls12_381_kzg_residue_witness(operand, false, responses)
         }
+        FieldHintOp::Secp256k1RecoveryWitness => {
+            impls::secp256k1_recovery_witness(operand, responses)
+        }
         _ => {
             panic!("Unknown field hint op {}", op as u32);
         }
@@ -467,5 +470,100 @@ mod native_query_tests {
             src_len_u32_words: 8,
         };
         let _ = process(RunMode::NativeRunOnly, &hint);
+    }
+
+    /// The guest is answered its recovery witness with the words of the `airbender-crypto` host
+    /// (`crypto::secp256k1::oracle::host`), which serves the hooks of that crate over the same
+    /// protocol: from the operand of a native run and from the same operand in the memory of the
+    /// guest
+    #[test]
+    fn the_recovery_witness_is_answered_as_the_airbender_host_answers_it() {
+        use crypto::secp256k1::hooks::DefaultSecp256k1Hooks;
+        use crypto::secp256k1::oracle::host::{serve, QuerierMemory, Representation};
+        use crypto::secp256k1::oracle::{RecoveryRequest, RECOVERY_REQUEST_WORDS};
+        use crypto::secp256k1::scalars::Scalar;
+        use crypto::secp256k1::Affine;
+        use oracle_provider::RamPeek;
+
+        /// The guest memory as the `airbender-crypto` host reads it
+        struct Reference<'a>(&'a TestMemorySource);
+
+        impl QuerierMemory for Reference<'_> {
+            fn word_size(&self) -> usize {
+                4
+            }
+
+            fn read_u32(&self, address: usize) -> u32 {
+                self.0.peek_word(address as u32)
+            }
+        }
+
+        let key: [u8; 32] = [5; 32];
+        let key = crypto::k256::ecdsa::SigningKey::from_bytes((&key).into()).unwrap();
+        let digest = [9u8; 32];
+        let (signature, recovery_id) = key.sign_prehash_recoverable(&digest).unwrap();
+        assert!(!recovery_id.is_x_reduced());
+        let bytes = signature.to_bytes();
+        let (r, s) = bytes.split_at(32);
+        let r_scalar = Scalar::from_be_bytes_checked(r.try_into().unwrap()).unwrap();
+        let s_scalar = Scalar::from_be_bytes_checked(s.try_into().unwrap()).unwrap();
+        let message = Scalar::from_be_bytes_reduced(&digest);
+        let point = Affine::lift_x_with_hooks(
+            &FieldElement::from_bytes(r.try_into().unwrap()).unwrap(),
+            recovery_id.is_y_odd(),
+            &mut DefaultSecp256k1Hooks,
+        )
+        .unwrap();
+        let operand = RecoveryRequest::new(&point, &r_scalar, &s_scalar, &message);
+
+        // the operand of the guest: the five elements in their Montgomery words
+        let mut x = [0u8; 32];
+        let mut y = [0u8; 32];
+        point.write_coordinates(&mut x, &mut y);
+        let x = FieldElement::from_bytes(&x).unwrap();
+        let y = FieldElement::from_bytes(&y).unwrap();
+        let mut guest = Vec::new();
+        for words in [
+            r_scalar.to_montgomery_words(),
+            s_scalar.to_montgomery_words(),
+            message.to_montgomery_words(),
+            x.to_montgomery_words(),
+            y.to_montgomery_words(),
+        ] {
+            guest.extend(words);
+        }
+        assert_eq!(guest.len(), RECOVERY_REQUEST_WORDS);
+
+        // from the memory of the guest: by this processor, and by the reference host
+        let mut memory = TestMemorySource::default();
+        memory.insert_u32(0x100, FieldHintOp::Secp256k1RecoveryWitness as u32);
+        memory.insert_u32(0x104, 0x1000);
+        memory.insert_u32(0x108, guest.len() as u32);
+        for (i, word) in guest.iter().enumerate() {
+            memory.insert_u32(0x1000 + 4 * i as u32, *word);
+        }
+        let (mut native_run, mut guest_run) = (Vec::new(), Vec::new());
+        FieldOpsQuery.process_memory_query(
+            FIELD_OPS_ADVISE_QUERY_ID,
+            0x100,
+            &GuestMemory(&memory),
+            RunMode::RiscVRun,
+            &mut native_run,
+            &mut guest_run,
+        );
+        assert!(native_run.is_empty());
+        let reference = serve(&Reference(&memory), Representation::Montgomery, 0x100);
+        assert_eq!(reference.len(), 1 + 8 + 8 + 16);
+        assert_eq!(reference[0], 1);
+        assert_eq!(guest_run, reference);
+
+        // from the operand of a native run that records the prover input: the same words for the
+        // guest, and for the native run (the words of the answer are the same on every target)
+        let (native_run, guest_run) = process(
+            RunMode::NativeRunSavingForRiscV,
+            &request(FieldHintOp::Secp256k1RecoveryWitness, &operand),
+        );
+        assert_eq!(guest_run, reference);
+        assert_eq!(native_run, reference);
     }
 }

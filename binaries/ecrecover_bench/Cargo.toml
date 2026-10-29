@@ -1,0 +1,39 @@
+[package]
+name = "ecrecover_bench"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+license = "MIT OR Apache-2.0"
+description = "A cycle benchmark of the airbender-crypto secp256k1 recovery (ecrecover) as an Airbender guest program, with and without the bigint and keccak delegations"
+
+# The guest calls `airbender-crypto` directly (no ZKsync OS system code): one
+# hardcoded signature is recovered a number of times, each recovery between two
+# cycle markers, with the hints (square roots, inverses, quotients) served over
+# the raw CSR channel by the host (`eth_runner ecrecover-bench`). The variants
+# are the features below; `build_variants.sh` builds all four.
+
+[dependencies]
+airbender = { package = "airbender-sdk", path = "../../../airbender-platform/crates/airbender-sdk", default-features = false, features = ["allocator-talc", "ram-1gb"] }
+crypto = { package = "airbender-crypto", path = "../../../airbender-platform/crates/airbender-crypto", default-features = false, features = ["secp256k1-static-context"] }
+
+[features]
+default = []
+# The u256 arithmetic through the bigint delegation (the production setup)
+bigint = ["crypto/bigint_ops"]
+# keccak-f[1600] through its delegation (the production setup); software otherwise
+keccak = ["crypto/keccak_special5"]
+
+[profile.dev]
+opt-level = 0
+lto = false
+codegen-units = 1
+panic = "abort"
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+# symbols for the flamegraphs; the code is the same
+debug = true

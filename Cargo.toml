@@ -95,6 +95,7 @@ exclude = [
     "binaries/glamsterdam_pre_execution",
     "binaries/glamsterdam_tx_range",
     "binaries/glamsterdam_aggregation",
+    "binaries/ecrecover_bench",
 ]
 
 [workspace.package]

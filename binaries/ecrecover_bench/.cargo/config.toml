@@ -1,0 +1,23 @@
+# The bare-metal RISC-V target with the code generation flags of the
+# `zksync_os` guest (the M extension, no unaligned scalar memory accesses,
+# linker relaxation, the Airbender runtime's linker scripts).
+[build]
+target = "riscv32i-unknown-none-elf"
+rustflags = [
+  "-C", "target-feature=+m,-unaligned-scalar-mem,+relax,+zimop",
+  "-C", "link-arg=-Tmemory.x",
+  "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=--save-temps",
+  # leaf functions skip the frame setup; the sampler still finds the callers through the chain
+  "-C", "force-frame-pointers=non-leaf",
+  "-Z", "unstable-options",
+  "-C", "passes=lower-atomic",
+  "--cfg", "getrandom_backend=\"custom\"",
+]
+
+[env]
+CC = "clang"
+
+[unstable]
+build-std = ["alloc", "core", "panic_abort", "compiler_builtins"]
+build-std-features = ["compiler-builtins-mem"]

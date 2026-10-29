@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
 ruint = { workspace = true, default-features = false }
-crypto = { workspace = true }
+crypto = { workspace = true, features = ["secp256k1-static-context"] }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }
 u256 = { path = "../supporting_crates/u256", default-features = false }

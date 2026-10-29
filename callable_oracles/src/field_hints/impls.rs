@@ -191,6 +191,57 @@ pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
     el.invert_vartime()
 }
 
+/// The witness of the key recovery the operand requests (`crypto::secp256k1::witness_host`): a
+/// flag, then for a witness the coordinates of the key as canonical little-endian words and the
+/// four coefficients as `i128` in little-endian words (see `FieldHintOp::Secp256k1RecoveryWitness`
+/// and `crypto::secp256k1::oracle`, whose host answers with the same words)
+pub(crate) fn secp256k1_recovery_witness(operand: &Operand, responses: &mut Responses) {
+    use crypto::secp256k1::oracle::{words_of_be_bytes, RecoveryRequest, RECOVERY_REQUEST_WORDS};
+    let request: RecoveryRequest = match operand.querier {
+        HintTarget::Native => operand.native_value(),
+        HintTarget::Guest => {
+            assert_eq!(
+                operand.size(),
+                4 * RECOVERY_REQUEST_WORDS,
+                "the operand is a recovery request"
+            );
+            let words = |i: usize| -> [u32; 8] {
+                operand.guest_words(32 * i, 8).try_into().expect("8 words")
+            };
+            RecoveryRequest {
+                r: Scalar::from_guest_operand_words(&words(0)),
+                s: Scalar::from_guest_operand_words(&words(1)),
+                message: Scalar::from_guest_operand_words(&words(2)),
+                x: FieldElement::from_guest_operand_words(&words(3)),
+                y: FieldElement::from_guest_operand_words(&words(4)),
+            }
+        }
+    };
+    let witness = crypto::secp256k1::witness_host::recovery_witness(
+        &request.point(),
+        &request.r,
+        &request.s,
+        &request.message,
+    );
+    match witness {
+        None => responses.write(&false),
+        Some(witness) => {
+            let coefficients: [[u32; 4]; 4] = witness.coefficients.map(|coefficient| {
+                let bytes = coefficient.to_le_bytes();
+                core::array::from_fn(|i| {
+                    u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().expect("4 bytes"))
+                })
+            });
+            responses.write(&(
+                true,
+                words_of_be_bytes(&witness.key_x),
+                words_of_be_bytes(&witness.key_y),
+                coefficients,
+            ));
+        }
+    }
+}
+
 /// The inverse of a non-zero field element
 pub(crate) fn inverse<F: HintEncoding + Copy>(operand: &Operand) -> F {
     let el: F = element(operand);

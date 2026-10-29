@@ -31,3 +31,7 @@ binaries/build.sh glamsterdam_tx_range   # one of them
 
 The `eth_runner` commands `glamsterdam-state-consistency-cycles` and
 `glamsterdam-range-cycles` load these dists by default.
+
+`ecrecover_bench` (with its host `ecrecover_bench_host`) is a cycle benchmark of the
+`airbender-crypto` ecrecover with and without the bigint and keccak delegations, see
+its README.
