@@ -42,7 +42,8 @@ pub const ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUB
 /// The length in bytes of the preimage of an MPT node, given its hash.
 pub struct MptPreimageByteLenQuery;
 
-impl OracleQuery for MptPreimageByteLenQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for MptPreimageByteLenQuery {
     const QUERY_ID: u32 = ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID;
     type Input = Bytes32;
     type Output = u32;
@@ -51,7 +52,8 @@ impl OracleQuery for MptPreimageByteLenQuery {
 /// The preimage of an MPT node, given its hash.
 pub struct MptPreimageWordsQuery;
 
-impl DynamicOracleQuery for MptPreimageWordsQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl DynamicOracleQuery for MptPreimageWordsQuery {
     const QUERY_ID: u32 = ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID;
     type Input = Bytes32;
 }

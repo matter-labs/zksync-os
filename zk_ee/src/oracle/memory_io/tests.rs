@@ -10,6 +10,7 @@ use crate::oracle::query_ids::{
     U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
 };
 use crate::storage_types::InitialStorageSlotData;
+use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
 use crate::utils::Bytes32;
 use alloc::alloc::Global;
@@ -58,7 +59,7 @@ impl WordChannel for MockHost {
 
 fn mock_oracle(
     handler: impl FnMut(u32, usize) -> Vec<u32> + 'static,
-) -> WordChannelOracle<MockHost> {
+) -> WordChannelOracle<MockHost, InternalError> {
     WordChannelOracle::new(MockHost {
         handler: Box::new(handler),
         query_id: None,
@@ -128,7 +129,8 @@ fn to_system(value: U256) -> u256::U256 {
 /// Model of `NEXT_TX_SIZE_QUERY_ID`: no input, a short output.
 struct NextTxSizeQuery;
 
-impl OracleQuery for NextTxSizeQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for NextTxSizeQuery {
     const QUERY_ID: u32 = NEXT_TX_SIZE_QUERY_ID;
     type Input = ();
     type Output = u32;
@@ -137,7 +139,8 @@ impl OracleQuery for NextTxSizeQuery {
 /// A short input, and a short output with a restricted representation.
 struct IsEeEnabledQuery;
 
-impl OracleQuery for IsEeEnabledQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for IsEeEnabledQuery {
     const QUERY_ID: u32 = TEST_QUERY_ID;
     type Input = ExecutionEnvironmentType;
     type Output = bool;
@@ -147,7 +150,8 @@ impl OracleQuery for IsEeEnabledQuery {
 /// place.
 struct DivRemAdviceQuery;
 
-impl OracleQuery for DivRemAdviceQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for DivRemAdviceQuery {
     const QUERY_ID: u32 = U256_DIV_REM_ADVICE_QUERY_ID;
     type Input = (u256::U256, u256::U256);
     type Output = u256::U256;
@@ -157,7 +161,8 @@ impl OracleQuery for DivRemAdviceQuery {
 /// quotient as a composite output.
 struct WideDivRemAdviceQuery;
 
-impl OracleQuery for WideDivRemAdviceQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for WideDivRemAdviceQuery {
     const QUERY_ID: u32 = U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
     type Input = (u256::U256, u256::U256, u256::U256);
     type Output = (u256::U256, u256::U256);
@@ -167,7 +172,8 @@ impl OracleQuery for WideDivRemAdviceQuery {
 /// (a `bool` flag, padding, the value) written memcpy-like.
 struct InitialStorageSlotQuery;
 
-impl OracleQuery for InitialStorageSlotQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for InitialStorageSlotQuery {
     const QUERY_ID: u32 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     type Input = (B160, Bytes32);
     type Output = InitialStorageSlotData<EthereumIOTypesConfig>;
@@ -179,7 +185,8 @@ struct AccountPropertiesQuery;
 
 const ACCOUNT_PROPERTIES_QUERY_ID: u32 = ACCOUNT_AND_STORAGE_SUBSPACE_MASK | 0x80;
 
-impl OracleQuery for AccountPropertiesQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for AccountPropertiesQuery {
     const QUERY_ID: u32 = ACCOUNT_PROPERTIES_QUERY_ID;
     type Input = B160;
     type Output = (u64, U256, Bytes32, Bytes32);
@@ -188,7 +195,8 @@ impl OracleQuery for AccountPropertiesQuery {
 /// Model of `GENERIC_PREIMAGE_QUERY_ID`: the hash passed by address, and the preimage words.
 struct PreimageQuery;
 
-impl DynamicOracleQuery for PreimageQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl DynamicOracleQuery for PreimageQuery {
     const QUERY_ID: u32 = GENERIC_PREIMAGE_QUERY_ID;
     type Input = Bytes32;
 }
@@ -241,7 +249,8 @@ fn continuous_input_is_passed_by_address_and_output_written_in_place() {
         assert_eq!(unsafe { read_exposed::<Bytes32>(input) }, hash);
         image(&response)
     });
-    oracle.send_continuous(TEST_QUERY_ID, &hash).unwrap();
+    // SAFETY: the mock reads a `Bytes32` through the input word
+    unsafe { oracle.send_continuous(TEST_QUERY_ID, &hash) }.unwrap();
     let mut dst = MaybeUninit::<Bytes32>::uninit();
     let dst_address = dst.as_ptr().addr();
     let written = oracle.init(&mut dst).unwrap();
@@ -259,7 +268,8 @@ fn continuous_input_is_passed_by_address_and_output_written_in_place() {
 #[test]
 fn b160_must_fit_in_160_bits() {
     let mut oracle = mock_oracle(|_, _| vec![1, 2, 3, 4, u32::MAX, 0]);
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = MaybeUninit::<B160>::uninit();
     assert_eq!(
         *oracle.init(&mut dst).unwrap(),
@@ -267,7 +277,8 @@ fn b160_must_fit_in_160_bits() {
     );
 
     let mut oracle = mock_oracle(|_, _| vec![1, 2, 3, 4, 0, 1]);
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     assert!(oracle.init(&mut MaybeUninit::<B160>::uninit()).is_err());
 }
 
@@ -275,12 +286,14 @@ fn b160_must_fit_in_160_bits() {
 fn arrays_validate_every_element() {
     let values = [b160(1), b160(2)];
     let mut oracle = mock_oracle(move |_, _| image(&values));
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = MaybeUninit::<[B160; 2]>::uninit();
     assert_eq!(*oracle.init(&mut dst).unwrap(), values);
 
     let mut oracle = mock_oracle(|_, _| [image(&b160(1)), vec![0, 0, 0, 0, 0, 1]].concat());
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     assert!(oracle
         .init(&mut MaybeUninit::<[B160; 2]>::uninit())
         .is_err());
@@ -332,9 +345,8 @@ fn composite_input_is_the_address_of_the_element_addresses() {
         }
         vec![]
     });
-    oracle
-        .send_composite(TEST_QUERY_ID, (&a, &b, &c, &d))
-        .unwrap();
+    // SAFETY: the mock reads these four values through the address of their addresses
+    unsafe { oracle.send_composite(TEST_QUERY_ID, (&a, &b, &c, &d)) }.unwrap();
     oracle.finish_query().unwrap();
     assert_eq!(oracle.channel().queries.len(), 1);
 }
@@ -430,7 +442,8 @@ fn composite_output_is_written_element_by_element() {
 fn composite_output_stops_at_the_first_invalid_element() {
     let mut oracle =
         mock_oracle(|_, _| [image(&u256(1)), vec![0, 0, 0, 0, 0, 1], image(&bytes32(2))].concat());
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = (
         MaybeUninit::<U256>::uninit(),
         MaybeUninit::<B160>::uninit(),
@@ -520,13 +533,15 @@ fn dynamic_response_into_vectors_and_boxes() {
 #[test]
 fn a_rejected_output_ends_its_query() {
     struct PairQuery;
-    impl OracleQuery for PairQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for PairQuery {
         const QUERY_ID: u32 = TEST_QUERY_ID;
         type Input = ();
         type Output = (B160, B160);
     }
     struct WordQuery;
-    impl OracleQuery for WordQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for WordQuery {
         const QUERY_ID: u32 = TEST_QUERY_ID + 1;
         type Input = ();
         type Output = u32;

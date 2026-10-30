@@ -1,32 +1,40 @@
 use super::*;
-use alloc::vec::Vec;
-use crypto::{ark_ec::pairing::Pairing, bls12_381::curves::Bls12_381};
-use zk_ee::{
-    out_of_return_memory,
-    system::{Resources, SystemFunction},
-};
+use crypto::hints::MemoryOracle;
+use crypto::precompiles::bls12_381_pairing_check;
+use zk_ee::oracle::IOOracle;
+use zk_ee::system::base_system_functions::SystemFunctionExt;
+use zk_ee::system::logger::Logger;
+use zk_ee::{out_of_return_memory, system::Resources};
 
 pub const BLS12_381_PAIRING_FIXED_GAS: u64 = 37700;
 pub const BLS12_381_PAIRING_PER_PAIR_GAS: u64 = 32600;
 
-pub const BLS12_381_PAIR_LEN: usize = G1_SERIALIZATION_LEN + G2_SERIALIZATION_LEN;
+pub struct Bls12381PairingCheckPrecompile<const USE_ADVICE: bool>;
 
-pub struct Bls12381PairingCheckPrecompile;
-
-impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381PairingCheckPrecompile {
-    zk_ee::system_function_execute_with_closure_via_buffer!(Bls12PrecompileErrors);
-
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileErrors>
+    for Bls12381PairingCheckPrecompile<USE_ADVICE>
+{
     fn execute<
+        O: IOOracle,
+        L: Logger,
         D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
     >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
         cycle_marker::wrap_with_resources!("bls12_381_pairing", resources, {
-            bls12_381_pairing_as_system_function_inner(input, output, resources, allocator)
+            bls12_381_pairing_as_system_function_inner(
+                input,
+                output,
+                resources,
+                allocator,
+                if USE_ADVICE { Some(oracle) } else { None },
+            )
         })
     }
 }
@@ -35,11 +43,13 @@ fn bls12_381_pairing_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
     A: core::alloc::Allocator + Clone,
+    O: MemoryOracle,
 >(
     input: &[u8],
     output: &mut D,
     resources: &mut R,
     allocator: A,
+    oracle: Option<&mut O>,
 ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
     if input.is_empty() || !input.len().is_multiple_of(BLS12_381_PAIR_LEN) {
         return Err(interface_error!(
@@ -55,33 +65,14 @@ fn bls12_381_pairing_as_system_function_inner<
             .saturating_mul(num_pairs as u64);
     resources.charge_legacy_gas_and_native(cost_gas, cost_native)?;
 
-    let mut g1_points = Vec::with_capacity_in(num_pairs, allocator.clone());
-    let mut g2_points = Vec::with_capacity_in(num_pairs, allocator.clone());
-
-    // arkworks MSM allocates inside, so we will do it our way, just parse here
-    // G1Projective::msm_bigint(bases, bigints)
-
-    // parse to use Peppinger algorithm
-    for pair_encoding in input.as_chunks::<BLS12_381_PAIR_LEN>().0.iter() {
-        let g1 = parse_g1_with_subgroup_check(
-            pair_encoding[0..G1_SERIALIZATION_LEN].try_into().unwrap(),
-        )?;
-        let g2 = parse_g2_with_subgroup_check(
-            pair_encoding[G1_SERIALIZATION_LEN..(G1_SERIALIZATION_LEN + G2_SERIALIZATION_LEN)]
-                .try_into()
-                .unwrap(),
-        )?;
-        g1_points.push(g1);
-        g2_points.push(g2);
-    }
-
-    let pairing_result = <Bls12_381 as Pairing>::multi_pairing(g1_points, g2_points);
+    let is_identity =
+        bls12_381_pairing_check(input.as_chunks::<BLS12_381_PAIR_LEN>().0, allocator, oracle)
+            .map_err(interface_error_of)?;
     output
         .try_extend([0u8; 31])
         .map_err(|_| out_of_return_memory!())?;
 
-    use crypto::ark_ff::Field;
-    if pairing_result.0 == <Bls12_381 as Pairing>::TargetField::ONE {
+    if is_identity {
         output
             .try_extend([1u8])
             .map_err(|_| out_of_return_memory!())?;

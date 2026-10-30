@@ -124,6 +124,7 @@ airbender-guest = { path = "../airbender-platform/crates/airbender-guest" }
 airbender-host = { path = "../airbender-platform/crates/airbender-host", default-features = false }
 airbender-sdk = { path = "../airbender-platform/crates/airbender-sdk" }
 crypto = { path = "../airbender-platform/crates/airbender-crypto", package = "airbender-crypto", default-features = false }
+airbender-oracle = { path = "../airbender-platform/crates/airbender-oracle" }
 
 seq-macro = { version = "0.3.6", default-features = false }
 

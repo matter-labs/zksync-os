@@ -35,7 +35,8 @@ impl Default for BlockHashesCache {
 /// The hashes of the 256 previous blocks, by depth (the parent first)
 pub struct HistoricalHashesQuery;
 
-impl OracleQuery for HistoricalHashesQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for HistoricalHashesQuery {
     type Input = ();
     type Output = [Bytes32; 256];
 

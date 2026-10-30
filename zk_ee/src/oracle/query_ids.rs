@@ -6,10 +6,10 @@
 //! - Second-level masks define subcategories within each major category
 //! - Individual query IDs are assigned within each subcategory
 //!
-//! **NOTE**: This list is not exhaustive. Additional implementation-specific query IDs can be
-//! defined in the corresponding system components (e.g. `modexp` queries)
-//! as needed. The bitmask structure provides namespace isolation to prevent conflicts between
-//! different subsystems.
+//! The subspaces themselves, and every ID of the subspaces the platform owns (system and advice),
+//! come from `airbender_oracle::query_ids`, so that the queries of the platform and of ZKsync OS
+//! never collide. ZKsync OS assigns the IDs inside its own subspaces: those below, and some
+//! defined next to their system components (e.g. the storage models' queries).
 //!
 //! **IMPORTANT**: Query ID uniqueness is not enforced on the caller side. Oracle responses
 //! are non-deterministic by nature and MUST be treated as untrusted input. All oracle
@@ -17,54 +17,14 @@
 //! - Treated as opaque byte arrays, or
 //! - Validated against additional constraints during deserialization or subsequent usage
 
-// # Query ID Bitmask Structure
-
-/// Top bit (0x80_00_00_00) reserved
-pub const RESERVED_SUBSPACE_MASK: u32 = 0x80_00_00_00;
-/// Second bit (0x40_00_00_00) for basic oracle functionality
-pub const BASIC_SUBSPACE_MASK: u32 = 0x40_00_00_00;
-
-// - Second byte organizes different query subcategories
-
-/// System-level queries (e.g. disconnect oracle)
-#[allow(clippy::identity_op)]
-pub const SYSTEM_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_00_00_00; // 0x40000000
-/// Generic queries
-pub const GENERIC_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_01_00_00; // 0x40010000
-/// Preimage and hash-related queries
-pub const PREIMAGE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_02_00_00; // 0x40020000
-/// Account state and storage queries
-pub const ACCOUNT_AND_STORAGE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_03_00_00; // 0x40030000
-/// State root and Merkle path queries
-pub const STATE_AND_MERKLE_PATHS_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_04_00_00; // 0x40040000
-/// Computational advice queries (e.g. division/modexp advice)
-pub const ADVICE_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_05_00_00; // 0x40050000
-
-// ========== Advice Subspace Queries ==========
-
-/// Query to get division hint (quotient, remainder) for U256 values.
-/// Guest sends pointers to dividend and divisor; host returns q and r.
-/// Guest verifies q * d + r == n and r < d using delegated arithmetic.
-pub const U256_DIV_REM_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x30; // 0x40050030
-
-/// Query to get wide div_rem hint (quotient) for a 512-bit dividend and 256-bit divisor.
-/// Guest sends pointers to dividend_lo, dividend_hi, and divisor; host returns q_lo and q_hi.
-/// Guest derives remainder r = dividend - q*divisor and verifies 0 <= r < divisor.
-pub const U256_WIDE_DIV_REM_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x31; // 0x40050031
-
-/// Transaction-related queries
-pub const TRANSACTION_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_06_00_00; // 0x40060000
-/// Block- (and batch-) related queries
-pub const BLOCK_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_07_00_00; // 0x40070000
-
-/// Special case: UART output query ID (for debugging purposes)
-pub const UART_QUERY_ID: u32 = 0xff_ff_ff_ff;
-
-// ========== System Subspace Queries ==========
-
-/// Signal to disconnect from external oracle and switch to autonomous execution mode
-#[allow(clippy::identity_op)]
-pub const DISCONNECT_ORACLE_QUERY_ID: u32 = SYSTEM_SUBSPACE_MASK | 0; // 0x40000000
+pub use airbender_oracle::query_ids::{
+    ACCOUNT_AND_STORAGE_SUBSPACE_MASK, ADVICE_SUBSPACE_MASK, BASIC_SUBSPACE_MASK,
+    BLOB_COMMITMENT_AND_PROOF_QUERY_ID, BLOCK_SUBSPACE_MASK, DISCONNECT_ORACLE_QUERY_ID,
+    FIELD_OPS_ADVISE_QUERY_ID, GENERIC_SUBSPACE_MASK, MODEXP_ADVICE_QUERY_ID,
+    PREIMAGE_SUBSPACE_MASK, RESERVED_SUBSPACE_MASK, STATE_AND_MERKLE_PATHS_SUBSPACE_MASK,
+    SYSTEM_SUBSPACE_MASK, TRANSACTION_SUBSPACE_MASK, U256_DIV_REM_ADVICE_QUERY_ID,
+    U256_WIDE_DIV_REM_ADVICE_QUERY_ID, UART_QUERY_ID,
+};
 
 // ========== Preimage Subspace Queries ==========
 

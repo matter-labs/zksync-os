@@ -367,7 +367,9 @@ impl IOOracle for ZkEENonDeterminismSource {
 
 /// The querier runs in this process (forward mode, and the native run that records the prover input).
 impl MemoryOracle for ZkEENonDeterminismSource {
-    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+    type Error = zk_ee::system::errors::internal::InternalError;
+
+    unsafe fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
         if !self.mode.produces_native_run_responses() {
             return Err(internal_error!(
                 "the oracle serves the RISC-V guest, not a querier in this process"
@@ -388,7 +390,7 @@ impl MemoryOracle for ZkEENonDeterminismSource {
             return Ok(());
         }
         // SAFETY: the querier of this process exposes the memory the input word refers to while it sends
-        // the query, i.e. during this call
+        // the query, i.e. during this call (the caller's contract)
         let memory = unsafe { NativeQuerierMemory::new() };
         self.process_memory_query(query_id, input_word, &memory)
     }
@@ -713,13 +715,16 @@ impl IOOracle for ReadWitnessSource {
 /// disconnected oracle does not respond, and the zeroes the querier reads then are recorded as read: the
 /// guest reads zeroes then too.
 impl MemoryOracle for ReadWitnessSource {
-    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+    type Error = zk_ee::system::errors::internal::InternalError;
+
+    unsafe fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
         if self.original_source.mode != RunMode::NativeRunSavingForRiscV {
             return Err(internal_error!(
                 "recording the prover input needs the run mode that saves the responses for the RISC-V guest"
             ));
         }
-        self.original_source.send_query(query_id, input_word)?;
+        // SAFETY: guaranteed by the caller, with the same contract
+        unsafe { self.original_source.send_query(query_id, input_word)? };
         let guest_run_response = core::mem::take(&mut self.original_source.guest_run_response);
         self.read_items.borrow_mut().extend(guest_run_response);
         Ok(())
@@ -810,7 +815,8 @@ mod tests {
     /// A composite input, and a composite output.
     struct SwapQuery;
 
-    impl OracleQuery for SwapQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for SwapQuery {
         const QUERY_ID: u32 = SWAP_QUERY_ID;
         type Input = (Bytes32, Bytes32);
         type Output = (Bytes32, Bytes32);
@@ -819,7 +825,8 @@ mod tests {
     /// An input passed by address, and a dynamically sized output of the first 13 bytes of it.
     struct BytesQuery;
 
-    impl DynamicOracleQuery for BytesQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl DynamicOracleQuery for BytesQuery {
         const QUERY_ID: u32 = BYTES_QUERY_ID;
         type Input = Bytes32;
     }
@@ -875,7 +882,8 @@ mod tests {
     /// process, with the words in reverse order for the guest.
     struct RepresentationQuery;
 
-    impl OracleQuery for RepresentationQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for RepresentationQuery {
         const QUERY_ID: u32 = REPRESENTATION_QUERY_ID;
         type Input = Bytes32;
         type Output = Bytes32;

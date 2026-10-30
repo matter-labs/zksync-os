@@ -1,7 +1,7 @@
 //! Proxies for composite inputs and outputs: tuples of two to four values continuous in memory.
 
 use super::continuous::{exposed_address, ContinuousDeserializable, ContinuousSerializable};
-use super::MemoryOracle;
+use super::MemoryOracleExt;
 use crate::system::errors::internal::InternalError;
 use core::mem::MaybeUninit;
 
@@ -22,8 +22,10 @@ pub trait CompositeDeserializable<'a> {
     /// References to the validated elements.
     type Initialized;
 
-    fn init_from<O: MemoryOracle>(self, oracle: &mut O)
-        -> Result<Self::Initialized, InternalError>;
+    fn init_from<O: MemoryOracleExt>(
+        self,
+        oracle: &mut O,
+    ) -> Result<Self::Initialized, InternalError>;
 }
 
 macro_rules! impl_composite {
@@ -42,7 +44,7 @@ macro_rules! impl_composite {
             type Initialized = ($(&'a mut $element,)+);
 
             #[inline(always)]
-            fn init_from<O: MemoryOracle>(
+            fn init_from<O: MemoryOracleExt>(
                 self,
                 oracle: &mut O,
             ) -> Result<Self::Initialized, InternalError> {

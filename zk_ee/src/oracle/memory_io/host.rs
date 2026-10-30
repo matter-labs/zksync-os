@@ -328,6 +328,8 @@ impl ResponseBuffer {
 #[macro_export]
 macro_rules! memory_oracle_response_methods {
     ($field:ident) => {
+        type Error = $crate::system::errors::internal::InternalError;
+
         fn read_word(&mut self) -> Result<u32, $crate::system::errors::internal::InternalError> {
             self.$field.read_word()
         }
@@ -371,9 +373,9 @@ impl<H> InProcessMemoryOracle<H> {
 impl<H: FnMut(u32, usize, &dyn QuerierMemory) -> Vec<u32>> MemoryOracle
     for InProcessMemoryOracle<H>
 {
-    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+    unsafe fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
         // SAFETY: the querier is code of this process, which exposes the memory the input word refers
-        // to while it sends the query, i.e. during this call
+        // to while it sends the query, i.e. during this call (the caller's contract)
         let memory = unsafe { NativeQuerierMemory::new() };
         let response = (self.handler)(query_id, input_word, &memory);
         self.response.set(response)

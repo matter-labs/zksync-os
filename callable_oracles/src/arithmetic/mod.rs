@@ -1,102 +1,63 @@
-use basic_system::system_functions::modexp::{read_modexp_advice_params, MODEXP_ADVICE_QUERY_ID};
+use basic_system::system_functions::field_ops::ZkOsQuerierMemory;
+use crypto::hints::{answer_query, MODEXP_ADVICE_QUERY_ID};
 use oracle_provider::{respond_to_every_target, OracleQueryProcessor, RunMode};
-use zk_ee::oracle::memory_io::host::{
-    read_querier_u32_words, QuerierMemory, ReadQueryInput, WriteQueryOutput,
-};
+use zk_ee::oracle::memory_io::host::{QuerierMemory, ReadQueryInput, WriteQueryOutput};
 use zk_ee::oracle::query_ids::{U256_DIV_REM_ADVICE_QUERY_ID, U256_WIDE_DIV_REM_ADVICE_QUERY_ID};
 
-/// Serves the U256 division advice (`u256_advice::U256DivRemAdviceQuery` and
-/// `U256WideDivRemAdviceQuery`): the operands are read through the input word, from the guest memory or
-/// from this process alike, and the answer is the quotient.
-fn process_u256_advice_query(
-    query_id: u32,
-    input_word: usize,
-    memory: &dyn QuerierMemory,
-) -> Vec<u32> {
+/// Serves the U256 division advice of the EVM division opcodes (`u256_advice::U256DivRemAdviceQuery`):
+/// the operands are read through the input word, from the guest memory or from this process alike,
+/// and the answer is the quotient.
+fn process_u256_div_rem_query(input_word: usize, memory: &dyn QuerierMemory) -> Vec<u32> {
     let limbs = |value: &u256::U256| *value.as_limbs();
     let mut response = Vec::new();
-    match query_id {
-        U256_DIV_REM_ADVICE_QUERY_ID => {
-            let (dividend, divisor) = <(u256::U256, u256::U256)>::read_input(memory, input_word)
-                .expect("must read the div_rem operands");
-            let mut quotient = limbs(&dividend);
-            ruint::algorithms::div(&mut quotient, &mut limbs(&divisor));
-            u256::U256::from_limbs(quotient).write_output(&mut response);
-        }
-        U256_WIDE_DIV_REM_ADVICE_QUERY_ID => {
-            let (dividend_lo, dividend_hi, divisor) =
-                <(u256::U256, u256::U256, u256::U256)>::read_input(memory, input_word)
-                    .expect("must read the wide div_rem operands");
-            let mut quotient = [0u64; 8];
-            quotient[..4].copy_from_slice(&limbs(&dividend_lo));
-            quotient[4..].copy_from_slice(&limbs(&dividend_hi));
-            ruint::algorithms::div(&mut quotient, &mut limbs(&divisor));
-            (
-                u256::U256::from_limbs(quotient[..4].try_into().unwrap()),
-                u256::U256::from_limbs(quotient[4..].try_into().unwrap()),
-            )
-                .write_output(&mut response);
-        }
-        _ => unreachable!("not a U256 advice query: 0x{query_id:08x}"),
-    }
+    let (dividend, divisor) = <(u256::U256, u256::U256)>::read_input(memory, input_word)
+        .expect("must read the div_rem operands");
+    let mut quotient = limbs(&dividend);
+    ruint::algorithms::div(&mut quotient, &mut limbs(&divisor));
+    u256::U256::from_limbs(quotient).write_output(&mut response);
     response
 }
 
-/// Serves the modexp division advice (`modexp::advice::bigint::OracleAdvisor`): the request, a
-/// `ModExpAdviceParamsGeneric` of querier words, and the operands it points to (256-bit digits) are
-/// read through the input word, from the guest memory or from this process alike. The answer is the
-/// lengths of the quotient and of the remainder in `u32` words, then their words.
-fn process_modexp_query(input_word: usize, memory: &dyn QuerierMemory) -> Vec<u32> {
-    let params =
-        read_modexp_advice_params(memory, input_word).expect("must read the modexp advice request");
-    assert!(params.a_ptr > 0);
-    assert!(params.a_len > 0);
-    assert_eq!(params.b_ptr, 0);
-    assert_eq!(params.b_len, 0);
-    assert!(params.modulus_ptr > 0);
-    assert!(params.modulus_len > 0);
-
-    // a 256-bit digit is 8 words
-    let read_digits = |address: usize, digits: usize| -> Vec<u64> {
-        let num_words = digits.checked_mul(8).expect("operand length overflow");
-        read_querier_u32_words(memory, address, num_words)
-            .expect("must read the modexp operand")
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|[low, high]| u64::from(*low) | (u64::from(*high) << 32))
-            .collect()
-    };
-    let mut n = read_digits(params.a_ptr, params.a_len);
-    let mut d = read_digits(params.modulus_ptr, params.modulus_len);
-
-    ruint::algorithms::div(&mut n, &mut d);
-
-    // without the leading zero limbs
-    fn significant(limbs: &[u64]) -> &[u64] {
-        let zeroes = limbs.iter().rev().take_while(|limb| **limb == 0).count();
-        &limbs[..limbs.len() - zeroes]
-    }
-    let (quotient, remainder) = (significant(&n), significant(&d));
-    let mut response = Vec::with_capacity(2 + 2 * (quotient.len() + remainder.len()));
-    for limbs in [quotient, remainder] {
-        response.push(u32::try_from(2 * limbs.len()).expect("the modexp advice is too long"));
-    }
-    for limb in quotient.iter().chain(remainder) {
-        response.push(*limb as u32);
-        response.push((*limb >> 32) as u32);
-    }
-    response
-}
-
+/// Serves an arithmetic advice query for the runs of `mode`, with the same response for each of
+/// them (`respond_to_every_target`): the U256 division advice here, and the modexp advice
+/// (`crypto::modexp`, `MODEXP_ADVICE_QUERY_ID`) and the wide U256 division advice
+/// (`u256_advice::U256WideDivRemAdviceQuery` and the single-digit path of the modexp,
+/// `U256_WIDE_DIV_REM_ADVICE_QUERY_ID`) with `crypto::hints::answer_query`.
 fn process_arithmetic_query(
     query_id: u32,
     input_word: usize,
     memory: &dyn QuerierMemory,
-) -> Vec<u32> {
+    mode: RunMode,
+    native_run_responses: &mut Vec<u32>,
+    guest_run_responses: &mut Vec<u32>,
+) {
     match query_id {
-        MODEXP_ADVICE_QUERY_ID => process_modexp_query(input_word, memory),
-        _ => process_u256_advice_query(query_id, input_word, memory),
+        U256_DIV_REM_ADVICE_QUERY_ID => respond_to_every_target(
+            mode,
+            process_u256_div_rem_query(input_word, memory),
+            native_run_responses,
+            guest_run_responses,
+        ),
+        MODEXP_ADVICE_QUERY_ID | U256_WIDE_DIV_REM_ADVICE_QUERY_ID => {
+            // SAFETY: the processors of these queries read the querier only through `memory`
+            // (`QuerierMemory::read_u32`), as zksync-os's did: they dereference no operand
+            // pointer, whatever the run. For the native runs (the native responses asked for),
+            // `memory` is the memory of this process that `oracle_provider::ZkEENonDeterminismSource`
+            // created while the querier sends the query, as `answer_query` asks.
+            let answered = unsafe {
+                answer_query(
+                    query_id,
+                    input_word,
+                    &ZkOsQuerierMemory(memory),
+                    mode.produces_native_run_responses()
+                        .then_some(native_run_responses),
+                    mode.produces_guest_run_responses()
+                        .then_some(guest_run_responses),
+                )
+            };
+            assert_eq!(answered, Ok(true), "the arithmetic advice is answered");
+        }
+        _ => unreachable!("not an arithmetic advice query: 0x{query_id:08x}"),
     }
 }
 
@@ -124,9 +85,11 @@ impl OracleQueryProcessor for ArithmeticQuery {
         native_run_responses: &mut Vec<u32>,
         guest_run_responses: &mut Vec<u32>,
     ) {
-        respond_to_every_target(
+        process_arithmetic_query(
+            query_id,
+            input_word,
+            memory,
             mode,
-            process_arithmetic_query(query_id, input_word, memory),
             native_run_responses,
             guest_run_responses,
         );
@@ -153,9 +116,11 @@ impl OracleQueryProcessor for NativeArithmeticQuery {
         native_run_responses: &mut Vec<u32>,
         guest_run_responses: &mut Vec<u32>,
     ) {
-        respond_to_every_target(
+        process_arithmetic_query(
+            query_id,
+            input_word,
+            memory,
             mode,
-            process_arithmetic_query(query_id, input_word, memory),
             native_run_responses,
             guest_run_responses,
         );
@@ -167,10 +132,10 @@ mod tests {
     use super::*;
 
     use crate::test_utils::TestMemorySource;
-    use basic_system::system_functions::modexp::{ModExpAdviceParams, ModExpAdviceParams64};
     use basic_system::system_functions::u256_advice::{
         U256DivRemAdviceQuery, U256WideDivRemAdviceQuery,
     };
+    use crypto::modexp::{ModExpAdviceParams, ModExpAdviceParams64};
     use oracle_provider::{GuestMemory, ZkEENonDeterminismSource};
     use zk_ee::oracle::memory_io::host::NativeQuerierMemory;
 

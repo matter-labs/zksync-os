@@ -26,10 +26,12 @@
 //! [`OracleQuery`] and [`DynamicOracleQuery`] bind the input and output types of a query to its ID, as
 //! [`SimpleOracleQuery`](super::simple_oracle_query::SimpleOracleQuery) does.
 //!
-//! On the proving target the oracle is a word channel (the non-determinism CSR), and receiving a response
-//! comes down to "write the next oracle word to the next aligned address" ([`WordChannelOracle`]). The
-//! oracle side of the protocol, reading the inputs from the memory of the querier and encoding the
-//! responses, is in [`host`].
+//! The transport, [`MemoryOracle`], is `airbender_oracle`'s, shared with the hints of `airbender-crypto`:
+//! its errors are [`InternalError`](crate::system::errors::internal::InternalError)s here, and
+//! [`MemoryOracleExt`] adds the typed encodings above on top of it. On the proving target the oracle is a
+//! word channel (the non-determinism CSR), and receiving a response comes down to "write the next oracle
+//! word to the next aligned address" ([`WordChannelOracle`]). The oracle side of the protocol, reading the
+//! inputs from the memory of the querier and encoding the responses, is in [`host`].
 //!
 //! # Security
 //!
@@ -46,7 +48,6 @@ mod impls;
 mod oracle;
 mod query;
 mod short;
-mod word_channel;
 
 #[cfg(test)]
 mod tests;
@@ -55,9 +56,22 @@ pub use self::composite::{CompositeDeserializable, CompositeSerializable};
 pub use self::continuous::{normalize_bool, ContinuousDeserializable, ContinuousSerializable};
 pub use self::dynamic::DynamicDestination;
 pub(crate) use self::dynamic::{write_usize_words, U32_WORDS_PER_USIZE};
-pub use self::oracle::MemoryOracle;
+pub use self::oracle::MemoryOracleExt;
 pub use self::query::{
     get_bytes_with_length_query, DynamicOracleQuery, OracleQuery, QueryInput, QueryOutput,
 };
 pub use self::short::{ShortDeserializable, ShortSerializable};
-pub use self::word_channel::{WordChannel, WordChannelOracle};
+pub use airbender_oracle::{MemoryOracle, OracleError, WordChannel, WordChannelOracle};
+
+/// The errors of the transport, located where it makes them.
+impl OracleError for crate::system::errors::internal::InternalError {
+    #[track_caller]
+    #[inline(always)]
+    fn new(message: &'static str) -> Self {
+        let location = core::panic::Location::caller();
+        Self::new(
+            message,
+            crate::system::errors::location::ErrorLocation::new(location.file(), location.line()),
+        )
+    }
+}

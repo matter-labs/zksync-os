@@ -818,7 +818,8 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 /// Query for finding the previous index in the sorted flat storage for a given key
 pub struct PreviousIndexQuery;
 
-impl OracleQuery for PreviousIndexQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for PreviousIndexQuery {
     const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
     type Input = Bytes32;
     type Output = u64;
@@ -827,7 +828,8 @@ impl OracleQuery for PreviousIndexQuery {
 /// Query for finding the exact index of a key in the flat storage
 pub struct ExactIndexQuery;
 
-impl OracleQuery for ExactIndexQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for ExactIndexQuery {
     const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x01;
     type Input = Bytes32;
     type Output = u64;
@@ -849,7 +851,8 @@ pub const PROOF_FOR_INDEX_QUERY_ID: u32 =
 /// leaf and the path
 pub struct ProofForIndexQuery<const N: usize>;
 
-impl<const N: usize> OracleQuery for ProofForIndexQuery<N> {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl<const N: usize> OracleQuery for ProofForIndexQuery<N> {
     const QUERY_ID: u32 = PROOF_FOR_INDEX_QUERY_ID;
     type Input = u64;
     /// `(index, leaf, path)`
@@ -1997,7 +2000,11 @@ mod test {
     }
 
     impl<const R: bool> MemoryOracle for TreeOracle<R> {
-        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+        ) -> Result<(), InternalError> {
             // SAFETY: the test sends the queries from this process
             let memory = unsafe { NativeQuerierMemory::new() };
             let mut response = vec![];

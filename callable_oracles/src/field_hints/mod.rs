@@ -1,126 +1,23 @@
-//! Oracle query processors for field operation hints (square roots and inverses of the
-//! secp256k1, bn254 and bls12-381 fields).
+//! Oracle query processors for field operation hints (square roots, inverses and quotients of
+//! the secp256k1, bn254 and bls12-381 fields).
 //!
 //! The hints are served with the memory-based protocol: the input word is the address of the
-//! request, which points to the operand where the querier keeps it. The field elements of the
-//! operands and of the answers are in the representation of the target of the querier (see
-//! `FieldHintOp`, `HintAnswer` and `Secp256k1Element`), which differs between the RISC-V guest and
-//! native builds. The run mode tells which the querier is, and whether the guest is answered too,
-//! when a native run records the prover input (see `oracle_provider::RunMode`): [`FieldOpsQuery`]
-//! and [`NativeFieldOpsQuery`] are the same processor under the names of the two setups.
+//! request, which points to the operand where the querier keeps it. The answers, and the
+//! representations of the operands and of the answers on each target, are those of
+//! `airbender-crypto` (`crypto::hints::answer_query`). The run mode tells which the querier is,
+//! and whether the guest is answered too, when a native run records the prover input (see
+//! `oracle_provider::RunMode`): [`FieldOpsQuery`] and [`NativeFieldOpsQuery`] are the same
+//! processor under the names of the two setups.
 
-use basic_system::system_functions::field_ops::{
-    read_field_hint_request, FieldHintOp, HintAnswer, HintTarget, FIELD_OPS_ADVISE_QUERY_ID,
-};
+use basic_system::system_functions::field_ops::ZkOsQuerierMemory;
+use crypto::hints::{answer_query, read_field_hint_request, FIELD_OPS_ADVISE_QUERY_ID};
 use oracle_provider::{OracleQueryProcessor, RunMode};
 use zk_ee::oracle::memory_io::host::QuerierMemory;
-mod impls;
 
-pub(crate) use impls::Operand;
-
-/// The op and the operand of the hint request at `input_word` in the memory of `querier`
-fn read_request<'m>(
-    memory: &'m dyn QuerierMemory,
-    input_word: usize,
-    querier: HintTarget,
-) -> (FieldHintOp, Operand<'m>) {
-    let (op, address, len_u32_words) =
-        read_field_hint_request(memory, input_word).expect("must read the field hint request");
-    let Some(op) = FieldHintOp::parse_u32(op) else {
-        panic!("Unknown field hint op {op}");
-    };
-    (op, Operand::new(memory, querier, address, len_u32_words))
-}
-
-/// The responses of a processor to a hint query: the answer as a querier in this process reads
-/// it (a native run), and as the RISC-V guest reads it, for those of the runs it is produced for
-struct Responses<'a> {
-    native_run: Option<&'a mut Vec<u32>>,
-    guest_run: Option<&'a mut Vec<u32>>,
-}
-
-impl Responses<'_> {
-    fn write<T: HintAnswer>(&mut self, answer: &T) {
-        if let Some(response) = self.native_run.as_deref_mut() {
-            answer.write(HintTarget::Native, response);
-        }
-        if let Some(response) = self.guest_run.as_deref_mut() {
-            answer.write(HintTarget::Guest, response);
-        }
-    }
-}
-
-/// The answer to the hint `op` on `operand`
-fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
-    match op {
-        FieldHintOp::Secp256k1BaseFieldSqrt => {
-            responses.write(&impls::secp256k1_base_field_sqrt(operand))
-        }
-        FieldHintOp::Secp256k1BaseFieldInverse => {
-            responses.write(&impls::secp256k1_base_field_inverse(operand))
-        }
-        FieldHintOp::Secp256k1ScalarFieldInverse => {
-            responses.write(&impls::secp256k1_scalar_field_inverse(operand))
-        }
-        FieldHintOp::Secp256k1BaseFieldDivision => {
-            responses.write(&impls::secp256k1_base_field_division(operand))
-        }
-        FieldHintOp::Bn254BaseFieldInverse => {
-            responses.write(&impls::inverse::<crypto::bn254::Fq>(operand))
-        }
-        FieldHintOp::Bn254BaseFieldDivision => {
-            responses.write(&impls::division::<crypto::bn254::Fq>(operand))
-        }
-        FieldHintOp::Bn254Fq12Inverse => {
-            responses.write(&impls::inverse::<crypto::bn254::Fq12>(operand))
-        }
-        FieldHintOp::Bls12381BaseFieldSqrt => {
-            responses.write(&impls::bls12_381_base_field_sqrt(operand))
-        }
-        FieldHintOp::Bls12381BaseFieldInverse => {
-            responses.write(&impls::inverse::<crypto::bls12_381::Fq>(operand))
-        }
-        FieldHintOp::Bls12381BaseFieldDivision => {
-            responses.write(&impls::division::<crypto::bls12_381::Fq>(operand))
-        }
-        FieldHintOp::Bls12381Fq12Inverse => {
-            responses.write(&impls::inverse::<crypto::bls12_381::Fq12>(operand))
-        }
-        FieldHintOp::Bn254PairingResidueWitness => {
-            impls::bn254_pairing_residue_witness(operand, false, responses)
-        }
-        FieldHintOp::Bn254G2PairingSlopes => impls::bn254_g2_pairing_slopes(operand, responses),
-        FieldHintOp::Bls12381KzgResidueWitness => {
-            impls::bls12_381_kzg_residue_witness(operand, false, responses)
-        }
-        _ => {
-            panic!("Unknown field hint op {}", op as u32);
-        }
-    }
-}
-
-/// The answer, as a querier in this process reads it, to its pairing request (bn254 or KZG) at
-/// `input_word` that claims a non-identity, with the inverse the exact path needs, whatever the
-/// product is: for tests of that path
-pub fn not_identity_claim(memory: &dyn QuerierMemory, input_word: usize) -> Vec<u32> {
-    let mut response = Vec::new();
-    let mut responses = Responses {
-        native_run: Some(&mut response),
-        guest_run: None,
-    };
-    match read_request(memory, input_word, HintTarget::Native) {
-        (FieldHintOp::Bn254PairingResidueWitness, operand) => {
-            impls::bn254_pairing_residue_witness(&operand, true, &mut responses)
-        }
-        (FieldHintOp::Bls12381KzgResidueWitness, operand) => {
-            impls::bls12_381_kzg_residue_witness(&operand, true, &mut responses)
-        }
-        (op, _) => panic!("not a pairing request: {op:?}"),
-    }
-    response
-}
-
-/// Serves a hint query for the runs of `mode`
+/// Serves a hint query for the runs of `mode`: the responses of the runs it produces (see
+/// `RunMode`) are the ones asked of `answer_query`. So the querier is in this process exactly for
+/// the native runs, and its word size must say so, else this panics; as it does on a malformed
+/// request.
 fn process_field_hint_query(
     query_id: u32,
     input_word: usize,
@@ -130,30 +27,37 @@ fn process_field_hint_query(
     guest_run_responses: &mut Vec<u32>,
 ) {
     assert_eq!(query_id, FIELD_OPS_ADVISE_QUERY_ID);
-    // the querier, whose memory holds the request and the operand, in its representation
-    let (querier, word_size) = match mode {
-        RunMode::NativeRunOnly | RunMode::NativeRunSavingForRiscV => {
-            (HintTarget::Native, size_of::<usize>())
-        }
-        RunMode::RiscVRun => (HintTarget::Guest, size_of::<u32>()),
-    };
-    assert_eq!(
-        memory.word_size(),
-        word_size,
-        "not the querier of the run mode {mode:?}"
-    );
-    let mut responses = Responses {
-        native_run: mode
-            .produces_native_run_responses()
-            .then_some(native_run_responses),
-        guest_run: mode
-            .produces_guest_run_responses()
-            .then_some(guest_run_responses),
-    };
-    let (op, operand) = read_request(memory, input_word, querier);
+    let memory = ZkOsQuerierMemory(memory);
+    // the op, for the opt-in accounting of the host time per op
+    let op = oracle_provider::query_timing::enabled().then(|| {
+        read_field_hint_request(&memory, input_word)
+            .expect("must read the field hint request")
+            .0
+    });
     let started = oracle_provider::query_timing::start();
-    answer(op, &operand, &mut responses);
-    oracle_provider::query_timing::record(query_id, Some(op as u32), started);
+    // SAFETY: the native responses are asked for exactly in the native runs, where the querier is
+    // this process: `oracle_provider::ZkEENonDeterminismSource` serves it with `memory` the memory
+    // of this process (`NativeQuerierMemory`, created under its contract while the query is sent),
+    // and the field hint queries of zksync-os are sent by the hinted operations of
+    // `airbender-crypto`, under the contract of `MemoryOracle::send_query` (a live request whose
+    // operand references live values of the operand types of its op), which is the one
+    // `answer_query` needs. In the run of the RISC-V
+    // guest the memory is the guest's, which is only read through `memory`.
+    let answered = unsafe {
+        answer_query(
+            query_id,
+            input_word,
+            &memory,
+            mode.produces_native_run_responses()
+                .then_some(native_run_responses),
+            mode.produces_guest_run_responses()
+                .then_some(guest_run_responses),
+        )
+    };
+    assert_eq!(answered, Ok(true), "the field hints are answered");
+    if let Some(op) = op {
+        oracle_provider::query_timing::record(query_id, Some(op), started);
+    }
 }
 
 /// Serves the field hints, set up for the RISC-V guest in the simulated machine.
@@ -218,10 +122,9 @@ impl OracleQueryProcessor for NativeFieldOpsQuery {
 mod native_query_tests {
     use super::*;
     use crate::test_utils::TestMemorySource;
-    use basic_system::system_functions::curve_hints::guest_layout;
-    use basic_system::system_functions::field_ops::{FieldOpsHint64, Secp256k1Element};
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::{AdditiveGroup, BigInteger, Field, PrimeField};
+    use crypto::hints::{guest_layout, FieldHintOp, FieldOpsHint64, Secp256k1Element};
     use crypto::secp256k1::field::FieldElement;
     use oracle_provider::GuestMemory;
     use zk_ee::oracle::memory_io::host::NativeQuerierMemory;

@@ -260,13 +260,6 @@ pub trait SystemFunctions<R: Resources> {
     type Secp256r1MulProjective: SystemFunction<R, Secp256r1MulProjectiveErrors>;
     type P256Verify: SystemFunction<R, P256VerifyErrors>;
     type RipeMd160: SystemFunction<R, RipeMd160Errors>;
-    type Bls12G1Add: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12G2Add: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12G1Msm: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12G2Msm: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12PairingCheck: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12MapFpToG1: SystemFunction<R, Bls12PrecompileErrors>;
-    type Bls12MapFp2ToG2: SystemFunction<R, Bls12PrecompileErrors>;
     type Blake2F: SystemFunction<R, Blake2FPrecompileErrors>;
 
     fn keccak256<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
@@ -351,69 +344,6 @@ pub trait SystemFunctions<R: Resources> {
         Self::RipeMd160::execute(input, output, resources, allocator)
     }
 
-    fn bls12_g1_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12G1Add::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_g2_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12G2Add::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_g1_msm<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12G1Msm::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_g2_msm<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12G2Msm::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_pairing_check<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12PairingCheck::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_map_fp_to_g1<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12MapFpToG1::execute(input, output, resources, allocator)
-    }
-
-    fn bls12_map_fp2_to_g2<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
-        Self::Bls12MapFp2ToG2::execute(input, output, resources, allocator)
-    }
-
     fn blake2f<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
@@ -427,18 +357,137 @@ pub trait SystemFunctions<R: Resources> {
 pub trait SystemFunctionsExt<R: Resources> {
     type Secp256k1ECRecover: SystemFunctionExt<R, Secp256k1ECRecoverErrors>;
     type ModExp: SystemFunctionExt<R, ModExpErrors>;
-    /// The bn254 and KZG point evaluation precompiles take field inversions and square roots
-    /// from oracle hints (see `curve_hints` in `basic_system`), hence the oracle access.
+    /// The bn254, BLS12-381 and KZG point evaluation precompiles take field arithmetic
+    /// from oracle hints (see `crypto::hints` in `airbender-crypto`), hence the oracle access.
     type Bn254Add: SystemFunctionExt<R, Bn254AddErrors>;
     type Bn254Mul: SystemFunctionExt<R, Bn254MulErrors>;
     type Bn254PairingCheck: SystemFunctionExt<R, Bn254PairingCheckErrors>;
     type PointEvaluation: SystemFunctionExt<R, PointEvaluationErrors>;
+    type Bls12G1Add: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12G2Add: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12G1Msm: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12G2Msm: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12PairingCheck: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12MapFpToG1: SystemFunctionExt<R, Bls12PrecompileErrors>;
+    type Bls12MapFp2ToG2: SystemFunctionExt<R, Bls12PrecompileErrors>;
     type DivRem: DivRemExt;
     type WideDivRem: WideDivRemExt;
     type MulModNonZeroModulus: MulModNonZeroModulusExt;
     type AddModNonZeroModulus: AddModNonZeroModulusExt;
     type DivNonZeroDivisor: DivNonZeroDivisorExt;
     type RemNonZeroDivisor: RemNonZeroDivisorExt;
+
+    fn bls12_g1_add<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G1Add::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_g2_add<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G2Add::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_g1_msm<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G1Msm::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_g2_msm<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12G2Msm::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_pairing_check<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12PairingCheck::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_map_fp_to_g1<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12MapFpToG1::execute(input, output, resources, oracle, logger, allocator)
+    }
+
+    fn bls12_map_fp2_to_g2<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Bls12PrecompileErrors>> {
+        Self::Bls12MapFp2ToG2::execute(input, output, resources, oracle, logger, allocator)
+    }
 
     fn secp256k1_ec_recover<
         O: IOOracle,

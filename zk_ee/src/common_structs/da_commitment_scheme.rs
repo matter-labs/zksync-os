@@ -1,7 +1,7 @@
 use crate::{
     internal_error,
     oracle::{
-        memory_io::{MemoryOracle, OracleQuery, ShortDeserializable, ShortSerializable},
+        memory_io::{MemoryOracleExt, OracleQuery, ShortDeserializable, ShortSerializable},
         query_ids::DA_COMMITMENT_SCHEME_QUERY_ID,
     },
     system::errors::internal::InternalError,
@@ -68,14 +68,15 @@ impl ShortDeserializable for DACommitmentScheme {
 
 pub struct DACommitmentSchemeQuery;
 
-impl OracleQuery for DACommitmentSchemeQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for DACommitmentSchemeQuery {
     const QUERY_ID: u32 = DA_COMMITMENT_SCHEME_QUERY_ID;
     type Input = ();
     type Output = DACommitmentScheme;
 }
 
 impl DACommitmentScheme {
-    pub fn try_from_oracle<O: MemoryOracle>(oracle: &mut O) -> Result<Self, InternalError> {
+    pub fn try_from_oracle<O: MemoryOracleExt>(oracle: &mut O) -> Result<Self, InternalError> {
         DACommitmentSchemeQuery::get(oracle, ())
     }
 }

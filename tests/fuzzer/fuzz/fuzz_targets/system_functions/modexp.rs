@@ -110,7 +110,9 @@ fn fuzz(data: &[u8]) {
 
 struct DummyOracle {}
 
-impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {
+    type Error = zk_ee::system::errors::internal::InternalError;
+}
 
 
 impl zk_ee::oracle::IOOracle for DummyOracle {

@@ -1,6 +1,6 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST};
-use field_ops::Secp256k1HooksWithOracle;
+use crypto::precompiles::{secp256k1_ecrecover, WordAligned};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
@@ -81,7 +81,7 @@ fn ecrecover_as_system_function_inner<
 
     let oracle = if USE_ADVICE { oracle } else { None };
 
-    let Ok(public_key) = ecrecover_inner(digest, r, s, rec_id == 1, oracle) else {
+    let Ok(public_key) = secp256k1_ecrecover(digest, r, s, rec_id == 1, oracle) else {
         return Ok(());
     };
 
@@ -91,46 +91,6 @@ fn ecrecover_as_system_function_inner<
         .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
-}
-
-/// Bytes at an address aligned for words: the conversions between big-endian bytes and integers
-/// work by words then (see `crypto::bigint_delegation::u256::from_be_bytes`)
-#[repr(C, align(4))]
-pub struct WordAligned<const N: usize>(pub [u8; N]);
-
-/// The public key (its coordinates `x` and `y`, big-endian) of the signature `(r, s)` of
-/// `digest`, for the point of the signature with the coordinate `x = r` and the `y` of the
-/// given parity. Fails if `r` or `s` is not in `[1, order - 1]`, or there is no such point or
-/// key.
-pub fn ecrecover_inner<O: IOOracle>(
-    digest: &[u8; 32],
-    r: &[u8; 32],
-    s: &[u8; 32],
-    y_is_odd: bool,
-    oracle: Option<&mut O>,
-) -> Result<WordAligned<64>, ()> {
-    use crypto::secp256k1::{hooks::DefaultSecp256k1Hooks, recover_from_bytes_with_hooks};
-
-    let public_key = match oracle {
-        Some(oracle) => recover_from_bytes_with_hooks(
-            digest,
-            r,
-            s,
-            y_is_odd,
-            &mut Secp256k1HooksWithOracle::new(oracle),
-        ),
-        None => recover_from_bytes_with_hooks(digest, r, s, y_is_odd, &mut DefaultSecp256k1Hooks),
-    }
-    .map_err(|_| ())?;
-
-    // represent as bytes, and we do not need compression
-    let mut encoded = WordAligned([0u8; 64]);
-    let ([x, y], []) = encoded.0.as_chunks_mut::<32>() else {
-        unreachable!("64 bytes are 2 chunks of 32")
-    };
-    public_key.write_coordinates(x, y);
-
-    Ok(encoded)
 }
 
 #[cfg(test)]
@@ -143,7 +103,9 @@ mod test {
     /// The paths without advice never query the oracle.
     enum NoOracle {}
 
-    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {}
+    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {
+        type Error = zk_ee::system::errors::internal::InternalError;
+    }
 
     impl IOOracle for NoOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;
@@ -343,5 +305,27 @@ mod test {
                 }
             }
         });
+    }
+
+    /// A wrong witness of the recovery stops the computation, as any wrong hint does: it cannot
+    /// turn the valid signature of `test_geth_ecrecover` into an empty result
+    #[test]
+    #[should_panic(expected = "the witness of the recovery is wrong")]
+    fn wrong_witness_cannot_fail_the_recovery() {
+        let input: [u8; 128] =
+            hex::decode("38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02")
+                .expect("should decode hex")
+                .try_into()
+                .unwrap();
+        let mut oracle = crate::system_functions::field_ops::test_oracles::lying_oracle(&[
+            crypto::hints::FieldHintOp::Secp256k1RecoveryWitness,
+        ]);
+        let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+        let _ = ecrecover_as_system_function_inner::<_, _, _, _, true>(
+            input.as_slice(),
+            &mut vec![],
+            &mut resources,
+            Some(&mut oracle),
+        );
     }
 }

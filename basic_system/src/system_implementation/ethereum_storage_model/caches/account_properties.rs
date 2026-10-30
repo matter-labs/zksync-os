@@ -59,7 +59,8 @@ pub struct EthereumAccountPropertiesQuery;
 
 pub const ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID: u32 = ACCOUNT_AND_STORAGE_SUBSPACE_MASK | 0x80;
 
-impl OracleQuery for EthereumAccountPropertiesQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for EthereumAccountPropertiesQuery {
     const QUERY_ID: u32 = ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID;
     type Input = B160;
     type Output = EthereumAccountProperties;

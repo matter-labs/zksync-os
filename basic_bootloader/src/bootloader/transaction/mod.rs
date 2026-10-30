@@ -377,7 +377,8 @@ zk_ee::impl_short_query_io!(TxEncodingFormat);
 
 pub struct TxEncodingFormatQuery;
 
-impl OracleQuery for TxEncodingFormatQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for TxEncodingFormatQuery {
     type Input = ();
     type Output = TxEncodingFormat;
 
@@ -386,7 +387,8 @@ impl OracleQuery for TxEncodingFormatQuery {
 
 pub struct TxFromQuery;
 
-impl OracleQuery for TxFromQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for TxFromQuery {
     type Input = ();
     type Output = B160;
 

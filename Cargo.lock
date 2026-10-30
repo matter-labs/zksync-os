@@ -21,11 +21,8 @@ dependencies = [
  "cpp_demangle",
  "fallible-iterator",
  "gimli",
- "memmap2 0.9.11",
- "object",
  "rustc-demangle",
  "smallvec",
- "typed-arena",
 ]
 
 [[package]]
@@ -84,6 +81,7 @@ dependencies = [
 name = "airbender-crypto"
 version = "0.3.0"
 dependencies = [
+ "airbender-oracle",
  "ark-bls12-381 0.5.0",
  "ark-bn254 0.5.0",
  "ark-ec 0.5.0",
@@ -126,6 +124,13 @@ dependencies = [
  "sysinfo",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "airbender-oracle"
+version = "0.3.0"
+dependencies = [
+ "riscv_common",
 ]
 
 [[package]]
@@ -2561,6 +2566,7 @@ dependencies = [
  "cs",
  "fft",
  "field",
+ "prover",
  "serde",
  "serde_json",
  "witness_eval_generator",
@@ -3814,7 +3820,10 @@ name = "full_statement_verifier"
 version = "0.1.0"
 dependencies = [
  "common_constants",
+ "flate2",
+ "riscv_transpiler",
  "serde",
+ "serde_json",
  "setups",
  "verifier_common",
 ]
@@ -4743,6 +4752,7 @@ dependencies = [
 name = "inits_and_teardowns"
 version = "0.1.0"
 dependencies = [
+ "circuit_common",
  "common_constants",
  "prover",
  "serde",
@@ -5003,7 +5013,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak_chi5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_column_parity"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
 name = "keccak_special5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_theta_rho"
 version = "0.1.0"
 dependencies = [
  "circuit_common",
@@ -5539,9 +5579,7 @@ version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
- "flate2",
  "memchr",
- "ruzstd",
 ]
 
 [[package]]
@@ -7506,15 +7544,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruzstd"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
-dependencies = [
- "twox-hash",
-]
-
-[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7843,7 +7872,10 @@ dependencies = [
  "hex",
  "inits_and_teardowns",
  "jump_branch_slt",
+ "keccak_chi5",
+ "keccak_column_parity",
  "keccak_special5",
+ "keccak_theta_rho",
  "load_store_subword_only",
  "load_store_word_only",
  "mul_div_unsigned",
@@ -7858,6 +7890,7 @@ dependencies = [
  "sha3 0.12.0",
  "shift_binary",
  "syn 2.0.117",
+ "unified_extended_machine",
  "unified_reduced_machine",
  "verifier_common",
 ]
@@ -8896,12 +8929,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "twox-hash"
-version = "2.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
-
-[[package]]
 name = "type-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8909,12 +8936,6 @@ checksum = "cb30dbbd9036155e74adad6812e9898d03ec374946234fbcebd5dfc7b9187b90"
 dependencies = [
  "rustc-hash",
 ]
-
-[[package]]
-name = "typed-arena"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "typenum"
@@ -8985,6 +9006,16 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unified_extended_machine"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
 
 [[package]]
 name = "unified_reduced_machine"
@@ -9895,6 +9926,7 @@ name = "zk_ee"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
+ "airbender-oracle",
  "arrayvec",
  "cfg-if",
  "cycle_marker",

@@ -674,7 +674,11 @@ mod tests {
     }
 
     impl MemoryOracle for CountingOracle {
-        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+        ) -> Result<(), InternalError> {
             assert_eq!(query_id, INITIAL_STORAGE_SLOT_VALUE_QUERY_ID);
             self.queries += 1;
             // SAFETY: the test sends the queries from this process
