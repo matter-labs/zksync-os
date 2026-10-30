@@ -31,6 +31,7 @@ version = "0.3.0"
 name = "airbender-crypto"
 version = "0.3.0"
 dependencies = [
+ "airbender-oracle",
  "ark-bls12-381",
  "ark-bn254",
  "ark-ec",
@@ -74,6 +75,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "airbender-oracle"
+version = "0.3.0"
+dependencies = [
+ "riscv_common",
 ]
 
 [[package]]
@@ -1312,6 +1320,7 @@ name = "zk_ee"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
+ "airbender-oracle",
  "arrayvec",
  "cfg-if",
  "cycle_marker",
