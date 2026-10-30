@@ -28,7 +28,8 @@ pub const FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: u32 =
 /// The preimage with the given hash.
 pub struct GenericPreimageQuery;
 
-impl DynamicOracleQuery for GenericPreimageQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl DynamicOracleQuery for GenericPreimageQuery {
     const QUERY_ID: u32 = FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
     type Input = Bytes32;
 }

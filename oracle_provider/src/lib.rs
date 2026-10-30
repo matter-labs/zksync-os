@@ -815,7 +815,8 @@ mod tests {
     /// A composite input, and a composite output.
     struct SwapQuery;
 
-    impl OracleQuery for SwapQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for SwapQuery {
         const QUERY_ID: u32 = SWAP_QUERY_ID;
         type Input = (Bytes32, Bytes32);
         type Output = (Bytes32, Bytes32);
@@ -824,7 +825,8 @@ mod tests {
     /// An input passed by address, and a dynamically sized output of the first 13 bytes of it.
     struct BytesQuery;
 
-    impl DynamicOracleQuery for BytesQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl DynamicOracleQuery for BytesQuery {
         const QUERY_ID: u32 = BYTES_QUERY_ID;
         type Input = Bytes32;
     }
@@ -880,7 +882,8 @@ mod tests {
     /// process, with the words in reverse order for the guest.
     struct RepresentationQuery;
 
-    impl OracleQuery for RepresentationQuery {
+    // SAFETY: the processors of `QUERY_ID` read its input as `Input`
+    unsafe impl OracleQuery for RepresentationQuery {
         const QUERY_ID: u32 = REPRESENTATION_QUERY_ID;
         type Input = Bytes32;
         type Output = Bytes32;

@@ -15,7 +15,8 @@ static ZERO: U256 = U256::ZERO;
 /// Advice for `dividend / divisor` (256-bit operands, passed by address): the quotient.
 pub struct U256DivRemAdviceQuery;
 
-impl OracleQuery for U256DivRemAdviceQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for U256DivRemAdviceQuery {
     const QUERY_ID: u32 = U256_DIV_REM_ADVICE_QUERY_ID;
     /// `(dividend, divisor)`
     type Input = (U256, U256);
@@ -26,7 +27,8 @@ impl OracleQuery for U256DivRemAdviceQuery {
 /// the high halves of the quotient.
 pub struct U256WideDivRemAdviceQuery;
 
-impl OracleQuery for U256WideDivRemAdviceQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for U256WideDivRemAdviceQuery {
     const QUERY_ID: u32 = U256_WIDE_DIV_REM_ADVICE_QUERY_ID;
     /// `(dividend_lo, dividend_hi, divisor)`
     type Input = (U256, U256, U256);

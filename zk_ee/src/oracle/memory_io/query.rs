@@ -24,7 +24,13 @@ pub trait QueryInput {
     where
         Self: 'a;
 
-    fn send<O: MemoryOracleExt>(
+    /// Starts the query `query_id` with `input`.
+    ///
+    /// # Safety
+    ///
+    /// `query_id` must take `Self` as its input, the way this sends it: an oracle in this process
+    /// reads it that way.
+    unsafe fn send<O: MemoryOracleExt>(
         oracle: &mut O,
         query_id: u32,
         input: Self::Ref<'_>,
@@ -61,7 +67,12 @@ pub trait QueryOutput: Sized {
 /// A query with a fixed-size output: the counterpart of
 /// [`SimpleOracleQuery`](crate::oracle::simple_oracle_query::SimpleOracleQuery) for the memory-based
 /// protocol.
-pub trait OracleQuery {
+///
+/// # Safety
+///
+/// `QUERY_ID` must take `Input` as its input, the way [`QueryInput::send`] sends it: the processors of
+/// the ID that run in this process read it through the input word as that type.
+pub unsafe trait OracleQuery {
     const QUERY_ID: u32;
     type Input: QueryInput;
     type Output: QueryOutput;
@@ -76,7 +87,8 @@ pub trait OracleQuery {
     where
         Self::Output: 'a,
     {
-        Self::Input::send(oracle, Self::QUERY_ID, input)?;
+        // SAFETY: `QUERY_ID` takes `Input` (the contract of the trait)
+        unsafe { Self::Input::send(oracle, Self::QUERY_ID, input)? };
         let output = Self::Output::receive(oracle, dst);
         finish(oracle, output)
     }
@@ -87,14 +99,19 @@ pub trait OracleQuery {
         oracle: &mut O,
         input: <Self::Input as QueryInput>::Ref<'_>,
     ) -> Result<Self::Output, InternalError> {
-        Self::Input::send(oracle, Self::QUERY_ID, input)?;
+        // SAFETY: `QUERY_ID` takes `Input` (the contract of the trait)
+        unsafe { Self::Input::send(oracle, Self::QUERY_ID, input)? };
         let output = Self::Output::receive_value(oracle);
         finish(oracle, output)
     }
 }
 
 /// A query with a dynamically sized output of `usize` words (see [`DynamicDestination`]).
-pub trait DynamicOracleQuery {
+///
+/// # Safety
+///
+/// As for [`OracleQuery`]: `QUERY_ID` must take `Input` as its input.
+pub unsafe trait DynamicOracleQuery {
     const QUERY_ID: u32;
     type Input: QueryInput;
 
@@ -105,7 +122,8 @@ pub trait DynamicOracleQuery {
         input: <Self::Input as QueryInput>::Ref<'_>,
         dst: D,
     ) -> Result<usize, InternalError> {
-        Self::Input::send(oracle, Self::QUERY_ID, input)?;
+        // SAFETY: `QUERY_ID` takes `Input` (the contract of the trait)
+        unsafe { Self::Input::send(oracle, Self::QUERY_ID, input)? };
         let len = oracle.write_dynamic(dst);
         finish(oracle, len)
     }
@@ -117,7 +135,8 @@ pub trait DynamicOracleQuery {
         max_len: usize,
         allocator: A,
     ) -> Result<Box<[usize], A>, InternalError> {
-        Self::Input::send(oracle, Self::QUERY_ID, input)?;
+        // SAFETY: `QUERY_ID` takes `Input` (the contract of the trait)
+        unsafe { Self::Input::send(oracle, Self::QUERY_ID, input)? };
         let output = oracle.write_dynamic_boxed(max_len, allocator);
         finish(oracle, output)
     }
@@ -141,14 +160,19 @@ fn finish<O: MemoryOracleExt, T>(
 /// (`0` for no bytes, then `None` is returned), and the second the bytes, as a dynamically sized response
 /// of whole `usize` words that must cover the length and fit into the length rounded up to whole `u64`
 /// words.
-pub fn get_bytes_with_length_query<O: MemoryOracleExt, I: QueryInput, A: Allocator>(
+///
+/// # Safety
+///
+/// Both query IDs must take `I` as their input (see [`QueryInput::send`]).
+pub unsafe fn get_bytes_with_length_query<O: MemoryOracleExt, I: QueryInput, A: Allocator>(
     oracle: &mut O,
     length_query_id: u32,
     body_query_id: u32,
     input: I::Ref<'_>,
     allocator: A,
 ) -> Result<Option<UsizeAlignedByteBox<A>>, InternalError> {
-    I::send(oracle, length_query_id, input)?;
+    // SAFETY: guaranteed by the caller
+    unsafe { I::send(oracle, length_query_id, input)? };
     let num_bytes = oracle.read_short::<u32>();
     let num_bytes = finish(oracle, num_bytes)?;
     if num_bytes == 0 {
@@ -156,7 +180,8 @@ pub fn get_bytes_with_length_query<O: MemoryOracleExt, I: QueryInput, A: Allocat
     }
     let num_bytes = num_bytes as usize;
     let mut buffer = UsizeAlignedByteBox::preallocated_in(num_bytes, allocator);
-    I::send(oracle, body_query_id, input)?;
+    // SAFETY: guaranteed by the caller
+    unsafe { I::send(oracle, body_query_id, input)? };
     let num_words = buffer.init_words(|words| oracle.write_dynamic(words));
     let num_words = finish(oracle, num_words)?;
     if num_words * USIZE_SIZE < num_bytes {
@@ -172,12 +197,12 @@ impl QueryInput for () {
     type Ref<'a> = ();
 
     #[inline(always)]
-    fn send<O: MemoryOracleExt>(
+    unsafe fn send<O: MemoryOracleExt>(
         oracle: &mut O,
         query_id: u32,
         _input: Self::Ref<'_>,
     ) -> Result<(), InternalError> {
-        // SAFETY: a query without input: the input word is 0
+        // SAFETY: `query_id` takes no input (the caller's contract): the input word is 0
         unsafe { oracle.send_query(query_id, 0) }
     }
 }
@@ -215,12 +240,13 @@ macro_rules! impl_short_query_io {
             type Ref<'a> = $t;
 
             #[inline(always)]
-            fn send<O: $crate::oracle::memory_io::MemoryOracleExt>(
+            unsafe fn send<O: $crate::oracle::memory_io::MemoryOracleExt>(
                 oracle: &mut O,
                 query_id: u32,
                 input: Self::Ref<'_>,
             ) -> Result<(), $crate::system::errors::internal::InternalError> {
-                oracle.send_short(query_id, input)
+                // SAFETY: guaranteed by the caller
+                unsafe { oracle.send_short(query_id, input) }
             }
         }
 
@@ -280,12 +306,13 @@ impl<T: ContinuousSerializable> QueryInput for T {
         T: 'a;
 
     #[inline(always)]
-    fn send<O: MemoryOracleExt>(
+    unsafe fn send<O: MemoryOracleExt>(
         oracle: &mut O,
         query_id: u32,
         input: Self::Ref<'_>,
     ) -> Result<(), InternalError> {
-        oracle.send_continuous(query_id, input)
+        // SAFETY: guaranteed by the caller
+        unsafe { oracle.send_continuous(query_id, input) }
     }
 }
 
@@ -322,12 +349,13 @@ macro_rules! impl_query_io_for_tuple {
             type Ref<'a> = ($(&'a $element,)+) where Self: 'a;
 
             #[inline(always)]
-            fn send<O: MemoryOracleExt>(
+            unsafe fn send<O: MemoryOracleExt>(
                 oracle: &mut O,
                 query_id: u32,
                 input: Self::Ref<'_>,
             ) -> Result<(), InternalError> {
-                oracle.send_composite(query_id, input)
+                // SAFETY: guaranteed by the caller
+                unsafe { oracle.send_composite(query_id, input) }
             }
         }
 

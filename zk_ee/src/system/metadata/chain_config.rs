@@ -213,7 +213,8 @@ impl WriteQueryOutput for ChainConfig {
 
 pub struct ChainConfigQuery;
 
-impl OracleQuery for ChainConfigQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for ChainConfigQuery {
     const QUERY_ID: u32 = CHAIN_CONFIG_QUERY_ID;
     type Input = ();
     type Output = ChainConfig;

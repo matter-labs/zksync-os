@@ -15,7 +15,8 @@ pub struct InitialStorageSlotQuery<IOTypes: SystemIOTypesConfig> {
     _marker: core::marker::PhantomData<IOTypes>,
 }
 
-impl OracleQuery for InitialStorageSlotQuery<EthereumIOTypesConfig> {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for InitialStorageSlotQuery<EthereumIOTypesConfig> {
     const QUERY_ID: u32 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
     /// `(address, key)`
     type Input = (B160, Bytes32);
@@ -25,7 +26,8 @@ impl OracleQuery for InitialStorageSlotQuery<EthereumIOTypesConfig> {
 /// Disconnects the oracle: every later query is answered with zeroes.
 pub struct DisconnectOracleQuery;
 
-impl OracleQuery for DisconnectOracleQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for DisconnectOracleQuery {
     const QUERY_ID: u32 = DISCONNECT_ORACLE_QUERY_ID;
     type Input = ();
     type Output = ();
@@ -34,7 +36,8 @@ impl OracleQuery for DisconnectOracleQuery {
 /// The length in bytes of the next transaction, `0` if there are no more transactions.
 pub struct NextTxSizeQuery;
 
-impl OracleQuery for NextTxSizeQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for NextTxSizeQuery {
     const QUERY_ID: u32 = NEXT_TX_SIZE_QUERY_ID;
     type Input = ();
     type Output = u32;

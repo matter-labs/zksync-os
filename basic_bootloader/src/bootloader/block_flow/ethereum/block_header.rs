@@ -203,13 +203,17 @@ impl HeaderAndHistory {
     ) -> Result<Self, InternalError> {
         let chain_id = 1u64;
         // get buffer
-        let target_header_buffer = get_bytes_with_length_query::<_, (), _>(
-            oracle,
-            ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
-            ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
-            (),
-            allocator,
-        )?;
+        // SAFETY: both IDs take no input (`ethereum_cl`'s processors), and the input word 0 is no
+        // address an oracle of this process reads through
+        let target_header_buffer = unsafe {
+            get_bytes_with_length_query::<_, (), _>(
+                oracle,
+                ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
+                ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID,
+                (),
+                allocator,
+            )
+        }?;
         let target_header_buffer = target_header_buffer.expect("target header is not empty slice");
 
         // EIP-7934: reject blocks whose RLP encoding exceeds 8 MiB
@@ -374,13 +378,17 @@ impl ChainChecker for PectraForkHeader {
             // so we assert here
             assert!(block_number >= PECTRA_EL_FORK_BLOCK_NUMBER);
 
-            let buffer = get_bytes_with_length_query::<_, u32, _>(
-                oracle,
-                ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
-                ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
-                depth as u32,
-                allocator.clone(),
-            )
+            // SAFETY: both IDs take the depth, a `u32` by value (`ethereum_cl`'s processors read it
+            // with `u32::read_input`)
+            let buffer = unsafe {
+                get_bytes_with_length_query::<_, u32, _>(
+                    oracle,
+                    ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID,
+                    ETHEREUM_HISTORICAL_HEADER_BUFFER_DATA_QUERY_ID,
+                    depth as u32,
+                    allocator.clone(),
+                )
+            }
             .expect("must get buffer for historical header")
             .expect("buffer for historical header is not empty");
             let historical_header = PectraForkHeaderReflection::decode_list_full(buffer.as_slice())

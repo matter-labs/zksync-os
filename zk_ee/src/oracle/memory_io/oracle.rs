@@ -18,46 +18,55 @@ use core::mem::MaybeUninit;
 /// top of the transport primitives of [`MemoryOracle`] (`airbender_oracle`'s), with ZKsync OS's errors.
 /// Every such oracle has them.
 ///
-/// The `send_*` methods are safe, as `send_query` was before it became `unsafe`, so they do not enclose
-/// its contract: they send the input word the way their input type is passed, and rely on `query_id`
-/// taking its input that way. [`OracleQuery`](super::OracleQuery) binds each query ID of ZKsync OS to its
-/// input type, but nothing checks the binding: an in-process oracle that reads a request through the
-/// input word (the field hints) would read through a value sent by `send_short` under its ID.
+/// The `send_*` methods are `unsafe`, as `send_query` is: each sends its input the way its type is passed,
+/// and the caller guarantees that the query ID takes it that way. [`OracleQuery`](super::OracleQuery) and
+/// [`DynamicOracleQuery`](super::DynamicOracleQuery), `unsafe` traits, bind each query ID of ZKsync OS to its
+/// input type once, and their methods are safe.
 pub trait MemoryOracleExt: MemoryOracle<Error = InternalError> {
     /// Starts a query with a short input, passed by value.
+    ///
+    /// # Safety
+    ///
+    /// `query_id` must take a short input of this type, the value itself.
     #[inline(always)]
-    fn send_short<T: ShortSerializable>(
+    unsafe fn send_short<T: ShortSerializable>(
         &mut self,
         query_id: u32,
         input: T,
     ) -> Result<(), InternalError> {
-        // SAFETY: the input word is the value itself, for a query that takes a short input (see the
-        // trait documentation)
+        // SAFETY: the input word is the value itself, which `query_id` takes (the caller's contract)
         unsafe { self.send_query(query_id, input.to_short_word() as usize) }
     }
 
     /// Starts a query with an input continuous in memory, passed by address.
+    ///
+    /// # Safety
+    ///
+    /// `query_id` must take a `T`, passed by address: an oracle in this process reads one through it.
     #[inline(always)]
-    fn send_continuous<T: ContinuousSerializable>(
+    unsafe fn send_continuous<T: ContinuousSerializable>(
         &mut self,
         query_id: u32,
         input: &T,
     ) -> Result<(), InternalError> {
-        // SAFETY: the input word is the address of `input`, live for the call, for a query that takes
-        // this type (see the trait documentation)
+        // SAFETY: the input word is the address of `input`, live for the call, and `query_id` takes a
+        // `T` (the caller's contract)
         unsafe { self.send_query(query_id, exposed_address(input)) }
     }
 
     /// Starts a query with a composite input, passed by the address of the array of element addresses.
+    ///
+    /// # Safety
+    ///
+    /// `query_id` must take these elements, passed by the address of the array of their addresses.
     #[inline(always)]
-    fn send_composite<C: CompositeSerializable>(
+    unsafe fn send_composite<C: CompositeSerializable>(
         &mut self,
         query_id: u32,
         input: C,
     ) -> Result<(), InternalError> {
         // SAFETY: the input word is the address of the array of the element addresses, both live
-        // until `with_address` returns, for a query that takes these types (see the trait
-        // documentation)
+        // until `with_address` returns, and `query_id` takes these elements (the caller's contract)
         input.with_address(|address| unsafe { self.send_query(query_id, address) })
     }
 

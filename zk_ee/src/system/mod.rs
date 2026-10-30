@@ -361,13 +361,17 @@ where
         body_query_id: u32,   // must return
     ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
         let allocator = self.get_allocator();
-        crate::oracle::memory_io::get_bytes_with_length_query::<_, (), _>(
-            self.io.oracle(),
-            length_query_id,
-            body_query_id,
-            (),
-            allocator,
-        )
+        // SAFETY: the input is `()`, the input word 0, which no oracle of this process reads through:
+        // their querier memories reject the address 0 (whatever the query IDs take)
+        unsafe {
+            crate::oracle::memory_io::get_bytes_with_length_query::<_, (), _>(
+                self.io.oracle(),
+                length_query_id,
+                body_query_id,
+                (),
+                allocator,
+            )
+        }
     }
 
     pub fn deploy_bytecode(

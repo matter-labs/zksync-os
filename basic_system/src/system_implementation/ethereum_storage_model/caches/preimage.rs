@@ -28,7 +28,8 @@ pub const ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID: u32 =
 pub const ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID: u32 =
     PREIMAGE_SUBSPACE_MASK | ETHEREUM_STORAGE_SUBSPACE_MASK | 0x01;
 
-impl OracleQuery for PreimageLengthQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for PreimageLengthQuery {
     const QUERY_ID: u32 = ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID;
     type Input = Bytes32;
     type Output = u32;
@@ -37,7 +38,8 @@ impl OracleQuery for PreimageLengthQuery {
 /// The bytecode with the given hash.
 pub struct BytecodePreimageQuery;
 
-impl DynamicOracleQuery for BytecodePreimageQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl DynamicOracleQuery for BytecodePreimageQuery {
     const QUERY_ID: u32 = ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID;
     type Input = Bytes32;
 }

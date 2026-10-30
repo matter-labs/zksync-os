@@ -68,7 +68,8 @@ impl ShortDeserializable for DACommitmentScheme {
 
 pub struct DACommitmentSchemeQuery;
 
-impl OracleQuery for DACommitmentSchemeQuery {
+// SAFETY: the processors of `QUERY_ID` read its input as `Input`
+unsafe impl OracleQuery for DACommitmentSchemeQuery {
     const QUERY_ID: u32 = DA_COMMITMENT_SCHEME_QUERY_ID;
     type Input = ();
     type Output = DACommitmentScheme;
