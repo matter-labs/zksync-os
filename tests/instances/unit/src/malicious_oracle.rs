@@ -392,6 +392,25 @@ mod custom_oracle_factories {
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_custom: impl FnOnce(&mut ZkEENonDeterminismSource),
     ) -> ZkEENonDeterminismSource {
+        build_oracle_with_field_hints(
+            block_metadata,
+            chain_config,
+            proof_data,
+            da_commitment_scheme,
+            add_custom,
+            rig::callable_oracles::field_hints::NativeFieldOpsQuery,
+        )
+    }
+
+    /// As [`build_oracle`], with `field_hints` answering the field hint queries
+    pub(super) fn build_oracle_with_field_hints(
+        block_metadata: BlockMetadataFromOracle,
+        chain_config: ChainConfig,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_custom: impl FnOnce(&mut ZkEENonDeterminismSource),
+        field_hints: impl rig::oracle_provider::OracleQueryProcessor + 'static,
+    ) -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
         oracle.add_external_processor(BlockMetadataResponder { block_metadata });
         oracle.add_external_processor(ChainConfigResponder { chain_config });
@@ -400,7 +419,7 @@ mod custom_oracle_factories {
         oracle.add_external_processor(DACommitmentSchemeResponder {
             da_commitment_scheme,
         });
-        oracle.add_external_processor(rig::callable_oracles::field_hints::NativeFieldOpsQuery);
+        oracle.add_external_processor(field_hints);
         oracle
     }
 
@@ -2094,6 +2113,226 @@ mod forged_wide_quotient_tape {
         ] {
             let result = run_modexp(operands, usize::MAX, Forgery::High(1), RunConfig::default());
             assert_eq!(result, Ok(hex::decode(output).unwrap()), "{operands:?}");
+        }
+    }
+}
+
+mod forged_recovery_witness_tape {
+    //! A forged answer to the recovery witness query of ecrecover on the prover input tape.
+    //!
+    //! The native run that records the tape gets the right answers and succeeds, so the forgery
+    //! reaches only the RISC-V run: a wrong witness must stop it, never turn the recovery of a
+    //! valid signature into a failure, and a withheld witness must only make it compute the key.
+
+    use super::custom_oracle_factories::{
+        add_standard_processors, build_oracle_with_field_hints, CustomOracleFactory,
+    };
+    use rig::alloy::consensus::TxLegacy;
+    use rig::alloy::primitives::{address, TxKind, U256};
+    use rig::basic_system::system_functions::field_ops::ZkOsQuerierMemory;
+    use rig::callable_oracles::field_hints::NativeFieldOpsQuery;
+    use rig::chain::RunConfig;
+    use rig::crypto::hints::{read_field_hint_request, FieldHintOp};
+    use rig::oracle_provider::{OracleQueryProcessor, RunMode};
+    use rig::zk_ee::oracle::memory_io::host::QuerierMemory;
+    use rig::{BlockContext, TestingFramework};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+    /// How the witness on the tape differs from the right one. The answer is a flag, the
+    /// coordinates of the key (8 words each) and the four coefficients (4 words each).
+    #[derive(Clone, Copy, Debug)]
+    enum Forgery {
+        /// The low bit of the key's `x` flipped
+        Key,
+        /// The low bit of the first coefficient flipped
+        Coefficient,
+        /// No witness: a cleared flag, and nothing more. A prover withholds it from its native run
+        /// too, so the tape holds the answers of the computed recovery that follow
+        Withheld,
+    }
+
+    impl Forgery {
+        fn apply(self, answer: &mut Vec<u32>) {
+            assert_eq!(answer.len(), 1 + 8 + 8 + 16, "a witness");
+            match self {
+                Forgery::Key => answer[1] ^= 1,
+                Forgery::Coefficient => answer[17] ^= 1,
+                Forgery::Withheld => *answer = vec![0],
+            }
+        }
+    }
+
+    /// Answers the field hints honestly, but saves `forgery` of the right answer on the tape
+    /// for the RISC-V run as the answer to the recovery witness query number `forged_query`
+    /// (counted from 0), and counts the witness queries of the recording run in `witnesses`. A
+    /// withheld witness is withheld from the recording run too.
+    struct ForgedRecoveryWitness {
+        forged_query: usize,
+        forgery: Forgery,
+        witnesses: Arc<AtomicUsize>,
+    }
+
+    impl OracleQueryProcessor for ForgedRecoveryWitness {
+        fn supported_memory_query_ids(&self) -> Vec<u32> {
+            NativeFieldOpsQuery.supported_memory_query_ids()
+        }
+
+        fn process_memory_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+            memory: &dyn QuerierMemory,
+            mode: RunMode,
+            native_run_responses: &mut Vec<u32>,
+            guest_run_responses: &mut Vec<u32>,
+        ) {
+            let native_start = native_run_responses.len();
+            let mut guest_run = Vec::new();
+            NativeFieldOpsQuery.process_memory_query(
+                query_id,
+                input_word,
+                memory,
+                mode,
+                native_run_responses,
+                &mut guest_run,
+            );
+            let (op, _, _) = read_field_hint_request(&ZkOsQuerierMemory(memory), input_word)
+                .expect("must read the field hint request");
+            if op == FieldHintOp::Secp256k1RecoveryWitness as u32
+                && mode == RunMode::NativeRunSavingForRiscV
+            {
+                if self.witnesses.fetch_add(1, Ordering::Relaxed) == self.forged_query {
+                    self.forgery.apply(&mut guest_run);
+                    if let Forgery::Withheld = self.forgery {
+                        native_run_responses.truncate(native_start);
+                        native_run_responses.extend_from_slice(&guest_run);
+                    }
+                }
+            }
+            guest_run_responses.append(&mut guest_run);
+        }
+    }
+
+    /// The signature of geth's ecrecover test, and the address it recovers
+    const INPUT: &str = "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02";
+    const OUTPUT: &str = "000000000000000000000000ceaccac640adf55b2028469bd36ba501f28b699d";
+
+    /// Calls the ecrecover precompile in a block run with `run_config` and the forged tape: the
+    /// output, or the panic message of the run; and the number of witness queries recorded
+    fn run_ecrecover(
+        forged_query: usize,
+        forgery: Forgery,
+        run_config: RunConfig,
+    ) -> (Result<Vec<u8>, String>, usize) {
+        let witnesses = Arc::new(AtomicUsize::new(0));
+        let counted = witnesses.clone();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let mut tester = TestingFramework::new();
+            let wallet = tester.random_signer();
+            tester = tester
+                .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+                .with_block_context(BlockContext {
+                    // unlimited native
+                    native_price: U256::ZERO,
+                    eip1559_basefee: U256::from(1000),
+                    ..Default::default()
+                })
+                .with_custom_oracle_factory(CustomOracleFactory(
+                    move |block_metadata,
+                          chain_config,
+                          state_tree,
+                          preimage_source,
+                          tx_source,
+                          proof_data,
+                          da_commitment_scheme| {
+                        build_oracle_with_field_hints(
+                            block_metadata,
+                            chain_config,
+                            proof_data,
+                            da_commitment_scheme,
+                            |oracle| {
+                                add_standard_processors(
+                                    oracle,
+                                    state_tree,
+                                    preimage_source,
+                                    tx_source,
+                                )
+                            },
+                            ForgedRecoveryWitness {
+                                forged_query,
+                                forgery,
+                                witnesses: counted.clone(),
+                            },
+                        )
+                    },
+                ))
+                .with_run_config(run_config);
+            let tx = ZKsyncTxEnvelope::from_eth_tx(
+                TxLegacy {
+                    chain_id: 37u64.into(),
+                    nonce: 0,
+                    gas_price: 1000,
+                    gas_limit: 1_000_000,
+                    to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
+                    value: Default::default(),
+                    input: hex::decode(INPUT).unwrap().into(),
+                },
+                wallet,
+            );
+            let output = tester.execute_block(vec![tx]);
+            let result = output.tx_results[0]
+                .clone()
+                .expect("the transaction is valid");
+            assert!(result.is_success(), "{result:?}");
+            result.as_returned_bytes().to_vec()
+        }))
+        .map_err(|payload| match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_owned(),
+            Err(payload) => *payload.downcast::<String>().expect("a panic message"),
+        });
+        (result, witnesses.load(Ordering::Relaxed))
+    }
+
+    /// A forged witness of the transaction's own signature (query 0) or of the precompile call
+    /// (query 1): the native runs succeed, the RISC-V run fails, unless the witness is only
+    /// withheld, which the guest answers by computing the key. The RISC-V run only runs when
+    /// the environment enables it (`ZKSYNC_RISC_V_RUN` or `CI`), otherwise only the native runs
+    /// are checked.
+    #[test]
+    fn forged_recovery_witness_on_tape_fails_riscv_run() {
+        let output = hex::decode(OUTPUT).unwrap();
+        let riscv_run = RunConfig::default().do_riscv_run;
+        for forged_query in [0, 1] {
+            for forgery in [Forgery::Key, Forgery::Coefficient, Forgery::Withheld] {
+                let case = format!("query {forged_query}, {forgery:?}");
+                // forward_only(): the native runs alone, which get the right answers
+                let (native, _) =
+                    run_ecrecover(forged_query, forgery, rig::run_config::forward_only());
+                assert_eq!(native, Ok(output.clone()), "{case}");
+                if riscv_run {
+                    let (result, witnesses) =
+                        run_ecrecover(forged_query, forgery, RunConfig::default());
+                    assert!(
+                        witnesses > forged_query,
+                        "{case}: {witnesses} witness queries"
+                    );
+                    match (forgery, result) {
+                        (Forgery::Withheld, result) => {
+                            assert_eq!(result, Ok(output.clone()), "{case}")
+                        }
+                        (_, Ok(_)) => panic!("{case}: the RISC-V run accepts the forgery"),
+                        // the guest panics (on the witness check), and its error exit is an
+                        // illegal instruction for the simulator
+                        (_, Err(message)) => assert!(
+                            message.starts_with("Illegal instruction"),
+                            "{case}: {message}"
+                        ),
+                    }
+                }
+            }
         }
     }
 }

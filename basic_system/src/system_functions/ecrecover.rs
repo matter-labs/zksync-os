@@ -306,4 +306,26 @@ mod test {
             }
         });
     }
+
+    /// A wrong witness of the recovery stops the computation, as any wrong hint does: it cannot
+    /// turn the valid signature of `test_geth_ecrecover` into an empty result
+    #[test]
+    #[should_panic(expected = "the witness of the recovery is wrong")]
+    fn wrong_witness_cannot_fail_the_recovery() {
+        let input: [u8; 128] =
+            hex::decode("38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02")
+                .expect("should decode hex")
+                .try_into()
+                .unwrap();
+        let mut oracle = crate::system_functions::field_ops::test_oracles::lying_oracle(&[
+            crypto::hints::FieldHintOp::Secp256k1RecoveryWitness,
+        ]);
+        let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+        let _ = ecrecover_as_system_function_inner::<_, _, _, _, true>(
+            input.as_slice(),
+            &mut vec![],
+            &mut resources,
+            Some(&mut oracle),
+        );
+    }
 }

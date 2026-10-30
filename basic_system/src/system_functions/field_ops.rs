@@ -96,9 +96,12 @@ pub(crate) mod test_oracles {
                 let index = match op {
                     FieldHintOp::Bn254PairingResidueWitness
                     | FieldHintOp::Bls12381KzgResidueWitness
-                    | FieldHintOp::Bls12381PairingResidueWitness => 1,
+                    | FieldHintOp::Bls12381PairingResidueWitness
+                    | FieldHintOp::Secp256k1RecoveryWitness => 1,
                     _ => 0,
                 };
+                // an answer that is only its flag (no recovery witness) has the flag flipped
+                let index = index.min(words.len() - 1);
                 words[index] ^= 1;
             }
             native_run_responses.extend(words);
