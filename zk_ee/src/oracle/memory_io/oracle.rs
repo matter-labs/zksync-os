@@ -6,59 +6,24 @@ use super::continuous::{
 };
 use super::dynamic::{read_claimed_len, write_usize_words, DynamicDestination};
 use super::short::{ShortDeserializable, ShortSerializable};
+use super::MemoryOracle;
 use crate::internal_error;
 use crate::system::errors::internal::InternalError;
 use alloc::boxed::Box;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 
-/// Querier side of the memory-based oracle protocol (see the [module documentation](super)).
+/// The typed encodings of the memory-based protocol (see the [module documentation](super)), on the
+/// querier side: values passed by value or by address, received memcpy-like and validated in place, on
+/// top of the transport primitives of [`MemoryOracle`] (`airbender_oracle`'s), with ZKsync OS's errors.
+/// Every such oracle has them.
 ///
-/// Implementations provide the transport primitives: [`send_query`](Self::send_query),
-/// [`read_word`](Self::read_word), [`write_words`](Self::write_words) and
-/// [`finish_query`](Self::finish_query). The typed methods are built on top of them, and are only meant
-/// to be overridden with equivalent, faster versions.
-///
-/// The default primitives reject the protocol: they are for oracles that never serve it, like test
-/// doubles of [`IOOracle`](crate::oracle::IOOracle), which requires this trait.
-pub trait MemoryOracle: Sized {
-    /// Starts a query: sends the query ID and the input word. The oracle reads whatever the input word
-    /// refers to during this call; the memory may change as soon as it returns.
-    fn send_query(&mut self, _query_id: u32, _input_word: usize) -> Result<(), InternalError> {
-        Err(internal_error!(
-            "oracle does not serve the memory-based protocol"
-        ))
-    }
-
-    /// Reads one response word: a short value, or the claimed length of a dynamically sized response.
-    fn read_word(&mut self) -> Result<u32, InternalError> {
-        Err(internal_error!(
-            "oracle does not serve the memory-based protocol"
-        ))
-    }
-
-    /// Writes the next `num_words` response words to `dst`, in order. This is the memcpy-like primitive:
-    /// "write the next `u32` to the next aligned address", repeated.
-    ///
-    /// # Safety
-    ///
-    /// `dst` must be aligned for `u32` and valid for writes of `num_words` `u32`s.
-    unsafe fn write_words(
-        &mut self,
-        _dst: *mut u32,
-        _num_words: usize,
-    ) -> Result<(), InternalError> {
-        Err(internal_error!(
-            "oracle does not serve the memory-based protocol"
-        ))
-    }
-
-    /// Ends the query. Implementations that can (in forward mode) should check here that the response
-    /// was consumed in full.
-    fn finish_query(&mut self) -> Result<(), InternalError> {
-        Ok(())
-    }
-
+/// The `send_*` methods are safe, as `send_query` was before it became `unsafe`, so they do not enclose
+/// its contract: they send the input word the way their input type is passed, and rely on `query_id`
+/// taking its input that way. [`OracleQuery`](super::OracleQuery) binds each query ID of ZKsync OS to its
+/// input type, but nothing checks the binding: an in-process oracle that reads a request through the
+/// input word (the field hints) would read through a value sent by `send_short` under its ID.
+pub trait MemoryOracleExt: MemoryOracle<Error = InternalError> {
     /// Starts a query with a short input, passed by value.
     #[inline(always)]
     fn send_short<T: ShortSerializable>(
@@ -66,7 +31,9 @@ pub trait MemoryOracle: Sized {
         query_id: u32,
         input: T,
     ) -> Result<(), InternalError> {
-        self.send_query(query_id, input.to_short_word() as usize)
+        // SAFETY: the input word is the value itself, for a query that takes a short input (see the
+        // trait documentation)
+        unsafe { self.send_query(query_id, input.to_short_word() as usize) }
     }
 
     /// Starts a query with an input continuous in memory, passed by address.
@@ -76,7 +43,9 @@ pub trait MemoryOracle: Sized {
         query_id: u32,
         input: &T,
     ) -> Result<(), InternalError> {
-        self.send_query(query_id, exposed_address(input))
+        // SAFETY: the input word is the address of `input`, live for the call, for a query that takes
+        // this type (see the trait documentation)
+        unsafe { self.send_query(query_id, exposed_address(input)) }
     }
 
     /// Starts a query with a composite input, passed by the address of the array of element addresses.
@@ -86,7 +55,10 @@ pub trait MemoryOracle: Sized {
         query_id: u32,
         input: C,
     ) -> Result<(), InternalError> {
-        input.with_address(|address| self.send_query(query_id, address))
+        // SAFETY: the input word is the address of the array of the element addresses, both live
+        // until `with_address` returns, for a query that takes these types (see the trait
+        // documentation)
+        input.with_address(|address| unsafe { self.send_query(query_id, address) })
     }
 
     /// Reads a short value.
@@ -156,3 +128,5 @@ pub trait MemoryOracle: Sized {
         Ok(unsafe { buffer.assume_init() })
     }
 }
+
+impl<O: MemoryOracle<Error = InternalError>> MemoryOracleExt for O {}

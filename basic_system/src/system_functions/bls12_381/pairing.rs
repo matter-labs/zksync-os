@@ -1,6 +1,5 @@
 use super::*;
-use crate::system_functions::field_ops::ZkOsHintOracle;
-use crypto::hints::HintOracle;
+use crypto::hints::MemoryOracle;
 use crypto::precompiles::bls12_381_pairing_check;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::SystemFunctionExt;
@@ -34,11 +33,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 output,
                 resources,
                 allocator,
-                if USE_ADVICE {
-                    Some(ZkOsHintOracle::from_mut(oracle))
-                } else {
-                    None
-                },
+                if USE_ADVICE { Some(oracle) } else { None },
             )
         })
     }
@@ -48,7 +43,7 @@ fn bls12_381_pairing_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
     A: core::alloc::Allocator + Clone,
-    O: HintOracle,
+    O: MemoryOracle,
 >(
     input: &[u8],
     output: &mut D,

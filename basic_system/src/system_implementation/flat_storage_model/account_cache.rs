@@ -1436,7 +1436,11 @@ mod tests {
     }
 
     impl MemoryOracle for EmptyAccountOracle {
-        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            _input_word: usize,
+        ) -> Result<(), InternalError> {
             if query_id != INITIAL_STORAGE_SLOT_VALUE_QUERY_ID {
                 return Err(internal_error!("unexpected oracle query in test"));
             }
@@ -1484,7 +1488,11 @@ mod tests {
     }
 
     impl MemoryOracle for ExistingAccountOracle {
-        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            _input_word: usize,
+        ) -> Result<(), InternalError> {
             let mut response = vec![];
             match query_id {
                 INITIAL_STORAGE_SLOT_VALUE_QUERY_ID => {

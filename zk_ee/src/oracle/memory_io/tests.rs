@@ -10,6 +10,7 @@ use crate::oracle::query_ids::{
     U256_WIDE_DIV_REM_ADVICE_QUERY_ID,
 };
 use crate::storage_types::InitialStorageSlotData;
+use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
 use crate::utils::Bytes32;
 use alloc::alloc::Global;
@@ -58,7 +59,7 @@ impl WordChannel for MockHost {
 
 fn mock_oracle(
     handler: impl FnMut(u32, usize) -> Vec<u32> + 'static,
-) -> WordChannelOracle<MockHost> {
+) -> WordChannelOracle<MockHost, InternalError> {
     WordChannelOracle::new(MockHost {
         handler: Box::new(handler),
         query_id: None,
@@ -259,7 +260,8 @@ fn continuous_input_is_passed_by_address_and_output_written_in_place() {
 #[test]
 fn b160_must_fit_in_160_bits() {
     let mut oracle = mock_oracle(|_, _| vec![1, 2, 3, 4, u32::MAX, 0]);
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = MaybeUninit::<B160>::uninit();
     assert_eq!(
         *oracle.init(&mut dst).unwrap(),
@@ -267,7 +269,8 @@ fn b160_must_fit_in_160_bits() {
     );
 
     let mut oracle = mock_oracle(|_, _| vec![1, 2, 3, 4, 0, 1]);
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     assert!(oracle.init(&mut MaybeUninit::<B160>::uninit()).is_err());
 }
 
@@ -275,12 +278,14 @@ fn b160_must_fit_in_160_bits() {
 fn arrays_validate_every_element() {
     let values = [b160(1), b160(2)];
     let mut oracle = mock_oracle(move |_, _| image(&values));
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = MaybeUninit::<[B160; 2]>::uninit();
     assert_eq!(*oracle.init(&mut dst).unwrap(), values);
 
     let mut oracle = mock_oracle(|_, _| [image(&b160(1)), vec![0, 0, 0, 0, 0, 1]].concat());
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     assert!(oracle
         .init(&mut MaybeUninit::<[B160; 2]>::uninit())
         .is_err());
@@ -430,7 +435,8 @@ fn composite_output_is_written_element_by_element() {
 fn composite_output_stops_at_the_first_invalid_element() {
     let mut oracle =
         mock_oracle(|_, _| [image(&u256(1)), vec![0, 0, 0, 0, 0, 1], image(&bytes32(2))].concat());
-    oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+    // SAFETY: a query without input
+    unsafe { oracle.send_query(TEST_QUERY_ID, 0) }.unwrap();
     let mut dst = (
         MaybeUninit::<U256>::uninit(),
         MaybeUninit::<B160>::uninit(),

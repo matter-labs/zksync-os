@@ -1,6 +1,6 @@
 use super::*;
+use crate::cost_constants::BN254_ECMUL_COST_GAS;
 use crate::cost_constants::BN254_ECMUL_NATIVE_COST;
-use crate::{cost_constants::BN254_ECMUL_COST_GAS, system_functions::field_ops::ZkOsHintOracle};
 use crypto::precompiles::bn254_g1_mul;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
@@ -40,11 +40,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254MulErrors>
         _allocator: A,
     ) -> Result<(), SubsystemError<Bn254MulErrors>> {
         cycle_marker::wrap_with_resources!("bn254_ecmul", resources, {
-            let oracle = if USE_ADVICE {
-                Some(ZkOsHintOracle::from_mut(oracle))
-            } else {
-                None
-            };
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
             bn254_ecmul_as_system_function_inner(input, output, resources, oracle)
         })
     }
@@ -54,7 +50,7 @@ fn bn254_ecmul_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
     R: Resources,
-    O: crypto::hints::HintOracle,
+    O: crypto::hints::MemoryOracle,
 >(
     src: &S,
     dst: &mut D,

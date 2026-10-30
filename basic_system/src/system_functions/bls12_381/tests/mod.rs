@@ -95,7 +95,9 @@ fn malformed_pairing_input_is_free() {
 pub(super) struct Unqueried;
 
 impl zk_ee::oracle::memory_io::MemoryOracle for Unqueried {
-    fn send_query(
+    type Error = zk_ee::system::errors::internal::InternalError;
+
+    unsafe fn send_query(
         &mut self,
         query_id: u32,
         _: usize,

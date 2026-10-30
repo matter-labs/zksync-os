@@ -3,8 +3,7 @@ use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::utils::exact_size_chain::ExactSizeChain;
 
-pub const BLOB_COMMITMENT_AND_PROOF_QUERY_ID: u32 =
-    zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK | 0x20;
+pub use zk_ee::oracle::query_ids::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 
 #[repr(C, align(8))]
 pub struct KZGCommitmentAndProof {

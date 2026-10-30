@@ -1997,7 +1997,11 @@ mod test {
     }
 
     impl<const R: bool> MemoryOracle for TreeOracle<R> {
-        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+        ) -> Result<(), InternalError> {
             // SAFETY: the test sends the queries from this process
             let memory = unsafe { NativeQuerierMemory::new() };
             let mut response = vec![];

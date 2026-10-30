@@ -1,6 +1,5 @@
 use super::*;
-use crate::system_functions::field_ops::ZkOsHintOracle;
-use crypto::hints::HintOracle;
+use crypto::hints::MemoryOracle;
 use crypto::precompiles::{bls12_381_g1_msm, bls12_381_g2_msm};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
@@ -75,11 +74,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 output,
                 resources,
                 allocator,
-                if USE_ADVICE {
-                    Some(ZkOsHintOracle::from_mut(oracle))
-                } else {
-                    None
-                },
+                if USE_ADVICE { Some(oracle) } else { None },
             )
         })
     }
@@ -88,7 +83,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g1_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: HintOracle,
+    O: MemoryOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],
@@ -150,11 +145,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
                 output,
                 resources,
                 allocator,
-                if USE_ADVICE {
-                    Some(ZkOsHintOracle::from_mut(oracle))
-                } else {
-                    None
-                },
+                if USE_ADVICE { Some(oracle) } else { None },
             )
         })
     }
@@ -163,7 +154,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bls12PrecompileE
 fn bls12_381_g2_msm_as_system_function_inner<
     D: zk_ee::common_traits::TryExtend<u8> + ?Sized,
     R: Resources,
-    O: HintOracle,
+    O: MemoryOracle,
     A: core::alloc::Allocator + Clone,
 >(
     input: &[u8],

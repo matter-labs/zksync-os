@@ -1,6 +1,5 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_GAS, POINT_EVALUATION_NATIVE_COST};
-use crate::system_functions::field_ops::ZkOsHintOracle;
-use crypto::hints::{HintOracle, NoHints};
+use crypto::hints::{MemoryOracle, NoHints};
 use crypto::precompiles::{
     parse_g1_compressed_with_oracle, parse_scalar, verify_kzg_proof_with_oracle,
 };
@@ -46,11 +45,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, PointEvaluationE
         _allocator: A,
     ) -> Result<(), SubsystemError<PointEvaluationErrors>> {
         cycle_marker::wrap_with_resources!("point_evaluation", resources, {
-            let oracle = if USE_ADVICE {
-                Some(ZkOsHintOracle::from_mut(oracle))
-            } else {
-                None
-            };
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
             point_evaluation_as_system_function_inner(input, output, resources, oracle)
         })
     }
@@ -88,7 +83,7 @@ pub fn verify_kzg_proof(
 fn point_evaluation_as_system_function_inner<
     D: ?Sized + TryExtend<u8>,
     R: Resources,
-    O: HintOracle,
+    O: MemoryOracle,
 >(
     input: &[u8],
     dst: &mut D,

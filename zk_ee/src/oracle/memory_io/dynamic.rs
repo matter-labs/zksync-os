@@ -1,6 +1,6 @@
 //! Destinations of dynamically sized responses.
 
-use super::MemoryOracle;
+use super::MemoryOracleExt;
 use crate::internal_error;
 use crate::system::errors::internal::InternalError;
 use alloc::boxed::Box;
@@ -20,13 +20,13 @@ pub(crate) const U32_WORDS_PER_USIZE: usize = size_of::<usize>() / size_of::<u32
 /// destination.
 pub trait DynamicDestination {
     /// Receives the response, and returns the number of `usize` words written.
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError>;
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError>;
 }
 
 /// Reads the claimed length of a dynamically sized response, and returns it in `usize` words after checking
 /// that it fits into `capacity` of them.
 #[inline(always)]
-pub(crate) fn read_claimed_len<O: MemoryOracle>(
+pub(crate) fn read_claimed_len<O: MemoryOracleExt>(
     oracle: &mut O,
     capacity: usize,
 ) -> Result<usize, InternalError> {
@@ -52,7 +52,7 @@ pub(crate) fn read_claimed_len<O: MemoryOracle>(
 ///
 /// `dst` must be aligned and valid for writes of `len` `usize`s.
 #[inline(always)]
-pub(crate) unsafe fn write_usize_words<O: MemoryOracle>(
+pub(crate) unsafe fn write_usize_words<O: MemoryOracleExt>(
     oracle: &mut O,
     dst: *mut usize,
     len: usize,
@@ -63,7 +63,7 @@ pub(crate) unsafe fn write_usize_words<O: MemoryOracle>(
 
 impl DynamicDestination for &mut [MaybeUninit<usize>] {
     #[inline(always)]
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError> {
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError> {
         let len = read_claimed_len(oracle, self.len())?;
         // SAFETY: `len` does not exceed the length of the slice
         unsafe { write_usize_words(oracle, self.as_mut_ptr().cast::<usize>(), len)? };
@@ -73,7 +73,7 @@ impl DynamicDestination for &mut [MaybeUninit<usize>] {
 
 impl DynamicDestination for &mut [usize] {
     #[inline(always)]
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError> {
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError> {
         let len = read_claimed_len(oracle, self.len())?;
         // SAFETY: `len` does not exceed the length of the slice, and the oracle writes whole words, so
         // the slice stays initialized even if the transfer fails midway
@@ -86,7 +86,7 @@ impl DynamicDestination for &mut [usize] {
 /// querier bounds the response by the capacity it reserves beforehand.
 impl<A: Allocator> DynamicDestination for &mut Vec<usize, A> {
     #[inline(always)]
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError> {
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError> {
         let len = self.spare_capacity_mut().receive(oracle)?;
         // SAFETY: the first `len` words of the spare capacity were just written
         unsafe { self.set_len(self.len() + len) };
@@ -96,14 +96,14 @@ impl<A: Allocator> DynamicDestination for &mut Vec<usize, A> {
 
 impl<A: Allocator> DynamicDestination for &mut Box<[usize], A> {
     #[inline(always)]
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError> {
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError> {
         (&mut **self).receive(oracle)
     }
 }
 
 impl<A: Allocator> DynamicDestination for &mut Box<[MaybeUninit<usize>], A> {
     #[inline(always)]
-    fn receive<O: MemoryOracle>(self, oracle: &mut O) -> Result<usize, InternalError> {
+    fn receive<O: MemoryOracleExt>(self, oracle: &mut O) -> Result<usize, InternalError> {
         (&mut **self).receive(oracle)
     }
 }

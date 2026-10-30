@@ -2,7 +2,7 @@ use crate::common_structs::da_commitment_scheme::PubdataContent;
 use crate::internal_error;
 use crate::oracle::memory_io::host::{write_padded_image, WriteQueryOutput};
 use crate::oracle::memory_io::{
-    normalize_bool, ContinuousDeserializable, MemoryOracle, OracleQuery,
+    normalize_bool, ContinuousDeserializable, MemoryOracleExt, OracleQuery,
 };
 use crate::oracle::query_ids::CHAIN_CONFIG_QUERY_ID;
 use crate::system::errors::internal::InternalError;
@@ -62,7 +62,7 @@ impl ChainConfig {
     /// Reads the run-frozen chain config from the oracle. Sourced once per run
     /// and reused by execution and public-input construction. Deserialization
     /// is a pure parse; the limitation is enforced separately via [`Self::validate`].
-    pub fn read_from_oracle(oracle: &mut impl MemoryOracle) -> Result<Self, InternalError> {
+    pub fn read_from_oracle(oracle: &mut impl MemoryOracleExt) -> Result<Self, InternalError> {
         ChainConfigQuery::get(oracle, ())
     }
 

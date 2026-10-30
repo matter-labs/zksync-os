@@ -474,7 +474,9 @@ mod tests {
 
     struct TestOracle;
 
-    impl zk_ee::oracle::memory_io::MemoryOracle for TestOracle {}
+    impl zk_ee::oracle::memory_io::MemoryOracle for TestOracle {
+        type Error = zk_ee::system::errors::internal::InternalError;
+    }
 
     impl IOOracle for TestOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;

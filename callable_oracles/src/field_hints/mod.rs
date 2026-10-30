@@ -39,9 +39,9 @@ fn process_field_hint_query(
     // this process: `oracle_provider::ZkEENonDeterminismSource` serves it with `memory` the memory
     // of this process (`NativeQuerierMemory`, created under its contract while the query is sent),
     // and the field hint queries of zksync-os are sent by the hinted operations of
-    // `airbender-crypto` through `field_ops::ZkOsHintOracle`, under the contract of
-    // `HintOracle::send_query` (a live request whose operand references live values of the
-    // operand types of its op), which is the one `answer_query` needs. In the run of the RISC-V
+    // `airbender-crypto`, under the contract of `MemoryOracle::send_query` (a live request whose
+    // operand references live values of the operand types of its op), which is the one
+    // `answer_query` needs. In the run of the RISC-V
     // guest the memory is the guest's, which is only read through `memory`.
     let answered = unsafe {
         answer_query(

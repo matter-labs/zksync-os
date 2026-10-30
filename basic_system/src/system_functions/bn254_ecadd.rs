@@ -1,6 +1,5 @@
 use super::*;
 use crate::cost_constants::{BN254_ECADD_COST_GAS, BN254_ECADD_NATIVE_COST};
-use crate::system_functions::field_ops::ZkOsHintOracle;
 use crypto::precompiles::bn254_g1_add;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
@@ -42,11 +41,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254AddErrors>
         _: A,
     ) -> Result<(), SubsystemError<Bn254AddErrors>> {
         cycle_marker::wrap_with_resources!("bn254_ecadd", resources, {
-            let oracle = if USE_ADVICE {
-                Some(ZkOsHintOracle::from_mut(oracle))
-            } else {
-                None
-            };
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
             bn254_ecadd_as_system_function_inner(src, dst, resources, oracle)
         })
     }
@@ -56,7 +51,7 @@ fn bn254_ecadd_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
     R: Resources,
-    O: crypto::hints::HintOracle,
+    O: crypto::hints::MemoryOracle,
 >(
     src: &S,
     dst: &mut D,

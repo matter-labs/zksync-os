@@ -3,7 +3,6 @@ use crate::cost_constants::{
     BN254_PAIRING_BASE_NATIVE_COST, BN254_PAIRING_COST_PER_PAIR_GAS,
     BN254_PAIRING_PER_PAIR_NATIVE_COST, BN254_PAIRING_STATIC_COST_GAS,
 };
-use crate::system_functions::field_ops::ZkOsHintOracle;
 use crypto::precompiles::bn254_pairing_check;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
@@ -41,11 +40,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254PairingChec
         allocator: A,
     ) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
         cycle_marker::wrap_with_resources!("bn254_pairing", resources, {
-            let oracle = if USE_ADVICE {
-                Some(ZkOsHintOracle::from_mut(oracle))
-            } else {
-                None
-            };
+            let oracle = if USE_ADVICE { Some(oracle) } else { None };
             let num_pairs = src.len() / 192;
             let gas_cost = BN254_PAIRING_STATIC_COST_GAS
                 + BN254_PAIRING_COST_PER_PAIR_GAS * (num_pairs as u64);
@@ -69,7 +64,7 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Bn254PairingChec
             let success = if src.is_empty() {
                 true
             } else {
-                bn254_pairing_check::<A, ZkOsHintOracle<O>>(num_pairs, src, allocator, oracle)
+                bn254_pairing_check::<A, O>(num_pairs, src, allocator, oracle)
                     .map_err(|_| interface_error!(Bn254PairingCheckInterfaceError::InvalidPoint))?
             };
 

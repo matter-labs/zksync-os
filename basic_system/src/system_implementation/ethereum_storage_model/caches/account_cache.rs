@@ -934,7 +934,11 @@ mod tests {
     }
 
     impl zk_ee::oracle::memory_io::MemoryOracle for FundedAccountsOracle {
-        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            _input_word: usize,
+        ) -> Result<(), InternalError> {
             assert_eq!(query_id, ETHEREUM_ACCOUNT_INITIAL_STATE_QUERY_ID);
             self.queries += 1;
             let account = EthereumAccountProperties {

@@ -14,7 +14,9 @@ const ECRECOVER_SRC_REQUIRED_LENGTH: usize = 128;
 
 struct DummyOracle;
 
-impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {
+    type Error = zk_ee::system::errors::internal::InternalError;
+}
 
 
 impl zk_ee::oracle::IOOracle for DummyOracle {

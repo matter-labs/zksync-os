@@ -1,7 +1,6 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_GAS, ECRECOVER_NATIVE_COST};
 use crypto::precompiles::{secp256k1_ecrecover, WordAligned};
-use field_ops::ZkOsHintOracle;
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
@@ -80,11 +79,7 @@ fn ecrecover_as_system_function_inner<
         return Ok(());
     }
 
-    let oracle = if USE_ADVICE {
-        oracle.map(ZkOsHintOracle::from_mut)
-    } else {
-        None
-    };
+    let oracle = if USE_ADVICE { oracle } else { None };
 
     let Ok(public_key) = secp256k1_ecrecover(digest, r, s, rec_id == 1, oracle) else {
         return Ok(());
@@ -108,7 +103,9 @@ mod test {
     /// The paths without advice never query the oracle.
     enum NoOracle {}
 
-    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {}
+    impl zk_ee::oracle::memory_io::MemoryOracle for NoOracle {
+        type Error = zk_ee::system::errors::internal::InternalError;
+    }
 
     impl IOOracle for NoOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;

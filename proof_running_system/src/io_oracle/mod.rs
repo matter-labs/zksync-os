@@ -75,7 +75,7 @@ impl<I: NonDeterminismCSRSourceImplementation> WordChannel for CsrWordChannel<I>
 
 impl<NDS: NonDeterminismCSRSourceImplementation> CsrBasedIOOracle<NDS> {
     #[inline(always)]
-    fn word_channel_oracle() -> WordChannelOracle<CsrWordChannel<NDS>> {
+    fn word_channel_oracle() -> WordChannelOracle<CsrWordChannel<NDS>, InternalError> {
         WordChannelOracle::new(CsrWordChannel {
             _marker: core::marker::PhantomData,
         })
@@ -83,9 +83,12 @@ impl<NDS: NonDeterminismCSRSourceImplementation> CsrBasedIOOracle<NDS> {
 }
 
 impl<NDS: NonDeterminismCSRSourceImplementation> MemoryOracle for CsrBasedIOOracle<NDS> {
+    type Error = zk_ee::system::errors::internal::InternalError;
+
     #[inline(always)]
-    fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
-        Self::word_channel_oracle().send_query(query_id, input_word)
+    unsafe fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        // SAFETY: guaranteed by the caller, with the same contract
+        unsafe { Self::word_channel_oracle().send_query(query_id, input_word) }
     }
 
     #[inline(always)]

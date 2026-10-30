@@ -730,7 +730,11 @@ mod tests {
     }
 
     impl MemoryOracle for TestOracle {
-        fn send_query(&mut self, query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            _input_word: usize,
+        ) -> Result<(), InternalError> {
             assert_eq!(query_id, FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID);
             self.queries += 1;
             let bytes: Vec<u8> = self.words.iter().flat_map(|w| w.to_ne_bytes()).collect();

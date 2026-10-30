@@ -420,7 +420,11 @@ mod tests {
     }
 
     impl MemoryOracle for OneCodeOracle {
-        fn send_query(&mut self, query_id: u32, input_word: usize) -> Result<(), InternalError> {
+        unsafe fn send_query(
+            &mut self,
+            query_id: u32,
+            input_word: usize,
+        ) -> Result<(), InternalError> {
             // SAFETY: the test sends the queries from this process
             let memory = unsafe { NativeQuerierMemory::new() };
             assert_eq!(Bytes32::read_input(&memory, input_word)?, self.hash);

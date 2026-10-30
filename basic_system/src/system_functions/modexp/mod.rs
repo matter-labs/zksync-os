@@ -1,6 +1,5 @@
 use super::*;
 
-use crate::system_functions::field_ops::ZkOsHintOracle;
 use alloc::vec::Vec;
 use crypto::modexp::strip_leading_zeroes;
 use ruint::aliases::U256;
@@ -378,7 +377,7 @@ fn modexp_as_system_function_inner<
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
-        ZkOsHintOracle::from_mut(oracle),
+        oracle,
         allocator,
     );
 
@@ -388,11 +387,7 @@ fn modexp_as_system_function_inner<
         exponent.as_slice(),
         modulus.as_slice(),
         allocator,
-        if USE_ADVICE {
-            Some(ZkOsHintOracle::from_mut(oracle))
-        } else {
-            None
-        },
+        if USE_ADVICE { Some(oracle) } else { None },
     );
 
     if output.len() >= mod_len {
@@ -543,7 +538,9 @@ mod tests {
     struct DummyOracle;
     struct AlwaysFailDst;
 
-    impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {}
+    impl zk_ee::oracle::memory_io::MemoryOracle for DummyOracle {
+        type Error = zk_ee::system::errors::internal::InternalError;
+    }
 
     impl IOOracle for DummyOracle {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;

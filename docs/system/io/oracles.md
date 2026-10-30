@@ -38,7 +38,7 @@ Query IDs are organized using bitmasks to separate different categories:
 - **Subspace masks**: Define subcategories within each major category
 - **Individual query IDs**: Assigned within each subcategory
 
-The core query ID definitions can be found in [`query_ids.rs`](../../../zk_ee/src/oracle/query_ids.rs).
+The subspaces, and the IDs of the subspaces the platform owns (system and advice), are allocated by `airbender_oracle::query_ids` in airbender-platform, so that the queries of the platform (e.g. the crypto hints of `airbender-crypto`) and of ZKsync OS never collide. ZKsync OS assigns the IDs inside its own subspaces, in [`query_ids.rs`](../../../zk_ee/src/oracle/query_ids.rs), which re-exports the platform's.
 
 ### Core Oracle Queries
 

@@ -421,7 +421,13 @@ mod tests {
     struct NoOracle;
 
     impl MemoryOracle for NoOracle {
-        fn send_query(&mut self, _query_id: u32, _input_word: usize) -> Result<(), InternalError> {
+        type Error = zk_ee::system::errors::internal::InternalError;
+
+        unsafe fn send_query(
+            &mut self,
+            _query_id: u32,
+            _input_word: usize,
+        ) -> Result<(), InternalError> {
             panic!("the path without advice must not query the oracle")
         }
     }

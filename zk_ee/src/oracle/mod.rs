@@ -23,7 +23,7 @@ pub mod usize_serialization;
 
 use crate::internal_error;
 use crate::oracle::basic_queries::NextTxSizeQuery;
-use crate::oracle::memory_io::{MemoryOracle, OracleQuery};
+use crate::oracle::memory_io::{MemoryOracleExt, OracleQuery};
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use core::num::NonZeroU32;
@@ -49,7 +49,7 @@ use core::num::NonZeroU32;
 ///
 /// Every oracle also serves the memory-based protocol of [`memory_io`] (`MemoryOracle`), where
 /// inputs are passed by address and responses are written memcpy-like.
-pub trait IOOracle: 'static + Sized + MemoryOracle {
+pub trait IOOracle: 'static + Sized + MemoryOracleExt {
     /// Iterator type that oracle returns for raw usize values
     type RawIterator<'a>: ExactSizeIterator<Item = usize>;
 

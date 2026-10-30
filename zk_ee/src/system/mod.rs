@@ -419,7 +419,7 @@ where
 
 /// Receives the words of the next transaction, `len_bytes` long, into `buffer`: a dynamically sized
 /// response that must cover the length and fit into the buffer.
-fn receive_tx_words<O: crate::oracle::memory_io::MemoryOracle, A: Allocator>(
+fn receive_tx_words<O: crate::oracle::memory_io::MemoryOracleExt, A: Allocator>(
     oracle: &mut O,
     buffer: &mut UsizeAlignedByteBox<A>,
     len_bytes: usize,
@@ -427,7 +427,8 @@ fn receive_tx_words<O: crate::oracle::memory_io::MemoryOracle, A: Allocator>(
     use crate::oracle::memory_io::{write_usize_words, U32_WORDS_PER_USIZE};
     use crate::utils::USIZE_SIZE;
 
-    oracle.send_query(TX_DATA_WORDS_QUERY_ID, 0)?;
+    // SAFETY: a query without input: the input word is 0
+    unsafe { oracle.send_query(TX_DATA_WORDS_QUERY_ID, 0) }?;
     let received = buffer.init_words(|words| {
         let claimed_u32_words = oracle.read_word()? as usize;
         // always a whole number of words on the proving target, where a `usize` is one `u32` word
