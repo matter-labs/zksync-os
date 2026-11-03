@@ -31,7 +31,7 @@ const MAX_BLOBS_PER_BLOCK: usize = 9;
 const TARGET_BLOBS_PER_BLOCK: u64 = 6;
 const TARGET_BLOB_GAS_PER_BLOCK: u64 = GAS_PER_BLOB * TARGET_BLOBS_PER_BLOCK;
 
-const PECTRA_EL_FORK_BLOCK_NUMBER: u64 = 22431084;
+use super::chain_config::{CHAIN_ID, MAX_EXTRA_DATA_LEN, PECTRA_EL_FORK_BLOCK_NUMBER};
 
 const EIP_1559_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 8;
 const EIP_1559_ELASTICITY_MULTIPLIER: u64 = 2;
@@ -52,8 +52,6 @@ pub struct PectraForkHeader {
     pub gas_limit: u64,
     pub gas_used: u64,
     pub timestamp: u64,
-    // 32 bytes or less, but variable length
-    pub extra_data: (Bytes32, usize),
     pub mix_hash: Bytes32,
     // fixed length
     pub nonce: [u8; 8],
@@ -86,7 +84,7 @@ impl PectraForkHeader {
             gas_limit,
             gas_used,
             timestamp,
-            extra_data,
+            extra_data: _,
             mix_hash,
             nonce,
             base_fee_per_gas,
@@ -96,13 +94,6 @@ impl PectraForkHeader {
             parent_beacon_block_root,
             requests_hash,
         } = header;
-        let extra_data_len = header.extra_data.len();
-        let extra_data = {
-            let mut buffer = Bytes32::zero();
-            buffer.as_u8_array_mut()[..extra_data_len].copy_from_slice(extra_data);
-
-            buffer
-        };
 
         Self {
             parent_hash: Bytes32::from_array(*parent_hash),
@@ -117,7 +108,6 @@ impl PectraForkHeader {
             gas_limit,
             gas_used,
             timestamp,
-            extra_data: (extra_data, extra_data_len),
             mix_hash: Bytes32::from_array(*mix_hash),
             nonce: *nonce,
             base_fee_per_gas,
@@ -195,7 +185,7 @@ impl HeaderAndHistory {
         oracle: &mut impl IOOracle,
         allocator: impl core::alloc::Allocator,
     ) -> Result<Self, InternalError> {
-        let chain_id = 1u64;
+        let chain_id = CHAIN_ID;
         // get buffer
         let target_header_buffer = oracle.get_bytes_from_query(
             ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID,
@@ -245,7 +235,7 @@ pub struct PectraForkHeaderReflection<'a> {
     pub gas_limit: u64,
     pub gas_used: u64,
     pub timestamp: u64,
-    // 32 bytes or less, but variable length
+    // variable length, bounded by the chain's limit
     pub extra_data: &'a [u8],
     pub mix_hash: &'a [u8; 32],
     // fixed length
@@ -282,9 +272,9 @@ impl<'a> RlpListDecode<'a> for PectraForkHeaderReflection<'a> {
         let gas_limit = r.u64()?;
         let gas_used = r.u64()?;
         let timestamp = r.u64()?;
-        // 32 bytes or less, but variable length
+        // variable length, bounded by the chain's limit
         let extra_data: &'a [u8] = r.bytes()?;
-        if extra_data.len() > 32 {
+        if extra_data.len() > MAX_EXTRA_DATA_LEN {
             return Err(crate::bootloader::errors::InvalidTransaction::InvalidStructure);
         }
         let mix_hash = r.bytes_exact()?;

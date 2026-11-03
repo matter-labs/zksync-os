@@ -29,6 +29,7 @@ pub struct EthereumLoopOp;
 mod block_data;
 mod block_hashes_cache;
 mod block_header;
+mod chain_config;
 pub mod eip_2935_historical_block_hash;
 pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;

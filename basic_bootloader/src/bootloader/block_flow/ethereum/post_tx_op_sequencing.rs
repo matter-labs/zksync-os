@@ -1,5 +1,6 @@
 use super::*;
 use crate::bootloader::block_flow::ethereum::block_header::PectraForkHeader;
+use crate::bootloader::block_flow::ethereum::chain_config::SYSTEM_CALLS_ENABLED;
 use crate::bootloader::block_flow::ethereum::eip_6110_deposit_events_parser::eip6110_events_parser;
 use crate::bootloader::block_flow::ethereum::eip_7002_withdrawal_contract::eip7002_system_part;
 use crate::bootloader::block_flow::ethereum::eip_7251_consolidation_contract::eip7251_system_part;
@@ -88,8 +89,10 @@ where
 
         // Environment may have no such contracts predeployed for tests or sequencing purposes
         let _ = eip6110_events_parser(&system, &mut requests_hasher);
-        let _ = eip7002_system_part(&mut system, &mut requests_hasher);
-        let _ = eip7251_system_part(&mut system, &mut requests_hasher);
+        if SYSTEM_CALLS_ENABLED {
+            let _ = eip7002_system_part(&mut system, &mut requests_hasher);
+            let _ = eip7251_system_part(&mut system, &mut requests_hasher);
+        }
 
         let requests_hash = Bytes32::from_array(requests_hasher.finalize().into());
         system_log!(system, "Requests hash = {:?}\n", &requests_hash);

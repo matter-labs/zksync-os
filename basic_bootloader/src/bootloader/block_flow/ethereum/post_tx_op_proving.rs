@@ -1,5 +1,6 @@
 use super::*;
 use crate::bootloader::block_flow::ethereum::block_header::PectraForkHeader;
+use crate::bootloader::block_flow::ethereum::chain_config::SYSTEM_CALLS_ENABLED;
 use crate::bootloader::block_flow::ethereum::eip_6110_deposit_events_parser::eip6110_events_parser;
 use crate::bootloader::block_flow::ethereum::eip_7002_withdrawal_contract::eip7002_system_part;
 use crate::bootloader::block_flow::ethereum::eip_7251_consolidation_contract::eip7251_system_part;
@@ -215,8 +216,9 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
             );
             requests_hasher.update(requests_hash);
         }
-        if eip7002_system_part(system, &mut intermediate_hasher)
-            .expect("withdrawal requests must be processed")
+        if SYSTEM_CALLS_ENABLED
+            && eip7002_system_part(system, &mut intermediate_hasher)
+                .expect("withdrawal requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
             system_log!(
@@ -226,8 +228,9 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
             );
             requests_hasher.update(requests_hash);
         }
-        if eip7251_system_part(system, &mut intermediate_hasher)
-            .expect("consolidation requests must be processed")
+        if SYSTEM_CALLS_ENABLED
+            && eip7251_system_part(system, &mut intermediate_hasher)
+                .expect("consolidation requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
             system_log!(
