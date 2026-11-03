@@ -91,6 +91,12 @@ enum Command {
         /// Path to the block directory
         #[arg(long)]
         block_dir: String,
+        /// Skip the RISC-V run
+        #[arg(long, default_value_t = false)]
+        only_forward: bool,
+        /// Write the prover input (hex of big-endian u32 words) to this file
+        #[arg(long, conflicts_with = "only_forward")]
+        witness_output_file: Option<String>,
     },
 }
 
@@ -142,6 +148,10 @@ fn main() -> anyhow::Result<()> {
         ),
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
-        Command::EthRun { block_dir } => crate::single_run::eth_run(block_dir),
+        Command::EthRun {
+            block_dir,
+            only_forward,
+            witness_output_file,
+        } => crate::single_run::eth_run(block_dir, only_forward, witness_output_file),
     }
 }

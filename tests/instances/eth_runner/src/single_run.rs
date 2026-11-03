@@ -186,7 +186,11 @@ pub fn single_run(
     }
 }
 
-pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
+pub fn eth_run(
+    block_dir: String,
+    only_forward: bool,
+    witness_output_file: Option<String>,
+) -> anyhow::Result<()> {
     use rig::alloy_rlp::Encodable;
     use rig::zksync_os_tests_common::zksync_tx::encoding::encode_alloy_rpc_tx;
     use std::path::Path;
@@ -228,6 +232,18 @@ pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
         Vec::new()
     };
 
-    let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
+    let (_, proof_input) = chain.run_eth_block_with_options(
+        transactions,
+        witness,
+        header,
+        withdrawals_encoding,
+        Some("eth_stf".to_string()),
+        only_forward,
+    );
+    if let (Some(path), Some(proof_input)) = (witness_output_file, proof_input) {
+        let encoded: String = proof_input.iter().map(|x| format!("{x:08x}")).collect();
+        fs::write(&path, encoded)?;
+        info!("Wrote prover input ({} words) to {path}", proof_input.len());
+    }
     Ok(())
 }

@@ -1046,6 +1046,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     copy_source,
                 )
             };
+            info!("RISC-V run output: {proof_output:?}, effective cycles: {block_effective:?}");
             Some(items.borrow().iter().copied().collect::<Vec<u32>>())
         };
         (Some(result_keeper), proof_input)
