@@ -1,0 +1,11 @@
+# generated network (includes the validator private key) and node database
+networkFiles/
+data/
+# build output and generated inputs
+contracts/out/
+contracts/cache/
+prover_inputs/
+tampered/
+workload_blocks.txt
+blocks/*
+!blocks/107/
