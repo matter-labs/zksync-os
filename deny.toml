@@ -13,6 +13,34 @@ ignore = [
     # `ruzstd` 0.9 only from 0.40, which that `addr2line` cannot use. It reads the ELF files this
     # repository builds, not untrusted input, and is not part of the proving runtime.
     "RUSTSEC-2026-0344",
+    # crypto-bigint 0.5 comes from elliptic-curve 0.13 (k256/p256 and Alloy).
+    # The OS verifies public transaction signatures, so it does not process
+    # secret scalars. The fixed 0.7 series requires upstream major upgrades.
+    "RUSTSEC-2026-0387",
+    # zstd 0.13 is used by host-side Reth/eth_runner tooling, not the proving
+    # binary. eth_runner uses a fresh stream read decoder; Reth uses the bulk
+    # API. Neither uses the affected reused-context, seekable, or stream write
+    # decoder APIs. The zstd-sys issue is limited to wasm32, while these tools
+    # run natively. Upgrade once the Reth dependency supports zstd 0.14.
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0403",
+    "RUSTSEC-2026-0410",
+    # The same zstd-safe 7.2 series also has unsound low-level APIs involving
+    # experimental buffers, seekable streams, dictionaries, and context cloning.
+    # Reth's dependency uses only zstd's bulk compressor/decompressor, and
+    # eth_runner uses a fresh stream read decoder. Neither calls these APIs.
+    # zstd-safe 8.2 requires zstd 0.14, while Reth currently pins zstd 0.13.
+    "RUSTSEC-2026-0395",
+    "RUSTSEC-2026-0396",
+    "RUSTSEC-2026-0397",
+    "RUSTSEC-2026-0399",
+    "RUSTSEC-2026-0400",
+    "RUSTSEC-2026-0401",
+    "RUSTSEC-2026-0402",
+    "RUSTSEC-2026-0404",
+    "RUSTSEC-2026-0405",
+    "RUSTSEC-2026-0406",
 ]
 
 [bans]
