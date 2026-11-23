@@ -24,7 +24,7 @@
 )]
 
 extern crate alloc;
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 extern crate std;
 
 pub mod bootloader;

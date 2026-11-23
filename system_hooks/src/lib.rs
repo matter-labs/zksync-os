@@ -1,4 +1,4 @@
-#![cfg_attr(target_arch = "riscv32", no_std)]
+#![cfg_attr(any(target_arch = "riscv32", target_arch = "riscv64"), no_std)]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
 #![allow(clippy::needless_borrow)]

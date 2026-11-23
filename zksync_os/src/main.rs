@@ -5,8 +5,15 @@
 
 use proof_running_system::system::bootloader::{init_allocator, run_proving};
 
+#[cfg(all(feature = "external-rv64-runtime", target_arch = "riscv64"))]
+#[path = "../../../rv64-port/runtime.rs"]
+mod runtime;
+
 /// Uses CSR (control & status register) to communicate with outside oracle.
 mod csr {
+    #[cfg(all(feature = "external-rv64-runtime", target_arch = "riscv64"))]
+    use crate::runtime::{read_word, write_word};
+    #[cfg(not(all(feature = "external-rv64-runtime", target_arch = "riscv64")))]
     use airbender::rt::sys::{read_word, write_word};
 
     #[derive(Clone, Copy, Debug)]
@@ -17,6 +24,7 @@ mod csr {
     {
         #[inline(always)]
         fn csr_read_impl() -> usize {
+            #[cfg(not(all(feature = "external-rv64-runtime", target_arch = "riscv64")))]
             const {
                 assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
             }
@@ -45,7 +53,10 @@ use proof_running_system::system::bootloader::OptionalGlobalAllocator;
 #[global_allocator]
 static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 
-#[airbender::main(allocator_init = init_allocator)]
+#[cfg_attr(
+    not(all(feature = "external-rv64-runtime", target_arch = "riscv64")),
+    airbender::main(allocator_init = init_allocator)
+)]
 fn main() -> [u32; 8] {
     run_proving::<CSRBasedNonDeterminismSource, LoggerTy>()
 }

@@ -163,7 +163,7 @@ pub mod guest_layout {
     pub const BN254_PAIR_SIZE: usize = 256;
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 const _: () = {
     use core::mem::{offset_of, size_of};
     use crypto::{bls12_381, bn254};

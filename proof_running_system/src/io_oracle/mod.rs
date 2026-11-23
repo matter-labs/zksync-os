@@ -27,7 +27,15 @@ impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIter
             None
         } else {
             self.remaining -= 1;
-            Some(I::csr_read_impl())
+            let low = I::csr_read_impl();
+            #[cfg(target_arch = "riscv64")]
+            let low = {
+                assert!(low <= u32::MAX as usize);
+                let high = I::csr_read_impl();
+                assert!(high <= u32::MAX as usize);
+                low | (high << 32)
+            };
+            Some(low)
         }
     }
 }
@@ -108,6 +116,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         query_type: u32,
         input: &I,
     ) -> Result<Self::RawIterator<'a>, InternalError> {
+        #[cfg(not(target_arch = "riscv64"))]
         const {
             assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
         }
@@ -116,17 +125,22 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         // write length
         let iterator_len = iter_to_write.len();
         assert!(iterator_len == <I as UsizeSerializable>::USIZE_LEN);
-        NDS::csr_write_impl(iterator_len);
+        const WORDS_PER_USIZE: usize = core::mem::size_of::<usize>() / 4;
+        NDS::csr_write_impl(iterator_len * WORDS_PER_USIZE);
         // write content
         let mut remaining_len = iterator_len;
         for value in iter_to_write {
             assert!(remaining_len != 0);
-            NDS::csr_write_impl(value);
+            NDS::csr_write_impl(value & u32::MAX as usize);
+            #[cfg(target_arch = "riscv64")]
+            NDS::csr_write_impl(value >> 32);
             remaining_len -= 1;
         }
         assert!(remaining_len == 0);
         // We can expect that length of the result is returned via read.
-        let remaining_len = NDS::csr_read_impl();
+        let wire_len = NDS::csr_read_impl();
+        assert!(wire_len.is_multiple_of(WORDS_PER_USIZE));
+        let remaining_len = wire_len / WORDS_PER_USIZE;
         let it = CsrBasedIOOracleIterator::<NDS> {
             remaining: remaining_len,
             _marker: core::marker::PhantomData,

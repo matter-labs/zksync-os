@@ -568,7 +568,7 @@ fn read_secp256k1_element<'a, T: Secp256k1Element, O: MemoryOracle>(
     oracle: &mut O,
     dst: &'a mut MaybeUninit<T>,
 ) -> Result<&'a mut T, InternalError> {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
         // a change of the representation in `airbender-crypto` must be noticed here: the element is
         // its Montgomery words, 32-byte aligned as the delegated representation, which `validate`
@@ -582,7 +582,7 @@ fn read_secp256k1_element<'a, T: Secp256k1Element, O: MemoryOracle>(
             Ok(dst.assume_init_mut())
         }
     }
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     {
         let mut words = [0u32; 8];
         // SAFETY: the buffer holds 8 words
@@ -603,7 +603,7 @@ fn read_secp256k1_quotient<'a, O: MemoryOracle>(
     oracle: &mut O,
     dst: &'a mut MaybeUninit<FieldElement>,
 ) -> Result<&'a mut FieldElement, InternalError> {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
         const {
             assert!(
@@ -618,7 +618,7 @@ fn read_secp256k1_quotient<'a, O: MemoryOracle>(
             Ok(dst.assume_init_mut())
         }
     }
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     {
         read_secp256k1_element(oracle, dst)
     }

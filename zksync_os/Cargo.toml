@@ -45,6 +45,7 @@ panic = "abort"
 debug = false
 
 [features]
+external-rv64-runtime = []
 scalloc = ["proof_running_system/scalloc"]
 bytereverse_delegation = ["proof_running_system/bytereverse_delegation"]
 le_storage_slots = ["proof_running_system/le_storage_slots"]

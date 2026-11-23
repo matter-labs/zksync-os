@@ -1,4 +1,4 @@
-#![cfg_attr(target_arch = "riscv32", no_std)]
+#![cfg_attr(any(target_arch = "riscv32", target_arch = "riscv64"), no_std)]
 
 //! Markers to capture basic RISC-V transpiler measurements for
 //! a block of rust code.
@@ -40,7 +40,7 @@ enum Label {
     OpcodeEnd(&'static str),
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 thread_local! {
   /// Forward run collects the labels, so that we don't incur in more RISC-V cycles
   static LABELS: std::cell::RefCell<Vec<Label>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -50,17 +50,23 @@ thread_local! {
 }
 
 #[allow(dead_code)]
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 fn init_marker_file() -> std::fs::File {
     let path = std::env::var("MARKER_PATH").unwrap_or("markers.bench".to_string());
     std::fs::File::create(path).expect("Failed to create marker file")
 }
 
 #[allow(dead_code)]
-#[cfg(all(not(feature = "log_to_file"), not(target_arch = "riscv32")))]
+#[cfg(all(
+    not(feature = "log_to_file"),
+    not(any(target_arch = "riscv32", target_arch = "riscv64"))
+))]
 pub fn log_marker(_msg: &str) {}
 
-#[cfg(all(feature = "log_to_file", not(target_arch = "riscv32")))]
+#[cfg(all(
+    feature = "log_to_file",
+    not(any(target_arch = "riscv32", target_arch = "riscv64"))
+))]
 pub fn log_marker(msg: &str) {
     use std::io::Write;
     MARKER_FILE.with(|f| {
@@ -72,8 +78,9 @@ pub fn log_marker(msg: &str) {
 /// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn start(_label: &'static str) {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
+        #[cfg(target_arch = "riscv32")]
         unsafe {
             core::arch::asm!(
                 "csrrw x0, 0x7ff, x0",
@@ -82,7 +89,7 @@ pub fn start(_label: &'static str) {
         }
     }
 
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     LABELS.with_borrow_mut(|v| v.push(Label::Start(_label)))
 }
 
@@ -90,8 +97,9 @@ pub fn start(_label: &'static str) {
 /// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn end(_label: &'static str) {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
+        #[cfg(target_arch = "riscv32")]
         unsafe {
             core::arch::asm!(
                 "csrrw x0, 0x7ff, x0",
@@ -100,17 +108,18 @@ pub fn end(_label: &'static str) {
         }
     }
 
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     LABELS.with_borrow_mut(|v| v.push(Label::End(_label)))
 }
 
 /// Start an opcode-level cycle marker. Uses the same CSR mechanism as `start()`
 /// on RISC-V. On the host side, recorded as `OpcodeStart` for aggregation.
 pub fn start_opcode() {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
+        #[cfg(target_arch = "riscv32")]
         unsafe {
             core::arch::asm!(
                 "csrrw x0, 0x7ff, x0",
@@ -119,17 +128,18 @@ pub fn start_opcode() {
         }
     }
 
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     LABELS.with_borrow_mut(|v| v.push(Label::OpcodeStart))
 }
 
 /// End an opcode-level cycle marker. Uses the same CSR mechanism as `end()`
 /// on RISC-V. On the host side, recorded as `OpcodeEnd` with label for aggregation.
 pub fn end_opcode(_label: &'static str) {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
+        #[cfg(target_arch = "riscv32")]
         unsafe {
             core::arch::asm!(
                 "csrrw x0, 0x7ff, x0",
@@ -138,7 +148,7 @@ pub fn end_opcode(_label: &'static str) {
         }
     }
 
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     LABELS.with_borrow_mut(|v| v.push(Label::OpcodeEnd(_label)))
 }
 
@@ -195,7 +205,7 @@ macro_rules! wrap {
 #[macro_export]
 macro_rules! wrap_with_resources {
     ($label:expr, $resources:expr, $code:block) => {{
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
         {
             use alloc::format;
             let resources_before = $resources.clone();
@@ -218,7 +228,7 @@ macro_rules! wrap_with_resources {
             ));
             __result
         }
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
         {
             $crate::start!($label);
             let __result = (|| $code)();
@@ -231,17 +241,17 @@ macro_rules! wrap_with_resources {
 // Snapshotting mechanism, used for tests
 // We run multiple native runs of the program, so labels can be duplicated.
 // This is a way to ignore some of those side effects.
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 pub struct Snapshot {
     labels_len: usize,
     #[cfg(feature = "log_to_file")]
     file_len: u64,
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 pub struct Snapshot;
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 pub fn snapshot() -> Snapshot {
     let labels_len = LABELS.with(|l| l.borrow().len());
 
@@ -263,12 +273,12 @@ pub fn snapshot() -> Snapshot {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 pub fn snapshot() -> Snapshot {
     Snapshot
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
 pub fn revert(snap: Snapshot) {
     // Restore LABELS length
     LABELS.with(|l| {
@@ -293,7 +303,7 @@ pub fn revert(snap: Snapshot) {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 pub fn revert(_: Snapshot) {}
 
 /// Re-export host-side cycle marker snapshots from `airbender-host`.
@@ -301,7 +311,10 @@ pub fn revert(_: Snapshot) {}
 pub use airbender_host::{CycleMarker, Mark};
 
 /// Per-opcode aggregated cycle statistics.
-#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
+#[cfg(all(
+    feature = "use_airbender_host",
+    not(any(target_arch = "riscv32", target_arch = "riscv64"))
+))]
 #[derive(Debug, Clone)]
 pub struct OpcodeCycleStats {
     pub name: &'static str,
@@ -313,7 +326,10 @@ pub struct OpcodeCycleStats {
 }
 
 /// Results from processing cycle markers.
-#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
+#[cfg(all(
+    feature = "use_airbender_host",
+    not(any(target_arch = "riscv32", target_arch = "riscv64"))
+))]
 pub struct CycleMarkerResults {
     pub block_effective: Option<u64>,
     pub opcode_cycle_stats: Vec<OpcodeCycleStats>,
@@ -324,7 +340,10 @@ pub struct CycleMarkerResults {
 ///
 /// Returns a `CycleMarkerResults` with the effective cycles for the block-wide
 /// label and per-opcode aggregated stats.
-#[cfg(all(feature = "use_airbender_host", not(target_arch = "riscv32")))]
+#[cfg(all(
+    feature = "use_airbender_host",
+    not(any(target_arch = "riscv32", target_arch = "riscv64"))
+))]
 pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;
