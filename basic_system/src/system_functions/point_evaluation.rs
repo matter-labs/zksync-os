@@ -108,7 +108,7 @@ fn parse_g1_compressed_with_oracle<O: IOOracle>(
                     )
                 },
             )
-            .map_err(|_| ())
+            .ok_or(())
         }
         None => parse_g1_compressed(input),
     }
@@ -193,7 +193,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
     };
     // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
     // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
-    // `crypto::residue_witness`): the Miller loop started at `d` gives `d^|u| f`, the rest is
+    // `crypto::oracle_common::residue_witness`): the Miller loop started at `d` gives `d^|u| f`, the rest is
     // one Frobenius map. The prover claims the outcome; it cannot choose it: a claimed
     // identity must come with a witness that passes the check (a failed check is a broken
     // prover and panics), and a claimed non-identity is settled by the exact final
@@ -202,7 +202,7 @@ pub fn verify_kzg_proof_with_oracle<O: IOOracle>(
         curve_hints::PairingClaim::Identity { c: _, d, s } => {
             let l = Bls12_381::multi_miller_loop_shared(Some(&d), pairs());
             assert!(
-                crypto::residue_witness::bls12_381::check(&l, &d, &s),
+                crypto::oracle_common::residue_witness::bls12_381::check(&l, &d, &s),
                 "the residue witness of the KZG proof claimed to be valid is wrong"
             );
             true

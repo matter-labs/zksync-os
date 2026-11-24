@@ -1,11 +1,6 @@
 use super::*;
+use crate::cost_constants::BN254_ECMUL_COST_GAS;
 use crate::cost_constants::BN254_ECMUL_NATIVE_COST;
-use crate::{
-    cost_constants::BN254_ECMUL_COST_GAS,
-    system_functions::bn254_ecadd::{
-        bigint_from_be, parse_affine, serialize_affine, serialize_projective,
-    },
-};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::base_system_functions::{
@@ -85,35 +80,16 @@ fn bn254_ecmul_as_system_function_inner<
     Ok(())
 }
 
-/// With an oracle, the multiplication works in affine coordinates, with its field divisions
-/// from checked hints.
+/// `scalar` (big-endian, any 256-bit integer) times the point `(x, y)`, in the EVM encoding: the
+/// multiplication of `crypto`. With an oracle it checks hints of the oracle instead of computing.
 pub fn bn254_ecmul_inner<O: IOOracle>(
     x: &[u8; 32],
     y: &[u8; 32],
     scalar: &[u8; 32],
     oracle: Option<&mut O>,
 ) -> Result<[u8; 64], ()> {
-    use crypto::ark_ec::AffineRepr;
-
-    let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
-    if is_zero {
-        return Ok([0u8; 64]);
-    }
-    let affine_point = parse_affine(x, y)?;
-    // the scalar is not reduced: any 256-bit integer is a valid multiplier
-    let scalar = bigint_from_be(scalar);
-
-    let result = match oracle {
-        // affine coordinates, with every division a checked hint
-        Some(oracle) => serialize_affine(&crypto::bn254::g1::mul_affine_with_divider(
-            &affine_point,
-            &scalar.0,
-            &mut curve_hints::Bn254FqDivider::new(oracle),
-        )),
-        None => serialize_projective::<O>(affine_point.mul_bigint(&scalar), None),
-    };
-
-    Ok(result)
+    let mut oracle = oracle.map(field_ops::CryptoHintsOracle);
+    crypto::precompiles::bn254_g1_mul(x, y, scalar, oracle.as_mut())
 }
 
 #[cfg(test)]

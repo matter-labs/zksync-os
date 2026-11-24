@@ -1,7 +1,7 @@
 //! Field inversions and square roots of the bn254 and bls12-381 base fields, and inversions of
 //! their degree-12 extensions, taken from oracle hints and checked: an inverse with one
 //! multiplication, a square root with one squaring. Also the residue witnesses of the pairing
-//! checks (`crypto::residue_witness`, after Novakovic and Eagen, "On Proving Pairings",
+//! checks (`crypto::oracle_common::residue_witness`, after Novakovic and Eagen, "On Proving Pairings",
 //! <https://eprint.iacr.org/2024/640>), which replace the final exponentiations; those hints
 //! are not checked on their own: the pairing check itself fails for any witness of a
 //! non-identity product (see the soundness argument in that module). The exponentiation-based versions cost
@@ -163,7 +163,9 @@ pub mod guest_layout {
     pub const BN254_PAIR_SIZE: usize = 256;
 }
 
-#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+// The layout of the RV32 guest with the bigint delegation, whose memory the oracle reads. An
+// RV64 guest has the fields of a native build: its answers are the ones of a native run.
+#[cfg(target_arch = "riscv32")]
 const _: () = {
     use core::mem::{offset_of, size_of};
     use crypto::{bls12_381, bn254};
@@ -540,7 +542,7 @@ pub enum PairingClaim<F12, F6> {
 }
 
 /// The claim and witness of the bn254 pairing product over `pairs` (all non-degenerate,
-/// validated) from the oracle, for `crypto::residue_witness::bn254::check` on the Miller loop
+/// validated) from the oracle, for `crypto::oracle_common::residue_witness::bn254::check` on the Miller loop
 /// started at `d`. `c d = 1` is checked here: the loop multiplies by `c` at the negative digits
 /// of its count, and the check is only sound for `c = d^-1` (otherwise `f s` would be
 /// `d^a c^b` with exponents not divisible by `r`).
@@ -690,7 +692,7 @@ impl<O: MemoryOracle> Drop for HintedChain<'_, '_, O> {
 }
 
 /// The claim and witness of `e(p1, G2) e(p2, tau G2)` (the KZG proof check, `points` are
-/// `[p1, p2]`) from the oracle, for `crypto::residue_witness::bls12_381::check` on the Miller loop
+/// `[p1, p2]`) from the oracle, for `crypto::oracle_common::residue_witness::bls12_381::check` on the Miller loop
 /// started at `d` (`c` is not needed by that loop and is left zero)
 pub fn bls12_381_kzg_residue_witness<O: IOOracle>(
     oracle: &mut O,
@@ -783,17 +785,25 @@ pub(crate) mod tests {
             assert_eq!(answer_words(&a, HintTarget::Guest), expected);
         }
         for a in elements::<crypto::bls12_381::Fq>(5) {
-            // `R = 2^384` in this build, `2^512` on the RISC-V guest; 6 limbs on both
+            // `R = 2^384` in a build with the software fields, `2^512` on the RISC-V guest and
+            // in a build that emulates its delegation; the answer is 6 limbs on both
+            let limbs = (a.into_bigint().as_ref() as &[u64]).len() as u64;
             let r = |bits: u64| crypto::bls12_381::Fq::from(2u64).pow([bits]);
-            let native = limb_words((a * r(384)).into_bigint().as_ref());
-            let guest = limb_words((a * r(512)).into_bigint().as_ref());
+            let low_words = |x: crypto::bls12_381::Fq| {
+                let integer = x.into_bigint();
+                let integer: &[u64] = integer.as_ref();
+                assert!(integer[6..].iter().all(|limb| *limb == 0));
+                limb_words(&integer[..6])
+            };
+            let native = low_words(a * r(64 * limbs));
+            let guest = low_words(a * r(512));
             assert_eq!(answer_words(&a, HintTarget::Native), native);
             assert_eq!(answer_words(&a, HintTarget::Guest), guest);
             assert_eq!(guest.len(), 12);
             let f = crypto::bls12_381::Fq2::new(a, -a);
             assert_eq!(
                 answer_words(&f, HintTarget::Guest),
-                [guest, limb_words(((-a) * r(512)).into_bigint().as_ref())].concat()
+                [guest, low_words((-a) * r(512))].concat()
             );
         }
     }

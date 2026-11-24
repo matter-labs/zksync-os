@@ -8,6 +8,9 @@
 //! native builds. The run mode tells which the querier is, and whether the guest is answered too,
 //! when a native run records the prover input (see `oracle_provider::RunMode`): [`FieldOpsQuery`]
 //! and [`NativeFieldOpsQuery`] are the same processor under the names of the two setups.
+//!
+//! The secp256k1 hints are those of `crypto`, whose recovery the system runs: its oracle side
+//! (`crypto::hints::answer_query`) answers them.
 
 use basic_system::system_functions::field_ops::{
     read_field_hint_request, FieldHintOp, HintAnswer, HintTarget, FIELD_OPS_ADVISE_QUERY_ID,
@@ -53,18 +56,6 @@ impl Responses<'_> {
 /// The answer to the hint `op` on `operand`
 fn answer(op: FieldHintOp, operand: &Operand, responses: &mut Responses) {
     match op {
-        FieldHintOp::Secp256k1BaseFieldSqrt => {
-            responses.write(&impls::secp256k1_base_field_sqrt(operand))
-        }
-        FieldHintOp::Secp256k1BaseFieldInverse => {
-            responses.write(&impls::secp256k1_base_field_inverse(operand))
-        }
-        FieldHintOp::Secp256k1ScalarFieldInverse => {
-            responses.write(&impls::secp256k1_scalar_field_inverse(operand))
-        }
-        FieldHintOp::Secp256k1BaseFieldDivision => {
-            responses.write(&impls::secp256k1_base_field_division(operand))
-        }
         FieldHintOp::Bn254BaseFieldInverse => {
             responses.write(&impls::inverse::<crypto::bn254::Fq>(operand))
         }
@@ -120,6 +111,38 @@ pub fn not_identity_claim(memory: &dyn QuerierMemory, input_word: usize) -> Vec<
     response
 }
 
+/// The memory of the querier as the oracle side of `crypto` reads it
+pub(crate) struct CryptoQuerierMemory<'a>(pub(crate) &'a dyn QuerierMemory);
+
+impl crypto::hints::QuerierMemory for CryptoQuerierMemory<'_> {
+    fn word_size(&self) -> usize {
+        self.0.word_size()
+    }
+
+    fn read_u32(&self, address: usize) -> Result<u32, crypto::hints::QuerierMemoryError> {
+        self.0
+            .read_u32(address)
+            .map_err(|_| crypto::hints::QuerierMemoryError("failed to read the querier's memory"))
+    }
+}
+
+/// Whether the oracle side of `crypto` answers the hint `op`: the hints of its secp256k1
+/// recovery, and every op this crate does not know (the hints of the other endpoints of `crypto`
+/// that the system calls, such as the witnesses of its scalar multiplications)
+fn is_answered_by_crypto(op: u32) -> bool {
+    use crypto::hints::FieldHintOp as Op;
+    [
+        Op::Secp256k1BaseFieldSqrt,
+        Op::Secp256k1BaseFieldInverse,
+        Op::Secp256k1ScalarFieldInverse,
+        Op::Secp256k1BaseFieldDivision,
+        Op::Secp256k1RecoveryWitness,
+    ]
+    .iter()
+    .any(|secp256k1_op| *secp256k1_op as u32 == op)
+        || FieldHintOp::parse_u32(op).is_none()
+}
+
 /// Serves a hint query for the runs of `mode`
 fn process_field_hint_query(
     query_id: u32,
@@ -142,16 +165,38 @@ fn process_field_hint_query(
         word_size,
         "not the querier of the run mode {mode:?}"
     );
+    let native_run = mode
+        .produces_native_run_responses()
+        .then_some(native_run_responses);
+    let guest_run = mode
+        .produces_guest_run_responses()
+        .then_some(guest_run_responses);
+    let (raw_op, _, _) =
+        read_field_hint_request(memory, input_word).expect("must read the field hint request");
+    let started = oracle_provider::query_timing::start();
+    if is_answered_by_crypto(raw_op) {
+        // SAFETY: a querier in this process keeps its request and operand alive while it sends
+        // the query (the contract of the memory-based protocol); the guest is read through
+        // `memory` only
+        let answered = unsafe {
+            crypto::hints::answer_query(
+                query_id,
+                input_word,
+                &CryptoQuerierMemory(memory),
+                native_run,
+                guest_run,
+            )
+        }
+        .expect("`crypto` must answer its hint");
+        assert!(answered, "`crypto` serves the field hints");
+        oracle_provider::query_timing::record(query_id, Some(raw_op), started);
+        return;
+    }
     let mut responses = Responses {
-        native_run: mode
-            .produces_native_run_responses()
-            .then_some(native_run_responses),
-        guest_run: mode
-            .produces_guest_run_responses()
-            .then_some(guest_run_responses),
+        native_run,
+        guest_run,
     };
     let (op, operand) = read_request(memory, input_word, querier);
-    let started = oracle_provider::query_timing::start();
     answer(op, &operand, &mut responses);
     oracle_provider::query_timing::record(query_id, Some(op as u32), started);
 }
@@ -219,9 +264,10 @@ mod native_query_tests {
     use super::*;
     use crate::test_utils::TestMemorySource;
     use basic_system::system_functions::curve_hints::guest_layout;
-    use basic_system::system_functions::field_ops::{FieldOpsHint64, Secp256k1Element};
+    use basic_system::system_functions::field_ops::FieldOpsHint64;
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::{AdditiveGroup, BigInteger, Field, PrimeField};
+    use crypto::hints::Secp256k1Element;
     use crypto::secp256k1::field::FieldElement;
     use oracle_provider::GuestMemory;
     use zk_ee::oracle::memory_io::host::NativeQuerierMemory;

@@ -1,5 +1,9 @@
+#[cfg(target_arch = "riscv64")]
+use zk_ee::oracle::memory_io::PackedWordChannelOracle;
+#[cfg(not(target_arch = "riscv64"))]
+use zk_ee::oracle::memory_io::WordChannelOracle;
 use zk_ee::{
-    oracle::memory_io::{MemoryOracle, WordChannel, WordChannelOracle},
+    oracle::memory_io::{MemoryOracle, WordChannel},
     oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
     oracle::IOOracle,
     system::errors::internal::InternalError,
@@ -27,15 +31,9 @@ impl<I: NonDeterminismCSRSourceImplementation> Iterator for CsrBasedIOOracleIter
             None
         } else {
             self.remaining -= 1;
-            let low = I::csr_read_impl();
-            #[cfg(target_arch = "riscv64")]
-            let low = {
-                assert!(low <= u32::MAX as usize);
-                let high = I::csr_read_impl();
-                assert!(high <= u32::MAX as usize);
-                low | (high << 32)
-            };
-            Some(low)
+            // On RV64 a CSR word carries the whole `usize`: the two `u32` words of the wire format
+            // of the RV32 guest are one advice word, the earlier one in the low half.
+            Some(I::csr_read_impl())
         }
     }
 }
@@ -82,9 +80,19 @@ impl<I: NonDeterminismCSRSourceImplementation> WordChannel for CsrWordChannel<I>
 }
 
 impl<NDS: NonDeterminismCSRSourceImplementation> CsrBasedIOOracle<NDS> {
+    #[cfg(not(target_arch = "riscv64"))]
     #[inline(always)]
     fn word_channel_oracle() -> WordChannelOracle<CsrWordChannel<NDS>> {
         WordChannelOracle::new(CsrWordChannel {
+            _marker: core::marker::PhantomData,
+        })
+    }
+
+    /// On RV64 a CSR word carries two response words wherever the querier takes two at once.
+    #[cfg(target_arch = "riscv64")]
+    #[inline(always)]
+    fn word_channel_oracle() -> PackedWordChannelOracle<CsrWordChannel<NDS>> {
+        PackedWordChannelOracle::new(CsrWordChannel {
             _marker: core::marker::PhantomData,
         })
     }
@@ -99,6 +107,11 @@ impl<NDS: NonDeterminismCSRSourceImplementation> MemoryOracle for CsrBasedIOOrac
     #[inline(always)]
     fn read_word(&mut self) -> Result<u32, InternalError> {
         Self::word_channel_oracle().read_word()
+    }
+
+    #[inline(always)]
+    fn read_u64(&mut self) -> Result<u64, InternalError> {
+        Self::word_channel_oracle().read_u64()
     }
 
     #[inline(always)]
@@ -138,7 +151,8 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         }
         assert!(remaining_len == 0);
         // We can expect that length of the result is returned via read.
-        let wire_len = NDS::csr_read_impl();
+        // the length in `u32` words; on RV64 only the low half of the CSR word carries it
+        let wire_len = NDS::csr_read_impl() as u32 as usize;
         assert!(wire_len.is_multiple_of(WORDS_PER_USIZE));
         let remaining_len = wire_len / WORDS_PER_USIZE;
         let it = CsrBasedIOOracleIterator::<NDS> {

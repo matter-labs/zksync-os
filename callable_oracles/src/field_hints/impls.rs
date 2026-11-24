@@ -1,10 +1,8 @@
 use super::Responses;
 use basic_system::system_functions::curve_hints::{guest_layout, HintEncoding};
-use basic_system::system_functions::field_ops::{HintTarget, Secp256k1Element};
+use basic_system::system_functions::field_ops::HintTarget;
 use crypto::ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use crypto::ark_ff::{Field, One, PrimeField, Zero};
-use crypto::secp256k1::field::FieldElement;
-use crypto::secp256k1::scalars::Scalar;
 use zk_ee::oracle::memory_io::host::{read_querier_u32_words, QuerierMemory};
 
 /// The operand of a hint query where the querier keeps it: its address and size in the memory of
@@ -130,67 +128,6 @@ fn element<F: HintEncoding + Copy>(operand: &Operand) -> F {
     }
 }
 
-/// A secp256k1 element operand (see `Secp256k1Element`)
-fn secp256k1_element<T: Secp256k1Element>(operand: &Operand) -> T {
-    match operand.querier {
-        HintTarget::Native => operand.native_value(),
-        HintTarget::Guest => {
-            assert_eq!(operand.size(), 32, "the operand is an element");
-            let words: [u32; 8] = operand.guest_words(0, 8).try_into().expect("8 words");
-            T::from_guest_operand_words(&words)
-        }
-    }
-}
-
-/// Computes the square root candidate for a secp256k1 base field element.
-///
-/// Returns `(candidate, is_quadratic_non_residue)` where:
-/// - `candidate` is `input^((p+1)/4)` (the square root if one exists)
-/// - `is_quadratic_non_residue` is `true` if `input` has no square root in the field
-///
-/// When `is_quadratic_non_residue` is false: `candidate² == input`
-/// When `is_quadratic_non_residue` is true:  `candidate² == -input`
-pub(crate) fn secp256k1_base_field_sqrt(operand: &Operand) -> (FieldElement, bool) {
-    let el: FieldElement = secp256k1_element(operand);
-    assert!(!el.is_zero());
-    let mut candidate = el;
-    // sqrt_in_place returns true if the input is a quadratic residue (has a square root)
-    let is_quadratic_residue = candidate.sqrt_in_place();
-    (candidate, !is_quadratic_residue)
-}
-
-pub(crate) fn secp256k1_base_field_inverse(operand: &Operand) -> FieldElement {
-    let mut el: FieldElement = secp256k1_element(operand);
-    assert!(!el.is_zero());
-    el.invert_in_place();
-    el
-}
-
-/// The quotient of the numerator and the (non-zero) denominator, two adjacent elements
-pub(crate) fn secp256k1_base_field_division(operand: &Operand) -> FieldElement {
-    let [numerator, denominator]: [FieldElement; 2] = match operand.querier {
-        HintTarget::Native => operand.native_value(),
-        HintTarget::Guest => {
-            assert_eq!(operand.size(), 64, "the operand is two elements");
-            core::array::from_fn(|i| {
-                let words: [u32; 8] = operand.guest_words(32 * i, 8).try_into().expect("8 words");
-                FieldElement::from_guest_operand_words(&words)
-            })
-        }
-    };
-    assert!(!denominator.is_zero());
-    let mut quotient = denominator;
-    quotient.invert_in_place();
-    quotient.mul_in_place(&numerator);
-    quotient
-}
-
-pub(crate) fn secp256k1_scalar_field_inverse(operand: &Operand) -> Scalar {
-    let el: Scalar = secp256k1_element(operand);
-    assert!(!el.is_zero());
-    el.invert_vartime()
-}
-
 /// The inverse of a non-zero field element
 pub(crate) fn inverse<F: HintEncoding + Copy>(operand: &Operand) -> F {
     let el: F = element(operand);
@@ -236,7 +173,7 @@ pub(crate) fn bls12_381_base_field_sqrt(operand: &Operand) -> (crypto::bls12_381
 
 /// The claim about the bn254 pairing product over the affine pairs of the operand, see
 /// `curve_hints::PairingClaim`: the identity flag, then `c`, `d = c^-1` and the scaling factor
-/// (`crypto::residue_witness::bn254`) for an identity, or the inverse of the Miller loop output
+/// (`crypto::oracle_common::residue_witness::bn254`) for an identity, or the inverse of the Miller loop output
 /// otherwise. `claim_not_identity` forces the latter (for tests of the exact path).
 pub(crate) fn bn254_pairing_residue_witness(
     operand: &Operand,
@@ -284,7 +221,7 @@ pub(crate) fn bn254_pairing_residue_witness(
             .0
             .is_one();
     if is_identity {
-        let witness = crypto::residue_witness::bn254::witness(&f)
+        let witness = crypto::oracle_common::residue_witness::bn254::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");
         responses.write(&(true, witness));
     } else {
@@ -294,7 +231,7 @@ pub(crate) fn bn254_pairing_residue_witness(
 
 /// The claim about `e(p1, G2) e(p2, tau G2)` for the affine points `[p1, p2]` of the operand, as
 /// `bn254_pairing_residue_witness`: the identity flag, then `d` and the scaling factor
-/// (`crypto::residue_witness::bls12_381`) for an identity, or the inverse of the Miller loop
+/// (`crypto::oracle_common::residue_witness::bls12_381`) for an identity, or the inverse of the Miller loop
 /// output otherwise
 pub(crate) fn bls12_381_kzg_residue_witness(
     operand: &Operand,
@@ -331,7 +268,7 @@ pub(crate) fn bls12_381_kzg_residue_witness(
             .0
             .is_one();
     if is_identity {
-        let witness = crypto::residue_witness::bls12_381::witness(&f)
+        let witness = crypto::oracle_common::residue_witness::bls12_381::witness(&f)
             .expect("the final exponentiation found an identity, which has a witness");
         responses.write(&(true, witness));
     } else {

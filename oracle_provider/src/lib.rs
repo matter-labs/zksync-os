@@ -639,14 +639,47 @@ impl NonDeterminismCSRSource for ZkEENonDeterminismSource {
 pub struct ReadWitnessSource {
     original_source: ZkEENonDeterminismSource,
     read_items: Rc<RefCell<Vec<u32>>>,
+    /// Whether the guest reads the responses of the memory-based protocol as the querier of
+    /// this process does (see [`Self::new_for_native_layout_guest`])
+    guest_reads_native_responses: bool,
+    /// The advice words of such a guest, which carry 64 bits each
+    packed_read_items: Rc<RefCell<Vec<u64>>>,
 }
 
 impl ReadWitnessSource {
+    /// Records the input of the RV32 guest, which reads the responses of the memory-based
+    /// protocol in its own representation (the bigint delegation's).
     pub fn new(original_source: ZkEENonDeterminismSource) -> Self {
         Self {
             original_source,
             read_items: Rc::new(RefCell::new(vec![])),
+            guest_reads_native_responses: false,
+            packed_read_items: Rc::new(RefCell::new(vec![])),
         }
+    }
+
+    /// Records the input of a guest that runs the code of this process on a 64-bit target
+    /// without the bigint delegation (RV64): it sends the same queries and reads the same
+    /// words, so the words the querier of this process reads are recorded, and the responses
+    /// in the representation of the RV32 guest are dropped.
+    ///
+    /// The advice words of that guest carry 64 bits, and its oracle takes two response words
+    /// from one wherever the querier reads two at once (`PackedWordChannelOracle` of `zk_ee`).
+    /// The record follows the reads of this run, which are the reads of the guest: one advice
+    /// word for a `read_word` (in its low half), one for a `read_u64`, for a `write_words`
+    /// one for every two words and one more for the last of an odd number, and for the
+    /// iterator-based protocol one for the length and one for every `usize`. It is in
+    /// [`Self::get_packed_read_items`], and [`Self::get_read_items`] stays empty.
+    pub fn new_for_native_layout_guest(original_source: ZkEENonDeterminismSource) -> Self {
+        Self {
+            guest_reads_native_responses: true,
+            ..Self::new(original_source)
+        }
+    }
+
+    /// The advice words of a guest of [`Self::new_for_native_layout_guest`]
+    pub fn get_packed_read_items(&self) -> Rc<RefCell<Vec<u64>>> {
+        self.packed_read_items.clone()
     }
 
     pub fn get_read_items(&self) -> Rc<RefCell<Vec<u32>>> {
@@ -691,13 +724,17 @@ impl IOOracle for ReadWitnessSource {
         let inner = self.original_source.raw_query(query_type, input)?;
         // First add the length of the iterator.
         let len = inner.len();
-        {
-            let mut read_items = self.read_items.borrow_mut();
-            // Len is multiplied by 2 to account for 32/64-bit mismatch
-            let len_u32 = u32::try_from(len.checked_mul(2).expect("response length overflow"))
-                .expect("iterator length does not fit into u32");
-            read_items.push(len_u32);
+        // Len is multiplied by 2 to account for 32/64-bit mismatch
+        let len_u32 = u32::try_from(len.checked_mul(2).expect("response length overflow"))
+            .expect("iterator length does not fit into u32");
+        if self.guest_reads_native_responses {
+            self.packed_read_items.borrow_mut().push(len_u32.into());
+            let packed_read_items = Rc::clone(&self.packed_read_items);
+            return Ok(Box::new(inner.inspect(move |v| {
+                packed_read_items.borrow_mut().push(*v as u64);
+            })));
         }
+        self.read_items.borrow_mut().push(len_u32);
         let read_items = Rc::clone(&self.read_items);
         let wrapped: Self::RawIterator<'a> = Box::new(inner.inspect(move |v| {
             record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
@@ -721,22 +758,49 @@ impl MemoryOracle for ReadWitnessSource {
         }
         self.original_source.send_query(query_id, input_word)?;
         let guest_run_response = core::mem::take(&mut self.original_source.guest_run_response);
-        self.read_items.borrow_mut().extend(guest_run_response);
+        if !self.guest_reads_native_responses {
+            self.read_items.borrow_mut().extend(guest_run_response);
+        }
         Ok(())
     }
 
     fn read_word(&mut self) -> Result<u32, InternalError> {
         let word = self.original_source.read_word()?;
-        if !self.original_source.is_connected_to_external_oracle {
+        if self.guest_reads_native_responses {
+            self.packed_read_items.borrow_mut().push(word.into());
+        } else if self.records_reads() {
             self.read_items.borrow_mut().push(word);
         }
         Ok(word)
     }
 
+    fn read_u64(&mut self) -> Result<u64, InternalError> {
+        if !self.guest_reads_native_responses {
+            // two words to the guest of the other layout
+            let low = self.read_word()?;
+            let high = self.read_word()?;
+            return Ok(u64::from(low) | u64::from(high) << 32);
+        }
+        let value = self.original_source.read_u64()?;
+        self.packed_read_items.borrow_mut().push(value);
+        Ok(value)
+    }
+
     unsafe fn write_words(&mut self, dst: *mut u32, num_words: usize) -> Result<(), InternalError> {
         // SAFETY: guaranteed by the caller
         unsafe { self.original_source.write_words(dst, num_words)? };
-        if !self.original_source.is_connected_to_external_oracle {
+        if self.guest_reads_native_responses {
+            // SAFETY: the words were just written
+            let words = unsafe { core::slice::from_raw_parts(dst, num_words) };
+            let mut packed = self.packed_read_items.borrow_mut();
+            let (pairs, last) = words.as_chunks::<2>();
+            packed.extend(
+                pairs
+                    .iter()
+                    .map(|[low, high]| u64::from(*low) | u64::from(*high) << 32),
+            );
+            packed.extend(last.iter().map(|word| u64::from(*word)));
+        } else if self.records_reads() {
             // SAFETY: the words were just written
             let words = unsafe { core::slice::from_raw_parts(dst, num_words) };
             self.read_items.borrow_mut().extend_from_slice(words);
@@ -746,6 +810,14 @@ impl MemoryOracle for ReadWitnessSource {
 
     fn finish_query(&mut self) -> Result<(), InternalError> {
         self.original_source.finish_query()
+    }
+}
+
+impl ReadWitnessSource {
+    /// Whether the words the querier of this process reads are the ones the guest reads: always
+    /// for a guest with the layout of this process, and for the zeroes of a disconnected oracle
+    fn records_reads(&self) -> bool {
+        self.guest_reads_native_responses || !self.original_source.is_connected_to_external_oracle
     }
 }
 
@@ -1020,6 +1092,64 @@ mod tests {
         ]
         .concat();
         assert_eq!(*source.get_read_items().borrow(), expected);
+    }
+
+    #[test]
+    fn a_guest_with_the_layout_of_this_process_reads_the_native_responses() {
+        let (a, b) = (bytes32(1), bytes32(2));
+        let mut oracle = ZkEENonDeterminismSource::new(RunMode::NativeRunSavingForRiscV);
+        oracle.add_external_processor(REPRESENTATION);
+        oracle.add_external_processor(MemoryProcessor);
+        let mut source = ReadWitnessSource::new_for_native_layout_guest(oracle);
+        // a response whose representation differs between the targets: the words this querier
+        // reads are recorded, not the ones of the RV32 guest
+        assert_eq!(RepresentationQuery::get(&mut source, &a).unwrap(), a);
+        assert_eq!(SwapQuery::get(&mut source, (&a, &b)).unwrap(), (b, a));
+        // two response words to an advice word
+        let mut expected: Vec<u64> = [a, b, a]
+            .as_slice()
+            .iter()
+            .flat_map(|value| value.as_u8_array_ref().chunks(8))
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        assert_eq!(*source.get_packed_read_items().borrow(), expected);
+        assert!(source.get_read_items().borrow().is_empty());
+
+        // by the primitives: a word alone takes an advice word, as does a `read_u64`, and the
+        // last of an odd number of words
+        let a_words = words(a.as_u8_array_ref());
+        let pair = |i: usize| u64::from(a_words[i]) | u64::from(a_words[i + 1]) << 32;
+        source
+            .send_query(REPRESENTATION_QUERY_ID, &a as *const Bytes32 as usize)
+            .unwrap();
+        assert_eq!(source.read_word().unwrap(), a_words[0]);
+        assert_eq!(source.read_u64().unwrap(), pair(1));
+        let mut dst = [0u32; 5];
+        // SAFETY: `dst` is five words
+        unsafe { source.write_words(dst.as_mut_ptr(), 5) }.unwrap();
+        assert_eq!(dst, a_words[3..]);
+        source.finish_query().unwrap();
+        expected.extend([
+            a_words[0].into(),
+            pair(1),
+            pair(3),
+            pair(5),
+            a_words[7].into(),
+        ]);
+        assert_eq!(*source.get_packed_read_items().borrow(), expected);
+    }
+
+    #[test]
+    fn a_guest_with_the_layout_of_this_process_reads_a_usize_from_an_advice_word() {
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(FixedResponseProcessor);
+        let mut source = ReadWitnessSource::new_for_native_layout_guest(oracle);
+        let response: Vec<usize> = source.raw_query(TEST_QUERY_ID, &7u64).unwrap().collect();
+        assert_eq!(response.len(), 2);
+        assert_eq!(
+            *source.get_packed_read_items().borrow(),
+            vec![4, 0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00]
+        );
     }
 
     #[test]

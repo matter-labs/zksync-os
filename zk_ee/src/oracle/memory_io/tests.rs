@@ -543,3 +543,70 @@ fn a_rejected_output_ends_its_query() {
     assert!(PairQuery::get(&mut oracle, ()).is_err());
     assert_eq!(WordQuery::get(&mut oracle, ()).unwrap(), 7);
 }
+
+/// The packed channel: what an advice word carries follows from the call that takes it.
+#[cfg(target_pointer_width = "64")]
+mod packed {
+    use super::super::PackedWordChannelOracle;
+    use super::*;
+
+    /// 64-bit channel words, served in order
+    struct Tape(VecDeque<u64>);
+
+    impl WordChannel for Tape {
+        fn write_word(&mut self, _word: usize) {}
+
+        fn read_word(&mut self) -> usize {
+            self.0.pop_front().expect("read past the end of the tape") as usize
+        }
+    }
+
+    const HIGH_GARBAGE: u64 = 0xdead_beef << 32;
+
+    #[test]
+    fn a_channel_word_carries_two_response_words_where_two_are_read() {
+        let pair = |i: u64| i | (i + 1) << 32;
+        let tape = [
+            // `read_word`: the low half, whatever the other one is
+            7 | HIGH_GARBAGE,
+            // `read_u64`
+            pair(10),
+            // `write_words` of five words to an address aligned for `u64`
+            pair(20),
+            pair(22),
+            24 | HIGH_GARBAGE,
+            // and of four words to an address that is not
+            pair(30),
+            pair(32),
+        ];
+        let mut oracle = PackedWordChannelOracle::new(Tape(tape.into()));
+        oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+        assert_eq!(oracle.read_word().unwrap(), 7);
+        assert_eq!(oracle.read_u64().unwrap(), pair(10));
+
+        let mut aligned = [0u64; 3];
+        // SAFETY: five `u32` words fit into three `u64`s
+        unsafe { oracle.write_words(aligned.as_mut_ptr().cast(), 5) }.unwrap();
+        assert_eq!(aligned, [pair(20), pair(22), 24]);
+
+        let mut unaligned = [0u64; 3];
+        // SAFETY: four `u32` words past the first one fit into three `u64`s
+        unsafe { oracle.write_words(aligned_plus_one(&mut unaligned), 4) }.unwrap();
+        assert_eq!(unaligned, [30 << 32, 31 | 32 << 32, 33]);
+        assert!(oracle.channel().0.is_empty());
+    }
+
+    fn aligned_plus_one(words: &mut [u64; 3]) -> *mut u32 {
+        // SAFETY: within the array
+        unsafe { words.as_mut_ptr().cast::<u32>().add(1) }
+    }
+
+    /// The default `read_u64` is two `read_word`s, the low half first
+    #[test]
+    fn read_u64_defaults_to_two_words() {
+        let mut oracle = mock_oracle(|_, _| vec![0x1111_1111, 0x2222_2222, 3]);
+        oracle.send_query(TEST_QUERY_ID, 0).unwrap();
+        assert_eq!(oracle.read_u64().unwrap(), 0x2222_2222_1111_1111);
+        assert_eq!(oracle.read_word().unwrap(), 3);
+    }
+}

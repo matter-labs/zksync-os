@@ -12,9 +12,9 @@ mod runtime;
 /// Uses CSR (control & status register) to communicate with outside oracle.
 mod csr {
     #[cfg(all(feature = "external-rv64-runtime", target_arch = "riscv64"))]
-    use crate::runtime::{read_word, write_word};
+    use crate::runtime::{read_word64, write_word};
     #[cfg(not(all(feature = "external-rv64-runtime", target_arch = "riscv64")))]
-    use airbender::rt::sys::{read_word, write_word};
+    use airbender::rt::sys::write_word;
 
     #[derive(Clone, Copy, Debug)]
     pub struct CSRBasedNonDeterminismSource;
@@ -25,10 +25,18 @@ mod csr {
         #[inline(always)]
         fn csr_read_impl() -> usize {
             #[cfg(not(all(feature = "external-rv64-runtime", target_arch = "riscv64")))]
-            const {
-                assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
+            {
+                const {
+                    assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
+                }
+                airbender::rt::sys::read_word() as usize
             }
-            read_word() as usize
+            // An advice word of the RV64 machine carries 64 bits, and the oracle of the guest
+            // takes all of it or its low half (`PackedWordChannelOracle`).
+            #[cfg(all(feature = "external-rv64-runtime", target_arch = "riscv64"))]
+            {
+                read_word64() as usize
+            }
         }
         #[inline(always)]
         #[allow(clippy::unit_arg)]

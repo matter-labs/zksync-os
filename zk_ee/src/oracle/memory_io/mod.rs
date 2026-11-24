@@ -60,4 +60,6 @@ pub use self::query::{
     get_bytes_with_length_query, DynamicOracleQuery, OracleQuery, QueryInput, QueryOutput,
 };
 pub use self::short::{ShortDeserializable, ShortSerializable};
+#[cfg(target_pointer_width = "64")]
+pub use self::word_channel::PackedWordChannelOracle;
 pub use self::word_channel::{WordChannel, WordChannelOracle};

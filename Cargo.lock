@@ -21,11 +21,8 @@ dependencies = [
  "cpp_demangle",
  "fallible-iterator",
  "gimli",
- "memmap2 0.9.11",
- "object",
  "rustc-demangle",
  "smallvec",
- "typed-arena",
 ]
 
 [[package]]
@@ -84,6 +81,7 @@ dependencies = [
 name = "airbender-crypto"
 version = "0.3.0"
 dependencies = [
+ "airbender-oracle",
  "ark-bls12-381 0.5.0",
  "ark-bn254 0.5.0",
  "ark-ec 0.5.0",
@@ -126,6 +124,14 @@ dependencies = [
  "sysinfo",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "airbender-oracle"
+version = "0.3.0"
+dependencies = [
+ "riscv_common",
+ "riscv_transpiler",
 ]
 
 [[package]]
@@ -2561,6 +2567,7 @@ dependencies = [
  "cs",
  "fft",
  "field",
+ "prover",
  "serde",
  "serde_json",
  "witness_eval_generator",
@@ -3708,12 +3715,13 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.9"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
- "miniz_oxide 0.8.9",
+ "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -3814,8 +3822,12 @@ name = "full_statement_verifier"
 version = "0.1.0"
 dependencies = [
  "common_constants",
+ "proof_fixtures",
+ "riscv_transpiler",
  "serde",
+ "serde_json",
  "setups",
+ "sha3 0.12.0",
  "verifier_common",
 ]
 
@@ -4102,6 +4114,7 @@ dependencies = [
  "cs",
  "era_cudart",
  "era_cudart_sys",
+ "fft",
  "field",
  "gkr_eval_ir",
  "gpu_core",
@@ -4743,6 +4756,7 @@ dependencies = [
 name = "inits_and_teardowns"
 version = "0.1.0"
 dependencies = [
+ "circuit_common",
  "common_constants",
  "prover",
  "serde",
@@ -5003,7 +5017,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak_chi5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_column_parity"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
 name = "keccak_special5"
+version = "0.1.0"
+dependencies = [
+ "circuit_common",
+ "common_constants",
+ "prover",
+ "witness_eval_generator",
+]
+
+[[package]]
+name = "keccak_theta_rho"
 version = "0.1.0"
 dependencies = [
  "circuit_common",
@@ -5235,17 +5279,7 @@ name = "miniz_nostd_compression"
 version = "0.1.0"
 dependencies = [
  "adler",
- "miniz_oxide 0.9.1",
-]
-
-[[package]]
-name = "miniz_oxide"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
-dependencies = [
- "adler2",
- "simd-adler32",
+ "miniz_oxide",
 ]
 
 [[package]]
@@ -5255,6 +5289,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -5539,9 +5574,7 @@ version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
- "flate2",
  "memchr",
- "ruzstd",
 ]
 
 [[package]]
@@ -6073,6 +6106,16 @@ dependencies = [
  "setups",
  "trace_and_split",
  "verifier_common",
+]
+
+[[package]]
+name = "proof_fixtures"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "miniz_oxide",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7297,7 +7340,9 @@ dependencies = [
  "inferno",
  "keccak 0.1.6",
  "object",
+ "rand 0.9.4",
  "rayon",
+ "riscv_common",
  "ruint",
  "seq-macro",
  "serde",
@@ -7503,15 +7548,6 @@ dependencies = [
  "quick-error",
  "tempfile",
  "wait-timeout",
-]
-
-[[package]]
-name = "ruzstd"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
-dependencies = [
- "twox-hash",
 ]
 
 [[package]]
@@ -7843,7 +7879,10 @@ dependencies = [
  "hex",
  "inits_and_teardowns",
  "jump_branch_slt",
+ "keccak_chi5",
+ "keccak_column_parity",
  "keccak_special5",
+ "keccak_theta_rho",
  "load_store_subword_only",
  "load_store_word_only",
  "mul_div_unsigned",
@@ -8896,12 +8935,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "twox-hash"
-version = "2.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
-
-[[package]]
 name = "type-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8909,12 +8942,6 @@ checksum = "cb30dbbd9036155e74adad6812e9898d03ec374946234fbcebd5dfc7b9187b90"
 dependencies = [
  "rustc-hash",
 ]
-
-[[package]]
-name = "typed-arena"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "typenum"
@@ -9151,6 +9178,7 @@ dependencies = [
  "field",
  "non_determinism_source",
  "proc-macro2",
+ "proof_fixtures",
  "prover",
  "quote",
  "serde",
@@ -9987,6 +10015,12 @@ dependencies = [
  "alloy",
  "zksync_os_interface",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa76918995d776d9dd34d371030be228d021137449771493d56e29f77e4148ac"
 
 [[package]]
 name = "zmij"

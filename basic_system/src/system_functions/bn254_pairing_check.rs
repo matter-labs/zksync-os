@@ -209,7 +209,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
     let normalized = || evaluations.iter().zip(prepared.iter());
     // The residue witness check in place of the final exponentiation (Novakovic, Eagen, "On
     // Proving Pairings", https://eprint.iacr.org/2024/640; soundness in the documentation of
-    // `crypto::residue_witness`): the Miller loop started at `d` gives `d^(6x+2) f`, the rest
+    // `crypto::oracle_common::residue_witness`): the Miller loop started at `d` gives `d^(6x+2) f`, the rest
     // is a few Frobenius maps. The prover claims the outcome; it cannot choose it: a claimed
     // identity must come with a witness that passes the check (a failed check is a broken
     // prover and panics), and a claimed non-identity is settled by the exact final
@@ -218,7 +218,7 @@ fn bn254_pairing_check_inner<A: Allocator + Clone, O: IOOracle>(
         curve_hints::PairingClaim::Identity { c, d, s } => {
             let l = Bn254::multi_miller_loop_normalized(Some((&d, &c)), normalized());
             assert!(
-                crypto::residue_witness::bn254::check(&l, &d, &s),
+                crypto::oracle_common::residue_witness::bn254::check(&l, &d, &s),
                 "the residue witness of the pairing claimed to be the identity is wrong"
             );
             Ok(true)

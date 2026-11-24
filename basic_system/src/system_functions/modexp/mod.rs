@@ -3,10 +3,7 @@ use super::*;
 use alloc::vec::Vec;
 use ruint::aliases::U256;
 use zk_ee::common_traits::TryExtend;
-use zk_ee::oracle::memory_io::host::{read_querier_word, QuerierMemory};
-use zk_ee::oracle::query_ids::ADVICE_SUBSPACE_MASK;
 use zk_ee::oracle::IOOracle;
-use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::SystemFunctionExt;
 use zk_ee::{
@@ -146,56 +143,8 @@ fn requires_initial_reduction(base: &[u8], modulus: &[u8]) -> bool {
 }
 
 // Query ID for modular exponentiation advice from oracle
-pub const MODEXP_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x10;
-
-/// Parameters for modular exponentiation oracle query
-/// Used to request division advice for big integer operations during modexp. The querier sends the
-/// address of a `ModExpAdviceParamsGeneric<usize>`, and the oracle answers with the lengths of the
-/// quotient and of the remainder in `u32` words, then their words (little-endian).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ModExpAdviceParamsGeneric<W> {
-    pub op: W,          // Operation type (0 = division)
-    pub a_ptr: W,       // Pointer to dividend
-    pub a_len: W,       // Length of dividend in 256-bit digits
-    pub b_ptr: W,       // Pointer to divisor
-    pub b_len: W,       // Length of divisor in 256-bit digits
-    pub modulus_ptr: W, // Pointer to modulus
-    pub modulus_len: W, // Length of modulus in 256-bit digits
-}
-
-/// Used for proving (RISC-V 32-bit)
-pub type ModExpAdviceParams = ModExpAdviceParamsGeneric<u32>;
-
-/// Used for native execution (64-bit)
-pub type ModExpAdviceParams64 = ModExpAdviceParamsGeneric<u64>;
-
-/// The request of a modexp advice query, as the oracle reads it through the input word: the address
-/// of a `ModExpAdviceParamsGeneric<usize>` of the querier, whose fields are querier words.
-pub fn read_modexp_advice_params<M: QuerierMemory + ?Sized>(
-    memory: &M,
-    address: usize,
-) -> Result<ModExpAdviceParamsGeneric<usize>, InternalError> {
-    let word_size = memory.word_size();
-    let field = |index: usize| {
-        let field_address = index
-            .checked_mul(word_size)
-            .and_then(|offset| address.checked_add(offset))
-            .ok_or_else(|| internal_error!("querier address overflows"))?;
-        read_querier_word(memory, field_address)
-    };
-    Ok(ModExpAdviceParamsGeneric {
-        op: field(0)?,
-        a_ptr: field(1)?,
-        a_len: field(2)?,
-        b_ptr: field(3)?,
-        b_len: field(4)?,
-        modulus_ptr: field(5)?,
-        modulus_len: field(6)?,
-    })
-}
-
-pub mod advice;
+/// The query of the ModExp advice: the one of `crypto`, whose ModExp the system runs
+pub use crypto::hints::MODEXP_ADVICE_QUERY_ID;
 
 ///
 /// modexp system function implementation.
@@ -423,42 +372,28 @@ fn modexp_as_system_function_inner<
 
     // Call the modexp.
 
-    #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
-    let output = self::advice::modexp(
+    // The ModExp of `crypto`: with the oracle it checks hinted quotients and remainders, without
+    // it computes. The proving guest and the tests always take the hints, as the native run that
+    // records them does.
+    let use_advice =
+        cfg!(any(all(target_arch = "riscv32", feature = "proving"), test)) || USE_ADVICE;
+    let mut hints = use_advice.then(|| field_ops::CryptoHintsOracle(oracle));
+    let output = crypto::modexp::modexp(
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
-        oracle,
-        logger,
-        allocator,
+        hints.as_mut(),
     );
-
-    #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
-    let output = if USE_ADVICE {
-        self::advice::modexp(
-            base.as_slice(),
-            exponent.as_slice(),
-            modulus.as_slice(),
-            oracle,
-            logger,
-            allocator,
-        )
-    } else {
-        ::modexp::modexp(
-            base.as_slice(),
-            exponent.as_slice(),
-            modulus.as_slice(),
-            allocator,
-        )
-    };
 
     if output.len() >= mod_len {
         // truncate
         dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
             .map_err(|_| out_of_return_memory!())?;
     } else {
-        dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
-            .map_err(|_| out_of_return_memory!())?;
+        dst.try_extend(
+            core::iter::repeat_n(0, mod_len - output.len()).chain(output.iter().copied()),
+        )
+        .map_err(|_| out_of_return_memory!())?;
     }
 
     Ok(())
