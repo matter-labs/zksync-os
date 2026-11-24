@@ -1,5 +1,4 @@
 /target
-/Cargo.lock
 
 instances_examples/test_contracts/node_modules
 instances_examples/test_contracts/cache
