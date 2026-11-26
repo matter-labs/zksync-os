@@ -26,7 +26,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -44,7 +44,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -66,7 +66,7 @@ jobs:
             - name: Configure private repo auth
               uses: ./.github/actions/private-git-auth
               with:
-                  token: ${{ secrets.RELEASE_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Setup
               run: |
                   rustup toolchain install
@@ -87,7 +87,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -103,7 +103,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -126,7 +126,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -142,7 +142,7 @@ jobs:
             - uses: actions/checkout@v3
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Check formatting
               run: cargo fmt --manifest-path tests/bytecode_lab/Cargo.toml -- --check
             - name: Lint bytecode lab
@@ -172,7 +172,7 @@ jobs:
             - name: Configure private repo auth
               uses: ./.github/actions/private-git-auth
               with:
-                  token: ${{ secrets.RELEASE_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Run Clippy
               run: |
                   cargo clippy --workspace -- -D warnings
@@ -189,7 +189,7 @@ jobs:
             - name: Configure private repo auth
               uses: ./.github/actions/private-git-auth
               with:
-                  token: ${{ secrets.RELEASE_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Run Clippy
               working-directory: ./zksync_os
               run: |
@@ -216,7 +216,7 @@ jobs:
             - name: Configure private repo auth
               uses: ./.github/actions/private-git-auth
               with:
-                  token: ${{ secrets.RELEASE_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Miri (Stacked Borrows)
               run: cargo miri test -p zk_ee -- history_map ptr_arena
             - name: Miri (Tree Borrows)
@@ -243,7 +243,7 @@ jobs:
                   node-version: "20"
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Install cargo-fuzz
               run: cargo install cargo-fuzz --locked
             - name: Run regression tests
@@ -261,7 +261,7 @@ jobs:
             - name: Configure private repo auth
               uses: ./.github/actions/private-git-auth
               with:
-                  token: ${{ secrets.RELEASE_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Verify zksync_os/Cargo.lock is up to date
               run: |
                   if ! cargo metadata --locked --manifest-path zksync_os/Cargo.toml --format-version 1 > /dev/null 2>&1; then
@@ -277,6 +277,6 @@ jobs:
             - uses: actions/checkout@v4
             - uses: ./.github/actions/setup-toolchain
               with:
-                  release-token: ${{ secrets.RELEASE_TOKEN }}
+                  release-token: ${{ secrets.RELEASE_TOKEN || secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_READ }}
             - name: Build fresh app bin
               run: zksync_os/reproduce/reproduce.sh
