@@ -19,7 +19,7 @@ path = "../../../../../zk_ee/src/lib.rs"
 ruint = { version = "1.20", default-features = false, features = ["alloc"] }
 u256 = { path = "../../../../../supporting_crates/u256", default-features = false }
 cfg-if = "*"
-crypto = { git = "https://github.com/matter-labs/airbender-platform", branch = "di/fix/87680-fri-fix", package = "airbender-crypto", default-features = false }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "b6ce3dd1252bfbda8e42b77fdd868e81c54b7bdc", package = "airbender-crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 bitflags = { version = "2.6.0", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }

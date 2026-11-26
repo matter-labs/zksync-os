@@ -111,20 +111,20 @@ zksync_os_evm_errors = { version = "0.2.0", default-features = false }
 zksync_os_interface = { version = "0.2.0" }
 
 # zksync-airbender dependencies track its dev branch.
-riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev", default-features = false }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
-prover = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
-full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev", default-features = false }
-cli = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
-gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender-private", branch = "dev" }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb", default-features = false }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
+full_statement_verifier = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb", default-features = false }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", rev = "0decdcdb" }
 
-airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", branch = "di/fix/87680-fri-fix" }
-airbender-host = { git = "https://github.com/matter-labs/airbender-platform", branch = "di/fix/87680-fri-fix", default-features = false }
-airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", branch = "di/fix/87680-fri-fix" }
-crypto = { git = "https://github.com/matter-labs/airbender-platform", branch = "di/fix/87680-fri-fix", package = "airbender-crypto", default-features = false }
+airbender-guest = { git = "https://github.com/matter-labs/airbender-platform", rev = "b6ce3dd1252bfbda8e42b77fdd868e81c54b7bdc" }
+airbender-host = { git = "https://github.com/matter-labs/airbender-platform", rev = "b6ce3dd1252bfbda8e42b77fdd868e81c54b7bdc", default-features = false }
+airbender-sdk = { git = "https://github.com/matter-labs/airbender-platform", rev = "b6ce3dd1252bfbda8e42b77fdd868e81c54b7bdc" }
+crypto = { git = "https://github.com/matter-labs/airbender-platform", rev = "b6ce3dd1252bfbda8e42b77fdd868e81c54b7bdc", package = "airbender-crypto", default-features = false }
 
 seq-macro = { version = "0.3.6", default-features = false }
 
