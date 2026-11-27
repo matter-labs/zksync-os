@@ -44,8 +44,12 @@ use alloc::boxed::Box;
 use core::fmt::Write;
 use zk_ee::system::metadata::chain_config::ChainConfig;
 
-pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
-pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
+// The RV64 guest's heap ends at 256 MiB (2^25 doublewords, binbender's dense RAM cap), so the two
+// buffers take 32 MiB each instead of 128 and 256. A block whose live EVM frames need more heap
+// fails those frames with OutOfGas, a divergence from Ethereum (evm_interpreter/src/utils.rs,
+// `resize_heap_implementation`); more return data is a fatal OutOfReturnMemory.
+pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 25; // 32 MiB
+pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 25; // 32 MiB
 
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
