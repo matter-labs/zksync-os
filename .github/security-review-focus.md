@@ -44,7 +44,7 @@ ZKsync OS is the STF of a ZK rollup. The same code runs in forward mode (sequenc
 - **Force-revert path:** runs for every priority tx, whatever its body: decoding, value mint, full-gas-limit charge, refund of the remainder, failure result log. It must be panic-free and provable. The result log must be correct, because L1 relies on it to release failed deposits.
 - **`RejectedAfterExecution`:** rolls the body back completely.
 - **Decision replay:** proving replays the decision from the oracle, and it must apply at exactly the same point as in sequencing.
-- **Upgrade txs:** never filtered, so an unprovable upgrade tx still halts the chain.
+- **Upgrade txs:** never filtered, so an unprovable upgrade tx still halts the chain. The content of an upgrade tx is controlled by the operator, not by an attacker, so the scope is limited to bugs in the upgrade tx flow itself.
 - **Priority operations hash:** every processed priority tx, force-reverted ones included, enters `priority_operations_hash` exactly once, in processing order.
 
 ## Out of scope
