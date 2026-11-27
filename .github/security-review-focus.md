@@ -15,12 +15,15 @@ ZKsync OS is the STF of a ZK rollup. The same code runs in forward mode (sequenc
 - Balances, nonces, storage and code in the state tree (`state_root`, `next_free_slot`).
 - Base-token backing: L2 supply must stay backed by funds locked in the L1 bridge.
 - Everything L1 acts on: chain state commitment, `priority_operations_hash`, `l2_logs_tree_root` (user messages, withdrawals, L1 tx results), `upgrade_tx_hash`, pubdata / DA commitment, `chain_config_hash`.
-- Provability: every batch committed to L1 must be provable with the current verification key. Batches are FRI-proven before the L1 commit, so an unprovable batch can be recovered by re-sequencing (splitting a block, dropping a tx). This is the planned recovery path, not routine operation; it has never been needed. It means a reorg: bad, but far less severe than a verification-key change.
+- Provability: every batch committed to L1 must be provable with the current verification key. Batches are FRI-proven before the L1 commit, so an unprovable batch can be recovered by re-sequencing (splitting a block, dropping a tx). This is the planned recovery path, not routine operation; it has never been needed. It means a reorg: bad, but far less severe than a verification-key change. Re-sequencing cannot fix a failure in processing that every block must run (see the High chain-halt impact).
 
 ## Impacts
 
 - **Critical, direct and publicly triggerable loss of funds:** a regular L2 or L1 tx steals balances, credits unbacked base token, or gets an L2→L1 log or message committed without the state change it attests to (withdrawal without burn, double withdrawal, wrong L1 tx result).
 - **High, invalid executions provable:** the proving run relies on an oracle answer it does not constrain (e.g. an unchecked tree proof, preimage or crypto-primitive hint), or lets the operator select an outcome the STF does not explicitly allow.
+- **High, chain halt that re-sequencing cannot fix:** proving fails in processing the operator cannot leave out, so no choice of transactions (dropping, force-reverting, splitting the block) lets the chain progress, and recovery needs a new verification key. Examples: a bug in the part of the bootloader that runs before the first tx, or a bug in the hashing of an L1 tx that makes it impossible to force-revert.
+
+  This is **not** the usual DoS triggered by a transaction. If dropping or force-reverting the offending tx avoids the failure, the finding is the Medium impact below, however cheap or repeatable the attack is. No finding of this High kind has been confirmed so far. Rate one High only with an argument for why re-sequencing cannot avoid the failure.
 - **Medium, valid executions unprovable:** attacker-controlled content makes proving fail (a panic on the proving path, forward/proving divergence, or proving cycles or memory not bounded by charged resources). The operator recovers by re-sequencing (dropping or force-reverting the tx, or splitting the block), so the impact is a forced reorg, not a halted chain or a verification-key change.
 - **Medium, undocumented deviation from EVM (Osaka) behavior,** excluding divergences documented in `docs/execution_environments/evm.md` and `docs/not-a-bug.md`. A deviation that arises only from operator-controlled inputs (e.g. an operator-supplied coinbase or other `BlockContext` value) is not a finding.
 
@@ -36,7 +39,7 @@ ZKsync OS is the STF of a ZK rollup. The same code runs in forward mode (sequenc
 
 ## L1 (priority) transactions
 
-`l1_tx_filtering_enabled` is on for every production chain. A priority tx that cannot be executed or proven can be dropped from the block or force-failed (force-reverted) by the operator instead of halting the chain, so an "unprovable L1 tx" finding is a forced reorg like any other unprovable execution. The filtering paths themselves must hold:
+`l1_tx_filtering_enabled` is on for every production chain. A priority tx that cannot be executed or proven can be dropped from the block or force-failed (force-reverted) by the operator instead of halting the chain, so an "unprovable L1 tx" finding is a forced reorg like any other unprovable execution (Medium). A failure in the processing that a force-reverted priority tx still goes through cannot be avoided this way: that is the High chain-halt impact. The filtering paths themselves must hold:
 
 - **Force-revert path:** runs for every priority tx, whatever its body: decoding, value mint, full-gas-limit charge, refund of the remainder, failure result log. It must be panic-free and provable. The result log must be correct, because L1 relies on it to release failed deposits.
 - **`RejectedAfterExecution`:** rolls the body back completely.
