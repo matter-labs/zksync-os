@@ -11,7 +11,7 @@ inputs:
     description: >-
       Token with read access to the private dependency repositories. Composite
       actions cannot read the `secrets` context, so callers must pass
-      `secrets.RELEASE_TOKEN` explicitly. Leave empty to skip configuration.
+      `secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE` explicitly. Leave empty to skip configuration.
     required: false
     default: ''
 

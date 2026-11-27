@@ -28,11 +28,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
 
       - uses: ./.github/actions/setup-toolchain
         with:
-          release-token: ${{ secrets.RELEASE_TOKEN }}
+          release-token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
 
       - name: Build fresh app bin
         run: zksync_os/reproduce/reproduce.sh
