@@ -20,7 +20,7 @@ jobs:
     - name: Configure private repo auth
       uses: ./.github/actions/private-git-auth
       with:
-        token: ${{ secrets.RELEASE_TOKEN }}
+        token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
 
     - name: Run cargo-deny
       run: cargo deny --manifest-path ./Cargo.toml check --allow unmaintained --hide-inclusion-graph
@@ -37,7 +37,7 @@ jobs:
     - name: Configure private repo auth
       uses: ./.github/actions/private-git-auth
       with:
-        token: ${{ secrets.RELEASE_TOKEN }}
+        token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
 
     - name: Run cargo-deny
       run: cargo deny --manifest-path zksync_os/Cargo.toml check --allow unmaintained --hide-inclusion-graph

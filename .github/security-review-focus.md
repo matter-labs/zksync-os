@@ -21,11 +21,7 @@ ZKsync OS is the STF of a ZK rollup. The same code runs in forward mode (sequenc
 
 - **Critical, direct and publicly triggerable loss of funds:** a regular L2 or L1 tx steals balances, credits unbacked base token, or gets an L2→L1 log or message committed without the state change it attests to (withdrawal without burn, double withdrawal, wrong L1 tx result).
 - **High, invalid executions provable:** the proving run relies on an oracle answer it does not constrain (e.g. an unchecked tree proof, preimage or crypto-primitive hint), or lets the operator select an outcome the STF does not explicitly allow.
-- **High, valid executions unprovable without a verification-key change:** attacker-controlled content makes proving fail (a panic on the proving path, forward/proving divergence, or proving cycles or memory not bounded by charged resources) where re-sequencing cannot avoid it:
-  - in content every batch must include: upgrade txs, and block- and batch-level processing;
-  - or triggered by state already committed to L1.
-
-  If dropping the tx or splitting the block avoids it, the impact is a forced reorg: report it as Medium.
+- **Medium, valid executions unprovable:** attacker-controlled content makes proving fail (a panic on the proving path, forward/proving divergence, or proving cycles or memory not bounded by charged resources). The operator recovers by re-sequencing (dropping or force-reverting the tx, or splitting the block), so the impact is a forced reorg, not a halted chain or a verification-key change.
 - **Medium, undocumented deviation from EVM (Osaka) behavior,** excluding divergences documented in `docs/execution_environments/evm.md` and `docs/not-a-bug.md`. A deviation that arises only from operator-controlled inputs (e.g. an operator-supplied coinbase or other `BlockContext` value) is not a finding.
 
 ## Invariants
@@ -40,7 +36,7 @@ ZKsync OS is the STF of a ZK rollup. The same code runs in forward mode (sequenc
 
 ## L1 (priority) transactions
 
-`l1_tx_filtering_enabled` is on for every production chain. A priority tx that cannot be executed or proven can be dropped from the block or force-failed (force-reverted) by the operator instead of halting the chain, so "unprovable L1 tx" findings are reduced unless they reach the paths below:
+`l1_tx_filtering_enabled` is on for every production chain. A priority tx that cannot be executed or proven can be dropped from the block or force-failed (force-reverted) by the operator instead of halting the chain, so an "unprovable L1 tx" finding is a forced reorg like any other unprovable execution. The filtering paths themselves must hold:
 
 - **Force-revert path:** runs for every priority tx, whatever its body: decoding, value mint, full-gas-limit charge, refund of the remainder, failure result log. It must be panic-free and provable. The result log must be correct, because L1 relies on it to release failed deposits.
 - **`RejectedAfterExecution`:** rolls the body back completely.

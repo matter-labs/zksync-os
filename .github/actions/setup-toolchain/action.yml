@@ -11,7 +11,7 @@ inputs:
     description: |
       Token used to fetch private matter-labs git dependencies over HTTPS.
       Composite actions cannot read the `secrets` context, so callers must
-      pass `secrets.RELEASE_TOKEN` explicitly.
+      pass `secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE` explicitly.
     default: ""
 runs:
   using: composite
